@@ -4,6 +4,21 @@
 import type { Metadata } from './metadata';
 
 /**
+ * Message metadata types
+ */
+export interface AssistantMetadata extends Record<string, unknown> {
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
+}
+
+export interface ToolResultMetadata extends Record<string, unknown> {
+  toolCallId: string;
+}
+
+/**
  * Represents the role of a message in a conversation
  */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result' | 'control';
@@ -21,9 +36,9 @@ export type Message =
 /**
  * Base interface for message properties
  */
-interface BaseMessage {
+interface BaseMessage<T extends Record<string, unknown> = Record<string, unknown>> {
   content: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Metadata<T>;
 }
 
 export interface SystemMessage extends BaseMessage {
@@ -34,11 +49,11 @@ export interface UserMessage extends BaseMessage {
   type: 'user';
 }
 
-export interface AssistantMessage extends BaseMessage {
+export interface AssistantMessage extends BaseMessage<AssistantMetadata> {
   type: 'assistant';
 }
 
-export interface ToolResultMessage extends BaseMessage {
+export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   type: 'tool_result';
   result: unknown;
 }

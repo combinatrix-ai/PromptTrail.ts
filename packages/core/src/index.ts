@@ -1,46 +1,10 @@
-/**
- * Core functionality for PromptTrail
- */
+// Core types
+export * from './types';
+export * from './metadata';
 
-// Export types
-export type {
-  Message,
-  SystemMessage,
-  UserMessage,
-  AssistantMessage,
-  ToolResultMessage,
-  ControlMessage,
-  Session,
-  Tool,
-  ModelConfig,
-  Temperature
-} from './types';
+// Base implementations
+export * from './model/base';
 
-// Export type guards
-export {
-  isSystemMessage,
-  isUserMessage,
-  isAssistantMessage,
-  isToolResultMessage,
-  isControlMessage,
-  createTemperature
-} from './types';
-
-// Export error classes
-export {
-  PromptTrailError,
-  ValidationError,
-  ConfigurationError
-} from './types';
-
-// Export metadata functionality
-export {
-  Metadata,
-  createMetadata
-} from './metadata';
-
-// Export session functionality
-export {
-  SessionImpl,
-  createSession
-} from './session';
+// OpenAI implementation
+export * from './model/openai/model';
+export * from './model/openai/types';
