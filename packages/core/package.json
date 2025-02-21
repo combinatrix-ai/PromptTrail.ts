@@ -39,6 +39,7 @@
     "vitest": "^1.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
     "openai": "^4.85.3",
     "zod": "^3.0.0"
   }
