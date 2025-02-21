@@ -1,4 +1,4 @@
-import type { ModelConfig, } from '../../types';
+import type { ModelConfig } from '../../types';
 import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,

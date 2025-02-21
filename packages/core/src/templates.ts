@@ -1,4 +1,5 @@
 import type { Session } from './session';
+import { createMetadata } from './metadata';
 
 /**
  * Base class for all templates
@@ -31,7 +32,7 @@ export class SystemTemplate extends Template {
     return session.addMessage({
       type: 'system',
       content: this.options.content,
-      metadata: {},
+      metadata: createMetadata().toObject(),
     });
   }
 }
@@ -55,7 +56,7 @@ export class UserTemplate extends Template {
     return session.addMessage({
       type: 'user',
       content: this.options.default,
-      metadata: {},
+      metadata: createMetadata().toObject(),
     });
   }
 }
@@ -81,7 +82,7 @@ export class AssistantTemplate extends Template {
       return session.addMessage({
         type: 'assistant',
         content: this.options.content,
-        metadata: {},
+        metadata: createMetadata().toObject(),
       });
     }
 
@@ -96,7 +97,7 @@ export class AssistantTemplate extends Template {
     return session.addMessage({
       type: 'assistant',
       content: response,
-      metadata: {},
+      metadata: createMetadata().toObject(),
     });
   }
 }
@@ -105,8 +106,47 @@ export class AssistantTemplate extends Template {
  * Template for linear sequence of templates
  */
 export class LinearTemplate extends Template {
-  constructor(private templates: Template[]) {
+  private templates: Template[] = [];
+
+  constructor(templates?: Template[]) {
     super();
+    if (templates) {
+      this.templates = templates;
+    }
+  }
+
+  addSystem(content: string): this {
+    this.templates.push(new SystemTemplate({ content }));
+    return this;
+  }
+
+  addUser(description: string, defaultValue: string): this {
+    this.templates.push(
+      new UserTemplate({ description, default: defaultValue }),
+    );
+    return this;
+  }
+
+  addAssistant(
+    options:
+      | string
+      | {
+          llm?: {
+            generate: (prompt: string) => Promise<string>;
+          };
+        },
+  ): this {
+    if (typeof options === 'string') {
+      this.templates.push(new AssistantTemplate({ content: options }));
+    } else {
+      this.templates.push(new AssistantTemplate(options));
+    }
+    return this;
+  }
+
+  addLoop(loop: LoopTemplate): this {
+    this.templates.push(loop);
+    return this;
   }
 
   async execute(session: Session): Promise<Session> {
@@ -122,23 +162,61 @@ export class LinearTemplate extends Template {
  * Template for looping sequence of templates
  */
 export class LoopTemplate extends Template {
-  constructor(
-    private options: {
-      templates: Template[];
-      exitCondition: (session: Session) => boolean;
-    },
-  ) {
+  private templates: Template[] = [];
+  private exitCondition?: (session: Session) => boolean;
+
+  constructor(options?: {
+    templates: Template[];
+    exitCondition: (session: Session) => boolean;
+  }) {
     super();
+    if (options) {
+      this.templates = options.templates;
+      this.exitCondition = options.exitCondition;
+    }
+  }
+
+  addUser(description: string, defaultValue: string): this {
+    this.templates.push(
+      new UserTemplate({ description, default: defaultValue }),
+    );
+    return this;
+  }
+
+  addAssistant(
+    options:
+      | string
+      | {
+          llm?: {
+            generate: (prompt: string) => Promise<string>;
+          };
+        },
+  ): this {
+    if (typeof options === 'string') {
+      this.templates.push(new AssistantTemplate({ content: options }));
+    } else {
+      this.templates.push(new AssistantTemplate(options));
+    }
+    return this;
+  }
+
+  setExitCondition(condition: (session: Session) => boolean): this {
+    this.exitCondition = condition;
+    return this;
   }
 
   async execute(session: Session): Promise<Session> {
+    if (!this.exitCondition) {
+      throw new Error('Exit condition not set for LoopTemplate');
+    }
+
     let currentSession = session;
 
     do {
-      for (const template of this.options.templates) {
+      for (const template of this.templates) {
         currentSession = await template.execute(currentSession);
       }
-    } while (!this.options.exitCondition(currentSession));
+    } while (!this.exitCondition(currentSession));
 
     return currentSession;
   }
