@@ -5,7 +5,9 @@
 /**
  * Type-safe metadata class extending Map with additional functionality
  */
-export class Metadata<T extends Record<string, unknown> = Record<string, unknown>> {
+export class Metadata<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
   private data: Map<string, unknown>;
 
   constructor(initial?: T) {
@@ -114,7 +116,9 @@ export class Metadata<T extends Record<string, unknown> = Record<string, unknown
    * Iterate over metadata entries
    */
   forEach(callback: (value: T[keyof T], key: keyof T) => void): void {
-    this.data.forEach((value, key) => callback(value as T[keyof T], key as keyof T));
+    this.data.forEach((value, key) =>
+      callback(value as T[keyof T], key as keyof T),
+    );
   }
 
   /**
@@ -127,9 +131,11 @@ export class Metadata<T extends Record<string, unknown> = Record<string, unknown
   /**
    * Merge another metadata instance or object into this one
    */
-  merge<U extends Record<string, unknown>>(other: Metadata<U> | U): Metadata<T & U> {
+  merge<U extends Record<string, unknown>>(
+    other: Metadata<U> | U,
+  ): Metadata<T & U> {
     const newMetadata = new Metadata<T & U>();
-    
+
     // Copy current data
     for (const [key, value] of this.entries()) {
       newMetadata.data.set(String(key), value);
@@ -152,7 +158,9 @@ export class Metadata<T extends Record<string, unknown> = Record<string, unknown
   /**
    * Create a new metadata instance by merging this one with another
    */
-  mergeNew<U extends Record<string, unknown>>(other: Metadata<U> | U): Metadata<T & U> {
+  mergeNew<U extends Record<string, unknown>>(
+    other: Metadata<U> | U,
+  ): Metadata<T & U> {
     return this.merge(other);
   }
 
@@ -161,7 +169,7 @@ export class Metadata<T extends Record<string, unknown> = Record<string, unknown
       return value;
     }
     if (Array.isArray(value)) {
-      return value.map(v => this.cloneValue(v)) as unknown as V;
+      return value.map((v) => this.cloneValue(v)) as unknown as V;
     }
     if (typeof value === 'object') {
       const cloned: Record<string, unknown> = {};
@@ -184,6 +192,8 @@ export class Metadata<T extends Record<string, unknown> = Record<string, unknown
 /**
  * Create a new metadata instance with type inference
  */
-export function createMetadata<T extends Record<string, unknown>>(initial?: T): Metadata<T> {
+export function createMetadata<T extends Record<string, unknown>>(
+  initial?: T,
+): Metadata<T> {
   return new Metadata<T>(initial);
 }

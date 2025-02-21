@@ -13,7 +13,7 @@ describe('Session', () => {
   it('should create session with initial messages', () => {
     const messages = [
       createSystemMessage('System message'),
-      createUserMessage('User message')
+      createUserMessage('User message'),
     ];
     const session = new SessionImpl(messages);
     expect(session.messages).toHaveLength(2);
@@ -36,7 +36,9 @@ describe('Session', () => {
       added?: string;
     };
 
-    const session = createSession<TestMetadata>({ metadata: { initial: true } });
+    const session = createSession<TestMetadata>({
+      metadata: { initial: true },
+    });
     const newSession = session.updateMetadata({ added: 'value' });
 
     expect(session.metadata.get('initial')).toBe(true);
@@ -50,7 +52,7 @@ describe('Session', () => {
       createSystemMessage('System message'),
       createUserMessage('User message 1'),
       createMessage('assistant', 'Assistant message'),
-      createUserMessage('User message 2')
+      createUserMessage('User message 2'),
     ];
     const session = new SessionImpl(messages);
 
@@ -63,26 +65,32 @@ describe('Session', () => {
   it('should validate session state', () => {
     const validSession = new SessionImpl([
       createSystemMessage('System message'),
-      createUserMessage('User message')
+      createUserMessage('User message'),
     ]);
 
     expect(() => validSession.validate()).not.toThrow();
 
     const emptySession = new SessionImpl();
-    expect(() => emptySession.validate()).toThrow('Session must have at least one message');
+    expect(() => emptySession.validate()).toThrow(
+      'Session must have at least one message',
+    );
 
     const multipleSystemMessages = new SessionImpl([
       createSystemMessage('System 1'),
       createUserMessage('User'),
-      createSystemMessage('System 2')
+      createSystemMessage('System 2'),
     ]);
-    expect(() => multipleSystemMessages.validate()).toThrow('Only one system message is allowed');
+    expect(() => multipleSystemMessages.validate()).toThrow(
+      'Only one system message is allowed',
+    );
 
     const systemNotFirst = new SessionImpl([
       createUserMessage('User'),
-      createSystemMessage('System')
+      createSystemMessage('System'),
     ]);
-    expect(() => systemNotFirst.validate()).toThrow('System message must be at the beginning');
+    expect(() => systemNotFirst.validate()).toThrow(
+      'System message must be at the beginning',
+    );
   });
 
   it('should serialize to JSON', () => {
@@ -93,14 +101,14 @@ describe('Session', () => {
     const json = session.toJSON();
     expect(json).toEqual({
       messages,
-      metadata
+      metadata,
     });
   });
 
   it('should deserialize from JSON', () => {
     const data = {
       messages: [createSystemMessage('Test')],
-      metadata: { key: 'value' }
+      metadata: { key: 'value' },
     };
 
     const session = SessionImpl.fromJSON(data);
@@ -120,7 +128,7 @@ describe('createSession', () => {
 
     const metadata: TestMetadata = {
       userId: 123,
-      settings: { theme: 'dark' }
+      settings: { theme: 'dark' },
     };
 
     const session = createSession({ metadata });

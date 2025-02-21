@@ -1,4 +1,3 @@
-import type { Message } from './types';
 import type { Session } from './session';
 
 /**
@@ -32,7 +31,7 @@ export class SystemTemplate extends Template {
     return session.addMessage({
       type: 'system',
       content: this.options.content,
-      metadata: {}
+      metadata: {},
     });
   }
 }
@@ -41,10 +40,12 @@ export class SystemTemplate extends Template {
  * Template for user messages
  */
 export class UserTemplate extends Template {
-  constructor(private options: {
-    description: string;
-    default: string;
-  }) {
+  constructor(
+    private options: {
+      description: string;
+      default: string;
+    },
+  ) {
     super();
   }
 
@@ -54,7 +55,7 @@ export class UserTemplate extends Template {
     return session.addMessage({
       type: 'user',
       content: this.options.default,
-      metadata: {}
+      metadata: {},
     });
   }
 }
@@ -63,12 +64,14 @@ export class UserTemplate extends Template {
  * Template for assistant messages
  */
 export class AssistantTemplate extends Template {
-  constructor(private options?: {
-    content?: string;
-    llm?: {
-      generate: (prompt: string) => Promise<string>;
-    };
-  }) {
+  constructor(
+    private options?: {
+      content?: string;
+      llm?: {
+        generate: (prompt: string) => Promise<string>;
+      };
+    },
+  ) {
     super(options);
   }
 
@@ -78,7 +81,7 @@ export class AssistantTemplate extends Template {
       return session.addMessage({
         type: 'assistant',
         content: this.options.content,
-        metadata: {}
+        metadata: {},
       });
     }
 
@@ -87,13 +90,13 @@ export class AssistantTemplate extends Template {
     }
 
     const response = await this.llm.generate(
-      session.getLastMessage()?.content ?? ''
+      session.getLastMessage()?.content ?? '',
     );
 
     return session.addMessage({
       type: 'assistant',
       content: response,
-      metadata: {}
+      metadata: {},
     });
   }
 }
@@ -119,22 +122,24 @@ export class LinearTemplate extends Template {
  * Template for looping sequence of templates
  */
 export class LoopTemplate extends Template {
-  constructor(private options: {
-    templates: Template[];
-    exitCondition: (session: Session) => boolean;
-  }) {
+  constructor(
+    private options: {
+      templates: Template[];
+      exitCondition: (session: Session) => boolean;
+    },
+  ) {
     super();
   }
 
   async execute(session: Session): Promise<Session> {
     let currentSession = session;
-    
+
     do {
       for (const template of this.options.templates) {
         currentSession = await template.execute(currentSession);
       }
     } while (!this.options.exitCondition(currentSession));
-    
+
     return currentSession;
   }
 }

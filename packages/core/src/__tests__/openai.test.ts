@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { OpenAIModel } from '../model/openai/model';
-import type { Session, Tool, AssistantMessage, AssistantMetadata } from '../types';
+import type {
+  Session,
+  Tool,
+  AssistantMessage,
+  AssistantMetadata,
+} from '../types';
 import { createMetadata } from '../metadata';
 import { createTemperature } from '../types';
 
@@ -88,9 +93,11 @@ describe('OpenAIModel', () => {
       metadata: createMetadata(),
     };
 
-    const response = await model.send(session) as AssistantMessage;
+    const response = (await model.send(session)) as AssistantMessage;
     expect(response.type).toBe('assistant');
-    const toolCalls = response.metadata?.get('toolCalls') as AssistantMetadata['toolCalls'];
+    const toolCalls = response.metadata?.get(
+      'toolCalls',
+    ) as AssistantMetadata['toolCalls'];
     expect(toolCalls).toBeDefined();
     expect(toolCalls?.[0]?.name).toBe('calculator');
     expect(toolCalls?.[0]?.arguments).toEqual({ a: 2, b: 2 });
@@ -101,7 +108,8 @@ describe('OpenAIModel', () => {
       messages: [
         {
           type: 'system',
-          content: 'You are a helpful assistant that always responds in French.',
+          content:
+            'You are a helpful assistant that always responds in French.',
         },
         {
           type: 'user',
@@ -127,11 +135,13 @@ describe('OpenAIModel', () => {
           type: 'assistant',
           content: 'Let me calculate that for you.',
           metadata: createMetadata<AssistantMetadata>({
-            toolCalls: [{
-              name: 'calculator',
-              arguments: { a: 2, b: 2 },
-              id: 'call_123',
-            }],
+            toolCalls: [
+              {
+                name: 'calculator',
+                arguments: { a: 2, b: 2 },
+                id: 'call_123',
+              },
+            ],
           }),
         },
         {

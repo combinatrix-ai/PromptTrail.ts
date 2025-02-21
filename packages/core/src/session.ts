@@ -5,13 +5,19 @@ import { ValidationError } from './types';
 /**
  * Session interface for maintaining conversation state
  */
-export interface Session<T extends Record<string, unknown> = Record<string, unknown>> {
+export interface Session<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
   addMessage(message: Message): Session<T>;
-  updateMetadata<U extends Record<string, unknown>>(metadata: U): Session<T & U>;
+  updateMetadata<U extends Record<string, unknown>>(
+    metadata: U,
+  ): Session<T & U>;
   getLastMessage(): Message | undefined;
-  getMessagesByType<U extends Message['type']>(type: U): Extract<Message, { type: U }>[];
+  getMessagesByType<U extends Message['type']>(
+    type: U,
+  ): Extract<Message, { type: U }>[];
   validate(): void;
   toJSON(): Record<string, unknown>;
 }
@@ -19,10 +25,13 @@ export interface Session<T extends Record<string, unknown> = Record<string, unkn
 /**
  * Immutable session implementation
  */
-export class SessionImpl<T extends Record<string, unknown> = Record<string, unknown>> implements Session<T> {
+export class SessionImpl<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> implements Session<T>
+{
   constructor(
     public readonly messages: readonly Message[] = [],
-    public readonly metadata: Metadata<T> = new Metadata<T>()
+    public readonly metadata: Metadata<T> = new Metadata<T>(),
   ) {}
 
   /**
@@ -31,18 +40,17 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
   addMessage(message: Message): SessionImpl<T> {
     return new SessionImpl<T>(
       [...this.messages, message],
-      this.metadata.clone()
+      this.metadata.clone(),
     );
   }
 
   /**
    * Create a new session with updated metadata
    */
-  updateMetadata<U extends Record<string, unknown>>(metadata: U): SessionImpl<T & U> {
-    return new SessionImpl<T & U>(
-      this.messages,
-      this.metadata.merge(metadata)
-    );
+  updateMetadata<U extends Record<string, unknown>>(
+    metadata: U,
+  ): SessionImpl<T & U> {
+    return new SessionImpl<T & U>(this.messages, this.metadata.merge(metadata));
   }
 
   /**
@@ -55,9 +63,11 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends Message['type']>(type: U): Extract<Message, { type: U }>[] {
-    return this.messages.filter((msg): msg is Extract<Message, { type: U }> => 
-      msg.type === type
+  getMessagesByType<U extends Message['type']>(
+    type: U,
+  ): Extract<Message, { type: U }>[] {
+    return this.messages.filter(
+      (msg): msg is Extract<Message, { type: U }> => msg.type === type,
     );
   }
 
@@ -71,7 +81,7 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
     }
 
     // Check for empty messages
-    if (this.messages.some(msg => !msg.content)) {
+    if (this.messages.some((msg) => !msg.content)) {
       throw new ValidationError('Empty messages are not allowed');
     }
 
@@ -91,7 +101,7 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      metadata: this.metadata.toJSON()
+      metadata: this.metadata.toJSON(),
     };
   }
 
@@ -105,14 +115,18 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
   /**
    * Create a new session from a JSON representation
    */
-  static fromJSON<U extends Record<string, unknown>>(json: Record<string, unknown>): SessionImpl<U> {
+  static fromJSON<U extends Record<string, unknown>>(
+    json: Record<string, unknown>,
+  ): SessionImpl<U> {
     if (!json.messages || !Array.isArray(json.messages)) {
-      throw new ValidationError('Invalid session JSON: messages must be an array');
+      throw new ValidationError(
+        'Invalid session JSON: messages must be an array',
+      );
     }
 
     return new SessionImpl<U>(
       json.messages as Message[],
-      new Metadata<U>(json.metadata as U)
+      new Metadata<U>(json.metadata as U),
     );
   }
 
@@ -126,14 +140,18 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
   /**
    * Create a session with initial messages
    */
-  static withMessages<U extends Record<string, unknown>>(messages: Message[]): SessionImpl<U> {
+  static withMessages<U extends Record<string, unknown>>(
+    messages: Message[],
+  ): SessionImpl<U> {
     return new SessionImpl<U>(messages);
   }
 
   /**
    * Create a session with initial metadata
    */
-  static withMetadata<U extends Record<string, unknown>>(metadata: U): SessionImpl<U> {
+  static withMetadata<U extends Record<string, unknown>>(
+    metadata: U,
+  ): SessionImpl<U> {
     return new SessionImpl<U>([], new Metadata<U>(metadata));
   }
 
@@ -142,7 +160,7 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
    */
   static create<U extends Record<string, unknown>>(
     messages: Message[],
-    metadata: U
+    metadata: U,
   ): SessionImpl<U> {
     return new SessionImpl<U>(messages, new Metadata<U>(metadata));
   }
@@ -151,12 +169,14 @@ export class SessionImpl<T extends Record<string, unknown> = Record<string, unkn
 /**
  * Create a new session with type inference
  */
-export function createSession<T extends Record<string, unknown>>(options: {
-  messages?: Message[];
-  metadata?: T;
-} = {}): SessionImpl<T> {
+export function createSession<T extends Record<string, unknown>>(
+  options: {
+    messages?: Message[];
+    metadata?: T;
+  } = {},
+): SessionImpl<T> {
   return new SessionImpl<T>(
     options.messages,
-    options.metadata ? new Metadata<T>(options.metadata) : undefined
+    options.metadata ? new Metadata<T>(options.metadata) : undefined,
   );
 }

@@ -25,10 +25,10 @@ describe('Metadata', () => {
   it('should clone metadata', () => {
     const metadata = new Metadata({ name: 'test', obj: { nested: true } });
     const cloned = metadata.clone();
-    
+
     expect(cloned.get('name')).toBe('test');
     expect(cloned.get('obj')).toEqual({ nested: true });
-    
+
     // Verify deep clone
     const obj = cloned.get('obj') as { nested: boolean };
     obj.nested = false;
@@ -38,7 +38,7 @@ describe('Metadata', () => {
   it('should merge metadata', () => {
     const metadata1 = new Metadata({ a: 1, b: 2 });
     const metadata2 = new Metadata({ b: 3, c: 4 });
-    
+
     const merged = metadata1.merge(metadata2);
     expect(merged.toObject()).toEqual({ a: 1, b: 3, c: 4 });
   });
@@ -61,9 +61,9 @@ describe('Metadata', () => {
       user: {
         name: 'test',
         settings: {
-          theme: 'dark'
-        }
-      }
+          theme: 'dark',
+        },
+      },
     };
     const metadata = new Metadata(data);
     expect(metadata.get('user')).toEqual(data.user);
@@ -75,7 +75,7 @@ describe('createMetadata', () => {
     const metadata = createMetadata({
       name: 'test',
       count: 42,
-      settings: { enabled: true }
+      settings: { enabled: true },
     });
 
     expect(metadata.get('name')).toBe('test');

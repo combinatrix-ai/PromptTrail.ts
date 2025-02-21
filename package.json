@@ -7,15 +7,25 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+    "lint": "eslint . --fix",
+    "lint:check": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm run lint:check && pnpm run format:check"
   },
   "devDependencies": {
+    "@eslint/js": "^9.20.0",
     "@types/node": "^20.0.0",
-    "prettier": "^3.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.24.1",
+    "@typescript-eslint/parser": "^8.24.1",
+    "eslint": "^9.20.1",
+    "eslint-plugin-react": "^7.37.4",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.1",
+    "tsup": "^8.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^1.0.0",
-    "tsup": "^8.0.0"
+    "typescript-eslint": "^8.24.1",
+    "vitest": "^1.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

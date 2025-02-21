@@ -21,12 +21,17 @@ export interface ToolResultMetadata extends Record<string, unknown> {
 /**
  * Represents the role of a message in a conversation
  */
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result' | 'control';
+export type MessageRole =
+  | 'system'
+  | 'user'
+  | 'assistant'
+  | 'tool_result'
+  | 'control';
 
 /**
  * Discriminated union type for different message types
  */
-export type Message = 
+export type Message =
   | SystemMessage
   | UserMessage
   | AssistantMessage
@@ -36,7 +41,9 @@ export type Message =
 /**
  * Base interface for message properties
  */
-interface BaseMessage<T extends Record<string, unknown> = Record<string, unknown>> {
+interface BaseMessage<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
   content: string;
   metadata?: Metadata<T>;
 }
@@ -75,11 +82,13 @@ export const isSystemMessage = (message: Message): message is SystemMessage =>
 export const isUserMessage = (message: Message): message is UserMessage =>
   message.type === 'user';
 
-export const isAssistantMessage = (message: Message): message is AssistantMessage =>
-  message.type === 'assistant';
+export const isAssistantMessage = (
+  message: Message,
+): message is AssistantMessage => message.type === 'assistant';
 
-export const isToolResultMessage = (message: Message): message is ToolResultMessage =>
-  message.type === 'tool_result';
+export const isToolResultMessage = (
+  message: Message,
+): message is ToolResultMessage => message.type === 'tool_result';
 
 export const isControlMessage = (message: Message): message is ControlMessage =>
   message.type === 'control';
@@ -122,7 +131,9 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
 /**
  * Session interface for maintaining conversation state
  */
-export interface Session<T extends Record<string, unknown> = Record<string, unknown>> {
+export interface Session<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
 }
@@ -131,7 +142,10 @@ export interface Session<T extends Record<string, unknown> = Record<string, unkn
  * Error types
  */
 export class PromptTrailError extends Error {
-  constructor(message: string, public readonly code: string) {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
     super(message);
     this.name = 'PromptTrailError';
   }

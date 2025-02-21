@@ -1,5 +1,11 @@
 import OpenAI from 'openai';
-import type { Message, Session, Tool, AssistantMessage, AssistantMetadata } from '../../types';
+import type {
+  Message,
+  Session,
+  Tool,
+  AssistantMessage,
+  AssistantMetadata,
+} from '../../types';
 import { Model } from '../base';
 import type { OpenAIConfig, OpenAITool } from './types';
 import { ConfigurationError } from '../../types';
@@ -24,7 +30,10 @@ export class OpenAIModel extends Model<OpenAIConfig> {
     if (!this.config.modelName) {
       throw new ConfigurationError('Model name is required');
     }
-    if (this.config.temperature && (this.config.temperature < 0 || this.config.temperature > 2)) {
+    if (
+      this.config.temperature &&
+      (this.config.temperature < 0 || this.config.temperature > 2)
+    ) {
       throw new ConfigurationError('Temperature must be between 0 and 2');
     }
   }
@@ -40,9 +49,12 @@ export class OpenAIModel extends Model<OpenAIConfig> {
     };
   }
 
-  private convertToOpenAIMessages(session: Session): OpenAI.Chat.ChatCompletionMessageParam[] {
+  private convertToOpenAIMessages(
+    session: Session,
+  ): OpenAI.Chat.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    let lastAssistantMessage: OpenAI.Chat.ChatCompletionAssistantMessageParam | null = null;
+    let lastAssistantMessage: OpenAI.Chat.ChatCompletionAssistantMessageParam | null =
+      null;
 
     for (const msg of session.messages) {
       if (msg.type === 'system') {
@@ -50,12 +62,14 @@ export class OpenAIModel extends Model<OpenAIConfig> {
       } else if (msg.type === 'user') {
         messages.push({ role: 'user', content: msg.content });
       } else if (msg.type === 'assistant') {
-        const toolCalls = msg.metadata?.get('toolCalls') as AssistantMetadata['toolCalls'];
+        const toolCalls = msg.metadata?.get(
+          'toolCalls',
+        ) as AssistantMetadata['toolCalls'];
         if (toolCalls) {
           lastAssistantMessage = {
             role: 'assistant',
             content: msg.content,
-            tool_calls: toolCalls.map(call => ({
+            tool_calls: toolCalls.map((call) => ({
               id: call.id,
               type: 'function',
               function: {
@@ -68,7 +82,10 @@ export class OpenAIModel extends Model<OpenAIConfig> {
         } else {
           messages.push({ role: 'assistant', content: msg.content });
         }
-      } else if (msg.type === 'tool_result' && lastAssistantMessage?.tool_calls) {
+      } else if (
+        msg.type === 'tool_result' &&
+        lastAssistantMessage?.tool_calls
+      ) {
         // Only add tool results if there was a preceding assistant message with tool calls
         const toolCallId = msg.metadata?.get('toolCallId') as string;
         if (toolCallId) {
@@ -86,13 +103,13 @@ export class OpenAIModel extends Model<OpenAIConfig> {
 
   async send(session: Session): Promise<Message> {
     const messages = this.convertToOpenAIMessages(session);
-    
+
     const params = {
       model: this.config.modelName,
       messages,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens,
-      tools: this.config.tools?.map(tool => this.formatTool(tool)),
+      tools: this.config.tools?.map((tool) => this.formatTool(tool)),
     };
 
     const response = await this.client.chat.completions.create(params);
@@ -105,7 +122,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
     if (choice.message.tool_calls?.length) {
       // Handle tool calls
       const metadata: AssistantMetadata = {
-        toolCalls: choice.message.tool_calls.map(call => ({
+        toolCalls: choice.message.tool_calls.map((call) => ({
           name: call.function.name,
           arguments: JSON.parse(call.function.arguments),
           id: call.id,
@@ -130,7 +147,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
 
   async *sendAsync(session: Session): AsyncGenerator<Message, void, unknown> {
     const messages = this.convertToOpenAIMessages(session);
-    
+
     const stream = await this.client.chat.completions.create({
       model: this.config.modelName,
       messages,

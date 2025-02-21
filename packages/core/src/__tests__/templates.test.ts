@@ -1,52 +1,61 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Session } from '../session';
-import type { Message } from '../types';
 import { SessionImpl } from '../session';
-import { LinearTemplate, LoopTemplate, SystemTemplate, UserTemplate, AssistantTemplate } from '../templates';
+import {
+  LinearTemplate,
+  LoopTemplate,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+} from '../templates';
 
 describe('Templates', () => {
   describe('LinearTemplate with Loop', () => {
     it('should execute a math teacher conversation flow', async () => {
       // Mock the LLM responses
       const mockLLM = {
-        generate: vi.fn()
-          .mockReturnValueOnce('Dividing a number by zero is undefined in mathematics because...')
-          .mockReturnValueOnce('END')
+        generate: vi
+          .fn()
+          .mockReturnValueOnce(
+            'Dividing a number by zero is undefined in mathematics because...',
+          )
+          .mockReturnValueOnce('END'),
       };
 
       // Create the template structure
       const template = new LinearTemplate([
         new SystemTemplate({
-          content: "You're a math teacher bot."
+          content: "You're a math teacher bot.",
         }),
         new LoopTemplate({
           templates: [
             new UserTemplate({
               description: "Let's ask a question to AI:",
-              default: "Why can't you divide a number by zero?"
+              default: "Why can't you divide a number by zero?",
             }),
             new AssistantTemplate({
-              llm: mockLLM
+              llm: mockLLM,
             }),
             new AssistantTemplate({
-              content: "Are you satisfied?"
+              content: 'Are you satisfied?',
             }),
             new UserTemplate({
-              description: "Input:",
-              default: "Yes."
+              description: 'Input:',
+              default: 'Yes.',
             }),
             new AssistantTemplate({
-              content: "The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`."
+              content:
+                'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
             }),
             new AssistantTemplate({
-              llm: mockLLM
-            })
+              llm: mockLLM,
+            }),
           ],
           exitCondition: (session: Session) => {
             const lastMessage = session.getLastMessage();
             return lastMessage?.content.includes('END') ?? false;
-          }
-        })
+          },
+        }),
       ]);
 
       // Create an initial session
@@ -61,38 +70,40 @@ describe('Templates', () => {
         {
           type: 'system',
           content: "You're a math teacher bot.",
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: "Why can't you divide a number by zero?",
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
-          content: 'Dividing a number by zero is undefined in mathematics because...',
-          metadata: {}
+          content:
+            'Dividing a number by zero is undefined in mathematics because...',
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'Are you satisfied?',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: 'Yes.',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
-          content: 'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
-          metadata: {}
+          content:
+            'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'END',
-          metadata: {}
-        }
+          metadata: {},
+        },
       ]);
 
       // Verify LLM was called correctly
@@ -102,45 +113,47 @@ describe('Templates', () => {
     it('should handle multiple loop iterations when user is not satisfied', async () => {
       // Mock the LLM responses for multiple iterations
       const mockLLM = {
-        generate: vi.fn()
+        generate: vi
+          .fn()
           .mockReturnValueOnce('First explanation about division by zero...')
           .mockReturnValueOnce('RETRY')
           .mockReturnValueOnce('Second, more detailed explanation...')
-          .mockReturnValueOnce('END')
+          .mockReturnValueOnce('END'),
       };
 
       const template = new LinearTemplate([
         new SystemTemplate({
-          content: "You're a math teacher bot."
+          content: "You're a math teacher bot.",
         }),
         new LoopTemplate({
           templates: [
             new UserTemplate({
               description: "Let's ask a question to AI:",
-              default: "Why can't you divide a number by zero?"
+              default: "Why can't you divide a number by zero?",
             }),
             new AssistantTemplate({
-              llm: mockLLM
+              llm: mockLLM,
             }),
             new AssistantTemplate({
-              content: "Are you satisfied?"
+              content: 'Are you satisfied?',
             }),
             new UserTemplate({
-              description: "Input:",
-              default: "No, please explain more."
+              description: 'Input:',
+              default: 'No, please explain more.',
             }),
             new AssistantTemplate({
-              content: "The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`."
+              content:
+                'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
             }),
             new AssistantTemplate({
-              llm: mockLLM
-            })
+              llm: mockLLM,
+            }),
           ],
           exitCondition: (session: Session) => {
             const lastMessage = session.getLastMessage();
             return lastMessage?.content.includes('END') ?? false;
-          }
-        })
+          },
+        }),
       ]);
 
       const session = new SessionImpl();
@@ -152,68 +165,70 @@ describe('Templates', () => {
         {
           type: 'system',
           content: "You're a math teacher bot.",
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: "Why can't you divide a number by zero?",
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'First explanation about division by zero...',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'Are you satisfied?',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: 'No, please explain more.',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
-          content: 'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
-          metadata: {}
+          content:
+            'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'RETRY',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: "Why can't you divide a number by zero?",
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'Second, more detailed explanation...',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'Are you satisfied?',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'user',
           content: 'No, please explain more.',
-          metadata: {}
+          metadata: {},
         },
         {
           type: 'assistant',
-          content: 'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
-          metadata: {}
+          content:
+            'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
+          metadata: {},
         },
         {
           type: 'assistant',
           content: 'END',
-          metadata: {}
-        }
+          metadata: {},
+        },
       ]);
 
       // Verify LLM was called the correct number of times

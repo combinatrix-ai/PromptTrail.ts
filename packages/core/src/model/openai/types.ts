@@ -1,5 +1,8 @@
-import type { ModelConfig, Temperature, Tool } from '../../types';
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
+import type { ModelConfig, } from '../../types';
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from 'openai/resources/chat/completions';
 
 /**
  * OpenAI specific configuration

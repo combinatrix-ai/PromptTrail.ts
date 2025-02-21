@@ -17,7 +17,7 @@ export abstract class Model<TConfig extends ModelConfig = ModelConfig> {
    * Send a message to the model and get streaming responses
    */
   abstract sendAsync(session: Session): AsyncGenerator<Message, void, unknown>;
-  
+
   /**
    * Format a tool for the specific model implementation
    */

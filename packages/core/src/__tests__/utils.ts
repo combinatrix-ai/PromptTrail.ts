@@ -1,4 +1,11 @@
-import type { Message, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ControlMessage } from '../types';
+import type {
+  Message,
+  SystemMessage,
+  UserMessage,
+  AssistantMessage,
+  ToolResultMessage,
+  ControlMessage,
+} from '../types';
 
 /**
  * Create a system message for testing
@@ -6,7 +13,7 @@ import type { Message, SystemMessage, UserMessage, AssistantMessage, ToolResultM
 export const createSystemMessage = (content: string): SystemMessage => ({
   type: 'system',
   content,
-  metadata: {}
+  metadata: {},
 });
 
 /**
@@ -15,7 +22,7 @@ export const createSystemMessage = (content: string): SystemMessage => ({
 export const createUserMessage = (content: string): UserMessage => ({
   type: 'user',
   content,
-  metadata: {}
+  metadata: {},
 });
 
 /**
@@ -24,36 +31,46 @@ export const createUserMessage = (content: string): UserMessage => ({
 export const createAssistantMessage = (content: string): AssistantMessage => ({
   type: 'assistant',
   content,
-  metadata: {}
+  metadata: {},
 });
 
 /**
  * Create a tool result message for testing
  */
-export const createToolResultMessage = (content: string, result: unknown): ToolResultMessage => ({
+export const createToolResultMessage = (
+  content: string,
+  result: unknown,
+): ToolResultMessage => ({
   type: 'tool_result',
   content,
   result,
-  metadata: {}
+  metadata: {},
 });
 
 /**
  * Create a control message for testing
  */
-export const createControlMessage = (content: string, action: string, parameters?: Record<string, unknown>): ControlMessage => ({
+export const createControlMessage = (
+  content: string,
+  action: string,
+  parameters?: Record<string, unknown>,
+): ControlMessage => ({
   type: 'control',
   content,
   control: {
     action,
-    parameters
+    parameters,
   },
-  metadata: {}
+  metadata: {},
 });
 
 /**
  * Create a message of any type for testing
  */
-export const createMessage = (type: Message['type'], content: string): Message => {
+export const createMessage = (
+  type: Message['type'],
+  content: string,
+): Message => {
   switch (type) {
     case 'system':
       return createSystemMessage(content);
