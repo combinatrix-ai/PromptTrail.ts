@@ -105,6 +105,11 @@ export const createTemperature = (value: number): Temperature => {
   return value as Temperature;
 };
 
+// Import Tool type first
+import type { Tool, SchemaType, ToolResult } from './tool';
+export { createTool } from './tool';
+export type { Tool, SchemaType, ToolResult };
+
 /**
  * Model configuration interface
  */
@@ -115,17 +120,7 @@ export interface ModelConfig {
   readonly topP?: number;
   readonly topK?: number;
   readonly repetitionPenalty?: number;
-  readonly tools?: readonly Tool[];
-}
-
-/**
- * Tool interface for function calling
- */
-export interface Tool<TInput = unknown, TOutput = unknown> {
-  readonly name: string;
-  readonly description: string;
-  readonly schema: unknown; // Will be replaced with actual schema type
-  execute(input: TInput): Promise<TOutput>;
+  readonly tools?: readonly Tool<SchemaType>[];
 }
 
 /**

@@ -33,7 +33,6 @@ import { OpenAIModel } from '@prompttrail/core';
 const model = new OpenAIModel({
   apiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-4',
-  temperature: 0.7,
 });
 
 // Create a conversation template
@@ -48,129 +47,176 @@ const result = await template.execute(session);
 console.log(result.messages[result.messages.length - 1].content);
 ```
 
-## Advanced Features
+## Core Concepts
+
+### Templates
+
+Templates help you build conversation flows. Start simple and add complexity as needed:
+
+```typescript
+// Basic conversation
+const basic = new LinearTemplate()
+  .addUser('Hello!')
+  .addAssistant({ llm: model });
+
+// Multi-turn conversation
+const complex = new LinearTemplate()
+  .addSystem('You are a friendly assistant.')
+  .addUser('Tell me about TypeScript.')
+  .addAssistant({ llm: model })
+  .addUser('Can you show an example?')
+  .addAssistant({ llm: model });
+```
+
+### Models
+
+Choose your LLM provider and customize settings:
+
+```typescript
+// OpenAI
+const openai = new OpenAIModel({
+  apiKey: process.env.OPENAI_API_KEY,
+  modelName: 'gpt-4',
+  temperature: 0.7,  // Optional: control randomness
+});
+
+// Anthropic
+const anthropic = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-haiku-20240307',
+});
+```
 
 ### Interactive Loops
 
-Create conversations that can loop based on conditions:
+Create dynamic conversations that can branch and repeat:
 
 ```typescript
-const template = new LinearTemplate()
-  .addSystem("You're a math teacher bot.")
+const quiz = new LinearTemplate()
+  .addSystem("You're a quiz bot.")
   .addLoop(
     new LoopTemplate()
-      .addUser("Let's ask a question:", "Why can't you divide by zero?")
+      .addUser('Ask me a question about TypeScript')
       .addAssistant({ llm: model })
-      .addAssistant('Are you satisfied?')
-      .addUser('Input:', 'Yes.')
-      .addAssistant('If satisfied, answer END. Otherwise, RETRY.')
+      .addUser('Here is my answer:', 'interfaces extend classes')
       .addAssistant({ llm: model })
+      .addUser('Should we continue? (yes/no)', 'yes')
       .setExitCondition(
-        (session) => session.getLastMessage()?.content.includes('END') ?? false,
-      ),
+        (session) => 
+          session.getLastMessage()?.content.toLowerCase() === 'no'
+      )
   );
-```
-
-### Tool Integration
-
-Define and use tools with LLMs:
-
-```typescript
-const calculatorTool = {
-  name: 'calculator',
-  description: 'A simple calculator that can add two numbers',
-  schema: {
-    type: 'object',
-    properties: {
-      a: { type: 'number', description: 'First number' },
-      b: { type: 'number', description: 'Second number' },
-    },
-    required: ['a', 'b'],
-  },
-  execute: async (input: { a: number; b: number }) => {
-    return { result: input.a + input.b };
-  },
-};
-
-const modelWithTools = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4',
-  temperature: 0.7,
-  tools: [calculatorTool],
-});
 ```
 
 ### Session Management
 
-Handle conversation state and metadata:
+Track conversation state and metadata:
 
 ```typescript
-// Create a session with custom metadata
-type CustomMetadata = {
-  userId: string;
-  settings: {
-    language: string;
-  };
-};
+// Simple session
+const session = createSession();
 
-const session = createSession<CustomMetadata>({
+// Session with custom metadata
+interface UserPreferences {
+  language: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+}
+
+const customSession = createSession<UserPreferences>({
   metadata: {
-    userId: 'user123',
-    settings: { language: 'en' },
+    language: 'en',
+    difficulty: 'beginner',
   },
-});
-
-// Add messages to session
-const newSession = session.addMessage({
-  type: 'user',
-  content: 'Hello!',
-  metadata: createMetadata(),
 });
 ```
 
-### Streaming Responses
+### Streaming Support
 
-Stream responses for real-time interactions:
+Get real-time responses:
 
 ```typescript
-const model = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-haiku-20240307',
+const model = new OpenAIModel({
+  apiKey: process.env.OPENAI_API_KEY,
+  modelName: 'gpt-4',
 });
 
+// Stream responses chunk by chunk
 for await (const chunk of model.sendAsync(session)) {
   process.stdout.write(chunk.content);
 }
 ```
 
+### Tool Integration
+
+Add capabilities to your LLM conversations:
+
+```typescript
+// Create a simple calculator tool
+const calculator = new Tool({
+  name: 'calculator',
+  description: 'Add two numbers together',
+  // Define the input schema for the LLM
+  schema: {
+    type: 'object',
+    properties: {
+      a: {
+        type: 'number',
+        description: 'First number to add'
+      },
+      b: {
+        type: 'number',
+        description: 'Second number to add'
+      }
+    },
+    required: ['a', 'b']
+  },
+  // Implementation - TypeScript infers types from schema
+  execute: async (input) => {
+    return { result: input.a + input.b };
+  }
+});
+
+// Use tools with your model
+const modelWithTools = new OpenAIModel({
+  apiKey: process.env.OPENAI_API_KEY,
+  modelName: 'gpt-4',
+  tools: [calculator],
+});
+
+// Use in conversation
+const template = new LinearTemplate()
+  .addSystem("You're a math assistant.")
+  .addUser("What's 123 + 456?")
+  .addAssistant({ llm: modelWithTools });
+```
+
 ## API Reference
 
-### Templates
+Explore available features through your IDE:
 
-- `LinearTemplate`: Create sequential conversation flows
-- `LoopTemplate`: Create conditional loops in conversations
-- `SystemTemplate`: Define system messages
-- `UserTemplate`: Define user messages
-- `AssistantTemplate`: Define assistant responses
+- Hover over types and classes for documentation
+- Use autocomplete to discover methods
+- "Go to Definition" (F12) to see detailed API
 
-### Models
+Key types and classes:
 
-- `OpenAIModel`: Interface with OpenAI models
-- `AnthropicModel`: Interface with Anthropic Claude models
-
-### Session Management
-
-- `createSession()`: Create a new conversation session
-- `Session.addMessage()`: Add a message to the session
-- `Session.updateMetadata()`: Update session metadata
-- `Session.getMessagesByType()`: Get messages of a specific type
-
-### Metadata
-
-- `createMetadata()`: Create typed metadata containers
-- `Metadata.set()`: Set metadata values
-- `Metadata.get()`: Get metadata values
-- `Metadata.merge()`: Merge multiple metadata objects
+```typescript
+import {
+  // Templates
+  LinearTemplate,   // Basic conversation flow
+  LoopTemplate,     // Conditional loops
+  
+  // Models
+  OpenAIModel,      // OpenAI integration
+  AnthropicModel,   // Anthropic integration
+  
+  // Session
+  createSession,    // Start conversations
+  
+  // Tools
+  Tool,            // Add capabilities
+} from '@prompttrail/core';
+```
 
 ## Contributing
 

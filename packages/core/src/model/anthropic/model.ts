@@ -3,6 +3,7 @@ import type {
   Message,
   Session,
   Tool,
+  SchemaType,
   AssistantMessage,
   AssistantMetadata,
   Temperature,
@@ -39,13 +40,24 @@ export class AnthropicModel extends Model<AnthropicConfig> {
     }
   }
 
-  protected formatTool(tool: Tool): AnthropicTool {
+  protected formatTool(tool: Tool<SchemaType>): AnthropicTool {
     return {
       type: 'function',
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: tool.schema as Record<string, unknown>,
+        parameters:
+          tool.schema.type === 'object'
+            ? {
+                type: 'object',
+                properties: tool.schema.properties,
+                required: tool.schema.required,
+                description: tool.schema.description,
+              }
+            : {
+                type: tool.schema.type,
+                description: tool.schema.description,
+              },
       },
     };
   }
