@@ -1,0 +1,5 @@
+- The aim of this project is proting Python library called PromptTrail to TypeScript.
+- You can see the python files under PromptTrail. 
+- But be very TypeScript like when you port.
+- Use `pnpm`
+- Use `cd packages/core && pnpm exec vitest --run --watch=false`

@@ -35,7 +35,7 @@ const calculatorTool: Tool = {
 describe('OpenAIModel', () => {
   const model = new OpenAIModel({
     apiKey: process.env.OPENAI_API_KEY!,
-    modelName: 'gpt-3.5-turbo',
+    modelName: 'gpt-4o-mini',
     temperature: createTemperature(0.7),
   });
 
@@ -78,7 +78,7 @@ describe('OpenAIModel', () => {
   it('should use tools when available', async () => {
     const model = new OpenAIModel({
       apiKey: process.env.OPENAI_API_KEY!,
-      modelName: 'gpt-3.5-turbo',
+      modelName: 'gpt-4o-mini',
       temperature: createTemperature(0.7),
       tools: [calculatorTool],
     });

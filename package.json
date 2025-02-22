@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "vitest --run --watch=false --inspect-brk",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "format": "prettier --write .",
