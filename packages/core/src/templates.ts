@@ -32,7 +32,7 @@ export class SystemTemplate extends Template {
     return session.addMessage({
       type: 'system',
       content: this.options.content,
-      metadata: createMetadata().toObject(),
+      metadata: createMetadata(),
     });
   }
 }
@@ -56,7 +56,7 @@ export class UserTemplate extends Template {
     return session.addMessage({
       type: 'user',
       content: this.options.default,
-      metadata: createMetadata().toObject(),
+      metadata: createMetadata(),
     });
   }
 }
@@ -82,7 +82,7 @@ export class AssistantTemplate extends Template {
       return session.addMessage({
         type: 'assistant',
         content: this.options.content,
-        metadata: createMetadata().toObject(),
+        metadata: createMetadata(),
       });
     }
 
@@ -97,7 +97,7 @@ export class AssistantTemplate extends Template {
     return session.addMessage({
       type: 'assistant',
       content: response,
-      metadata: createMetadata().toObject(),
+      metadata: createMetadata(),
     });
   }
 }

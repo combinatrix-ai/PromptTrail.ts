@@ -1,4 +1,4 @@
-import type { Message, Session, Tool, ModelConfig } from '../types';
+import type { Message, Session, Tool, ModelConfig, SchemaType } from '../types';
 
 /**
  * Abstract base class for all model implementations
@@ -21,7 +21,7 @@ export abstract class Model<TConfig extends ModelConfig = ModelConfig> {
   /**
    * Format a tool for the specific model implementation
    */
-  protected abstract formatTool(tool: Tool): Record<string, any>;
+  protected abstract formatTool(tool: Tool<SchemaType>): Record<string, any>;
 
   /**
    * Validate the model configuration

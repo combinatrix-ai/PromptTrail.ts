@@ -3,6 +3,7 @@ import type {
   Message,
   Session,
   Tool,
+  SchemaType,
   AssistantMessage,
   AssistantMetadata,
 } from '../../types';
@@ -38,13 +39,17 @@ export class OpenAIModel extends Model<OpenAIConfig> {
     }
   }
 
-  protected formatTool(tool: Tool): OpenAITool {
+  protected formatTool(tool: Tool<SchemaType>): OpenAITool {
     return {
       type: 'function',
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: tool.schema as Record<string, unknown>,
+        parameters: {
+          type: 'object',
+          properties: tool.schema.properties,
+          required: tool.schema.required || [],
+        },
       },
     };
   }
@@ -131,7 +136,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
 
       const message: AssistantMessage = {
         type: 'assistant',
-        content: 'Tool Call Request',
+        content: choice.message.content || 'Tool Call Request',
         metadata: createMetadata<AssistantMetadata>(metadata),
       };
 

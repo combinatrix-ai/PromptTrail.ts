@@ -77,7 +77,7 @@ Choose your LLM provider and customize settings:
 const openai = new OpenAIModel({
   apiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-4',
-  temperature: 0.7,  // Optional: control randomness
+  temperature: 0.7, // Optional: control randomness
 });
 
 // Anthropic
@@ -92,20 +92,17 @@ const anthropic = new AnthropicModel({
 Create dynamic conversations that can branch and repeat:
 
 ```typescript
-const quiz = new LinearTemplate()
-  .addSystem("You're a quiz bot.")
-  .addLoop(
-    new LoopTemplate()
-      .addUser('Ask me a question about TypeScript')
-      .addAssistant({ llm: model })
-      .addUser('Here is my answer:', 'interfaces extend classes')
-      .addAssistant({ llm: model })
-      .addUser('Should we continue? (yes/no)', 'yes')
-      .setExitCondition(
-        (session) => 
-          session.getLastMessage()?.content.toLowerCase() === 'no'
-      )
-  );
+const quiz = new LinearTemplate().addSystem("You're a quiz bot.").addLoop(
+  new LoopTemplate()
+    .addUser('Ask me a question about TypeScript')
+    .addAssistant({ llm: model })
+    .addUser('Here is my answer:', 'interfaces extend classes')
+    .addAssistant({ llm: model })
+    .addUser('Should we continue? (yes/no)', 'yes')
+    .setExitCondition(
+      (session) => session.getLastMessage()?.content.toLowerCase() === 'no',
+    ),
+);
 ```
 
 ### Session Management
@@ -161,19 +158,19 @@ const calculator = new Tool({
     properties: {
       a: {
         type: 'number',
-        description: 'First number to add'
+        description: 'First number to add',
       },
       b: {
         type: 'number',
-        description: 'Second number to add'
-      }
+        description: 'Second number to add',
+      },
     },
-    required: ['a', 'b']
+    required: ['a', 'b'],
   },
   // Implementation - TypeScript infers types from schema
   execute: async (input) => {
     return { result: input.a + input.b };
-  }
+  },
 });
 
 // Use tools with your model
@@ -203,18 +200,18 @@ Key types and classes:
 ```typescript
 import {
   // Templates
-  LinearTemplate,   // Basic conversation flow
-  LoopTemplate,     // Conditional loops
-  
+  LinearTemplate, // Basic conversation flow
+  LoopTemplate, // Conditional loops
+
   // Models
-  OpenAIModel,      // OpenAI integration
-  AnthropicModel,   // Anthropic integration
-  
+  OpenAIModel, // OpenAI integration
+  AnthropicModel, // Anthropic integration
+
   // Session
-  createSession,    // Start conversations
-  
+  createSession, // Start conversations
+
   // Tools
-  Tool,            // Add capabilities
+  Tool, // Add capabilities
 } from '@prompttrail/core';
 ```
 

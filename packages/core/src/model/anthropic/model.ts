@@ -46,18 +46,11 @@ export class AnthropicModel extends Model<AnthropicConfig> {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters:
-          tool.schema.type === 'object'
-            ? {
-                type: 'object',
-                properties: tool.schema.properties,
-                required: tool.schema.required,
-                description: tool.schema.description,
-              }
-            : {
-                type: tool.schema.type,
-                description: tool.schema.description,
-              },
+        parameters: {
+          type: 'object',
+          properties: tool.schema.properties,
+          required: tool.schema.required || [],
+        },
       },
     };
   }
