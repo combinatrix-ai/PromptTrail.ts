@@ -7,33 +7,28 @@ import { ValidationError } from './types';
 /**
  * JSON Schema primitive types
  */
-export type SchemaType =
+export type SchemaType = {
+  properties: Record<string, PropertySchema>;
+  required?: string[];
+};
+
+type PropertySchema =
   | { type: 'string'; description: string }
   | { type: 'number'; description: string }
-  | { type: 'boolean'; description: string }
-  | {
-      type: 'object';
-      description: string;
-      properties: Record<string, SchemaType>;
-      required?: string[];
-    };
+  | { type: 'boolean'; description: string };
 
 /**
  * Infer TypeScript type from JSON Schema
  */
-export type InferSchemaType<T extends SchemaType> = T extends { type: 'string' }
-  ? string
-  : T extends { type: 'number' }
-    ? number
-    : T extends { type: 'boolean' }
-      ? boolean
-      : T extends { type: 'object'; properties: infer P }
-        ? {
-            [K in keyof P]: P[K] extends SchemaType
-              ? InferSchemaType<P[K]>
-              : never;
-          }
+export type InferSchemaType<T extends SchemaType> = {
+  [K in keyof T['properties']]: T['properties'][K] extends { type: 'string' }
+    ? string
+    : T['properties'][K] extends { type: 'number' }
+      ? number
+      : T['properties'][K] extends { type: 'boolean' }
+        ? boolean
         : never;
+};
 
 /**
  * Tool result type
@@ -59,41 +54,36 @@ function validateSchema<T extends SchemaType>(
   schema: T,
   value: unknown,
 ): value is InferSchemaType<T> {
-  if (schema.type === 'string') {
-    return typeof value === 'string';
+  if (typeof value !== 'object' || value === null) {
+    return false;
   }
-  if (schema.type === 'number') {
-    return typeof value === 'number';
-  }
-  if (schema.type === 'boolean') {
-    return typeof value === 'boolean';
-  }
-  if (schema.type === 'object') {
-    if (typeof value !== 'object' || value === null) {
-      return false;
-    }
 
-    // Check required properties
-    if (schema.required) {
-      for (const required of schema.required) {
-        if (!(required in value)) {
-          return false;
-        }
-      }
-    }
-
-    // Validate each property
-    for (const [key, propSchema] of Object.entries(schema.properties)) {
-      const propValue = (value as any)[key];
-      if (propValue !== undefined && !validateSchema(propSchema, propValue)) {
+  // Check required properties
+  if (schema.required) {
+    for (const required of schema.required) {
+      if (!(required in value)) {
         return false;
       }
     }
-
-    return true;
   }
 
-  return false;
+  // Validate each property
+  for (const [key, propSchema] of Object.entries(schema.properties)) {
+    const propValue = (value as any)[key];
+    if (propValue !== undefined) {
+      if (propSchema.type === 'string' && typeof propValue !== 'string') {
+        return false;
+      }
+      if (propSchema.type === 'number' && typeof propValue !== 'number') {
+        return false;
+      }
+      if (propSchema.type === 'boolean' && typeof propValue !== 'boolean') {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 /**
