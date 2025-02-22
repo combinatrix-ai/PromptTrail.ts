@@ -5,13 +5,16 @@ import {
   type Message,
   type ToolResultMetadata,
   type InferSchemaType,
-  SessionImpl,
-  Metadata,
+  type Session,
+  createSession,
   OpenAIModel,
+  AnthropicModel,
   type OpenAIConfig,
+  type AnthropicConfig,
   type AssistantMetadata,
   createTemperature,
-} from '../packages/core/dist';
+  createMetadata,
+} from '@prompttrail/core';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
@@ -48,13 +51,9 @@ const shellCommandTool = createTool({
   name: 'shell_command',
   description: 'Execute a shell command',
   schema: shellCommandSchema,
-  execute: async (input) => {
-    try {
-      const { stdout, stderr } = await execAsync(input.command);
-      return { stdout, stderr };
-    } catch (error) {
-      throw new Error(`Failed to execute command: ${error}`);
-    }
+  execute: async (input: InferSchemaType<typeof shellCommandSchema>) => {
+    const { stdout, stderr } = await execAsync(input.command);
+    return { stdout, stderr };
   },
 });
 
@@ -62,13 +61,9 @@ const readFileTool = createTool({
   name: 'read_file',
   description: 'Read content from a file',
   schema: readFileSchema,
-  execute: async (input) => {
-    try {
-      const content = await readFile(input.path, 'utf-8');
-      return content;
-    } catch (error) {
-      throw new Error(`Failed to read file: ${error}`);
-    }
+  execute: async (input: InferSchemaType<typeof readFileSchema>) => {
+    const content = await readFile(input.path, 'utf-8');
+    return { content };
   },
 });
 
@@ -76,13 +71,9 @@ const writeFileTool = createTool({
   name: 'write_file',
   description: 'Write content to a file',
   schema: writeFileSchema,
-  execute: async (input) => {
-    try {
-      await writeFile(input.path, input.content, 'utf-8');
-      return { success: true, path: input.path };
-    } catch (error) {
-      throw new Error(`Failed to write file: ${error}`);
-    }
+  execute: async (input: InferSchemaType<typeof writeFileSchema>) => {
+    await writeFile(input.path, input.content, 'utf-8');
+    return { success: true };
   },
 });
 
@@ -95,33 +86,42 @@ type ToolSchemas = {
 
 // CodingAgent class to manage tools and session
 export class CodingAgent {
-  private session: SessionImpl;
+  private session: Session;
   private tools: Tool<SchemaType>[];
-  private model: OpenAIModel;
+  private model: OpenAIModel | AnthropicModel;
 
-  constructor(apiKey: string) {
+  constructor(config: { provider: 'openai' | 'anthropic'; apiKey: string }) {
     this.tools = [shellCommandTool, readFileTool, writeFileTool];
 
-    // Initialize OpenAI model
-    const modelConfig: OpenAIConfig = {
-      modelName: 'gpt-4o-mini',
-      temperature: createTemperature(0.7),
-      apiKey,
-      tools: this.tools,
-    };
-    this.model = new OpenAIModel(modelConfig);
+    // Initialize model based on provider
+    if (config.provider === 'openai') {
+      const modelConfig: OpenAIConfig = {
+        modelName: 'gpt-4',
+        temperature: createTemperature(0.7),
+        apiKey: config.apiKey,
+        tools: this.tools,
+      };
+      this.model = new OpenAIModel(modelConfig);
+    } else {
+      const modelConfig: AnthropicConfig = {
+        modelName: 'claude-3-opus-20240229',
+        temperature: createTemperature(0.7),
+        apiKey: config.apiKey,
+        tools: this.tools,
+      };
+      this.model = new AnthropicModel(modelConfig);
+    }
 
     // Initialize session
-    this.session = SessionImpl.create(
-      [
+    this.session = createSession({
+      messages: [
         {
           type: 'system',
           content:
             'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
         },
       ],
-      {},
-    );
+    });
   }
 
   // Add a user message to the session and get AI response
@@ -165,12 +165,11 @@ export class CodingAgent {
     result: unknown,
     toolCallId: string,
   ): Promise<void> {
-    const metadata = new Metadata<ToolResultMetadata>({ toolCallId });
     this.session = this.session.addMessage({
       type: 'tool_result',
       content: JSON.stringify(result),
       result,
-      metadata,
+      metadata: createMetadata<ToolResultMetadata>({ initial: { toolCallId } }),
     });
   }
 
@@ -214,21 +213,22 @@ export class CodingAgent {
 
 // Example usage
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
-  // Get OpenAI API key from environment variable
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Get API key from environment variable based on provider
+  const provider = (process.env.AI_PROVIDER || 'openai') as
+    | 'openai'
+    | 'anthropic';
+  const apiKey =
+    provider === 'openai'
+      ? process.env.OPENAI_API_KEY
+      : process.env.ANTHROPIC_API_KEY;
+
   if (!apiKey) {
-    console.error('Please set OPENAI_API_KEY environment variable');
+    console.error(
+      `${provider.toUpperCase()}_API_KEY environment variable is required`,
+    );
     process.exit(1);
   }
 
-  const agent = new CodingAgent(apiKey);
-  agent
-    .runExample()
-    .then(() => {
-      console.log('Example completed successfully');
-      console.log('Session messages:', agent.getMessages());
-    })
-    .catch((error) => {
-      console.error('Error running example:', error);
-    });
+  const agent = new CodingAgent({ provider, apiKey });
+  agent.runExample().catch(console.error);
 }

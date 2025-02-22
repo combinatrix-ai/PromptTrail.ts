@@ -4,7 +4,11 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "start": "tsx coding_agent.ts"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

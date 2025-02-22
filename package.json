@@ -31,5 +31,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "openai": "^4.85.3"
   }
 }
