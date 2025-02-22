@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { SessionImpl, createSession } from '../session';
-import { Metadata } from '../metadata';
+import type { Session } from '../session';
+import { createSession } from '../session';
 import { createMessage, createSystemMessage, createUserMessage } from './utils';
 
 describe('Session', () => {
   it('should create empty session', () => {
-    const session = new SessionImpl();
+    const session = createSession();
     expect(session.messages).toHaveLength(0);
-    expect(session.metadata).toBeInstanceOf(Metadata);
+    expect(session.metadata.size).toBe(0);
   });
 
   it('should create session with initial messages', () => {
@@ -15,13 +15,13 @@ describe('Session', () => {
       createSystemMessage('System message'),
       createUserMessage('User message'),
     ];
-    const session = new SessionImpl(messages);
+    const session = createSession({ messages });
     expect(session.messages).toHaveLength(2);
     expect(session.messages[0].content).toBe('System message');
   });
 
   it('should add messages immutably', () => {
-    const session = new SessionImpl();
+    const session = createSession();
     const newMessage = createUserMessage('Test message');
     const newSession = session.addMessage(newMessage);
 
@@ -54,7 +54,7 @@ describe('Session', () => {
       createMessage('assistant', 'Assistant message'),
       createUserMessage('User message 2'),
     ];
-    const session = new SessionImpl(messages);
+    const session = createSession({ messages });
 
     const userMessages = session.getMessagesByType('user');
     expect(userMessages).toHaveLength(2);
@@ -63,31 +63,34 @@ describe('Session', () => {
   });
 
   it('should validate session state', () => {
-    const validSession = new SessionImpl([
-      createSystemMessage('System message'),
-      createUserMessage('User message'),
-    ]);
+    const validSession = createSession({
+      messages: [
+        createSystemMessage('System message'),
+        createUserMessage('User message'),
+      ],
+    });
 
     expect(() => validSession.validate()).not.toThrow();
 
-    const emptySession = new SessionImpl();
+    const emptySession = createSession();
     expect(() => emptySession.validate()).toThrow(
       'Session must have at least one message',
     );
 
-    const multipleSystemMessages = new SessionImpl([
-      createSystemMessage('System 1'),
-      createUserMessage('User'),
-      createSystemMessage('System 2'),
-    ]);
+    const multipleSystemMessages = createSession({
+      messages: [
+        createSystemMessage('System 1'),
+        createUserMessage('User'),
+        createSystemMessage('System 2'),
+      ],
+    });
     expect(() => multipleSystemMessages.validate()).toThrow(
       'Only one system message is allowed',
     );
 
-    const systemNotFirst = new SessionImpl([
-      createUserMessage('User'),
-      createSystemMessage('System'),
-    ]);
+    const systemNotFirst = createSession({
+      messages: [createUserMessage('User'), createSystemMessage('System')],
+    });
     expect(() => systemNotFirst.validate()).toThrow(
       'System message must be at the beginning',
     );
@@ -111,13 +114,11 @@ describe('Session', () => {
       metadata: { key: 'value' },
     };
 
-    const session = SessionImpl.fromJSON(data);
+    const session = createSession(data);
     expect(session.messages).toEqual(data.messages);
     expect(session.metadata.toObject()).toEqual(data.metadata);
   });
-});
 
-describe('createSession', () => {
   it('should create session with type inference', () => {
     type TestMetadata = Record<string, unknown> & {
       userId: number;

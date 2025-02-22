@@ -1,5 +1,6 @@
 import type { Message } from './types';
-import { Metadata } from './metadata';
+import type { Metadata } from './metadata';
+import { createMetadata } from './metadata';
 import { ValidationError } from './types';
 
 /**
@@ -25,20 +26,22 @@ export interface Session<
 /**
  * Immutable session implementation
  */
-export class SessionImpl<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> implements Session<T>
+/**
+ * Internal session implementation
+ */
+class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
+  implements Session<T>
 {
   constructor(
     public readonly messages: readonly Message[] = [],
-    public readonly metadata: Metadata<T> = new Metadata<T>(),
+    public readonly metadata: Metadata<T> = createMetadata<T>(),
   ) {}
 
   /**
    * Create a new session with additional message
    */
-  addMessage(message: Message): SessionImpl<T> {
-    return new SessionImpl<T>(
+  addMessage(message: Message): Session<T> {
+    return new _SessionImpl<T>(
       [...this.messages, message],
       this.metadata.clone(),
     );
@@ -49,8 +52,11 @@ export class SessionImpl<
    */
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
-  ): SessionImpl<T & U> {
-    return new SessionImpl<T & U>(this.messages, this.metadata.merge(metadata));
+  ): Session<T & U> {
+    return new _SessionImpl<T & U>(
+      this.messages,
+      this.metadata.merge(metadata),
+    );
   }
 
   /**
@@ -117,52 +123,17 @@ export class SessionImpl<
    */
   static fromJSON<U extends Record<string, unknown>>(
     json: Record<string, unknown>,
-  ): SessionImpl<U> {
+  ): Session<U> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
       );
     }
 
-    return new SessionImpl<U>(
-      json.messages as Message[],
-      new Metadata<U>(json.metadata as U),
-    );
-  }
-
-  /**
-   * Create an empty session
-   */
-  static empty<U extends Record<string, unknown>>(): SessionImpl<U> {
-    return new SessionImpl<U>();
-  }
-
-  /**
-   * Create a session with initial messages
-   */
-  static withMessages<U extends Record<string, unknown>>(
-    messages: Message[],
-  ): SessionImpl<U> {
-    return new SessionImpl<U>(messages);
-  }
-
-  /**
-   * Create a session with initial metadata
-   */
-  static withMetadata<U extends Record<string, unknown>>(
-    metadata: U,
-  ): SessionImpl<U> {
-    return new SessionImpl<U>([], new Metadata<U>(metadata));
-  }
-
-  /**
-   * Create a session with both messages and metadata
-   */
-  static create<U extends Record<string, unknown>>(
-    messages: Message[],
-    metadata: U,
-  ): SessionImpl<U> {
-    return new SessionImpl<U>(messages, new Metadata<U>(metadata));
+    return createSession<U>({
+      messages: json.messages as Message[],
+      metadata: json.metadata as U,
+    });
   }
 }
 
@@ -174,9 +145,11 @@ export function createSession<T extends Record<string, unknown>>(
     messages?: Message[];
     metadata?: T;
   } = {},
-): SessionImpl<T> {
-  return new SessionImpl<T>(
+): Session<T> {
+  return new _SessionImpl<T>(
     options.messages,
-    options.metadata ? new Metadata<T>(options.metadata) : undefined,
+    options.metadata
+      ? createMetadata<T>({ initial: options.metadata })
+      : undefined,
   );
 }

@@ -2,7 +2,8 @@
 export * from './types';
 export * from './metadata';
 export * from './tool';
-export { SessionImpl } from './session';
+export type { Session } from './session';
+export { createSession } from './session';
 export * from './templates';
 
 // Base implementations

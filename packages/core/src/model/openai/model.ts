@@ -137,7 +137,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
       const message: AssistantMessage = {
         type: 'assistant',
         content: choice.message.content || 'Tool Call Request',
-        metadata: createMetadata<AssistantMetadata>(metadata),
+        metadata: createMetadata<AssistantMetadata>({ initial: metadata }),
       };
 
       return message;
@@ -146,7 +146,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
     return {
       type: 'assistant',
       content: choice.message.content || '',
-      metadata: createMetadata(),
+      metadata: createMetadata<AssistantMetadata>(),
     };
   }
 
@@ -166,7 +166,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
       yield {
         type: 'assistant',
         content: delta,
-        metadata: createMetadata(),
+        metadata: createMetadata<AssistantMetadata>(),
       };
     }
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Session } from '../session';
-import { SessionImpl } from '../session';
+import { createSession } from '../session';
 import {
   LinearTemplate,
   LoopTemplate,
@@ -59,7 +59,7 @@ describe('Templates', () => {
       ]);
 
       // Create an initial session
-      const session = new SessionImpl();
+      const session = createSession();
 
       // Execute the template
       const result = await template.execute(session);
@@ -67,7 +67,12 @@ describe('Templates', () => {
       // Verify the conversation flow
       const messages = Array.from(result.messages);
 
-      expect(messages).toEqual([
+      expect(
+        messages.map((msg) => ({
+          ...msg,
+          metadata: (msg.metadata as any).toJSON(),
+        })),
+      ).toEqual([
         {
           type: 'system',
           content: "You're a math teacher bot.",
@@ -145,7 +150,7 @@ describe('Templates', () => {
         );
 
       // Create an initial session
-      const session = new SessionImpl();
+      const session = createSession();
 
       // Execute the template
       const result = await template.execute(session);
@@ -153,7 +158,12 @@ describe('Templates', () => {
       // Verify the conversation flow
       const messages = Array.from(result.messages);
 
-      expect(messages).toEqual([
+      expect(
+        messages.map((msg) => ({
+          ...msg,
+          metadata: (msg.metadata as any).toJSON(),
+        })),
+      ).toEqual([
         {
           type: 'system',
           content: "You're a math teacher bot.",
@@ -243,13 +253,18 @@ describe('Templates', () => {
         }),
       ]);
 
-      const session = new SessionImpl();
+      const session = createSession();
       const result = await template.execute(session);
 
       // Verify multiple iterations occurred
       const messages = Array.from(result.messages);
 
-      expect(messages).toEqual([
+      expect(
+        messages.map((msg) => ({
+          ...msg,
+          metadata: (msg.metadata as any).toJSON(),
+        })),
+      ).toEqual([
         {
           type: 'system',
           content: "You're a math teacher bot.",

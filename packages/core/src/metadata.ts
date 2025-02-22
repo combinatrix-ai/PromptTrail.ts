@@ -5,15 +5,47 @@
 /**
  * Type-safe metadata class extending Map with additional functionality
  */
-export class Metadata<
+/**
+ * Metadata interface for type-safe key-value storage
+ */
+export interface Metadata<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
+  get<K extends keyof T>(key: K): T[K] | undefined;
+  set<K extends keyof T>(key: K, value: T[K]): this;
+  has(key: keyof T): boolean;
+  delete(key: keyof T): boolean;
+  clear(): void;
+  keys(): IterableIterator<keyof T>;
+  values(): IterableIterator<T[keyof T]>;
+  entries(): IterableIterator<[keyof T, T[keyof T]]>;
+  clone(): Metadata<T>;
+  toObject(): T;
+  toJSON(): T;
+  toString(): string;
+  forEach(callback: (value: T[keyof T], key: keyof T) => void): void;
+  readonly size: number;
+  merge<U extends Record<string, unknown>>(
+    other: Metadata<U> | U,
+  ): Metadata<T & U>;
+  mergeNew<U extends Record<string, unknown>>(
+    other: Metadata<U> | U,
+  ): Metadata<T & U>;
+  [Symbol.iterator](): Iterator<[keyof T, T[keyof T]]>;
+}
+
+/**
+ * Internal implementation of Metadata interface
+ */
+class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
+  implements Metadata<T>
+{
   private data: Map<string, unknown>;
 
-  constructor(initial?: T) {
+  constructor(options: { initial?: T } = {}) {
     this.data = new Map();
-    if (initial) {
-      Object.entries(initial).forEach(([key, value]) => {
+    if (options.initial) {
+      Object.entries(options.initial).forEach(([key, value]) => {
         this.data.set(key, value);
       });
     }
@@ -80,7 +112,7 @@ export class Metadata<
    * Create a new Metadata instance with the same data
    */
   clone(): Metadata<T> {
-    const newMetadata = new Metadata<T>();
+    const newMetadata = new _MetadataImpl<T>();
     for (const [key, value] of this.entries()) {
       newMetadata.set(key, this.cloneValue(value));
     }
@@ -134,7 +166,7 @@ export class Metadata<
   merge<U extends Record<string, unknown>>(
     other: Metadata<U> | U,
   ): Metadata<T & U> {
-    const newMetadata = new Metadata<T & U>();
+    const newMetadata = new _MetadataImpl<T & U>();
 
     // Copy current data
     for (const [key, value] of this.entries()) {
@@ -142,11 +174,13 @@ export class Metadata<
     }
 
     // Merge new data
-    if (other instanceof Metadata) {
+    if ('entries' in other && typeof other.entries === 'function') {
+      // Handle Metadata interface
       for (const [key, value] of other.entries()) {
         newMetadata.data.set(String(key), value);
       }
     } else {
+      // Handle plain object
       Object.entries(other).forEach(([key, value]) => {
         newMetadata.data.set(key, value);
       });
@@ -193,7 +227,9 @@ export class Metadata<
  * Create a new metadata instance with type inference
  */
 export function createMetadata<T extends Record<string, unknown>>(
-  initial?: T,
+  options: {
+    initial?: T;
+  } = {},
 ): Metadata<T> {
-  return new Metadata<T>(initial);
+  return new _MetadataImpl<T>(options);
 }
