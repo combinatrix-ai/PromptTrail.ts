@@ -38,14 +38,14 @@ const chat = new LinearTemplate()
     new LoopTemplate()
       .addUser("What's on your mind? (type 'exit' to end)")
       .addAssistant({ model })
-      .setExitCondition(session => 
-        session.getLastMessage()?.content.toLowerCase() === 'exit'
-      )
+      .setExitCondition(
+        (session) => session.getLastMessage()?.content.toLowerCase() === 'exit',
+      ),
   );
 
 // Start chatting with print mode enabled
 const session = await chat.execute(
-  createSession({ print: true }) // Prints conversation flow
+  createSession({ print: true }), // Prints conversation flow
 );
 ```
 
@@ -68,10 +68,10 @@ interface UserPreferences {
 
 const personalizedChat = new LinearTemplate()
   .addSystem("I'll adapt to your preferences.")
-  .addAssistant("Hello ${name}! How can I help with ${expertise.topics[0]}?") // Context with interpolation
+  .addAssistant('Hello ${name}! How can I help with ${expertise.topics[0]}?') // Context with interpolation
   .addUser({ inputSource: new CLIInputSource() }) // Get real user input
-  .addAssistant("Should I explain in ${language}?") // Predefined response with interpolation
-  .addUser("Yes, please explain in ${language}") // Impersonate user
+  .addAssistant('Should I explain in ${language}?') // Predefined response with interpolation
+  .addUser('Yes, please explain in ${language}') // Impersonate user
   .addAssistant({ model }); // Let model generate response
 
 // Use with session metadata
@@ -82,11 +82,11 @@ const session = await personalizedChat.execute(
       language: 'TypeScript',
       expertise: {
         level: 'intermediate',
-        topics: ['generics', 'type inference']
-      }
+        topics: ['generics', 'type inference'],
+      },
     },
-    print: true  // See the conversation flow
-  })
+    print: true, // See the conversation flow
+  }),
 );
 ```
 
@@ -138,8 +138,8 @@ Keep track of your conversations with type-safe sessions:
 const session = createSession();
 
 // Enable printing for CLI apps
-const cliSession = createSession({ 
-  print: true  // Prints conversation flow
+const cliSession = createSession({
+  print: true, // Prints conversation flow
 });
 
 // Add some personality
@@ -153,7 +153,7 @@ const funChat = createSession<ChatStyle>({
     tone: 'casual',
     emoji: true,
   },
-  print: true  // See the conversation unfold
+  print: true, // See the conversation unfold
 });
 
 // Add messages, get history, validate state

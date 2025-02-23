@@ -11,6 +11,7 @@ export interface Session<
 > {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
+  readonly print: boolean;
   addMessage(message: Message): Session<T>;
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
@@ -35,15 +36,30 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   constructor(
     public readonly messages: readonly Message[] = [],
     public readonly metadata: Metadata<T> = createMetadata<T>(),
+    public readonly print: boolean = false,
   ) {}
 
   /**
    * Create a new session with additional message
    */
   addMessage(message: Message): Session<T> {
+    if (this.print) {
+      switch (message.type) {
+        case 'system':
+          console.log('\nSystem:', message.content);
+          break;
+        case 'user':
+          console.log('\nUser:', message.content);
+          break;
+        case 'assistant':
+          console.log('Assistant:', message.content);
+          break;
+      }
+    }
     return new _SessionImpl<T>(
       [...this.messages, message],
       this.metadata.clone(),
+      this.print,
     );
   }
 
@@ -56,6 +72,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     return new _SessionImpl<T & U>(
       this.messages,
       this.metadata.merge(metadata),
+      this.print,
     );
   }
 
@@ -108,6 +125,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     return {
       messages: this.messages,
       metadata: this.metadata.toJSON(),
+      print: this.print,
     };
   }
 
@@ -133,6 +151,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     return createSession<U>({
       messages: json.messages as Message[],
       metadata: json.metadata as U,
+      print: json.print as boolean,
     });
   }
 }
@@ -144,6 +163,7 @@ export function createSession<T extends Record<string, unknown>>(
   options: {
     messages?: Message[];
     metadata?: T;
+    print?: boolean;
   } = {},
 ): Session<T> {
   return new _SessionImpl<T>(
@@ -151,5 +171,6 @@ export function createSession<T extends Record<string, unknown>>(
     options.metadata
       ? createMetadata<T>({ initial: options.metadata })
       : undefined,
+    options.print ?? false,
   );
 }

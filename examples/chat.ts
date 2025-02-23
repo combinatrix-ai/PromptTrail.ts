@@ -25,20 +25,11 @@ class LoggingSession<T extends Record<string, unknown>> implements Session<T> {
     return this.session.metadata;
   }
 
-  addMessage(message: Message): Session<T> {
-    // Log the message based on its type
-    switch (message.type) {
-      case 'user':
-        console.log('\nUser:', message.content);
-        break;
-      case 'assistant':
-        console.log('Assistant:', message.content);
-        break;
-      case 'system':
-        console.log('\nSystem:', message.content);
-        break;
-    }
+  get print(): boolean {
+    return true; // LoggingSession always prints
+  }
 
+  addMessage(message: Message): Session<T> {
     // Create new session with the message
     return new LoggingSession(this.session.addMessage(message));
   }
@@ -77,7 +68,7 @@ function createLoggingSession<
     metadata?: T;
   } = {},
 ): Session<T> {
-  return new LoggingSession(createSession<T>(options));
+  return new LoggingSession(createSession<T>({ ...options, print: true }));
 }
 
 // Get API key from environment variable

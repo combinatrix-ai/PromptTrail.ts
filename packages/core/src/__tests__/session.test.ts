@@ -104,6 +104,7 @@ describe('Session', () => {
     expect(json).toEqual({
       messages,
       metadata,
+      print: false,
     });
   });
 
@@ -140,13 +141,37 @@ describe('Session', () => {
     const session1 = createSession();
     expect(session1.messages).toHaveLength(0);
     expect(session1.metadata.size).toBe(0);
+    expect(session1.print).toBe(false);
 
     const session2 = createSession({ messages: [createUserMessage('Test')] });
     expect(session2.messages).toHaveLength(1);
     expect(session2.metadata.size).toBe(0);
+    expect(session2.print).toBe(false);
 
     const session3 = createSession({ metadata: { test: true } });
     expect(session3.messages).toHaveLength(0);
     expect(session3.metadata.get('test')).toBe(true);
+    expect(session3.print).toBe(false);
+  });
+
+  it('should handle print option', () => {
+    const session = createSession({ print: true });
+    expect(session.print).toBe(true);
+  });
+
+  it('should maintain print setting through immutable operations', () => {
+    const session = createSession({ print: true });
+    const newSession = session
+      .addMessage(createUserMessage('Test'))
+      .updateMetadata({ test: true });
+
+    expect(session.print).toBe(true);
+    expect(newSession.print).toBe(true);
+  });
+
+  it('should include print in JSON representation', () => {
+    const session = createSession({ print: true });
+    const json = session.toJSON();
+    expect(json).toHaveProperty('print', true);
   });
 });

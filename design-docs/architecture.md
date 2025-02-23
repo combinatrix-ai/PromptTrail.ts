@@ -37,14 +37,14 @@ The foundation for LLM interactions.
 interface ModelConfig {
   modelName: string;
   temperature?: number;
-  tools?: Tool[];  // Tools available to the model
+  tools?: Tool[]; // Tools available to the model
   // Other model-specific settings
 }
 
 class Model {
   // Base class for model implementations
   constructor(config: ModelConfig) {}
-  addTool(tool: Tool): Model;  // Chain-friendly tool addition
+  addTool(tool: Tool): Model; // Chain-friendly tool addition
   async send(session: Session): Promise<Message>;
   async *sendAsync(): AsyncGenerator<Message>;
   // Other model capabilities
@@ -56,7 +56,7 @@ class OpenAIModel extends Model {
     super({
       modelName: config.modelName,
       temperature: config.temperature,
-      apiKey: config.apiKey
+      apiKey: config.apiKey,
     });
   }
 }
@@ -66,7 +66,7 @@ class AnthropicModel extends Model {
     super({
       modelName: config.modelName,
       temperature: config.temperature,
-      apiKey: config.apiKey
+      apiKey: config.apiKey,
     });
   }
 }
@@ -89,8 +89,8 @@ abstract class Template {
 
 // Example: Template with metadata interpolation
 interface ProjectContext {
-  user: { name: string; role: string; };
-  project: { name: string; language: string; };
+  user: { name: string; role: string };
+  project: { name: string; language: string };
 }
 
 const template = new LinearTemplate()
@@ -98,16 +98,16 @@ const template = new LinearTemplate()
   .addAssistant("Hi ${user.name}, I see you're working on ${project.language}") // Context with interpolation
   .addUser({ inputSource: new CLIInputSource() }) // Get real user input
   .addAssistant("I understand you're a ${user.role}. Let me help with that.") // Predefined response
-  .addUser("Please explain the code") // Impersonate user
+  .addUser('Please explain the code') // Impersonate user
   .addAssistant({ model }); // Let model generate response
 
 const session = await template.execute(
   createSession<ProjectContext>({
     metadata: {
-      user: { name: "Alice", role: "developer" },
-      project: { name: "AwesomeApp", language: "TypeScript" }
-    }
-  })
+      user: { name: 'Alice', role: 'developer' },
+      project: { name: 'AwesomeApp', language: 'TypeScript' },
+    },
+  }),
 );
 
 // System message template
@@ -129,20 +129,21 @@ class UserTemplate extends Template {
 
 // Assistant response template
 class AssistantTemplate extends Template {
-  constructor(options: {
-    model?: Model;
-    content?: string;
-  }) {}
+  constructor(options: { model?: Model; content?: string }) {}
   async execute(session: Session): Promise<Session>;
 }
 
 // Linear sequence of templates
 class LinearTemplate extends Template {
   addSystem(content: string): this;
-  addUser(description: string, defaultValue?: string, options?: {
-    inputSource?: InputSource;
-    validate?: (input: string) => Promise<boolean>;
-  }): this;
+  addUser(
+    description: string,
+    defaultValue?: string,
+    options?: {
+      inputSource?: InputSource;
+      validate?: (input: string) => Promise<boolean>;
+    },
+  ): this;
   addAssistant(options?: { model?: Model }): this;
   addLoop(loop: LoopTemplate): this;
   async execute(session: Session): Promise<Session>;
@@ -150,9 +151,13 @@ class LinearTemplate extends Template {
 
 // Looping sequence of templates
 class LoopTemplate extends Template {
-  addUser(description: string, defaultValue?: string, options?: {
-    inputSource?: InputSource;
-  }): this;
+  addUser(
+    description: string,
+    defaultValue?: string,
+    options?: {
+      inputSource?: InputSource;
+    },
+  ): this;
   addAssistant(options?: { model?: Model }): this;
   setExitCondition(condition: (session: Session) => boolean): this;
   async execute(session: Session): Promise<Session>;
@@ -177,26 +182,31 @@ Immutable state container with strict validation.
 interface SessionOptions<T> {
   messages?: Message[];
   metadata?: T;
-  print?: boolean;  // Enable conversation flow printing
+  print?: boolean; // Enable conversation flow printing
 }
 
 class Session<T extends Record<string, unknown>> {
   // Core properties
   readonly messages: Message[];
   readonly metadata: Metadata<T>;
-  readonly print: boolean;  // Print conversation flow
+  readonly print: boolean; // Print conversation flow
 
   // Example usage with print mode
-  const session = createSession({
-    print: true  // Enable conversation flow printing
+  session = createSession({
+    print: true, // Enable conversation flow printing
   });
 
-  const devSession = createSession<ProjectContext>({
+  devSession = createSession<ProjectContext>({
     metadata: {
-      user: { name: "Alice", role: "developer" }
+      user: { name: 'Alice', role: 'developer' },
     },
-    print: true  // See template interpolation in action
+    print: true, // See template interpolation in action
   });
+
+  // Print mode will automatically log messages:
+  // System: [content]
+  // User: [content]
+  // Assistant: [content]
 
   // Immutable updates
   addMessage(message: Message): Session<T>;
@@ -272,17 +282,15 @@ const model = new OpenAIModel({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const chat = new LinearTemplate()
-  .addSystem("I'm a helpful assistant")
-  .addLoop(
-    new LoopTemplate()
-      .addUser("What's on your mind?", "", { inputSource })
-      .addAssistant({ model })
-      .setExitCondition(session => {
-        const lastMessage = session.getMessagesByType('user').slice(-1)[0];
-        return lastMessage?.content.toLowerCase().trim() === 'exit';
-      })
-  );
+const chat = new LinearTemplate().addSystem("I'm a helpful assistant").addLoop(
+  new LoopTemplate()
+    .addUser("What's on your mind?", '', { inputSource })
+    .addAssistant({ model })
+    .setExitCondition((session) => {
+      const lastMessage = session.getMessagesByType('user').slice(-1)[0];
+      return lastMessage?.content.toLowerCase().trim() === 'exit';
+    }),
+);
 
 const session = await chat.execute(createSession());
 ```
@@ -318,14 +326,14 @@ const mathChat = new LinearTemplate()
   .addSystem("I'm a math assistant with calculation abilities")
   .addLoop(
     new LoopTemplate()
-      .addUser("What would you like to calculate?", "", { inputSource })
-      .addAssistant({ model: mathModel })
+      .addUser('What would you like to calculate?', '', { inputSource })
+      .addAssistant({ model: mathModel }),
   );
 
 const session = await mathChat.execute(
   createSession({
-    metadata: { mode: 'math' }
-  })
+    metadata: { mode: 'math' },
+  }),
 );
 ```
 
@@ -334,42 +342,47 @@ const session = await mathChat.execute(
 ```typescript
 // Code review template
 const codeReview = new LinearTemplate()
-  .addSystem("I am a code review expert")
-  .addUser("Here is the code to review:", "", { inputSource })
+  .addSystem('I am a code review expert')
+  .addUser('Here is the code to review:', '', { inputSource })
   .addAssistant({ model: reviewModel })
-  .addUser("Any security concerns?", "", { inputSource })
+  .addUser('Any security concerns?', '', { inputSource })
   .addAssistant({ model: securityModel });
 
 // Main development flow
 const mainFlow = new LinearTemplate()
-  .addSystem("I am a development assistant")
+  .addSystem('I am a development assistant')
   .addLoop(
     new LoopTemplate()
-      .addUser("What would you like to do?", "", { inputSource })
+      .addUser('What would you like to do?', '', { inputSource })
       .addAssistant({ model })
       .addIf({
-        condition: session => session.getLastMessage()?.content.includes("review"),
+        condition: (session) =>
+          session.getLastMessage()?.content.includes('review'),
         then: new SubroutineTemplate({
           template: codeReview,
-          initWith: session => createSession({
-            metadata: {
-              fileType: detectFileType(session.getLastMessage()?.content),
-              severity: 'low'
-            }
-          }),
+          initWith: (session) =>
+            createSession({
+              metadata: {
+                fileType: detectFileType(session.getLastMessage()?.content),
+                severity: 'low',
+              },
+            }),
           squashWith: (parentSession, childSession) => {
             const severity = childSession.metadata.get('severity');
             return parentSession
-              .addMessage(createSystemMessage(
-                `Code review completed with ${severity} severity`
-              ))
+              .addMessage(
+                createSystemMessage(
+                  `Code review completed with ${severity} severity`,
+                ),
+              )
               .updateMetadata({
                 lastReviewSeverity: severity,
-                reviewCount: (parentSession.metadata.get('reviewCount') || 0) + 1
+                reviewCount:
+                  (parentSession.metadata.get('reviewCount') || 0) + 1,
               });
-          }
-        })
-      })
+          },
+        }),
+      }),
   );
 
 const session = await mainFlow.execute(createSession());
@@ -378,27 +391,31 @@ const session = await mainFlow.execute(createSession());
 ## Key Features
 
 1. **Type Safety**
+
    - Full TypeScript support
    - Metadata type inference
    - Strict message validation
 
 2. **Template Interpolation**
+
    - Dynamic content using ${variable} syntax
    - Support for nested object paths
    - Type-safe metadata access
    - Automatic empty string fallback for undefined values
 
 3. **Immutability**
+
    - Session state changes create new instances
    - Predictable state management
    - Thread-safe operations
 
 4. **Flexibility**
+
    - Multiple model support
    - Custom input sources
    - Extensible template system
 
-4. **Developer Experience**
+5. **Developer Experience**
    - Builder pattern API
    - Built-in debugging
    - Clear error messages
@@ -406,16 +423,19 @@ const session = await mainFlow.execute(createSession());
 ## Best Practices
 
 1. **Session Management**
+
    - Always validate sessions before use
    - Handle metadata types explicitly
    - Use immutable updates
 
 2. **Error Handling**
+
    - Validate input before sending to models
    - Handle model errors gracefully
    - Provide clear error messages
 
 3. **Performance**
+
    - Reuse templates when possible
    - Clean up resources (close input sources)
    - Handle large conversations efficiently
