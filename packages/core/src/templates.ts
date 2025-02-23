@@ -1,22 +1,19 @@
-import type { Session } from './session';
 import { createMetadata } from './metadata';
-import { Message, Session } from './types';
-import { DefaultInputSource, InputSource } from './input_source';
+import type { Message } from './types';
+import type { InputSource } from './input_source';
+import { DefaultInputSource } from './input_source';
+import type { Model } from './model/base';
+import type { Session } from './session';
+import { createSession } from './session';
 
 /**
  * Base class for all templates
  */
 export abstract class Template {
-  protected llm?: {
-    generate: (prompt: string) => Promise<string>;
-  };
+  protected model?: Model;
 
-  constructor(options?: {
-    llm?: {
-      generate: (prompt: string) => Promise<string>;
-    };
-  }) {
-    this.llm = options?.llm;
+  constructor(options?: { model?: Model }) {
+    this.model = options?.model;
   }
 
   abstract execute(session: Session): Promise<Session>;
@@ -109,9 +106,7 @@ export class AssistantTemplate extends Template {
   constructor(
     private options?: {
       content?: string;
-      llm?: {
-        generate: (prompt: string) => Promise<string>;
-      };
+      model?: Model;
     },
   ) {
     super(options);
@@ -127,19 +122,12 @@ export class AssistantTemplate extends Template {
       });
     }
 
-    if (!this.llm) {
-      throw new Error('No LLM provided for AssistantTemplate');
+    if (!this.model) {
+      throw new Error('No Model provided for AssistantTemplate');
     }
 
-    const response = await this.llm.generate(
-      session.getLastMessage()?.content ?? '',
-    );
-
-    return session.addMessage({
-      type: 'assistant',
-      content: response,
-      metadata: createMetadata(),
-    });
+    const response = await this.model.send(session);
+    return session.addMessage(response);
   }
 }
 
@@ -172,9 +160,7 @@ export class LinearTemplate extends Template {
     options:
       | string
       | {
-          llm?: {
-            generate: (prompt: string) => Promise<string>;
-          };
+          model?: Model;
         },
   ): this {
     if (typeof options === 'string') {
@@ -228,9 +214,7 @@ export class LoopTemplate extends Template {
     options:
       | string
       | {
-          llm?: {
-            generate: (prompt: string) => Promise<string>;
-          };
+          model?: Model;
         },
   ): this {
     if (typeof options === 'string') {
