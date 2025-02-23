@@ -425,4 +425,82 @@ describe('Templates', () => {
       expect(onInput).toHaveBeenCalledWith('test input');
     });
   });
+
+  describe('Template Interpolation', () => {
+    it('should interpolate basic variables in SystemTemplate', async () => {
+      const session = createSession();
+      session.metadata.set('name', 'John');
+
+      const template = new SystemTemplate({
+        content: 'Hello ${name}!',
+      });
+
+      const result = await template.execute(session);
+      expect(result.getLastMessage()?.content).toBe('Hello John!');
+    });
+
+    it('should interpolate nested objects in UserTemplate', async () => {
+      const session = createSession();
+      session.metadata.set('user', {
+        preferences: { language: 'TypeScript' },
+      });
+
+      const template = new UserTemplate({
+        description: 'Programming in ${user.preferences.language}',
+        default: 'I love ${user.preferences.language}!',
+        inputSource: new CallbackInputSource(async () => 'I love TypeScript!'),
+      });
+
+      const result = await template.execute(session);
+      expect(result.getLastMessage()?.content).toBe('I love TypeScript!');
+    });
+
+    it('should handle missing variables gracefully', async () => {
+      const session = createSession();
+      session.metadata.set('name', 'John');
+      // Intentionally not setting 'age'
+
+      const template = new SystemTemplate({
+        content: 'Hello ${name}, your age is ${age}!',
+      });
+
+      const result = await template.execute(session);
+      expect(result.getLastMessage()?.content).toBe(
+        'Hello John, your age is !',
+      );
+    });
+
+    it('should work with AssistantTemplate', async () => {
+      const session = createSession();
+      session.metadata.set('topic', 'TypeScript');
+      session.metadata.set('version', '5.0');
+
+      const template = new AssistantTemplate({
+        content: 'Let me tell you about ${topic} version ${version}',
+      });
+
+      const result = await template.execute(session);
+      expect(result.getLastMessage()?.content).toBe(
+        'Let me tell you about TypeScript version 5.0',
+      );
+    });
+
+    it('should work with template chains', async () => {
+      const session = createSession();
+      session.metadata.set('topic', 'TypeScript');
+      session.metadata.set('student', 'John');
+
+      const template = new LinearTemplate()
+        .addSystem('Teaching ${topic} to ${student}')
+        .addUser('What is ${topic}?', 'What is ${topic}?')
+        .addAssistant('${topic} is a programming language');
+
+      const result = await template.execute(session);
+      const messages = Array.from(result.messages);
+
+      expect(messages[0].content).toBe('Teaching TypeScript to John');
+      expect(messages[1].content).toBe('What is TypeScript?');
+      expect(messages[2].content).toBe('TypeScript is a programming language');
+    });
+  });
 });

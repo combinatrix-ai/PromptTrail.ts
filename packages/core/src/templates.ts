@@ -1,8 +1,9 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
-import { DefaultInputSource } from './input_source';
+import { DefaultInputSource, CallbackInputSource } from './input_source';
 import type { Model } from './model/base';
 import type { Session } from './session';
+import { interpolateTemplate } from './utils/template_interpolation';
 
 /**
  * Base class for all templates
@@ -12,6 +13,13 @@ export abstract class Template {
 
   constructor(options?: { model?: Model }) {
     this.model = options?.model;
+  }
+
+  /**
+   * Helper method to interpolate content with session metadata
+   */
+  protected interpolateContent(content: string, session: Session): string {
+    return interpolateTemplate(content, session.metadata);
   }
 
   abstract execute(session: Session): Promise<Session>;
@@ -26,9 +34,13 @@ export class SystemTemplate extends Template {
   }
 
   async execute(session: Session): Promise<Session> {
+    const interpolatedContent = this.interpolateContent(
+      this.options.content,
+      session,
+    );
     return session.addMessage({
       type: 'system',
-      content: this.options.content,
+      content: interpolatedContent,
       metadata: createMetadata(),
     });
   }
@@ -78,9 +90,17 @@ export class UserTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     let input: string;
     do {
+      const interpolatedDescription = this.interpolateContent(
+        this.options.description,
+        session,
+      );
+      const interpolatedDefault = this.options.default
+        ? this.interpolateContent(this.options.default, session)
+        : undefined;
+
       input = await this.options.inputSource!.getInput({
-        description: this.options.description,
-        defaultValue: this.options.default,
+        description: interpolatedDescription,
+        defaultValue: interpolatedDefault,
         metadata: session.metadata.toJSON(),
       });
     } while (this.options.validate && !(await this.options.validate(input)));
@@ -113,9 +133,13 @@ export class AssistantTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     if (this.options?.content) {
       // For fixed content responses, don't add control messages
+      const interpolatedContent = this.interpolateContent(
+        this.options.content,
+        session,
+      );
       return session.addMessage({
         type: 'assistant',
-        content: this.options.content,
+        content: interpolatedContent,
         metadata: createMetadata(),
       });
     }
@@ -149,7 +173,13 @@ export class LinearTemplate extends Template {
 
   addUser(description: string, defaultValue: string): this {
     this.templates.push(
-      new UserTemplate({ description, default: defaultValue }),
+      new UserTemplate({
+        description,
+        default: defaultValue,
+        inputSource: new CallbackInputSource(
+          async ({ defaultValue }) => defaultValue || '',
+        ),
+      }),
     );
     return this;
   }
@@ -159,6 +189,7 @@ export class LinearTemplate extends Template {
       | string
       | {
           model?: Model;
+          content?: string;
         },
   ): this {
     if (typeof options === 'string') {
@@ -203,7 +234,13 @@ export class LoopTemplate extends Template {
 
   addUser(description: string, defaultValue: string): this {
     this.templates.push(
-      new UserTemplate({ description, default: defaultValue }),
+      new UserTemplate({
+        description,
+        default: defaultValue,
+        inputSource: new CallbackInputSource(
+          async ({ defaultValue }) => defaultValue || '',
+        ),
+      }),
     );
     return this;
   }
@@ -213,6 +250,7 @@ export class LoopTemplate extends Template {
       | string
       | {
           model?: Model;
+          content?: string;
         },
   ): this {
     if (typeof options === 'string') {
