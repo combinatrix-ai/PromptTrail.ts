@@ -7,6 +7,6 @@
   - OpenAI: `gpt-4o-mini`
   - Anthropic: `claude-3-5-haiku-latest`
 - Note: Library is in development
-  - You're working with the library developer. So, don't hesitate to fix the core code.
-  - Current implementation may have bugs
-  - Investigate core code if results are unexpected
+- You're talking with the library developer. So, don't hesitate to fix the core code.
+- Current implementation may have bugs
+- Investigate core code if results are unexpected

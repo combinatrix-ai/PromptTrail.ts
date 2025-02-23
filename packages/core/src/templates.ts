@@ -1,5 +1,7 @@
 import type { Session } from './session';
 import { createMetadata } from './metadata';
+import { Message, Session } from './types';
+import { DefaultInputSource, InputSource } from './input_source';
 
 /**
  * Base class for all templates
@@ -41,21 +43,60 @@ export class SystemTemplate extends Template {
  * Template for user messages
  */
 export class UserTemplate extends Template {
+  private options: {
+    description: string;
+    default?: string;
+    inputSource?: InputSource;
+    onInput?: (input: string) => Promise<void>;
+    validate?: (input: string) => Promise<boolean>;
+  };
+
   constructor(
-    private options: {
-      description: string;
-      default: string;
-    },
+    optionsOrDescription:
+      | string
+      | {
+          description: string;
+          default?: string;
+          inputSource?: InputSource;
+          onInput?: (input: string) => Promise<void>;
+          validate?: (input: string) => Promise<boolean>;
+        },
   ) {
     super();
+
+    if (typeof optionsOrDescription === 'string') {
+      // Simple string constructor case
+      this.options = {
+        description: optionsOrDescription,
+        inputSource: new DefaultInputSource(),
+      };
+    } else {
+      // Full options object case
+      this.options = {
+        ...optionsOrDescription,
+        inputSource:
+          optionsOrDescription.inputSource ?? new DefaultInputSource(),
+      };
+    }
   }
 
   async execute(session: Session): Promise<Session> {
-    // In a real implementation, this would interact with the user
-    // For testing, we use the default value
+    let input: string;
+    do {
+      input = await this.options.inputSource!.getInput({
+        description: this.options.description,
+        defaultValue: this.options.default,
+        metadata: session.metadata.toJSON(),
+      });
+    } while (this.options.validate && !(await this.options.validate(input)));
+
+    if (this.options.onInput) {
+      await this.options.onInput(input);
+    }
+
     return session.addMessage({
       type: 'user',
-      content: this.options.default,
+      content: input,
       metadata: createMetadata(),
     });
   }

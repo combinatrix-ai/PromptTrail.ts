@@ -8,6 +8,7 @@ import {
   UserTemplate,
   AssistantTemplate,
 } from '../templates';
+import { DefaultInputSource, CallbackInputSource } from '../input_source';
 
 describe('Templates', () => {
   describe('LinearTemplate with Loop', () => {
@@ -336,6 +337,72 @@ describe('Templates', () => {
 
       // Verify LLM was called the correct number of times
       expect(mockLLM.generate).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('UserTemplate', () => {
+    it('should support string constructor', async () => {
+      const template = new UserTemplate('test description');
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('');
+    });
+
+    it('should support options object constructor', async () => {
+      const template = new UserTemplate({
+        description: 'test description',
+        default: 'default value',
+      });
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('default value');
+    });
+
+    it('should support custom input source', async () => {
+      const inputSource = new CallbackInputSource(async () => 'custom input');
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+      });
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('custom input');
+    });
+
+    it('should validate input', async () => {
+      const inputSource = new CallbackInputSource(async () => 'valid input');
+      const validate = vi
+        .fn()
+        .mockImplementation((input: string) =>
+          Promise.resolve(input === 'valid input'),
+        );
+
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+        validate,
+      });
+
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('valid input');
+      expect(validate).toHaveBeenCalledWith('valid input');
+    });
+
+    it('should call onInput callback', async () => {
+      const onInput = vi.fn();
+      const template = new UserTemplate({
+        description: 'test description',
+        default: 'test input',
+        onInput,
+      });
+
+      await template.execute(createSession());
+      expect(onInput).toHaveBeenCalledWith('test input');
     });
   });
 });
