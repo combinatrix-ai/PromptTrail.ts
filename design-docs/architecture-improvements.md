@@ -3,6 +3,7 @@
 ## 1. Template System Enhancements
 
 ### Template Registry Pattern
+
 ```typescript
 // Central registry for template types
 class TemplateRegistry {
@@ -35,6 +36,7 @@ const template = TemplateRegistry.create('loop', {
 ## 2. Model Management
 
 ### ModelProvider Pattern
+
 ```typescript
 interface ModelProvider {
   getModel(config: Partial<ModelConfig>): Model;
@@ -59,31 +61,31 @@ class OpenAIProvider implements ModelProvider {
     return new OpenAIModel({
       ...this.baseConfig,
       ...config,
-      tools: this.tools
+      tools: this.tools,
     });
   }
 }
 
 // Usage
 const provider = new OpenAIProvider({
-  apiKey: process.env.OPENAI_API_KEY
-})
-.withTools([calculator, weather]);
+  apiKey: process.env.OPENAI_API_KEY,
+}).withTools([calculator, weather]);
 
 const preciseModel = provider.getModel({
   temperature: 0.1,
-  modelName: 'gpt-4o-mini'
+  modelName: 'gpt-4o-mini',
 });
 
 const creativeModel = provider.getModel({
   temperature: 0.7,
-  modelName: 'gpt-4o-mini'
+  modelName: 'gpt-4o-mini',
 });
 ```
 
 ## 3. Session Transformation
 
 ### SessionTransformer Utility
+
 ```typescript
 class SessionTransformer {
   static transform<T, U>(
@@ -92,12 +94,12 @@ class SessionTransformer {
       includeMessages?: boolean;
       messageFilter?: (message: Message) => boolean;
       metadataTransform?: (metadata: T) => U;
-    }
+    },
   ): Session<U> {
     const messages = options.includeMessages
-      ? (options.messageFilter
-          ? session.messages.filter(options.messageFilter)
-          : session.messages)
+      ? options.messageFilter
+        ? session.messages.filter(options.messageFilter)
+        : session.messages
       : [];
 
     const metadata = options.metadataTransform
@@ -109,19 +111,20 @@ class SessionTransformer {
 }
 
 // Usage in SubroutineTemplate
-init_with: (parentSession) => 
+init_with: (parentSession) =>
   SessionTransformer.transform(parentSession, {
     includeMessages: false,
     metadataTransform: (metadata) => ({
       projectId: metadata.projectId,
-      preferences: metadata.preferences
-    })
+      preferences: metadata.preferences,
+    }),
   });
 ```
 
 ## 4. Tool Management
 
 ### ToolProvider Pattern
+
 ```typescript
 interface ToolProvider {
   getTool(name: string): Tool;
@@ -138,10 +141,7 @@ class DefaultToolProvider implements ToolProvider {
   }
 
   assignToModel(modelName: string, toolNames: string[]) {
-    this.modelTools.set(
-      modelName,
-      new Set(toolNames)
-    );
+    this.modelTools.set(modelName, new Set(toolNames));
   }
 
   getTool(name: string): Tool {
@@ -152,7 +152,7 @@ class DefaultToolProvider implements ToolProvider {
 
   getToolsForModel(model: Model): Tool[] {
     const toolNames = this.modelTools.get(model.name) || new Set();
-    return Array.from(toolNames).map(name => this.getTool(name));
+    return Array.from(toolNames).map((name) => this.getTool(name));
   }
 }
 
@@ -166,13 +166,14 @@ toolProvider.assignToModel('claude-3-5-haiku-latest', ['calculator']);
 
 const model = new OpenAIModel({
   modelName: 'gpt-4o-mini',
-  tools: toolProvider.getToolsForModel(model)
+  tools: toolProvider.getToolsForModel(model),
 });
 ```
 
 ## 5. Improved Agent Configuration
 
 ### Builder Pattern with Type Safety
+
 ```typescript
 class AgentBuilder<T extends Record<string, unknown>> {
   private config: Partial<AgentConfig> = {};
@@ -215,7 +216,7 @@ const agent = new AgentBuilder<ChatMetadata>()
   .withDebug(true)
   .withMetadata({
     userId: 'user123',
-    preferences: { language: 'en' }
+    preferences: { language: 'en' },
   })
   .addTemplate(systemTemplate)
   .addTemplate(loopTemplate)
@@ -225,16 +226,19 @@ const agent = new AgentBuilder<ChatMetadata>()
 ## Benefits
 
 1. **Modularity**
+
    - Clear separation of concerns
    - Easy to extend with new templates/models/tools
    - Better testing isolation
 
 2. **Type Safety**
+
    - Improved type inference
    - Better error messages
    - Compile-time checks
 
 3. **Reusability**
+
    - Share configurations across instances
    - Compose functionality
    - Reduce duplication
@@ -247,16 +251,19 @@ const agent = new AgentBuilder<ChatMetadata>()
 ## Migration Strategy
 
 1. **Phase 1: Tool Management**
+
    - Implement ToolProvider
    - Update existing tool usage
    - Add tool registration
 
 2. **Phase 2: Model Providers**
+
    - Create provider interfaces
    - Implement for OpenAI/Anthropic
    - Update model creation
 
 3. **Phase 3: Template Registry**
+
    - Add registry system
    - Register built-in templates
    - Update template creation

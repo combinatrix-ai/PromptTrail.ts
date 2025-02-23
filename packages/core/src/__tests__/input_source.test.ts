@@ -5,7 +5,6 @@ import {
   CLIInputSource,
 } from '../input_source';
 import { UserTemplate } from '../templates';
-import type { Session } from '../session';
 import { createSession } from '../session';
 
 // Mock readline module
