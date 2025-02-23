@@ -1,15 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { AnthropicModel } from '../model/anthropic/model';
-import type { Session, Tool } from '../types';
+import type {
+  Session,
+  Tool,
+  AssistantMessage,
+  AssistantMetadata,
+  ToolResultMetadata,
+} from '../types';
+import { createTool } from '../types';
 import { createMetadata } from '../metadata';
 import { createTemperature } from '../types';
 
 // Create a calculator tool for testing function calling
-const calculatorTool: Tool = {
+const calculatorTool = createTool({
   name: 'calculator',
   description: 'A simple calculator that can add two numbers',
   schema: {
-    type: 'object',
     properties: {
       a: {
         type: 'number',
@@ -22,10 +28,8 @@ const calculatorTool: Tool = {
     },
     required: ['a', 'b'],
   },
-  execute: async (input: { a: number; b: number }) => {
-    return { result: input.a + input.b };
-  },
-};
+  execute: async (input) => input.a + input.b,
+});
 
 describe('AnthropicModel', () => {
   const model = new AnthropicModel({
@@ -117,8 +121,6 @@ describe('AnthropicModel', () => {
     expect(response.content).toContain('iron');
   });
 
-  // Note: Tool tests are commented out as Anthropic's tool calling might work differently
-  /* 
   it('should use tools when available', async () => {
     const modelWithTools = new AnthropicModel({
       apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -146,5 +148,31 @@ describe('AnthropicModel', () => {
     expect(toolCalls?.[0]?.name).toBe('calculator');
     expect(toolCalls?.[0]?.arguments).toEqual({ a: 2, b: 2 });
   });
-  */
+
+  it('should handle tool results', async () => {
+    const session: Session = {
+      messages: [
+        {
+          type: 'user',
+          content: 'What is 2 + 2?',
+        },
+        {
+          type: 'assistant',
+          content: 'Let me calculate that for you.',
+          metadata: createMetadata(),
+        },
+        {
+          type: 'tool_result',
+          content: '4',
+          result: { result: 4 },
+          metadata: createMetadata(),
+        },
+      ],
+      metadata: createMetadata(),
+    };
+
+    const response = await model.send(session);
+    expect(response.type).toBe('assistant');
+    expect(response.content).toMatch(/4/);
+  });
 });

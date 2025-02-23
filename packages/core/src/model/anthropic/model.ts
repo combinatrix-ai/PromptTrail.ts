@@ -1,5 +1,36 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Message, Session, Tool, SchemaType } from '../../types';
+import type {
+  Message,
+  Session,
+  Tool,
+  SchemaType,
+  AssistantMetadata,
+} from '../../types';
+
+interface AnthropicToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+interface TextBlock {
+  type: 'text';
+  text: string;
+}
+
+interface ToolUseBlock {
+  type: 'tool_use';
+  name: string;
+  input: Record<string, unknown>;
+  id: string;
+}
+
+interface AnthropicResponse {
+  content: Array<TextBlock | ToolUseBlock>;
+}
 import { Model } from '../base';
 import type { AnthropicConfig, AnthropicTool } from './types';
 import { ConfigurationError } from '../../types';
@@ -33,15 +64,12 @@ export class AnthropicModel extends Model<AnthropicConfig> {
 
   protected formatTool(tool: Tool<SchemaType>): AnthropicTool {
     return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: {
-          type: 'object',
-          properties: tool.schema.properties,
-          required: tool.schema.required || [],
-        },
+      name: tool.name,
+      description: tool.description,
+      input_schema: {
+        type: 'object',
+        properties: tool.schema.properties,
+        required: tool.schema.required || [],
       },
     };
   }
@@ -75,22 +103,42 @@ export class AnthropicModel extends Model<AnthropicConfig> {
   async send(session: Session): Promise<Message> {
     const { messages, system } = this.convertToAnthropicMessages(session);
 
-    const response = await this.client.messages.create({
+    const formattedTools = this.config.tools?.map((tool) =>
+      this.formatTool(tool),
+    );
+    const response = (await this.client.messages.create({
       model: this.config.modelName,
       messages,
       system,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens || 1024,
-    });
+      tools: formattedTools as any,
+    })) as unknown as AnthropicResponse;
 
-    if (!response.content[0] || response.content[0].type !== 'text') {
-      throw new Error('Unexpected response format from Anthropic');
+    const metadata = createMetadata<AssistantMetadata>();
+    let content = '';
+
+    for (const block of response.content) {
+      switch (block.type) {
+        case 'text':
+          content += block.text;
+          break;
+        case 'tool_use':
+          metadata.set('toolCalls', [
+            {
+              name: block.name,
+              arguments: block.input,
+              id: block.id,
+            },
+          ]);
+          break;
+      }
     }
 
     return {
       type: 'assistant',
-      content: response.content[0].text,
-      metadata: createMetadata(),
+      content,
+      metadata,
     };
   }
 

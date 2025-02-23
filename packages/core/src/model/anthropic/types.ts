@@ -10,10 +10,25 @@ export interface AnthropicConfig extends ModelConfig {
 }
 
 export interface AnthropicTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface AnthropicToolCall {
+  id: string;
   type: 'function';
   function: {
     name: string;
-    description?: string;
-    parameters: Record<string, unknown>;
+    arguments: Record<string, unknown>;
   };
+}
+
+export interface AnthropicResponse {
+  content: Array<{ type: string; text: string }>;
+  tool_calls?: AnthropicToolCall[];
 }
