@@ -5,6 +5,7 @@
     "rootDir": ".",
     "baseUrl": ".",
     "moduleResolution": "bundler",
+    "noEmit": true,
     "paths": {
       "@prompttrail/core": ["../packages/core/src"]
     }
