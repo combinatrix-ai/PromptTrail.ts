@@ -1,10 +1,8 @@
 import { createMetadata } from './metadata';
-import type { Message } from './types';
 import type { InputSource } from './input_source';
 import { DefaultInputSource } from './input_source';
 import type { Model } from './model/base';
 import type { Session } from './session';
-import { createSession } from './session';
 
 /**
  * Base class for all templates

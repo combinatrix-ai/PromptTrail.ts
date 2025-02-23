@@ -8,7 +8,7 @@ import {
   UserTemplate,
   AssistantTemplate,
 } from '../templates';
-import { DefaultInputSource, CallbackInputSource } from '../input_source';
+import { CallbackInputSource } from '../input_source';
 import type { Message, ModelConfig } from '../types';
 import { Model } from '../model/base';
 import { createMetadata } from '../metadata';

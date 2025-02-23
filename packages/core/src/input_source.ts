@@ -1,5 +1,3 @@
-import { Metadata } from './metadata';
-
 /**
  * Interface for input sources that can provide user input
  */

@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import type { Metadata } from '../metadata';
 import { createMetadata } from '../metadata';
 
 describe('Metadata', () => {

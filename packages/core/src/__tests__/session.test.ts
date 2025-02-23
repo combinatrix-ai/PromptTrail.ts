@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import type { Session } from '../session';
 import { createSession } from '../session';
 import { createMessage, createSystemMessage, createUserMessage } from './utils';
 

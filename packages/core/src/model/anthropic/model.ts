@@ -1,14 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type {
-  Message,
-  Session,
-  Tool,
-  SchemaType,
-  AssistantMessage,
-  AssistantMetadata,
-  Temperature,
-  createTemperature,
-} from '../../types';
+import type { Message, Session, Tool, SchemaType } from '../../types';
 import { Model } from '../base';
 import type { AnthropicConfig, AnthropicTool } from './types';
 import { ConfigurationError } from '../../types';

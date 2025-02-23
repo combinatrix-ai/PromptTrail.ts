@@ -28,19 +28,19 @@
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "@vitest/coverage-v8": "^1.0.0",
-    "eslint": "^8.0.0",
-    "prettier": "^3.0.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^1.0.0"
+    "@types/node": "^20.17.19",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^8.57.1",
+    "prettier": "^3.5.2",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
-    "openai": "^4.85.3",
-    "zod": "^3.0.0"
+    "openai": "^4.85.4",
+    "zod": "^3.24.2"
   }
 }
