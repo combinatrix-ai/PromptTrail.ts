@@ -40,6 +40,7 @@ interface ModelConfig {
   tools?: Tool[];  // Tools available to the model
   // Other model-specific settings
 }
+
 class Model {
   // Base class for model implementations
   constructor(config: ModelConfig) {}
@@ -69,94 +70,106 @@ class AnthropicModel extends Model {
     });
   }
 }
-
-// Example usage with tools
-const weatherTool = createTool({
-  name: 'weather_forecast',
-  description: 'Get weather forecast for location',
-  schema: {
-    properties: {
-      location: { type: 'string', description: 'Location name' },
-      date: { type: 'string', description: 'Forecast date' }
-    },
-    required: ['location']
-  },
-  execute: async (input) => ({ forecast: 'sunny' })
-});
-
-const model = new OpenAIModel({
-  modelName: 'gpt-4o-mini',
-  temperature: 0.7,
-  apiKey: process.env.OPENAI_API_KEY
-})
-.addTool(weatherTool);  // Add tool capabilities
-class AnthropicModel extends Model { ... }
 ```
 
-### 2. Agent
+### 3. Template
 
-High-level interface for conversation management.
+Core building block for conversation flows, with support for metadata interpolation.
 
 ```typescript
-interface AgentConfig {
-  debug?: boolean; // Enables console logging of all messages
-  model: Model | ModelConfig; // Model instance or config
-  inputSource?: InputSource; // Optional custom input source
+abstract class Template {
+  /**
+   * Helper method to interpolate content with session metadata
+   * Supports ${variable} syntax with nested paths (e.g., ${user.name})
+   */
+  protected interpolateContent(content: string, session: Session): string;
+
+  abstract execute(session: Session): Promise<Session>;
 }
 
-class Agent<T extends Record<string, unknown> = Record<string, unknown>> {
-  constructor(config: AgentConfig) {}
-
-  // Builder pattern for conversation setup
-  addSystem(content: string): Agent<T>;
-  addUser(description: string, defaultValue?: string): Agent<T>;
-  addAssistant(options?: { model?: Model }): Agent<T>;
-  addLoop(loop: LoopTemplate): Agent<T>;
-
-  // Initialize with context and type-safe metadata
-  initWith(options: { context?: string; metadata?: T }): Agent<T>;
-
-  // Start conversation
-  async start(): Promise<Session<T>>;
+// Example: Template with metadata interpolation
+interface ProjectContext {
+  user: { name: string; role: string; };
+  project: { name: string; language: string; };
 }
 
-// Example: CLI chat with validation (based on chat.ts)
-const inputSource = new CLIInputSource();
-const model = new OpenAIModel({
-  modelName: 'gpt-4o-mini',
-  temperature: 0.7,
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const template = new LinearTemplate()
+  .addSystem("I'm helping with ${project.name}")
+  .addAssistant("Hi ${user.name}, I see you're working on ${project.language}") // Context with interpolation
+  .addUser({ inputSource: new CLIInputSource() }) // Get real user input
+  .addAssistant("I understand you're a ${user.role}. Let me help with that.") // Predefined response
+  .addUser("Please explain the code") // Impersonate user
+  .addAssistant({ model }); // Let model generate response
 
-const agent = new Agent({
-  debug: true, // Replaces LoggingSession
-  model,
-  inputSource,
-})
-  .addSystem('You are a helpful AI assistant')
-  .addLoop(
-    new LoopTemplate()
-      .addUser('Your message (type "exit" to end):', '', {
-        validate: async (input) => {
-          if (!input.trim()) {
-            console.log('Please enter a message');
-            return false;
-          }
-          return true;
-        },
-      })
-      .addAssistant()
-      .setExitCondition((session) => {
-        const lastMessage = session.getMessagesByType('user').slice(-1)[0];
-        return lastMessage?.content.toLowerCase().trim() === 'exit';
-      }),
-  );
+const session = await template.execute(
+  createSession<ProjectContext>({
+    metadata: {
+      user: { name: "Alice", role: "developer" },
+      project: { name: "AwesomeApp", language: "TypeScript" }
+    }
+  })
+);
 
-// Start chat
-const session = await agent.start();
+// System message template
+class SystemTemplate extends Template {
+  constructor(options: { content: string }) {}
+  async execute(session: Session): Promise<Session>;
+}
+
+// User input template
+class UserTemplate extends Template {
+  constructor(options: {
+    description: string;
+    default?: string;
+    inputSource?: InputSource;
+    validate?: (input: string) => Promise<boolean>;
+  }) {}
+  async execute(session: Session): Promise<Session>;
+}
+
+// Assistant response template
+class AssistantTemplate extends Template {
+  constructor(options: {
+    model?: Model;
+    content?: string;
+  }) {}
+  async execute(session: Session): Promise<Session>;
+}
+
+// Linear sequence of templates
+class LinearTemplate extends Template {
+  addSystem(content: string): this;
+  addUser(description: string, defaultValue?: string, options?: {
+    inputSource?: InputSource;
+    validate?: (input: string) => Promise<boolean>;
+  }): this;
+  addAssistant(options?: { model?: Model }): this;
+  addLoop(loop: LoopTemplate): this;
+  async execute(session: Session): Promise<Session>;
+}
+
+// Looping sequence of templates
+class LoopTemplate extends Template {
+  addUser(description: string, defaultValue?: string, options?: {
+    inputSource?: InputSource;
+  }): this;
+  addAssistant(options?: { model?: Model }): this;
+  setExitCondition(condition: (session: Session) => boolean): this;
+  async execute(session: Session): Promise<Session>;
+}
+
+// Nested conversation template
+class SubroutineTemplate extends Template {
+  constructor(options: {
+    template: Template;
+    initWith: (parentSession: Session) => Session;
+    squashWith?: (parentSession: Session, childSession: Session) => Session;
+  }) {}
+  async execute(session: Session): Promise<Session>;
+}
 ```
 
-### 3. Session
+### 4. Session
 
 Immutable state container with strict validation.
 
@@ -164,12 +177,26 @@ Immutable state container with strict validation.
 interface SessionOptions<T> {
   messages?: Message[];
   metadata?: T;
+  print?: boolean;  // Enable conversation flow printing
 }
 
 class Session<T extends Record<string, unknown>> {
   // Core properties
   readonly messages: Message[];
   readonly metadata: Metadata<T>;
+  readonly print: boolean;  // Print conversation flow
+
+  // Example usage with print mode
+  const session = createSession({
+    print: true  // Enable conversation flow printing
+  });
+
+  const devSession = createSession<ProjectContext>({
+    metadata: {
+      user: { name: "Alice", role: "developer" }
+    },
+    print: true  // See template interpolation in action
+  });
 
   // Immutable updates
   addMessage(message: Message): Session<T>;
@@ -186,7 +213,7 @@ class Session<T extends Record<string, unknown>> {
 }
 ```
 
-### 4. Metadata
+### 5. Metadata
 
 Type-safe key-value store.
 
@@ -199,7 +226,7 @@ class Metadata<T extends Record<string, unknown>> {
 }
 ```
 
-### 5. Message
+### 6. Message
 
 Core message types and utilities.
 
@@ -218,7 +245,7 @@ function createUserMessage(content: string): Message;
 function createAssistantMessage(content: string): Message;
 ```
 
-### 6. InputSource
+### 7. InputSource
 
 Abstract input handling.
 
@@ -238,17 +265,26 @@ class CallbackInputSource implements InputSource { ... }
 ### 1. Basic Chat
 
 ```typescript
-const agent = new Agent({
-  debug: true,
-  model: 'gpt-4o-mini',
-})
-  .addSystem("I'm a helpful assistant")
-  .addLoop(new LoopTemplate().addUser("What's on your mind?").addAssistant())
-  .initWith({
-    metadata: { tone: 'casual' },
-  });
+const inputSource = new CLIInputSource();
+const model = new OpenAIModel({
+  modelName: 'gpt-4o-mini',
+  temperature: 0.7,
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-const session = await agent.start();
+const chat = new LinearTemplate()
+  .addSystem("I'm a helpful assistant")
+  .addLoop(
+    new LoopTemplate()
+      .addUser("What's on your mind?", "", { inputSource })
+      .addAssistant({ model })
+      .setExitCondition(session => {
+        const lastMessage = session.getMessagesByType('user').slice(-1)[0];
+        return lastMessage?.content.toLowerCase().trim() === 'exit';
+      })
+  );
+
+const session = await chat.execute(createSession());
 ```
 
 ### 2. Tool Integration
@@ -270,311 +306,94 @@ const calculator = createTool({
   execute: async (input) => eval(input.expression),
 });
 
-// Use tool with model
-const agent = new Agent({
-  debug: true,
-  model: {
-    name: 'gpt-4o-mini',
-    temperature: 0.7,
-    tools: [calculator], // Make tool available to model
-  },
-})
+// Create model with tool
+const mathModel = new OpenAIModel({
+  modelName: 'gpt-4o-mini',
+  temperature: 0.7,
+  tools: [calculator],
+});
+
+// Create chat template
+const mathChat = new LinearTemplate()
   .addSystem("I'm a math assistant with calculation abilities")
   .addLoop(
     new LoopTemplate()
-      .addUser('What would you like to calculate?')
-      .addAssistant(), // Model can use calculator tool here
-  )
-  .initWith({
-    metadata: { mode: 'math' },
-  });
-
-const session = await agent.start();
-```
-
-### 3. Template Control Flow
-
-```typescript
-// Conditional template for branching conversations
-class IfTemplate extends Template {
-  constructor(options: {
-    condition: (session: Session) => boolean;
-    then: Template;
-    else?: Template;
-  }) {}
-}
-
-// Example: Different tools per template
-const mathModel = new OpenAIModel(config).addTool(tools.calculator);
-const weatherModel = new OpenAIModel(config).addTool(tools.weather);
-
-const agent = new Agent({
-  debug: true,
-  model: new OpenAIModel(config), // Base model without tools
-})
-  .addSystem('I can help with math and weather')
-  .addLoop(
-    new LoopTemplate()
-      .addUser('What would you like to know?')
-      .addIf({
-        condition: (session) =>
-          session.getLastMessage()?.content.includes('calculate'),
-        then: new AssistantTemplate({ model: mathModel }), // Use calculator tool
-        else: new IfTemplate({
-          condition: (session) =>
-            session.getLastMessage()?.content.includes('weather'),
-          then: new AssistantTemplate({ model: weatherModel }), // Use weather tool
-          else: new AssistantTemplate(), // Use base model
-        }),
-      })
-      .setExitCondition(
-        (session) => session.getLastMessage()?.content === 'exit',
-      ),
+      .addUser("What would you like to calculate?", "", { inputSource })
+      .addAssistant({ model: mathModel })
   );
+
+const session = await mathChat.execute(
+  createSession({
+    metadata: { mode: 'math' }
+  })
+);
 ```
 
-### 4. Model Specialization
+### 3. Nested Conversations
 
 ```typescript
-// Create specialized models for different tasks
-const codeModel = new OpenAIModel({
-  modelName: 'gpt-4o-mini',
-  temperature: 0.1, // More precise for code
-  tools: [tools.linter, tools.formatter],
-});
-
-const explainerModel = new AnthropicModel({
-  modelName: 'claude-3-5-haiku-latest',
-  temperature: 0.7, // More creative for explanations
-});
-
-// Use different models for different parts of conversation
-const agent = new Agent({
-  debug: true,
-  model: new OpenAIModel(config), // Default model
-})
-  .addSystem('I can help write and explain code')
-  .addLoop(
-    new LoopTemplate()
-      .addUser('What would you like to do?')
-      .addAssistant({ model: codeModel }) // Generate code with tools
-      .addUser('Can you explain this code?')
-      .addAssistant({ model: explainerModel }) // Explain with different model
-      .setExitCondition(
-        (session) => session.getLastMessage()?.content === 'exit',
-      ),
-  );
-```
-
-### 5. Advanced Tool Integration
-
-```typescript
-// Define tool-aware metadata
-interface ToolingMetadata {
-  activeTools: string[]; // Currently enabled tools
-  preferences: {
-    language: string;
-    style: 'formal' | 'casual';
-    debug: boolean;
-  };
-}
-
-// Create multiple tools
-const tools = {
-  calculator: createTool({
-    name: 'calculator',
-    description: 'Perform calculations',
-    schema: {
-      properties: {
-        expression: { type: 'string', description: 'Math expression' },
-      },
-      required: ['expression'],
-    },
-    execute: async (input) => eval(input.expression),
-  }),
-
-  weather: createTool({
-    name: 'weather',
-    description: 'Get weather forecast',
-    schema: {
-      properties: {
-        location: { type: 'string', description: 'Location name' },
-      },
-      required: ['location'],
-    },
-    execute: async (input) => ({ forecast: 'sunny' }),
-  }),
-};
-
-// Create base model with all tools
-const model = new OpenAIModel({
-  modelName: 'gpt-4o-mini',
-  temperature: 0.7,
-  apiKey: process.env.OPENAI_API_KEY,
-})
-  .addTool(tools.calculator)
-  .addTool(tools.weather);
-
-// Create agent with tool-aware metadata
-const agent = new Agent<ToolingMetadata>({
-  debug: true,
-  model,
-  inputSource: new CLIInputSource(),
-})
-  .addSystem(
-    `
-  You are an AI assistant with multiple capabilities:
-  - Perform calculations
-  - Check weather forecasts
-  Choose the appropriate tool based on user requests.
-`,
-  )
-  .addLoop(
-    new LoopTemplate()
-      .addUser('What can I help you with? (type "exit" to end)')
-      .addAssistant()
-      .setExitCondition((session) => {
-        const lastMessage = session.getMessagesByType('user').slice(-1)[0];
-        return lastMessage?.content.toLowerCase().trim() === 'exit';
-      }),
-  )
-  .initWith({
-    metadata: {
-      activeTools: ['calculator', 'weather'],
-      preferences: {
-        language: 'en',
-        style: 'casual',
-        debug: true,
-      },
-    },
-  });
-
-// Start multi-tool conversation
-const session = await agent.start();
-```
-
-### 6. Nested Conversations
-
-```typescript
-// Template for running nested conversations
-class SubroutineTemplate extends Template {
-  constructor(options: {
-    template: Template; // Template to run as subroutine
-    init_with: (parentSession: Session) => Session; // Transform parent session for subroutine
-    squash_with: (parentSession: Session, childSession: Session) => Session; // Merge results back
-  }) {}
-}
-
-// Example: Code review conversation within larger development chat
-interface ReviewMetadata {
-  fileType: string;
-  severity: 'low' | 'medium' | 'high';
-}
-
-// Create review subroutine
-const codeReviewTemplate = new LinearTemplate()
-  .addSystem('You are a code review expert')
-  .addUser('Here is the code to review:')
+// Code review template
+const codeReview = new LinearTemplate()
+  .addSystem("I am a code review expert")
+  .addUser("Here is the code to review:", "", { inputSource })
   .addAssistant({ model: reviewModel })
-  .addUser('Any security concerns?')
+  .addUser("Any security concerns?", "", { inputSource })
   .addAssistant({ model: securityModel });
 
-// Use subroutine in main conversation
-const agent = new Agent({
-  debug: true,
-  model: new OpenAIModel(config),
-})
-  .addSystem('I am a development assistant')
+// Main development flow
+const mainFlow = new LinearTemplate()
+  .addSystem("I am a development assistant")
   .addLoop(
     new LoopTemplate()
-      .addUser('What would you like to do?')
-      .addAssistant()
+      .addUser("What would you like to do?", "", { inputSource })
+      .addAssistant({ model })
       .addIf({
-        condition: (session) =>
-          session.getLastMessage()?.content.includes('review'),
+        condition: session => session.getLastMessage()?.content.includes("review"),
         then: new SubroutineTemplate({
-          template: codeReviewTemplate,
-          // Initialize subroutine session with relevant metadata
-          init_with: (parentSession) => {
-            const lastMessage = parentSession.getLastMessage();
-            return createSession<ReviewMetadata>({
-              metadata: {
-                fileType: detectFileType(lastMessage?.content),
-                severity: 'low',
-              },
-            });
-          },
-          // Merge review results back to parent conversation
-          squash_with: (parentSession, childSession) => {
-            const reviewResult = childSession.getLastMessage();
+          template: codeReview,
+          initWith: session => createSession({
+            metadata: {
+              fileType: detectFileType(session.getLastMessage()?.content),
+              severity: 'low'
+            }
+          }),
+          squashWith: (parentSession, childSession) => {
             const severity = childSession.metadata.get('severity');
             return parentSession
-              .addMessage(
-                createSystemMessage(
-                  `Code review completed with ${severity} severity`,
-                ),
-              )
-              .addMessage(reviewResult)
+              .addMessage(createSystemMessage(
+                `Code review completed with ${severity} severity`
+              ))
               .updateMetadata({
                 lastReviewSeverity: severity,
-                reviewCount:
-                  (parentSession.metadata.get('reviewCount') || 0) + 1,
+                reviewCount: (parentSession.metadata.get('reviewCount') || 0) + 1
               });
-          },
-        }),
+          }
+        })
       })
-      .setExitCondition(
-        (session) => session.getLastMessage()?.content === 'exit',
-      ),
   );
 
-// Example: Nested conversation with shared context
-interface SharedContext {
-  projectId: string;
-  userRole: string;
-  preferences: Record<string, unknown>;
-}
-
-const setupChildSession = (parentSession: Session<SharedContext>) => {
-  // Keep only relevant metadata for child conversation
-  const { projectId, preferences } = parentSession.metadata.toObject();
-  return createSession({
-    metadata: { projectId, preferences },
-  });
-};
-
-const mergeChildResults = (
-  parentSession: Session<SharedContext>,
-  childSession: Session,
-) => {
-  // Keep parent context but add child conversation results
-  const relevantMessages = childSession
-    .getMessagesByType('assistant')
-    .slice(-2); // Last two assistant responses
-
-  return relevantMessages.reduce(
-    (session, message) => session.addMessage(message),
-    parentSession,
-  );
-};
+const session = await mainFlow.execute(createSession());
 ```
 
 ## Key Features
 
 1. **Type Safety**
-
    - Full TypeScript support
    - Metadata type inference
    - Strict message validation
 
-2. **Immutability**
+2. **Template Interpolation**
+   - Dynamic content using ${variable} syntax
+   - Support for nested object paths
+   - Type-safe metadata access
+   - Automatic empty string fallback for undefined values
 
+3. **Immutability**
    - Session state changes create new instances
    - Predictable state management
    - Thread-safe operations
 
-3. **Flexibility**
-
+4. **Flexibility**
    - Multiple model support
    - Custom input sources
    - Extensible template system
@@ -587,13 +406,11 @@ const mergeChildResults = (
 ## Best Practices
 
 1. **Session Management**
-
    - Always validate sessions before use
    - Handle metadata types explicitly
    - Use immutable updates
 
 2. **Error Handling**
-
    - Validate input before sending to models
    - Handle model errors gracefully
    - Provide clear error messages
@@ -602,3 +419,8 @@ const mergeChildResults = (
    - Reuse templates when possible
    - Clean up resources (close input sources)
    - Handle large conversations efficiently
+
+4. **Template Design**
+   - Keep templates focused and composable
+   - Pass dependencies explicitly
+   - Use SubroutineTemplate for complex flows

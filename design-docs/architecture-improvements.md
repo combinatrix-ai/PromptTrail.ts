@@ -1,274 +1,161 @@
-# PromptTrail Architecture Improvements
+# Architecture Improvements
 
-## 1. Template System Enhancements
+## 1. Template-First Design
 
-### Template Registry Pattern
+### Current State
+The current architecture has overlapping concepts between Agent and Template, leading to unnecessary complexity and confusion about which pattern to use.
 
+### Proposed Changes
+
+1. **Remove Agent Class**
+   - Agent functionality is fully covered by Templates
+   - No need for special configuration handling
+   - Simpler mental model: "everything is a template"
+
+2. **Template Usage Patterns**
+   ```typescript
+   // Create conversation flow
+   const chat = new LinearTemplate()
+     .addSystem("I'm a helpful assistant")
+     .addAssistant("Hello ${name}!") // Context with interpolation
+     .addUser({ inputSource: new CLIInputSource() }) // Get real user input
+     .addAssistant("I see you're interested in ${topic}") // Predefined response
+     .addUser("Yes, tell me more") // Impersonate user
+     .addAssistant({ model }); // Let model generate response
+   ```
+
+3. **Session Improvements**
+   ```typescript
+   interface SessionOptions<T> {
+     messages?: Message[];
+     metadata?: T;
+     print?: boolean;  // Enable conversation flow printing
+   }
+
+   // Usage
+   const session = createSession({
+     print: true,  // Print conversation flow
+     metadata: {
+       name: 'Alice',
+       topic: 'TypeScript'
+     }
+   });
+   ```
+
+4. **Template Interpolation**
+   - Support for ${variable} syntax in template content
+   - Access to nested metadata paths (e.g., ${user.preferences.language})
+   - Type-safe metadata access
+   - Automatic empty string fallback for undefined values
+
+### Benefits
+
+1. **Simplified Architecture**
+   - Single pattern for conversation management
+   - Clear responsibility boundaries
+   - Less code to maintain
+   - Easier to understand and use
+
+2. **Enhanced Flexibility**
+   - Mix and match template types
+   - Combine real input with predefined responses
+   - Easy to add new template types
+   - Natural composition of conversation flows
+
+3. **Better Developer Experience**
+   - Print mode for debugging
+   - Type-safe metadata access
+   - Clear patterns for common use cases
+   - Less boilerplate code
+
+## 2. Example: Converting Agent to Templates
+
+### Before (Agent-based)
 ```typescript
-// Central registry for template types
-class TemplateRegistry {
-  private static templates = new Map<string, typeof Template>();
+const agent = new Agent({
+  debug: true,
+  model,
+  inputSource
+})
+  .addSystem("I'm a helpful assistant")
+  .addLoop(
+    new LoopTemplate()
+      .addUser("What's on your mind?")
+      .addAssistant()
+  );
 
-  static register(name: string, template: typeof Template) {
-    this.templates.set(name, template);
-  }
-
-  static create(name: string, config: any): Template {
-    const TemplateClass = this.templates.get(name);
-    if (!TemplateClass) throw new Error(`Template ${name} not found`);
-    return new TemplateClass(config);
-  }
-}
-
-// Register built-in templates
-TemplateRegistry.register('linear', LinearTemplate);
-TemplateRegistry.register('loop', LoopTemplate);
-TemplateRegistry.register('if', IfTemplate);
-TemplateRegistry.register('subroutine', SubroutineTemplate);
-
-// Usage
-const template = TemplateRegistry.create('loop', {
-  templates: [...],
-  exitCondition: (session) => boolean
-});
+const session = await agent.start();
 ```
 
-## 2. Model Management
-
-### ModelProvider Pattern
-
+### After (Template-based)
 ```typescript
-interface ModelProvider {
-  getModel(config: Partial<ModelConfig>): Model;
-  withTools(tools: Tool[]): ModelProvider;
-}
+const chat = new LinearTemplate()
+  .addSystem("I'm a helpful assistant")
+  .addAssistant("How can I help you today ${user.name}?")
+  .addLoop(
+    new LoopTemplate()
+      .addUser("What's on your mind?", "", { inputSource })
+      .addAssistant({ model })
+  );
 
-class OpenAIProvider implements ModelProvider {
-  private baseConfig: Partial<OpenAIConfig>;
-  private tools: Tool[] = [];
-
-  constructor(config: Partial<OpenAIConfig>) {
-    this.baseConfig = config;
-  }
-
-  withTools(tools: Tool[]): ModelProvider {
-    const provider = new OpenAIProvider(this.baseConfig);
-    provider.tools = [...this.tools, ...tools];
-    return provider;
-  }
-
-  getModel(config: Partial<OpenAIConfig>): Model {
-    return new OpenAIModel({
-      ...this.baseConfig,
-      ...config,
-      tools: this.tools,
-    });
-  }
-}
-
-// Usage
-const provider = new OpenAIProvider({
-  apiKey: process.env.OPENAI_API_KEY,
-}).withTools([calculator, weather]);
-
-const preciseModel = provider.getModel({
-  temperature: 0.1,
-  modelName: 'gpt-4o-mini',
-});
-
-const creativeModel = provider.getModel({
-  temperature: 0.7,
-  modelName: 'gpt-4o-mini',
-});
-```
-
-## 3. Session Transformation
-
-### SessionTransformer Utility
-
-```typescript
-class SessionTransformer {
-  static transform<T, U>(
-    session: Session<T>,
-    options: {
-      includeMessages?: boolean;
-      messageFilter?: (message: Message) => boolean;
-      metadataTransform?: (metadata: T) => U;
-    },
-  ): Session<U> {
-    const messages = options.includeMessages
-      ? options.messageFilter
-        ? session.messages.filter(options.messageFilter)
-        : session.messages
-      : [];
-
-    const metadata = options.metadataTransform
-      ? options.metadataTransform(session.metadata.toObject())
-      : {};
-
-    return createSession<U>({ messages, metadata });
-  }
-}
-
-// Usage in SubroutineTemplate
-init_with: (parentSession) =>
-  SessionTransformer.transform(parentSession, {
-    includeMessages: false,
-    metadataTransform: (metadata) => ({
-      projectId: metadata.projectId,
-      preferences: metadata.preferences,
-    }),
-  });
-```
-
-## 4. Tool Management
-
-### ToolProvider Pattern
-
-```typescript
-interface ToolProvider {
-  getTool(name: string): Tool;
-  register(tool: Tool): void;
-  getToolsForModel(model: Model): Tool[];
-}
-
-class DefaultToolProvider implements ToolProvider {
-  private tools = new Map<string, Tool>();
-  private modelTools = new Map<string, Set<string>>();
-
-  register(tool: Tool) {
-    this.tools.set(tool.name, tool);
-  }
-
-  assignToModel(modelName: string, toolNames: string[]) {
-    this.modelTools.set(modelName, new Set(toolNames));
-  }
-
-  getTool(name: string): Tool {
-    const tool = this.tools.get(name);
-    if (!tool) throw new Error(`Tool ${name} not found`);
-    return tool;
-  }
-
-  getToolsForModel(model: Model): Tool[] {
-    const toolNames = this.modelTools.get(model.name) || new Set();
-    return Array.from(toolNames).map((name) => this.getTool(name));
-  }
-}
-
-// Usage
-const toolProvider = new DefaultToolProvider();
-toolProvider.register(calculator);
-toolProvider.register(weather);
-
-toolProvider.assignToModel('gpt-4o-mini', ['calculator', 'weather']);
-toolProvider.assignToModel('claude-3-5-haiku-latest', ['calculator']);
-
-const model = new OpenAIModel({
-  modelName: 'gpt-4o-mini',
-  tools: toolProvider.getToolsForModel(model),
-});
-```
-
-## 5. Improved Agent Configuration
-
-### Builder Pattern with Type Safety
-
-```typescript
-class AgentBuilder<T extends Record<string, unknown>> {
-  private config: Partial<AgentConfig> = {};
-  private metadata: Partial<T> = {};
-  private templates: Template[] = [];
-
-  withModel(model: Model | ModelConfig): AgentBuilder<T> {
-    this.config.model = model;
-    return this;
-  }
-
-  withDebug(debug: boolean): AgentBuilder<T> {
-    this.config.debug = debug;
-    return this;
-  }
-
-  withMetadata(metadata: Partial<T>): AgentBuilder<T> {
-    this.metadata = { ...this.metadata, ...metadata };
-    return this;
-  }
-
-  addTemplate(template: Template): AgentBuilder<T> {
-    this.templates.push(template);
-    return this;
-  }
-
-  build(): Agent<T> {
-    const agent = new Agent<T>(this.config);
-    for (const template of this.templates) {
-      agent.addTemplate(template);
-    }
-    agent.initWith({ metadata: this.metadata as T });
-    return agent;
-  }
-}
-
-// Usage
-const agent = new AgentBuilder<ChatMetadata>()
-  .withModel(model)
-  .withDebug(true)
-  .withMetadata({
-    userId: 'user123',
-    preferences: { language: 'en' },
+const session = await chat.execute(
+  createSession({
+    print: true,
+    metadata: { user: { name: 'Alice' } }
   })
-  .addTemplate(systemTemplate)
-  .addTemplate(loopTemplate)
-  .build();
+);
 ```
 
-## Benefits
+## 3. Migration Path
 
-1. **Modularity**
+1. **Phase 1: Template Enhancements**
+   - Add print option to Session
+   - Implement metadata interpolation
+   - Add support for different message patterns
 
-   - Clear separation of concerns
-   - Easy to extend with new templates/models/tools
-   - Better testing isolation
+2. **Phase 2: Agent Deprecation**
+   - Mark Agent as deprecated
+   - Update documentation to show template patterns
+   - Provide migration examples
 
-2. **Type Safety**
+3. **Phase 3: Cleanup**
+   - Remove Agent class
+   - Update all examples to use templates
+   - Ensure backward compatibility where needed
 
-   - Improved type inference
-   - Better error messages
-   - Compile-time checks
+## 4. Future Considerations
 
-3. **Reusability**
+1. **Template Patterns**
+   - Document common patterns
+   - Create specialized templates for common use cases
+   - Add utilities for template composition
 
-   - Share configurations across instances
-   - Compose functionality
-   - Reduce duplication
+2. **Session Enhancements**
+   - Consider additional debug options
+   - Add more metadata utilities
+   - Improve print formatting
 
-4. **Maintainability**
-   - Centralized registration
-   - Consistent patterns
-   - Clear dependencies
+3. **Developer Tools**
+   - Add template validation
+   - Improve error messages
+   - Create testing utilities
 
-## Migration Strategy
+## 5. Best Practices
 
-1. **Phase 1: Tool Management**
+1. **Template Design**
+   - Keep templates focused and composable
+   - Use metadata interpolation for dynamic content
+   - Mix real input and predefined responses as needed
+   - Consider reusability when designing templates
 
-   - Implement ToolProvider
-   - Update existing tool usage
-   - Add tool registration
+2. **Session Management**
+   - Enable print mode during development
+   - Use type-safe metadata
+   - Keep metadata structure flat when possible
+   - Clean up resources properly
 
-2. **Phase 2: Model Providers**
-
-   - Create provider interfaces
-   - Implement for OpenAI/Anthropic
-   - Update model creation
-
-3. **Phase 3: Template Registry**
-
-   - Add registry system
-   - Register built-in templates
-   - Update template creation
-
-4. **Phase 4: Session Utilities**
-   - Add transformation utilities
-   - Update session handling
-   - Improve type safety
+3. **Conversation Flow**
+   - Use system messages for context
+   - Leverage assistant messages for both static and dynamic responses
+   - Mix user input methods based on needs
+   - Keep loops focused and exit conditions clear

@@ -4,7 +4,7 @@ Welcome to PromptTrail! We're here to make your LLM conversations more structure
 
 ## ✨ What's Cool About PromptTrail?
 
-- 🎯 **Smart Templates**: Build conversations like Lego - piece by piece!
+- � **Smart Templates**: Build conversations like Lego - piece by piece!
 - 🔄 **Interactive Loops**: Create dynamic, branching conversations
 - 🛠️ **Tool Power**: Let your LLMs use real functions
 - 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
@@ -20,10 +20,10 @@ First, let's get PromptTrail installed:
 pnpm add @prompttrail/core
 ```
 
-Here's a quick example to get you chatting:
+Here's a quick CLI chat example:
 
 ```typescript
-import { LinearTemplate, OpenAIModel } from '@prompttrail/core';
+import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
 
 // Set up your model
 const model = new OpenAIModel({
@@ -31,37 +31,63 @@ const model = new OpenAIModel({
   modelName: 'gpt-4o-mini',
 });
 
-// Create a simple chat
+// Create an interactive chat
 const chat = new LinearTemplate()
   .addSystem("Hi! I'm a friendly assistant.")
-  .addUser('What makes TypeScript awesome?')
-  .addAssistant({ llm: model });
+  .addLoop(
+    new LoopTemplate()
+      .addUser("What's on your mind? (type 'exit' to end)")
+      .addAssistant({ model })
+      .setExitCondition(session => 
+        session.getLastMessage()?.content.toLowerCase() === 'exit'
+      )
+  );
 
-// Let's chat!
-const session = createSession();
-const result = await chat.execute(session);
-console.log(result.getLastMessage()?.content);
+// Start chatting with print mode enabled
+const session = await chat.execute(
+  createSession({ print: true }) // Prints conversation flow
+);
 ```
 
 ## 🎨 Building Conversations
 
 ### 🏗️ Templates: Your Building Blocks
 
-Templates are like conversation blueprints. Start simple and add more as you need:
+Templates are like conversation blueprints, with support for metadata interpolation:
 
 ```typescript
-// A friendly greeting
-const hello = new LinearTemplate()
-  .addUser('Hi there!')
-  .addAssistant({ llm: model });
+// Create a personalized chat with metadata interpolation
+interface UserPreferences {
+  name: string;
+  language: string;
+  expertise: {
+    level: 'beginner' | 'intermediate' | 'expert';
+    topics: string[];
+  };
+}
 
-// A deeper discussion
-const typescript = new LinearTemplate()
-  .addSystem('You are a TypeScript expert who loves helping developers.')
-  .addUser('Tell me about TypeScript generics.')
-  .addAssistant({ llm: model })
-  .addUser('Could you show me an example?')
-  .addAssistant({ llm: model });
+const personalizedChat = new LinearTemplate()
+  .addSystem("I'll adapt to your preferences.")
+  .addAssistant("Hello ${name}! How can I help with ${expertise.topics[0]}?") // Context with interpolation
+  .addUser({ inputSource: new CLIInputSource() }) // Get real user input
+  .addAssistant("Should I explain in ${language}?") // Predefined response with interpolation
+  .addUser("Yes, please explain in ${language}") // Impersonate user
+  .addAssistant({ model }); // Let model generate response
+
+// Use with session metadata
+const session = await personalizedChat.execute(
+  createSession<UserPreferences>({
+    metadata: {
+      name: 'Alice',
+      language: 'TypeScript',
+      expertise: {
+        level: 'intermediate',
+        topics: ['generics', 'type inference']
+      }
+    },
+    print: true  // See the conversation flow
+  })
+);
 ```
 
 ### 🤖 Choosing Your AI Friend
@@ -93,9 +119,9 @@ const quiz = new LinearTemplate()
   .addLoop(
     new LoopTemplate()
       .addUser('Ready for a TypeScript question?')
-      .addAssistant({ llm: model })
+      .addAssistant({ model })
       .addUser('Here is my answer:', 'interfaces are awesome!')
-      .addAssistant({ llm: model })
+      .addAssistant({ model })
       .addUser('Another question? (yes/no)', 'yes')
       .setExitCondition(
         (session) => session.getLastMessage()?.content.toLowerCase() === 'no',
@@ -111,6 +137,11 @@ Keep track of your conversations with type-safe sessions:
 // Start a fresh chat
 const session = createSession();
 
+// Enable printing for CLI apps
+const cliSession = createSession({ 
+  print: true  // Prints conversation flow
+});
+
 // Add some personality
 interface ChatStyle {
   tone: 'casual' | 'professional';
@@ -122,6 +153,7 @@ const funChat = createSession<ChatStyle>({
     tone: 'casual',
     emoji: true,
   },
+  print: true  // See the conversation unfold
 });
 
 // Add messages, get history, validate state
@@ -189,7 +221,7 @@ const smartModel = new OpenAIModel({
 const mathChat = new LinearTemplate()
   .addSystem("I'm great at math!")
   .addUser("What's 123 + 456?")
-  .addAssistant({ llm: smartModel });
+  .addAssistant({ model: smartModel });
 ```
 
 ## 📚 API Explorer
