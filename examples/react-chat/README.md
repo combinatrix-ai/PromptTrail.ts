@@ -1,50 +1,52 @@
-# React + TypeScript + Vite
+# PromptTrail React Chat Example
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is a web example of the PromptTrail library, demonstrating how to use PromptTrail in a React application to create a chat interface with OpenAI's GPT models.
 
-Currently, two official plugins are available:
+<img width="890" alt="Image" src="https://github.com/user-attachments/assets/447c7943-f720-4e8e-80fb-4245c3ae780c" />
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## Expanding the ESLint configuration
+- Modern React chat interface
+- Client-side API key management
+- Real-time chat with GPT models
+- TypeScript support
+- Styled with Emotion
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+## Getting Started
 
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-});
+1. Make sure you're in the react-chat directory:
+```bash
+cd examples/react-chat
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
-
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react';
-
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-});
+2. Install dependencies:
+```bash
+pnpm install
 ```
+
+3. Start the development server:
+```bash
+pnpm run dev
+```
+
+4. Open your browser and navigate to `http://localhost:3000`
+
+## Usage
+
+1. Enter your OpenAI API key in the input field at the top of the chat interface
+2. Type your message in the input field at the bottom
+3. Press Enter or click the Send button to send your message
+4. The AI will respond with a message
+
+## Implementation Details
+
+This example demonstrates:
+- How to integrate PromptTrail in a web application
+- Using PromptTrail's template system for chat
+- Managing chat state in React
+- Handling API responses and errors
+- Building a responsive chat UI
+
+## Note
+
+This is a development example and stores the API key in the browser. For production applications, it's recommended to handle API keys server-side.
