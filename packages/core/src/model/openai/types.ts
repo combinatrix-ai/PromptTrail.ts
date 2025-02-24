@@ -12,6 +12,7 @@ export interface OpenAIConfig extends ModelConfig {
   organizationId?: string;
   apiBase?: string;
   apiVersion?: string;
+  dangerouslyAllowBrowser?: boolean;
 }
 
 /**

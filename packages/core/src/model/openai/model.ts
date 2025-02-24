@@ -21,6 +21,7 @@ export class OpenAIModel extends Model<OpenAIConfig> {
       apiKey: config.apiKey,
       organization: config.organizationId,
       baseURL: config.apiBase,
+      dangerouslyAllowBrowser: config.dangerouslyAllowBrowser,
     });
   }
 
