@@ -4,13 +4,14 @@ Welcome to PromptTrail! We're here to make your LLM conversations more structure
 
 ## ✨ What's Cool About PromptTrail?
 
-- � **Smart Templates**: Build conversations like Lego - piece by piece!
+- 📝 **Smart Templates**: Build conversations like Lego - piece by piece!
 - 🔄 **Interactive Loops**: Create dynamic, branching conversations
 - 🛠️ **Tool Power**: Let your LLMs use real functions
 - 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
 - 📝 **Type-Safe**: Full TypeScript support - catch errors before they happen
 - 🌊 **Streaming**: Get responses in real-time
 - 🧩 **Composable**: Mix and match templates for complex flows
+- 🌐 **Browser Ready**: Works seamlessly in both Node.js and browser environments
 
 ## 🚀 Getting Started
 
@@ -223,6 +224,54 @@ const mathChat = new LinearTemplate()
   .addUser("What's 123 + 456?")
   .addAssistant({ model: smartModel });
 ```
+
+### 🌐 Browser Support
+
+PromptTrail works seamlessly in browser environments! Check out our [React Chat Example](examples/react-chat) to see a complete implementation. Here's how to use PromptTrail in a React application:
+
+```typescript
+import { useState } from 'react';
+import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
+
+function ChatComponent() {
+  const [messages, setMessages] = useState([]);
+  const [session, setSession] = useState(() => createSession());
+
+  const sendMessage = async (userInput) => {
+    // Create model with browser support enabled
+    const model = new OpenAIModel({
+      apiKey: 'YOUR_API_KEY', // In production, fetch this securely from your backend
+      modelName: 'gpt-4o-mini',
+      temperature: 0.7,
+      dangerouslyAllowBrowser: true, // Required for browser use
+    });
+
+    // Create chat template
+    const template = new LinearTemplate()
+      .addSystem('You are a helpful AI assistant.')
+      .addUser('User message:', userInput)
+      .addAssistant({ model });
+
+    // Execute template and update session
+    const newSession = await template.execute(session);
+    setSession(newSession);
+
+    // Get assistant's response
+    const response = newSession.getMessagesByType('assistant').slice(-1)[0];
+    if (response) {
+      setMessages(prev => [...prev, { content: response.content, isUser: false }]);
+    }
+  };
+
+  return (
+    <div>
+      {/* Your chat UI components */}
+    </div>
+  );
+}
+```
+
+For a complete example with UI components and error handling, check out the [React Chat Example](examples/react-chat).
 
 ## 📚 API Explorer
 
