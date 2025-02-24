@@ -7,6 +7,7 @@ import {
   SystemTemplate,
   UserTemplate,
   AssistantTemplate,
+  SubroutineTemplate,
 } from '../templates';
 import { CallbackInputSource } from '../input_source';
 import type { Message, ModelConfig } from '../types';
@@ -501,6 +502,105 @@ describe('Templates', () => {
       expect(messages[0].content).toBe('Teaching TypeScript to John');
       expect(messages[1].content).toBe('What is TypeScript?');
       expect(messages[2].content).toBe('TypeScript is a programming language');
+    });
+  });
+
+  describe('SubroutineTemplate', () => {
+    it('should execute child template with separate session', async () => {
+      const session = createSession();
+      session.metadata.set('parentValue', 'parent');
+
+      const childTemplate = new LinearTemplate()
+        .addSystem('Child system message')
+        .addAssistant('Child response');
+
+      const template = new SubroutineTemplate({
+        template: childTemplate,
+        initWith: (parentSession: Session) => {
+          const childSession = createSession();
+          childSession.metadata.set('childValue', 'child');
+          return childSession;
+        },
+      });
+
+      const result = await template.execute(session);
+
+      // Parent session should be unchanged
+      expect(result.metadata.get('parentValue')).toBe('parent');
+      expect(result.messages).toHaveLength(0);
+    });
+
+    it('should merge results with squashWith', async () => {
+      const session = createSession();
+      const childTemplate = new LinearTemplate()
+        .addSystem('Child system message')
+        .addAssistant('Child response');
+
+      const template = new SubroutineTemplate({
+        template: childTemplate,
+        initWith: (parentSession: Session) => createSession(),
+        squashWith: (parentSession: Session, childSession: Session) => {
+          return parentSession.addMessage({
+            type: 'system',
+            content: 'Merged child messages',
+            metadata: createMetadata(),
+          });
+        },
+      });
+
+      const result = await template.execute(session);
+
+      // Parent session should be updated with merged message
+      expect(result.messages).toHaveLength(1);
+      expect(result.getLastMessage()?.content).toBe('Merged child messages');
+    });
+
+    it('should work with nested templates', async () => {
+      const mockModel = new MockModel(['Child response', 'Parent response']);
+
+      const childTemplate = new LinearTemplate()
+        .addSystem('Child context')
+        .addAssistant({ model: mockModel });
+
+      const parentTemplate = new LinearTemplate()
+        .addSystem('Parent context')
+        .addAssistant({ model: mockModel })
+        .addLoop(
+          new LoopTemplate()
+            .addUser('Input:', 'test')
+            .addAssistant('Response')
+            .setExitCondition(() => true),
+        );
+
+      const template = new SubroutineTemplate({
+        template: childTemplate,
+        initWith: (parentSession: Session) => {
+          const childSession = createSession();
+          // Copy relevant metadata from parent to child
+          const context = parentSession.metadata.get('context') as string;
+          childSession.metadata.set('context', context);
+          return childSession;
+        },
+        squashWith: (parentSession: Session, childSession: Session) => {
+          // Merge child messages into parent
+          let updatedSession = parentSession;
+          for (const message of childSession.messages) {
+            updatedSession = updatedSession.addMessage(message);
+          }
+          return updatedSession;
+        },
+      });
+
+      const session = createSession();
+      session.metadata.set('context', 'test context');
+
+      const result = await template.execute(session);
+
+      // Verify messages were merged
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(2);
+      expect(messages[0].content).toBe('Child context');
+      expect(messages[1].content).toBe('Child response');
     });
   });
 });

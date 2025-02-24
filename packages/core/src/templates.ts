@@ -282,3 +282,34 @@ export class LoopTemplate extends Template {
     return currentSession;
   }
 }
+
+/**
+ * Template for nested conversations with separate session context
+ */
+export class SubroutineTemplate extends Template {
+  constructor(
+    private options: {
+      template: Template;
+      initWith: (parentSession: Session) => Session;
+      squashWith?: (parentSession: Session, childSession: Session) => Session;
+    },
+  ) {
+    super();
+  }
+
+  async execute(session: Session): Promise<Session> {
+    // Create child session using initWith function
+    const childSession = this.options.initWith(session);
+
+    // Execute the template with child session
+    const resultSession = await this.options.template.execute(childSession);
+
+    // If squashWith is provided, merge results back to parent session
+    if (this.options.squashWith) {
+      return this.options.squashWith(session, resultSession);
+    }
+
+    // Otherwise just return parent session unchanged
+    return session;
+  }
+}
