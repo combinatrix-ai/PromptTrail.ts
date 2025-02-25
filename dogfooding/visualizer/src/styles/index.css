@@ -1,0 +1,227 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+body {
+  @apply bg-gray-50 text-gray-900;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+    Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+
+#root {
+  height: 100%;
+}
+
+.app-container {
+  @apply h-full flex flex-col;
+}
+
+/* Template Node Component Styles */
+.template-node-wrapper {
+  @apply transition-all duration-200;
+}
+
+.template-node {
+  @apply border rounded shadow hover:shadow-md transition-shadow;
+}
+
+.template-children {
+  @apply border-l-2 border-gray-200 mt-1;
+}
+
+/* Node UI Elements */
+.node {
+  @apply bg-white p-2 rounded shadow border border-gray-200 min-w-[250px];
+}
+
+.node-header {
+  @apply flex justify-between items-center pb-2 border-b border-gray-200 mb-2 font-medium;
+}
+
+.node-content {
+  @apply text-sm;
+}
+
+.node-actions {
+  @apply flex items-center;
+}
+
+.edit-node-btn {
+  @apply text-blue-500 hover:text-blue-700 text-sm font-bold;
+}
+
+.delete-node-btn {
+  @apply text-red-500 hover:text-red-700 text-sm font-bold;
+}
+
+/* Node Type-Specific Styles */
+.node-system {
+  @apply border-l-4 border-l-blue-500;
+}
+
+.node-user {
+  @apply border-l-4 border-l-green-500;
+}
+
+.node-assistant {
+  @apply border-l-4 border-l-purple-500;
+}
+
+.node-loop {
+  @apply border-l-4 border-l-amber-500;
+}
+
+.node-subroutine {
+  @apply border-l-4 border-l-indigo-500;
+}
+
+.composite-node {
+  @apply bg-white p-2 rounded shadow border border-gray-200;
+}
+
+.composite-node-header {
+  @apply flex justify-between items-center pb-2 border-b border-gray-200 mb-2 font-medium;
+}
+
+.composite-node-content {
+  @apply p-2 bg-gray-50 rounded;
+}
+
+.child-nodes-container {
+  @apply space-y-2;
+}
+
+.exit-condition {
+  @apply bg-white p-2 rounded border border-gray-200 mb-2;
+}
+
+.exit-condition-label {
+  @apply text-xs font-medium;
+}
+
+.exit-condition-code {
+  @apply text-xs font-mono bg-gray-50 p-1 rounded;
+}
+
+.child-nodes-label {
+  @apply text-xs font-medium mb-1;
+}
+
+.child-nodes {
+  @apply space-y-1;
+}
+
+.child-node-reference {
+  @apply text-xs bg-white p-1 rounded border border-gray-200 flex items-center;
+}
+
+.child-node-index {
+  @apply mr-1 font-medium;
+}
+
+.child-node-type {
+  @apply mr-2 px-1 py-0.5 bg-gray-100 rounded;
+}
+
+.child-node-id {
+  @apply text-gray-500 text-xs;
+}
+
+.no-children-message {
+  @apply text-xs text-gray-500 italic;
+}
+
+/* Template Content Styles */
+.system-template-content,
+.user-template-content,
+.assistant-template-content,
+.loop-template-content,
+.subroutine-template-content {
+  @apply text-sm;
+}
+
+/* Property Panel Styles */
+.template-property-panel {
+  @apply h-full overflow-y-auto;
+}
+
+.property-panel {
+  @apply bg-white border border-gray-200 rounded shadow h-full overflow-hidden flex flex-col;
+}
+
+.property-panel-header {
+  @apply bg-gray-100 p-3 border-b font-medium flex justify-between items-center;
+}
+
+.property-panel-content {
+  @apply p-4 overflow-y-auto flex-grow;
+}
+
+.property-group {
+  @apply mb-4;
+}
+
+.property-label {
+  @apply block text-sm font-medium mb-1;
+}
+
+.property-input {
+  @apply w-full p-2 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500;
+}
+
+/* Code Panel Styles */
+.template-code-panel {
+  @apply h-full;
+}
+
+.code-panel-header {
+  @apply bg-gray-100 p-2 border-b flex justify-between items-center;
+}
+
+/* Toolbar Styles */
+.template-toolbar {
+  @apply bg-white shadow-sm z-10 flex items-center p-3;
+}
+
+/* Form Control Styles */
+input,
+textarea,
+select {
+  @apply rounded border border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50;
+}
+
+button {
+  @apply transition-colors duration-200;
+}
+
+.btn {
+  @apply px-3 py-1 rounded text-sm font-medium;
+}
+
+.btn-primary {
+  @apply bg-blue-500 text-white hover:bg-blue-600;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 text-gray-700 hover:bg-gray-300;
+}
+
+.add-child-btn {
+  @apply text-xs bg-green-500 text-white px-2 py-0.5 rounded hover:bg-green-600;
+}
+
+.expand-toggle {
+  @apply text-xs bg-gray-200 text-gray-700 px-1 rounded hover:bg-gray-300;
+}
+
+/* Utility Classes */
+.font-mono {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+}

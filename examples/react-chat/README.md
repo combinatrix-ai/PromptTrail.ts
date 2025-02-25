@@ -15,16 +15,19 @@ This is a web example of the PromptTrail library, demonstrating how to use Promp
 ## Getting Started
 
 1. Make sure you're in the react-chat directory:
+
 ```bash
 cd examples/react-chat
 ```
 
 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 3. Start the development server:
+
 ```bash
 pnpm run dev
 ```
@@ -41,6 +44,7 @@ pnpm run dev
 ## Implementation Details
 
 This example demonstrates:
+
 - How to integrate PromptTrail in a web application
 - Using PromptTrail's template system for chat
 - Managing chat state in React
