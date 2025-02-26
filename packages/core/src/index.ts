@@ -22,3 +22,4 @@ export * from './model/openai/types';
 // Anthropic implementation
 export * from './model/anthropic/model';
 export * from './model/anthropic/types';
+export * from './model/anthropic/mcp';

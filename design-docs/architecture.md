@@ -67,8 +67,13 @@ class AnthropicModel extends Model {
       modelName: config.modelName,
       temperature: config.temperature,
       apiKey: config.apiKey,
+      mcpServers: config.mcpServers, // MCP server configurations
     });
   }
+  
+  // MCP integration methods
+  private async initializeMcpClients(serverConfigs: MCPServerConfig[]): Promise<void>;
+  getAllTools(): Tool<SchemaType>[]; // Get all tools including MCP tools
 }
 ```
 
@@ -503,6 +508,55 @@ function extractPattern<T extends Record<string, unknown>>(
 }
 ```
 
+### 10. MCP Integration
+
+Anthropic Model Context Protocol (MCP) integration for accessing external tools and resources.
+
+```typescript
+/**
+ * MCP server configuration
+ */
+interface MCPServerConfig {
+  url: string;
+  name?: string;
+  version?: string;
+}
+
+/**
+ * MCP client wrapper for PromptTrail
+ */
+class MCPClientWrapper {
+  constructor(config: MCPServerConfig) {}
+  
+  // Connection management
+  async connect(): Promise<void>;
+  async disconnect(): Promise<void>;
+  
+  // Tool management
+  async loadTools(): Promise<Tool<SchemaType>[]>;
+  getTool(name: string): Tool<SchemaType> | undefined;
+  getAllTools(): Tool<SchemaType>[];
+  
+  // Resource management
+  async readResource(uri: string): Promise<string>;
+  async listResources(): Promise<{ uri: string; name: string; description?: string }[]>;
+  
+  // Prompt management
+  async getPrompt(name: string, params?: Record<string, unknown>): Promise<{ role: string; content: string }[]>;
+}
+
+// Enhanced Anthropic configuration
+interface AnthropicConfig extends ModelConfig {
+  readonly apiKey: string;
+  readonly apiBase?: string;
+  readonly modelName: string;
+  readonly temperature: number;
+  readonly maxTokens?: number;
+  readonly tools?: readonly Tool<SchemaType>[];
+  readonly mcpServers?: MCPServerConfig[]; // MCP server configurations
+}
+```
+
 ## Flow Examples
 
 ### 1. Basic Chat
@@ -738,6 +792,37 @@ const template = new LinearTemplate()
   }));
 ```
 
+### 6. MCP Integration
+
+```typescript
+// Create an Anthropic model with MCP integration
+const model = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.7,
+  mcpServers: [
+    {
+      url: 'http://localhost:8080', // MCP server URL
+      name: 'github-mcp-server',
+      version: '1.0.0',
+    },
+  ],
+});
+
+// Create a template that uses the model with MCP tools
+const template = new LinearTemplate()
+  .addSystem(`You are a helpful assistant with access to external tools.
+             You can use these tools when needed to provide accurate information.`)
+  .addUser('Can you check the latest commits in our repository?', '')
+  .addAssistant({ model });
+
+// Execute the template
+const session = await template.execute(createSession());
+
+// The model will automatically discover and use tools from the MCP server
+// For example, it might use a git_list_commits tool to fetch commit information
+```
+
 ## Key Features
 
 1. **Type Safety**
@@ -772,7 +857,12 @@ const template = new LinearTemplate()
    - Transform free-form LLM outputs to structured data
    - Chain multiple transformers for complex extraction
 
-6. **Developer Experience**
+6. **External Tool Integration**
+   - Native function calling with OpenAI
+   - Anthropic MCP support for external tools and resources
+   - Automatic tool discovery and loading
+
+7. **Developer Experience**
    - Builder pattern API
    - Built-in debugging
    - Clear error messages

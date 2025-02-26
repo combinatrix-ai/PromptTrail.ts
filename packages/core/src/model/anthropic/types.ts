@@ -1,4 +1,5 @@
 import type { ModelConfig, Tool, SchemaType } from '../../types';
+import type { MCPServerConfig } from './mcp';
 
 export interface AnthropicConfig extends ModelConfig {
   readonly apiKey: string;
@@ -7,6 +8,7 @@ export interface AnthropicConfig extends ModelConfig {
   readonly temperature: number;
   readonly maxTokens?: number;
   readonly tools?: readonly Tool<SchemaType>[];
+  readonly mcpServers?: MCPServerConfig[];
 }
 
 export interface AnthropicTool {

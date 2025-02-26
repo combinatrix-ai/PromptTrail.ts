@@ -12,7 +12,7 @@ PromptTrail provides a robust TypeScript framework for creating structured, type
 - 📝 **Template-Based** - Composable conversation building blocks
 - 🔄 **Stateless Architecture** - Immutable sessions for predictable state management
 - 🛠️ **Tool Integration** - First-class support for function calling
-- 🔌 **Multi-Provider** - Works with OpenAI, Anthropic, and extensible for more
+- 🔌 **Multi-Provider** - Works with OpenAI, Anthropic (with MCP support), and extensible for more
 - 🌊 **Streaming Support** - Real-time response streaming
 - 🧩 **Composable Patterns** - Mix and match templates for complex flows
 - 📊 **Structured Data Extraction** - Extract and transform data from LLM outputs
@@ -125,6 +125,20 @@ const claude = new AnthropicModel({
   apiKey: process.env.ANTHROPIC_API_KEY,
   modelName: 'claude-3-5-haiku-latest',
   temperature: 0.5,
+});
+
+// Anthropic with MCP integration
+const claudeWithMCP = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.7,
+  mcpServers: [
+    {
+      url: 'http://localhost:8080', // Your MCP server URL
+      name: 'github-mcp-server',
+      version: '1.0.0',
+    },
+  ],
 });
 ```
 
@@ -345,6 +359,44 @@ const mathChat = new LinearTemplate()
   .addAssistant({ model: smartModel });
 ```
 
+### 🔌 Anthropic MCP Integration
+
+Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
+
+```typescript
+import { 
+  AnthropicModel, 
+  createSession, 
+  LinearTemplate 
+} from '@prompttrail/core';
+
+// Create an Anthropic model with MCP integration
+const model = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.7,
+  mcpServers: [
+    {
+      url: 'http://localhost:8080', // Your MCP server URL
+      name: 'github-mcp-server',
+      version: '1.0.0',
+    },
+  ],
+});
+
+// Create a template that uses the model with MCP tools
+const template = new LinearTemplate()
+  .addSystem(`You are a helpful assistant with access to external tools.
+             You can use these tools when needed to provide accurate information.`)
+  .addUser('Can you check the weather in San Francisco?', '')
+  .addAssistant({ model });
+
+// Execute the template
+const session = await template.execute(createSession());
+```
+
+MCP allows Claude to access external tools and resources like GitHub repositories, databases, or custom APIs through a standardized protocol. PromptTrail automatically discovers and loads tools from connected MCP servers, making them available to Claude during conversations.
+
 ## 🌐 Browser Support
 
 PromptTrail works in browser environments with a simple configuration flag:
@@ -378,6 +430,7 @@ import {
   createSession,    // Session factory
   Tool,             // Function calling
   CLIInputSource,   // Command-line input
+  MCPClientWrapper, // Anthropic MCP client
   
   // Data extraction
   extractMarkdown,  // Extract structured data from markdown
