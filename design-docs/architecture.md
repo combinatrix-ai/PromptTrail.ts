@@ -146,6 +146,12 @@ class LinearTemplate extends Template {
   ): this;
   addAssistant(options?: { model?: Model }): this;
   addLoop(loop: LoopTemplate): this;
+  addIf(options: {
+    condition: (session: Session) => boolean;
+    thenTemplate: Template;
+    elseTemplate?: Template;
+  }): this;
+  addTransformer(transformer: SessionTransformer<any, any>): this;
   async execute(session: Session): Promise<Session>;
 }
 
@@ -169,6 +175,16 @@ class SubroutineTemplate extends Template {
     template: Template;
     initWith: (parentSession: Session) => Session;
     squashWith?: (parentSession: Session, childSession: Session) => Session;
+  }) {}
+  async execute(session: Session): Promise<Session>;
+}
+
+// Conditional template for branching logic
+class IfTemplate extends Template {
+  constructor(options: {
+    condition: (session: Session) => boolean;
+    thenTemplate: Template;
+    elseTemplate?: Template;
   }) {}
   async execute(session: Session): Promise<Session>;
 }
@@ -268,6 +284,89 @@ interface InputSource {
 // Implementations
 class CLIInputSource implements InputSource { ... }
 class CallbackInputSource implements InputSource { ... }
+```
+
+### 8. SessionTransformer
+
+Transforms sessions to extract structured data from LLM outputs.
+
+```typescript
+/**
+ * Session transformer interface
+ */
+interface SessionTransformer<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput
+> {
+  transform(session: Session<TInput>): Promise<Session<TOutput>> | Session<TOutput>;
+}
+
+// Function-based transformers
+type SessionTransformerFn<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput
+> = (session: Session<TInput>) => Promise<Session<TOutput>> | Session<TOutput>;
+
+// Create a transformer from a function
+function createTransformer<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput
+>(
+  transformFn: SessionTransformerFn<TInput, TOutput>
+): SessionTransformer<TInput, TOutput> {
+  return {
+    transform: (session) => transformFn(session)
+  };
+}
+
+// Integration with templates
+class LinearTemplate extends Template {
+  // Add a transformer to the template sequence
+  addTransformer<U extends Record<string, unknown>>(
+    transformer: SessionTransformer<any, U>
+  ): this {
+    this.templates.push(createTransformerTemplate(transformer));
+    return this;
+  }
+}
+```
+
+#### Specialized Extractors
+
+```typescript
+// Markdown extractor for headings and code blocks
+function extractMarkdown<T extends Record<string, unknown>>(
+  options: {
+    messageTypes?: MessageRole[];  // Default to ['assistant']
+    headingMap?: Record<string, keyof T>;  // Map heading to metadata key
+    codeBlockMap?: Record<string, keyof T>;  // Map language to metadata key
+  }
+): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
+  return createTransformer((session) => {
+    // Implementation that extracts markdown sections and code blocks
+    // and returns a new session with updated metadata
+  });
+}
+
+// Pattern extractor for regex-based extraction
+function extractPattern<T extends Record<string, unknown>>(
+  options: {
+    pattern: RegExp | string;
+    key: keyof T;
+    transform?: (match: string) => unknown;
+    defaultValue?: unknown;
+  } | Array<{
+    pattern: RegExp | string;
+    key: keyof T;
+    transform?: (match: string) => unknown;
+    defaultValue?: unknown;
+  }>
+): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
+  return createTransformer((session) => {
+    // Implementation that extracts data based on patterns
+    // and returns a new session with updated metadata
+  });
+}
 ```
 
 ## Flow Examples
@@ -388,6 +487,123 @@ const mainFlow = new LinearTemplate()
 const session = await mainFlow.execute(createSession());
 ```
 
+### 4. Conditional Branching
+
+```typescript
+// Create a template with conditional branching
+const conditionalTemplate = new LinearTemplate()
+  .addSystem("I'm a programming assistant")
+  .addUser("Help me with: ${task}")
+  .addAssistant({ model })
+  .addIf({
+    condition: (session) => 
+      session.getLastMessage()?.content.toLowerCase().includes('error'),
+    thenTemplate: new LinearTemplate()
+      .addSystem("Switching to debugging mode")
+      .addUser("Please explain the error in detail")
+      .addAssistant({ model }),
+    elseTemplate: new LinearTemplate()
+      .addSystem("Continuing with implementation")
+      .addUser("Show me how to implement this")
+      .addAssistant({ model })
+  });
+
+// Execute with different tasks
+const debugSession = await conditionalTemplate.execute(
+  createSession({
+    metadata: { task: "I'm getting a TypeError in my code" }
+  })
+);
+// Will execute the thenTemplate branch
+
+const implementSession = await conditionalTemplate.execute(
+  createSession({
+    metadata: { task: "I need to create a sorting algorithm" }
+  })
+);
+// Will execute the elseTemplate branch
+```
+
+### 5. Metadata Extraction
+
+```typescript
+// Extract code blocks from LLM responses
+const codeTemplate = new LinearTemplate()
+  .addSystem("You're a TypeScript expert. Include code in ```typescript blocks.")
+  .addUser("Write a function to calculate the factorial of a number.")
+  .addAssistant({ model })
+  .addTransformer(extractMarkdown({
+    codeBlockMap: { 'typescript': 'factorialCode' }
+  }))
+  .addUser("Now optimize it for performance.")
+  .addAssistant({ model })
+  .addTransformer(extractMarkdown({
+    codeBlockMap: { 'typescript': 'optimizedCode' }
+  }));
+
+const session = await codeTemplate.execute(createSession());
+console.log("Original code:", session.metadata.get('factorialCode'));
+console.log("Optimized code:", session.metadata.get('optimizedCode'));
+
+// Extract structured analysis from LLM responses
+const analysisTemplate = new LinearTemplate()
+  .addSystem("You're a code reviewer. Use ## headings for different sections.")
+  .addUser("Analyze this function: function add(a,b) { return a+b; }")
+  .addAssistant({ model })
+  .addTransformer(extractMarkdown({
+    headingMap: {
+      'Summary': 'summary',
+      'Strengths': 'strengths',
+      'Weaknesses': 'weaknesses',
+      'Suggestions': 'suggestions'
+    }
+  }));
+
+const session = await analysisTemplate.execute(createSession());
+console.log("Analysis summary:", session.metadata.get('summary'));
+console.log("Suggestions:", session.metadata.get('suggestions'));
+
+// Extract data using regex patterns
+const jsonTemplate = new LinearTemplate()
+  .addSystem("Generate user profile data in JSON format")
+  .addUser("Create a profile for a software developer")
+  .addAssistant({ model })
+  .addTransformer(extractPattern({
+    pattern: /```json\n([\s\S]*?)\n```/,
+    key: 'profile',
+    transform: (json) => JSON.parse(json)
+  }));
+
+const session = await jsonTemplate.execute(createSession());
+const profile = session.metadata.get('profile');
+console.log("Name:", profile.name);
+console.log("Skills:", profile.skills);
+
+// Custom transformer for specific needs
+const customTransformer = createTransformer((session) => {
+  const lastMessage = session.getLastMessage();
+  if (lastMessage?.type === 'assistant') {
+    // Extract specific data
+    const data = processMessage(lastMessage.content);
+    // Return updated session
+    return session.updateMetadata({ extractedData: data });
+  }
+  return session;
+});
+
+// Chain multiple transformers
+const template = new LinearTemplate()
+  .addSystem("I'm a coding assistant")
+  .addUser("Write a factorial function with explanation")
+  .addAssistant({ model })
+  .addTransformer(extractMarkdown({
+    codeBlockMap: { 'typescript': 'code' }
+  }))
+  .addTransformer(extractMarkdown({
+    headingMap: { 'Explanation': 'explanation' }
+  }));
+```
+
 ## Key Features
 
 1. **Type Safety**
@@ -415,7 +631,14 @@ const session = await mainFlow.execute(createSession());
    - Custom input sources
    - Extensible template system
 
-5. **Developer Experience**
+5. **Structured Data Extraction**
+
+   - Extract markdown sections and code blocks
+   - Pattern-based extraction with regex
+   - Transform free-form LLM outputs to structured data
+   - Chain multiple transformers for complex extraction
+
+6. **Developer Experience**
    - Builder pattern API
    - Built-in debugging
    - Clear error messages
@@ -444,3 +667,10 @@ const session = await mainFlow.execute(createSession());
    - Keep templates focused and composable
    - Pass dependencies explicitly
    - Use SubroutineTemplate for complex flows
+
+5. **Metadata Extraction**
+   - Place transformers immediately after the messages they should process
+   - Use multiple specialized transformers instead of one complex transformer
+   - Provide default values for optional extractions
+   - Document extraction patterns for reliable extraction
+   - Leverage TypeScript's type system for type safety
