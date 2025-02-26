@@ -8,6 +8,7 @@ import {
   UserTemplate,
   AssistantTemplate,
   SubroutineTemplate,
+  IfTemplate,
 } from '../templates';
 import { CallbackInputSource } from '../input_source';
 import type { Message, ModelConfig } from '../types';
@@ -600,6 +601,225 @@ describe('Templates', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].content).toBe('Child context');
       expect(messages[1].content).toBe('Child response');
+    });
+  });
+
+  describe('IfTemplate', () => {
+    it('should execute thenTemplate when condition is true', async () => {
+      // Create a session with a condition that will be true
+      const session = createSession();
+      session.metadata.set('condition', true);
+
+      // Create templates for then and else branches
+      const thenTemplate = new SystemTemplate({
+        content: 'Then branch executed',
+      });
+      const elseTemplate = new SystemTemplate({
+        content: 'Else branch executed',
+      });
+
+      // Create the if template
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) =>
+          Boolean(session.metadata.get('condition')),
+        thenTemplate,
+        elseTemplate,
+      });
+
+      // Execute the template
+      const result = await ifTemplate.execute(session);
+
+      // Verify the then branch was executed
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('Then branch executed');
+    });
+
+    it('should execute elseTemplate when condition is false', async () => {
+      // Create a session with a condition that will be false
+      const session = createSession();
+      session.metadata.set('condition', false);
+
+      // Create templates for then and else branches
+      const thenTemplate = new SystemTemplate({
+        content: 'Then branch executed',
+      });
+      const elseTemplate = new SystemTemplate({
+        content: 'Else branch executed',
+      });
+
+      // Create the if template
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) =>
+          Boolean(session.metadata.get('condition')),
+        thenTemplate,
+        elseTemplate,
+      });
+
+      // Execute the template
+      const result = await ifTemplate.execute(session);
+
+      // Verify the else branch was executed
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('Else branch executed');
+    });
+
+    it('should return session unchanged when condition is false and no elseTemplate is provided', async () => {
+      // Create a session with a condition that will be false
+      const session = createSession();
+      session.metadata.set('condition', false);
+
+      // Create template for then branch only
+      const thenTemplate = new SystemTemplate({
+        content: 'Then branch executed',
+      });
+
+      // Create the if template without an else branch
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) =>
+          Boolean(session.metadata.get('condition')),
+        thenTemplate,
+      });
+
+      // Execute the template
+      const result = await ifTemplate.execute(session);
+
+      // Verify the session is unchanged (no messages added)
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(0);
+    });
+
+    it('should work with complex conditions based on session state', async () => {
+      // Create a session with messages
+      let session = createSession();
+      session = session.addMessage({
+        type: 'user',
+        content: 'Hello',
+        metadata: createMetadata(),
+      });
+
+      // Create templates for then and else branches
+      const thenTemplate = new SystemTemplate({ content: 'User said hello' });
+      const elseTemplate = new SystemTemplate({
+        content: 'User said something else',
+      });
+
+      // Create the if template with a condition that checks message content
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) => {
+          const lastMessage = session.getLastMessage();
+          return (
+            lastMessage?.type === 'user' && lastMessage.content === 'Hello'
+          );
+        },
+        thenTemplate,
+        elseTemplate,
+      });
+
+      // Execute the template
+      const result = await ifTemplate.execute(session);
+
+      // Verify the then branch was executed
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(2); // Original message + new message
+      expect(messages[1].content).toBe('User said hello');
+    });
+
+    it('should work with template interpolation', async () => {
+      // Create a session with metadata
+      const session = createSession();
+      session.metadata.set('username', 'John');
+      session.metadata.set('isAdmin', true);
+
+      // Create templates with interpolation
+      const thenTemplate = new SystemTemplate({
+        content: 'Welcome admin ${username}!',
+      });
+      const elseTemplate = new SystemTemplate({
+        content: 'Welcome user ${username}!',
+      });
+
+      // Create the if template
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) =>
+          Boolean(session.metadata.get('isAdmin')),
+        thenTemplate,
+        elseTemplate,
+      });
+
+      // Execute the template
+      const result = await ifTemplate.execute(session);
+
+      // Verify the interpolated content
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('Welcome admin John!');
+    });
+
+    it('should integrate with LinearTemplate', async () => {
+      // Create a session with metadata
+      const session = createSession();
+      session.metadata.set('isLoggedIn', true);
+
+      // Create a LinearTemplate with an IfTemplate
+      const template = new LinearTemplate()
+        .addSystem('Welcome to the system')
+        .addUser('Status check', 'Status check')
+        .addAssistant('Checking status...');
+
+      // Add an IfTemplate to the LinearTemplate
+      const ifTemplate = new IfTemplate({
+        condition: (session: Session) =>
+          Boolean(session.metadata.get('isLoggedIn')),
+        thenTemplate: new SystemTemplate({ content: 'User is logged in' }),
+        elseTemplate: new SystemTemplate({ content: 'User is not logged in' }),
+      });
+
+      // Add the IfTemplate to the LinearTemplate
+      template['templates'].push(ifTemplate);
+
+      // Execute the template
+      const result = await template.execute(session);
+
+      // Verify the conversation flow
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(4);
+      expect(messages[0].content).toBe('Welcome to the system');
+      expect(messages[1].content).toBe('Status check');
+      expect(messages[2].content).toBe('Checking status...');
+      expect(messages[3].content).toBe('User is logged in');
+    });
+
+    it('should work with LinearTemplate.addIf method', async () => {
+      // Create a session with metadata
+      const session = createSession();
+      session.metadata.set('isLoggedIn', true);
+
+      // Create a LinearTemplate with the addIf method
+      const template = new LinearTemplate()
+        .addSystem('Welcome to the system')
+        .addUser('Status check', 'Status check')
+        .addAssistant('Checking status...')
+        .addIf({
+          condition: (session: Session) =>
+            Boolean(session.metadata.get('isLoggedIn')),
+          thenTemplate: new SystemTemplate({ content: 'User is logged in' }),
+          elseTemplate: new SystemTemplate({
+            content: 'User is not logged in',
+          }),
+        });
+
+      // Execute the template
+      const result = await template.execute(session);
+
+      // Verify the conversation flow
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(4);
+      expect(messages[0].content).toBe('Welcome to the system');
+      expect(messages[1].content).toBe('Status check');
+      expect(messages[2].content).toBe('Checking status...');
+      expect(messages[3].content).toBe('User is logged in');
     });
   });
 });

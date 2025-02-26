@@ -208,6 +208,21 @@ export class LinearTemplate extends Template {
   }
 
   /**
+   * Add a conditional template to the sequence
+   *
+   * @param options The if template options
+   * @returns The template instance for chaining
+   */
+  addIf(options: {
+    condition: (session: Session) => boolean;
+    thenTemplate: Template;
+    elseTemplate?: Template;
+  }): this {
+    this.templates.push(new IfTemplate(options));
+    return this;
+  }
+
+  /**
    * Add a transformer to the template sequence
    *
    * Transformers can extract structured data from messages and store it in the session metadata.
@@ -341,5 +356,29 @@ export class SubroutineTemplate extends Template {
 
     // Otherwise just return parent session unchanged
     return session;
+  }
+}
+
+/**
+ * Template for conditional execution based on a condition
+ */
+export class IfTemplate extends Template {
+  constructor(
+    private options: {
+      condition: (session: Session) => boolean;
+      thenTemplate: Template;
+      elseTemplate?: Template;
+    },
+  ) {
+    super();
+  }
+
+  async execute(session: Session): Promise<Session> {
+    if (this.options.condition(session)) {
+      return this.options.thenTemplate.execute(session);
+    } else if (this.options.elseTemplate) {
+      return this.options.elseTemplate.execute(session);
+    }
+    return session; // If no else template and condition is false, return session unchanged
   }
 }
