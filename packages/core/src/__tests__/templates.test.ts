@@ -13,13 +13,12 @@ import { CallbackInputSource } from '../input_source';
 import type { Message, ModelConfig } from '../types';
 import { Model } from '../model/base';
 import { createMetadata } from '../metadata';
-import { createTemperature } from '../types';
 
 class MockModel extends Model<ModelConfig> {
   constructor(private responses: string[]) {
     super({
       modelName: 'mock-model',
-      temperature: createTemperature(0),
+      temperature: 0,
     });
   }
 

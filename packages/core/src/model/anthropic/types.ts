@@ -1,10 +1,10 @@
-import type { ModelConfig, Temperature, Tool, SchemaType } from '../../types';
+import type { ModelConfig, Tool, SchemaType } from '../../types';
 
 export interface AnthropicConfig extends ModelConfig {
   readonly apiKey: string;
   readonly apiBase?: string;
   readonly modelName: string;
-  readonly temperature: Temperature;
+  readonly temperature: number;
   readonly maxTokens?: number;
   readonly tools?: readonly Tool<SchemaType>[];
 }

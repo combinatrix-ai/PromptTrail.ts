@@ -9,7 +9,6 @@ import type {
 } from '../types';
 import { createTool } from '../types';
 import { createMetadata } from '../metadata';
-import { createTemperature } from '../types';
 
 // Create a calculator tool for testing function calling
 const calculatorTool = createTool({
@@ -35,7 +34,7 @@ describe('AnthropicModel', () => {
   const model = new AnthropicModel({
     apiKey: process.env.ANTHROPIC_API_KEY!,
     modelName: 'claude-3-haiku-20240307',
-    temperature: createTemperature(0.7),
+    temperature: 0.7,
   });
 
   it('should generate a response', async () => {
@@ -125,7 +124,7 @@ describe('AnthropicModel', () => {
     const modelWithTools = new AnthropicModel({
       apiKey: process.env.ANTHROPIC_API_KEY!,
       modelName: 'claude-3-haiku-20240307',
-      temperature: createTemperature(0.7),
+      temperature: 0.7,
       tools: [calculatorTool],
     });
 

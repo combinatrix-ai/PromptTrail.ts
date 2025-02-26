@@ -93,17 +93,7 @@ export const isToolResultMessage = (
 export const isControlMessage = (message: Message): message is ControlMessage =>
   message.type === 'control';
 
-/**
- * Branded type for temperature to ensure type safety
- */
-export type Temperature = number & { readonly __brand: unique symbol };
-
-export const createTemperature = (value: number): Temperature => {
-  if (value < 0 || value > 2) {
-    throw new Error('Temperature must be between 0 and 2');
-  }
-  return value as Temperature;
-};
+// Temperature is now just a regular number
 
 // Import Tool type first
 import type { Tool, SchemaType, ToolResult } from './tool';
@@ -115,7 +105,7 @@ export type { Tool, SchemaType, ToolResult };
  */
 export interface ModelConfig {
   readonly modelName: string;
-  readonly temperature: Temperature;
+  readonly temperature: number;
   readonly maxTokens?: number;
   readonly topP?: number;
   readonly topK?: number;
