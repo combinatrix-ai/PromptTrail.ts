@@ -1,127 +1,102 @@
 # 🚀 PromptTrail
 
-Welcome to PromptTrail! We're here to make your LLM conversations more structured, type-safe, and fun. Whether you're building a chatbot, coding assistant, or any AI-powered application, PromptTrail helps you create robust conversations with popular LLM providers like OpenAI and Anthropic.
+A type-safe, composable framework for building structured LLM conversations with OpenAI and Anthropic models.
 
-## ✨ What's Cool About PromptTrail?
+## 📋 Overview
 
-- 📝 **Smart Templates**: Build conversations like Lego - piece by piece!
-- 🔄 **Interactive Loops**: Create dynamic, branching conversations
-- 🛠️ **Tool Power**: Let your LLMs use real functions
-- 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
-- 📝 **Type-Safe**: Full TypeScript support - catch errors before they happen
-- 🌊 **Streaming**: Get responses in real-time
-- 🧩 **Composable**: Mix and match templates for complex flows
-- 🌐 **Browser Ready**: Works seamlessly in both Node.js and browser environments
+PromptTrail provides a robust TypeScript framework for creating structured, type-safe interactions with Large Language Models. It enables developers to build complex conversation flows, implement tool usage, and manage chat state with full TypeScript support.
 
-## 🚀 Getting Started
+## ✨ Features
 
-First, let's get PromptTrail installed:
+- 🔒 **Type-Safe** - Full TypeScript support with inference and generics
+- 📝 **Template-Based** - Composable conversation building blocks
+- 🔄 **Stateless Architecture** - Immutable sessions for predictable state management
+- 🛠️ **Tool Integration** - First-class support for function calling
+- 🔌 **Multi-Provider** - Works with OpenAI, Anthropic, and extensible for more
+- 🌊 **Streaming Support** - Real-time response streaming
+- 🧩 **Composable Patterns** - Mix and match templates for complex flows
+- 🌐 **Browser Compatible** - Works in both Node.js and browser environments
+
+## 🔧 Installation
 
 ```bash
+# Using pnpm (recommended)
 pnpm add @prompttrail/core
+
+# Using npm
+npm install @prompttrail/core
+
+# Using yarn
+yarn add @prompttrail/core
 ```
 
-Here's a quick CLI chat example:
+## 🚀 Quick Start
 
 ```typescript
 import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
 
-// Set up your model
+// Initialize model with your API key
 const model = new OpenAIModel({
   apiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-4o-mini',
 });
 
-// Create an interactive chat
+// Create a simple conversation template
 const chat = new LinearTemplate()
-  .addSystem("Hi! I'm a friendly assistant.")
-  .addLoop(
-    new LoopTemplate()
-      .addUser("What's on your mind? (type 'exit' to end)")
-      .addAssistant({ model })
-      .setExitCondition(
-        (session) => session.getLastMessage()?.content.toLowerCase() === 'exit',
-      ),
-  );
+  .addSystem("I'm a helpful assistant.")
+  .addUser("What's TypeScript?")
+  .addAssistant({ model });
 
-// Start chatting with print mode enabled
-const session = await chat.execute(
-  createSession({ print: true }), // Prints conversation flow
-);
+// Execute the template
+const session = await chat.execute(createSession());
+console.log(session.getLastMessage()?.content);
 ```
 
-## 🎨 Building Conversations
+## 📘 Usage
 
-### 🏗️ Templates: Your Building Blocks
+### 🏗️ Building Templates
 
-Templates are like conversation blueprints, with support for metadata interpolation:
+Templates are the core building blocks for creating conversation flows:
 
 ```typescript
 // Create a personalized chat with metadata interpolation
 interface UserPreferences {
   name: string;
   language: string;
-  expertise: {
-    level: 'beginner' | 'intermediate' | 'expert';
-    topics: string[];
-  };
+  expertise: string[];
 }
 
 const personalizedChat = new LinearTemplate()
   .addSystem("I'll adapt to your preferences.")
-  .addAssistant('Hello ${name}! How can I help with ${expertise.topics[0]}?') // Context with interpolation
-  .addUser({ inputSource: new CLIInputSource() }) // Get real user input
-  .addAssistant('Should I explain in ${language}?') // Predefined response with interpolation
-  .addUser('Yes, please explain in ${language}') // Impersonate user
-  .addAssistant({ model }); // Let model generate response
+  .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?')
+  .addUser({ inputSource: new CLIInputSource() })
+  .addAssistant({ model });
 
-// Use with session metadata
+// Execute with session metadata
 const session = await personalizedChat.execute(
   createSession<UserPreferences>({
     metadata: {
       name: 'Alice',
       language: 'TypeScript',
-      expertise: {
-        level: 'intermediate',
-        topics: ['generics', 'type inference'],
-      },
+      expertise: ['generics', 'type inference'],
     },
-    print: true, // See the conversation flow
+    print: true, // Enable console logging
   }),
 );
 ```
 
-### 🤖 Choosing Your AI Friend
+### 🔄 Interactive Loops
 
-Pick your favorite AI and customize how it thinks:
-
-```typescript
-// Chat with OpenAI
-const gpt4 = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
-  temperature: 0.7, // Make it more creative!
-});
-
-// Chat with Claude
-const claude = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
-});
-```
-
-### 🔄 Making Interactive Chats
-
-Create conversations that adapt and respond:
+Create dynamic, branching conversations with loop templates:
 
 ```typescript
 const quiz = new LinearTemplate()
-  .addSystem("I'm your friendly TypeScript quiz master!")
+  .addSystem("I'm your TypeScript quiz master!")
   .addLoop(
     new LoopTemplate()
-      .addUser('Ready for a TypeScript question?')
+      .addUser('Ready for a question?')
       .addAssistant({ model })
-      .addUser('Here is my answer:', 'interfaces are awesome!')
+      .addUser('My answer:', 'interfaces are awesome!')
       .addAssistant({ model })
       .addUser('Another question? (yes/no)', 'yes')
       .setExitCondition(
@@ -130,89 +105,113 @@ const quiz = new LinearTemplate()
   );
 ```
 
-### 💾 Managing Chat History
+### 🤖 Model Configuration
 
-Keep track of your conversations with type-safe sessions:
+Configure models with provider-specific options:
 
 ```typescript
-// Start a fresh chat
-const session = createSession();
-
-// Enable printing for CLI apps
-const cliSession = createSession({
-  print: true, // Prints conversation flow
+// OpenAI configuration
+const gpt4 = new OpenAIModel({
+  apiKey: process.env.OPENAI_API_KEY,
+  modelName: 'gpt-4o-mini',
+  temperature: 0.7,
+  maxTokens: 1000,
 });
 
-// Add some personality
-interface ChatStyle {
-  tone: 'casual' | 'professional';
-  emoji: boolean;
-}
+// Anthropic configuration
+const claude = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.5,
+});
+```
 
-const funChat = createSession<ChatStyle>({
+### 💾 Session Management
+
+Manage conversation state with immutable sessions and in-place templating:
+
+```typescript
+// Create a session with metadata for templating
+const session = createSession({
   metadata: {
-    tone: 'casual',
-    emoji: true,
+    userId: 'user-123',
+    language: 'TypeScript',
+    tone: 'professional',
+    topics: ['generics', 'type inference', 'utility types'],
   },
-  print: true, // See the conversation unfold
+  print: true, // Enable console logging
 });
 
-// Add messages, get history, validate state
-session.addMessage({
+// Templates use ${variable} syntax for direct interpolation
+const template = new LinearTemplate()
+  .addSystem("I'll use ${tone} language to explain ${topics[0]}")
+  .addAssistant("Let me explain ${topics[0]} in ${language}")
+  .addUser("Can you also cover ${topics[1]}?");
+
+// Sessions are immutable - operations return new instances
+const updatedSession = session.addMessage({
   type: 'user',
   content: 'Hello!',
-}); // Returns new session (immutable!)
-
-session.getLastMessage(); // Latest message
-session.getMessagesByType('user'); // All user messages
-
-// Update preferences
-const proMode = session.updateMetadata({
-  tone: 'professional',
 });
 
-// Save for later
-const json = session.toJSON();
+// Query session state
+const lastMessage = updatedSession.getLastMessage();
+const userMessages = updatedSession.getMessagesByType('user');
+
+// Update metadata (returns new session)
+const newSession = updatedSession.updateMetadata({
+  tone: 'casual',
+});
+
+// Serialize/deserialize
+const json = newSession.toJSON();
 const restored = Session.fromJSON(json);
 ```
 
 ### 🌊 Streaming Responses
 
-Watch the AI think in real-time:
+Process model responses in real-time:
 
 ```typescript
-const model = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
-});
-
-// See responses as they come
+// Stream responses chunk by chunk
 for await (const chunk of model.sendAsync(session)) {
   process.stdout.write(chunk.content);
 }
 ```
 
-### 🛠️ Adding Special Powers
+### 🛠️ Tool Integration
 
-Give your AI helper some real-world capabilities:
+Extend LLM capabilities with function calling:
 
 ```typescript
-// Create a friendly calculator
+// Define a calculator tool
 const calculator = new Tool({
   name: 'calculator',
-  description: 'Add numbers together',
+  description: 'Perform arithmetic operations',
   schema: {
     type: 'object',
     properties: {
       a: { type: 'number', description: 'First number' },
       b: { type: 'number', description: 'Second number' },
+      operation: { 
+        type: 'string', 
+        enum: ['add', 'subtract', 'multiply', 'divide'],
+        description: 'Operation to perform' 
+      },
     },
-    required: ['a', 'b'],
+    required: ['a', 'b', 'operation'],
   },
-  execute: async (input) => ({ result: input.a + input.b }),
+  execute: async (input) => {
+    switch (input.operation) {
+      case 'add': return { result: input.a + input.b };
+      case 'subtract': return { result: input.a - input.b };
+      case 'multiply': return { result: input.a * input.b };
+      case 'divide': return { result: input.a / input.b };
+    }
+  },
 });
 
-// Use tools in chat
+// Use tools with models
 const smartModel = new OpenAIModel({
   apiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-4o-mini',
@@ -220,93 +219,61 @@ const smartModel = new OpenAIModel({
 });
 
 const mathChat = new LinearTemplate()
-  .addSystem("I'm great at math!")
-  .addUser("What's 123 + 456?")
+  .addSystem("I can help with calculations.")
+  .addUser("What's 123 * 456?")
   .addAssistant({ model: smartModel });
 ```
 
-### 🌐 Browser Support
+## 🌐 Browser Support
 
-PromptTrail works seamlessly in browser environments! Check out our [React Chat Example](examples/react-chat) to see a complete implementation. Here's how to use PromptTrail in a React application:
+PromptTrail works in browser environments with a simple configuration flag:
 
 ```typescript
-import { useState } from 'react';
-import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
-
-function ChatComponent() {
-  const [messages, setMessages] = useState([]);
-  const [session, setSession] = useState(() => createSession());
-
-  const sendMessage = async (userInput) => {
-    // Create model with browser support enabled
-    const model = new OpenAIModel({
-      apiKey: 'YOUR_API_KEY', // In production, fetch this securely from your backend
-      modelName: 'gpt-4o-mini',
-      temperature: 0.7,
-      dangerouslyAllowBrowser: true, // Required for browser use
-    });
-
-    // Create chat template
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful AI assistant.')
-      .addUser('User message:', userInput)
-      .addAssistant({ model });
-
-    // Execute template and update session
-    const newSession = await template.execute(session);
-    setSession(newSession);
-
-    // Get assistant's response
-    const response = newSession.getMessagesByType('assistant').slice(-1)[0];
-    if (response) {
-      setMessages(prev => [...prev, { content: response.content, isUser: false }]);
-    }
-  };
-
-  return (
-    <div>
-      {/* Your chat UI components */}
-    </div>
-  );
-}
+// Browser-compatible model initialization
+const model = new OpenAIModel({
+  apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
+  modelName: 'gpt-4o-mini',
+  dangerouslyAllowBrowser: true, // Required for browser usage
+});
 ```
 
-For a complete example with UI components and error handling, check out the [React Chat Example](examples/react-chat).
+For a complete React implementation, check out our [React Chat Example](examples/react-chat).
 
-## 📚 API Explorer
+## 📚 API Reference
 
-Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
-
-- 💡 Hover over anything for instant docs
-- ⚡ Autocomplete everywhere
-- 🔍 Jump-to-definition (F12) for deep dives
-
-Here are the main pieces you'll play with:
+PromptTrail provides comprehensive TypeScript definitions with full documentation:
 
 ```typescript
 import {
-  // Chat building
-  LinearTemplate, // Your basic chat flow
-  LoopTemplate, // For interactive chats
-
-  // AI friends
-  OpenAIModel, // Chat with GPT
-  AnthropicModel, // Chat with Claude
-
-  // Utilities
-  createSession, // Start chatting
-  Tool, // Add special powers
+  // Templates
+  LinearTemplate,   // Sequential conversation flow
+  LoopTemplate,     // Conditional looping conversations
+  
+  // Models
+  OpenAIModel,      // OpenAI API integration
+  AnthropicModel,   // Anthropic API integration
+  
+  // Core utilities
+  createSession,    // Session factory
+  Tool,             // Function calling
+  CLIInputSource,   // Command-line input
 } from '@prompttrail/core';
 ```
 
-## 🤝 Join the Fun!
+Leverage TypeScript's IDE features for:
+- 💡 Inline documentation
+- ⚡ Type-aware autocomplete
+- 🔍 Jump-to-definition navigation
 
-Love PromptTrail? Found a bug? Have an idea? We'd love to hear from you! Feel free to:
+## 👥 Contributing
 
-- 🐛 Report issues
-- 💡 Suggest features
-- 🎨 Submit pull requests
+Contributions are welcome! Here's how you can help:
 
-## 📜 License
+- 🐛 Report bugs by opening issues
+- 💡 Suggest features and improvements
+- 🧪 Run tests with `cd packages/core && pnpm exec vitest --run --watch=false`
+- 🔀 Submit pull requests
 
-MIT - Go build something awesome! 🚀
+## 📄 License
+
+MIT - See [LICENSE](LICENSE) for details.
