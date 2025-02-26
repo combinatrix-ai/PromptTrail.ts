@@ -15,6 +15,7 @@ PromptTrail provides a robust TypeScript framework for creating structured, type
 - 🔌 **Multi-Provider** - Works with OpenAI, Anthropic, and extensible for more
 - 🌊 **Streaming Support** - Real-time response streaming
 - 🧩 **Composable Patterns** - Mix and match templates for complex flows
+- 📊 **Structured Data Extraction** - Extract and transform data from LLM outputs
 - 🌐 **Browser Compatible** - Works in both Node.js and browser environments
 
 ## 🔧 Installation
@@ -179,6 +180,60 @@ for await (const chunk of model.sendAsync(session)) {
 }
 ```
 
+### 📊 Session-to-Metadata Conversion
+
+Extract structured data from LLM outputs:
+
+```typescript
+import { 
+  LinearTemplate, 
+  OpenAIModel, 
+  createSession, 
+  extractMarkdown, 
+  extractPattern 
+} from '@prompttrail/core';
+
+// Create a template that extracts structured data from responses
+const codeTemplate = new LinearTemplate()
+  .addSystem("You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.")
+  .addUser("Write a function to calculate the factorial of a number with explanation.")
+  .addAssistant({ model })
+  // Extract markdown headings and code blocks
+  .addTransformer(extractMarkdown({
+    headingMap: { 
+      'Explanation': 'explanation',
+      'Usage Example': 'usageExample'
+    },
+    codeBlockMap: { 'typescript': 'code' }
+  }));
+
+// Execute the template
+const session = await codeTemplate.execute(createSession());
+
+// Access the extracted data
+console.log("Code:", session.metadata.get('code'));
+console.log("Explanation:", session.metadata.get('explanation'));
+
+// You can also extract data using regex patterns
+const dataTemplate = new LinearTemplate()
+  .addUser("Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running")
+  .addTransformer(extractPattern([
+    {
+      pattern: /IP ([\d\.]+)/,
+      key: 'ipAddress'
+    },
+    {
+      pattern: /Uptime ([\d\.]+)%/,
+      key: 'uptime',
+      transform: (value) => parseFloat(value) / 100
+    }
+  ]));
+
+const dataSession = await dataTemplate.execute(createSession());
+console.log("IP:", dataSession.metadata.get('ipAddress')); // "192.168.1.100"
+console.log("Uptime:", dataSession.metadata.get('uptime')); // 0.9999
+```
+
 ### 🛠️ Tool Integration
 
 Extend LLM capabilities with function calling:
@@ -257,6 +312,11 @@ import {
   createSession,    // Session factory
   Tool,             // Function calling
   CLIInputSource,   // Command-line input
+  
+  // Data extraction
+  extractMarkdown,  // Extract structured data from markdown
+  extractPattern,   // Extract data using regex patterns
+  createTransformer, // Create custom transformers
 } from '@prompttrail/core';
 ```
 

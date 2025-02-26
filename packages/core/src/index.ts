@@ -6,6 +6,9 @@ export type { Session } from './session';
 export { createSession } from './session';
 export * from './templates';
 
+// Session transformers and extractors
+export * from './utils/extractors';
+
 // Base implementations
 export * from './model/base';
 

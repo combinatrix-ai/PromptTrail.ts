@@ -4,6 +4,8 @@ import { DefaultInputSource, CallbackInputSource } from './input_source';
 import type { Model } from './model/base';
 import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
+import type { SessionTransformer } from './utils/session_transformer';
+import { createTransformerTemplate } from './templates/transformer_template';
 
 /**
  * Base class for all templates
@@ -202,6 +204,34 @@ export class LinearTemplate extends Template {
 
   addLoop(loop: LoopTemplate): this {
     this.templates.push(loop);
+    return this;
+  }
+
+  /**
+   * Add a transformer to the template sequence
+   *
+   * Transformers can extract structured data from messages and store it in the session metadata.
+   *
+   * @example
+   * ```typescript
+   * // Extract markdown sections and code blocks
+   * template.addTransformer(extractMarkdown({
+   *   headingMap: { 'Summary': 'summary' },
+   *   codeBlockMap: { 'typescript': 'code' }
+   * }));
+   *
+   * // Extract data using regex patterns
+   * template.addTransformer(extractPattern({
+   *   pattern: /API Endpoint: (.+)/,
+   *   key: 'apiEndpoint'
+   * }));
+   * ```
+   *
+   * @param transformer The transformer to add
+   * @returns The template instance for chaining
+   */
+  addTransformer(transformer: SessionTransformer<any, any>): this {
+    this.templates.push(createTransformerTemplate(transformer) as Template);
     return this;
   }
 
