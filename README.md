@@ -16,6 +16,7 @@ PromptTrail provides a robust TypeScript framework for creating structured, type
 - 🌊 **Streaming Support** - Real-time response streaming
 - 🧩 **Composable Patterns** - Mix and match templates for complex flows
 - 📊 **Structured Data Extraction** - Extract and transform data from LLM outputs
+- 🛡️ **Guardrails** - Validate and ensure quality of LLM responses
 - 🌐 **Browser Compatible** - Works in both Node.js and browser environments
 
 ## 🔧 Installation
@@ -232,6 +233,71 @@ const dataTemplate = new LinearTemplate()
 const dataSession = await dataTemplate.execute(createSession());
 console.log("IP:", dataSession.metadata.get('ipAddress')); // "192.168.1.100"
 console.log("Uptime:", dataSession.metadata.get('uptime')); // 0.9999
+```
+
+### 🛡️ Guardrails
+
+Validate and ensure quality of LLM responses:
+
+```typescript
+import {
+  LinearTemplate,
+  AssistantTemplate,
+  GuardrailTemplate,
+  RegexMatchValidator,
+  KeywordValidator,
+  LengthValidator,
+  AllValidator,
+  OnFailAction,
+  OpenAIModel
+} from '@prompttrail/core';
+
+// Create validators to ensure responses meet criteria
+const validators = [
+  // Ensure response is a single word with only letters
+  new RegexMatchValidator({
+    regex: /^[A-Za-z]+$/,
+    description: "Response must be a single word with only letters"
+  }),
+  
+  // Ensure response is between 3 and 10 characters
+  new LengthValidator({
+    min: 3,
+    max: 10,
+    description: "Response must be between 3 and 10 characters"
+  }),
+  
+  // Ensure response doesn't contain inappropriate words
+  new KeywordValidator({
+    keywords: ['inappropriate', 'offensive'],
+    mode: 'exclude',
+    description: "Response must not be inappropriate"
+  })
+];
+
+// Combine all validators with AND logic
+const combinedValidator = new AllValidator(validators);
+
+// Create a guardrail template
+const guardrailTemplate = new GuardrailTemplate({
+  template: new AssistantTemplate({ model }),
+  validators: [combinedValidator],
+  onFail: OnFailAction.RETRY,
+  maxAttempts: 3
+});
+
+// Create a template that asks for a pet name
+const petNameTemplate = new LinearTemplate()
+  .addSystem("You are a helpful assistant that suggests pet names.")
+  .addUser("Suggest a name for a pet cat.");
+
+// Execute the templates in sequence
+let session = createSession();
+session = await petNameTemplate.execute(session);
+session = await guardrailTemplate.execute(session);
+
+// Get the final response
+console.log("Pet name:", session.getLastMessage()?.content);
 ```
 
 ### 🛠️ Tool Integration

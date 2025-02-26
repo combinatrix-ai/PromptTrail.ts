@@ -331,6 +331,140 @@ class LinearTemplate extends Template {
 }
 ```
 
+### 9. Guardrails
+
+Validation system for ensuring LLM responses meet quality criteria.
+
+```typescript
+/**
+ * Interface for validator functions that check if a response meets certain criteria
+ */
+interface Validator {
+  validate(content: string): Promise<ValidationResult>;
+}
+
+/**
+ * Result of a validation operation
+ */
+interface ValidationResult {
+  passed: boolean;
+  score?: number;
+  feedback?: string;
+  fix?: string;
+}
+
+/**
+ * Action to take when validation fails
+ */
+enum OnFailAction {
+  EXCEPTION = 'exception', // Throw an exception
+  RETRY = 'retry',         // Retry with the model
+  FIX = 'fix',             // Apply the suggested fix
+  CONTINUE = 'continue'    // Continue despite the failure
+}
+
+/**
+ * Template that applies guardrails to ensure responses meet quality criteria
+ */
+class GuardrailTemplate extends Template {
+  constructor(options: {
+    template: Template;
+    validators: Validator[];
+    onFail?: OnFailAction;
+    maxAttempts?: number;
+    onRejection?: (result: ValidationResult, content: string, attempt: number) => void;
+  }) {}
+  
+  async execute(session: Session): Promise<Session>;
+}
+
+// Base validator class
+abstract class BaseValidator implements Validator {
+  abstract validate(content: string): Promise<ValidationResult>;
+  
+  protected createResult(
+    passed: boolean, 
+    options?: { 
+      score?: number; 
+      feedback?: string; 
+      fix?: string;
+    }
+  ): ValidationResult;
+}
+
+// Example validators
+class RegexMatchValidator extends BaseValidator {
+  constructor(options: { 
+    regex: RegExp | string;
+    description?: string;
+  }) {}
+  
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+class KeywordValidator extends BaseValidator {
+  constructor(options: { 
+    keywords: string[];
+    mode: 'include' | 'exclude';
+    description?: string;
+    caseSensitive?: boolean;
+  }) {}
+  
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+class LengthValidator extends BaseValidator {
+  constructor(options: { 
+    min?: number;
+    max?: number;
+    description?: string;
+  }) {}
+  
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+// Composite validators
+class AllValidator extends BaseValidator {
+  constructor(validators: Validator[]) {}
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+class AnyValidator extends BaseValidator {
+  constructor(validators: Validator[]) {}
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+// Model-based validators
+class ModelValidator extends BaseValidator {
+  constructor(options: {
+    model: Model;
+    prompt?: string;
+    scoreThreshold?: number;
+  }) {}
+  
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+class ToxicLanguageValidator extends BaseValidator {
+  constructor(options: {
+    model: Model;
+    threshold?: number;
+    validationMethod?: 'full' | 'sentence';
+  }) {}
+  
+  async validate(content: string): Promise<ValidationResult>;
+}
+
+// Create a guardrail transformer for session validation
+function createGuardrailTransformer<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput & { guardrail: { passed: boolean; validationResults: ValidationResult[] } }
+>(options: {
+  validators: Validator[];
+  messageTypes?: string[];
+}): SessionTransformer<TInput, TOutput>;
+```
+
 #### Specialized Extractors
 
 ```typescript

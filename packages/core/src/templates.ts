@@ -10,7 +10,10 @@ import { createTransformerTemplate } from './templates/transformer_template';
 /**
  * Base class for all templates
  */
-export abstract class Template {
+export abstract class Template<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> {
   protected model?: Model;
 
   constructor(options?: { model?: Model }) {
@@ -20,11 +23,14 @@ export abstract class Template {
   /**
    * Helper method to interpolate content with session metadata
    */
-  protected interpolateContent(content: string, session: Session): string {
+  protected interpolateContent(
+    content: string,
+    session: Session<TInput>,
+  ): string {
     return interpolateTemplate(content, session.metadata);
   }
 
-  abstract execute(session: Session): Promise<Session>;
+  abstract execute(session: Session<TInput>): Promise<Session<TOutput>>;
 }
 
 /**
