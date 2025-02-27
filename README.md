@@ -8,17 +8,17 @@ PromptTrail provides a robust TypeScript framework for creating structured, type
 
 ## ✨ Features
 
-- 🔒 **Type-Safe** - Full TypeScript support with inference and generics
-- 📝 **Template-Based** - Composable conversation building blocks
-- 🔄 **Stateless Architecture** - Immutable sessions for predictable state management
-- 🛠️ **Tool Integration** - First-class support for function calling
-- 🔌 **Multi-Provider** - Works with OpenAI, Anthropic (with MCP support), and extensible for more
-- 🌊 **Streaming Support** - Real-time response streaming
-- 🧩 **Composable Patterns** - Mix and match templates for complex flows
-- 📊 **Structured Data Extraction** - Extract and transform data from LLM outputs
-- 🛡️ **Guardrails** - Validate and ensure quality of LLM responses
-- 🧩 **Schema Validation** - Force LLMs to produce structured outputs using schemas
-- 🌐 **Browser Compatible** - Works in both Node.js and browser environments
+- 🔒 [**TypeScript-First**](#-typescript-first-design) - Full TypeScript support with inference and generics
+- 📝 [**Template-Based**](#-building-templates) - Composable conversation building blocks
+- 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
+- 🛠️ [**Tool Integration**](#-tool-integration) - First-class support for function calling
+- 🔌 [**Multi-Provider**](#-model-configuration) - Works with OpenAI, Anthropic (with MCP support), and extensible for more
+- 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
+- 🧩 [**Composable Patterns**](#-interactive-loops) - Mix and match templates for complex flows
+- 📊 [**Structured Data Extraction**](#-session-to-metadata-conversion) - Extract and transform data from LLM outputs
+- 🛡️ [**Guardrails**](#-guardrails) - Validate and ensure quality of LLM responses
+- 🧩 [**Schema Validation**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
+- 🌐 [**Browser Compatible**](#-browser-support) - Works in both Node.js and browser environments
 
 ## 🔧 Installation
 
@@ -50,12 +50,61 @@ const chat = new LinearTemplate()
   .addUser("What's TypeScript?")
   .addAssistant({ model });
 
-// Execute the template
-const session = await chat.execute(createSession());
+// Execute the template with print mode enabled
+const session = await chat.execute(createSession({
+  print: true, // Enable console logging of the conversation
+}));
 console.log(session.getLastMessage()?.content);
 ```
 
 ## 📘 Usage
+
+### 🔒 TypeScript-First Design
+
+While many LLM libraries are built around Python, PromptTrail takes a different approach by embracing TypeScript. This choice provides significant advantages for developers building production applications, offering strong typing, better IDE support, and a more robust development experience.
+
+PromptTrail is built from the ground up with TypeScript, embracing modern type system features:
+
+```typescript
+// Type inference for session metadata
+interface UserContext {
+  name: string;
+  preferences: {
+    theme: 'light' | 'dark';
+    language: string;
+  };
+}
+
+// Type-safe session with inferred metadata types
+const session = createSession<UserContext>({
+  metadata: {
+    name: 'Alice',
+    preferences: {
+      theme: 'dark',
+      language: 'TypeScript',
+    },
+  },
+});
+
+// Type-safe metadata access with autocomplete
+const userName = session.metadata.get('name'); // Type: string
+const theme = session.metadata.get('preferences').theme; // Type: 'light' | 'dark'
+
+// Immutable updates return new instances with preserved types
+const updatedSession = session.updateMetadata({
+  lastActive: new Date(),
+});
+// updatedSession.metadata.get('lastActive') is now available with correct type
+```
+
+PromptTrail's immutable architecture ensures predictable state management:
+
+- All session operations return new instances rather than modifying existing ones
+- Templates use pure functions for transformations
+- Type definitions are shared across the entire library for consistency
+- Generic type parameters flow through the API for end-to-end type safety
+
+This approach provides compile-time guarantees, excellent IDE support, and helps prevent common runtime errors.
 
 ### 🏗️ Building Templates
 
@@ -260,7 +309,7 @@ console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 
 ### 🛡️ Guardrails
 
-Validate and ensure quality of LLM responses:
+Validate and ensure quality of LLM responses, inspired by the Python library [guardrails-ai](https://github.com/guardrails-ai/guardrails/tree/main):
 
 ```typescript
 import {
@@ -395,7 +444,7 @@ console.log(`Product: ${product.name} - $${product.price}`);
 console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
 ```
 
-This feature is inspired by Zod-GPT but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
+This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
 
 ### 🛠️ Tool Integration
 
@@ -500,39 +549,6 @@ const model = new OpenAIModel({
 ```
 
 For a complete React implementation, check out our [React Chat Example](examples/react-chat).
-
-## 📚 API Reference
-
-PromptTrail provides comprehensive TypeScript definitions with full documentation:
-
-```typescript
-import {
-  // Templates
-  LinearTemplate, // Sequential conversation flow
-  LoopTemplate, // Conditional looping conversations
-
-  // Models
-  OpenAIModel, // OpenAI API integration
-  AnthropicModel, // Anthropic API integration
-
-  // Core utilities
-  createSession, // Session factory
-  Tool, // Function calling
-  CLIInputSource, // Command-line input
-  MCPClientWrapper, // Anthropic MCP client
-
-  // Data extraction
-  extractMarkdown, // Extract structured data from markdown
-  extractPattern, // Extract data using regex patterns
-  createTransformer, // Create custom transformers
-} from '@prompttrail/core';
-```
-
-Leverage TypeScript's IDE features for:
-
-- 💡 Inline documentation
-- ⚡ Type-aware autocomplete
-- 🔍 Jump-to-definition navigation
 
 ## 👥 Contributing
 

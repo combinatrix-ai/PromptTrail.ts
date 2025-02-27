@@ -26,21 +26,21 @@ class RankingTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     // Generate multiple responses in parallel
     const responseSessions = await Promise.all(
-      this.templates.map(template => template.execute(session))
+      this.templates.map((template) => template.execute(session)),
     );
-    
+
     // Rank the responses using the provided strategy
     const rankedSessions = await this.rankingStrategy.rank(responseSessions);
-    
+
     // Return the top N responses based on count
     const topResponses = rankedSessions.slice(0, this.count);
-    
+
     // Merge the top responses into the session
     let resultSession = session;
     for (const response of topResponses) {
       resultSession = resultSession.addMessage(response.getLastMessage()!);
     }
-    
+
     return resultSession;
   }
 }
@@ -52,7 +52,7 @@ interface RankingStrategy {
 
 class ModelBasedRanking implements RankingStrategy {
   constructor(private model: Model) {}
-  
+
   async rank(sessions: Session[]): Promise<Session[]> {
     // Use the model to rank the sessions
     // Return sessions sorted by rank
@@ -86,8 +86,8 @@ const rankingTemplate = new RankingTemplate({
 
 // Use in a conversation flow
 const template = new LinearTemplate()
-  .addSystem("You are a creative writing assistant.")
-  .addUser("Write a short story about a robot learning to paint.")
+  .addSystem('You are a creative writing assistant.')
+  .addUser('Write a short story about a robot learning to paint.')
   .addTemplate(rankingTemplate); // This will generate and rank multiple responses
 
 const session = await template.execute(createSession());
@@ -98,14 +98,12 @@ const session = await template.execute(createSession());
 A transformer that reduces session context length for managing token limits in long conversations.
 
 ```typescript
-function createSessionCompressor<T extends Record<string, unknown>>(
-  options: {
-    strategy: 'summarize' | 'truncate' | 'select-important';
-    model?: Model; // For summarization strategy
-    maxTokens?: number;
-    preserveTypes?: MessageType[]; // Message types to always preserve
-  }
-): SessionTransformer<T, T> {
+function createSessionCompressor<T extends Record<string, unknown>>(options: {
+  strategy: 'summarize' | 'truncate' | 'select-important';
+  model?: Model; // For summarization strategy
+  maxTokens?: number;
+  preserveTypes?: MessageType[]; // Message types to always preserve
+}): SessionTransformer<T, T> {
   return createTransformer(async (session) => {
     switch (options.strategy) {
       case 'summarize':
@@ -121,7 +119,10 @@ function createSessionCompressor<T extends Record<string, unknown>>(
 }
 
 // Helper functions
-async function summarizeSession(session: Session, options: any): Promise<Session> {
+async function summarizeSession(
+  session: Session,
+  options: any,
+): Promise<Session> {
   // Implementation that uses a model to summarize conversation history
   // and creates a new session with the summary as a system message
 }
@@ -131,7 +132,10 @@ function truncateSession(session: Session, options: any): Session {
   // up to the specified token limit
 }
 
-async function selectImportantMessages(session: Session, options: any): Promise<Session> {
+async function selectImportantMessages(
+  session: Session,
+  options: any,
+): Promise<Session> {
   // Implementation that selects important messages based on
   // relevance to the current conversation
 }
@@ -146,13 +150,15 @@ const longConversationTemplate = new LinearTemplate()
   .addUser("Let's have a long conversation...")
   .addAssistant({ model })
   // ... more conversation ...
-  .addTransformer(createSessionCompressor({
-    strategy: 'summarize',
-    model: summaryModel,
-    maxTokens: 1000,
-    preserveTypes: ['system']
-  }))
-  .addUser("Now, can you remember what we discussed earlier?")
+  .addTransformer(
+    createSessionCompressor({
+      strategy: 'summarize',
+      model: summaryModel,
+      maxTokens: 1000,
+      preserveTypes: ['system'],
+    }),
+  )
+  .addUser('Now, can you remember what we discussed earlier?')
   .addAssistant({ model });
 
 const session = await longConversationTemplate.execute(createSession());
@@ -168,7 +174,7 @@ class ParallelTemplate extends Template {
     private options: {
       templates: Template[];
       combineWith: (sessions: Session[]) => Session;
-    }
+    },
   ) {
     super();
   }
@@ -176,9 +182,9 @@ class ParallelTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     // Execute all templates in parallel
     const results = await Promise.all(
-      this.options.templates.map(template => template.execute(session))
+      this.options.templates.map((template) => template.execute(session)),
     );
-    
+
     // Combine results using the provided function
     return this.options.combineWith(results);
   }
@@ -193,17 +199,17 @@ const parallelTemplate = new ParallelTemplate({
   templates: [
     new LinearTemplate()
       .addSystem("You're a financial analyst.")
-      .addUser("Analyze this company: ${company}")
+      .addUser('Analyze this company: ${company}')
       .addAssistant({ model }),
-    
+
     new LinearTemplate()
       .addSystem("You're a market researcher.")
-      .addUser("Analyze this company: ${company}")
+      .addUser('Analyze this company: ${company}')
       .addAssistant({ model }),
-    
+
     new LinearTemplate()
       .addSystem("You're a risk assessment expert.")
-      .addUser("Analyze this company: ${company}")
+      .addUser('Analyze this company: ${company}')
       .addAssistant({ model }),
   ],
   combineWith: (sessions) => {
@@ -214,23 +220,23 @@ const parallelTemplate = new ParallelTemplate({
       content: 'Multi-perspective analysis:',
       metadata: createMetadata(),
     });
-    
+
     for (const session of sessions) {
       combinedSession = combinedSession.addMessage(session.getLastMessage()!);
     }
-    
+
     return combinedSession;
-  }
+  },
 });
 
 // Use in a conversation
 const template = new LinearTemplate()
-  .addSystem("I provide comprehensive company analysis.")
-  .addUser("Analyze Apple Inc.")
+  .addSystem('I provide comprehensive company analysis.')
+  .addUser('Analyze Apple Inc.')
   .addTemplate(parallelTemplate);
 
 const session = await template.execute(
-  createSession({ metadata: { company: 'Apple Inc.' } })
+  createSession({ metadata: { company: 'Apple Inc.' } }),
 );
 ```
 
@@ -245,21 +251,21 @@ class StreamingTemplate extends Template {
       template: Template;
       onChunk?: (chunk: string) => void;
       onProgress?: (progress: number) => void;
-    }
+    },
   ) {
     super();
   }
 
   async execute(session: Session): Promise<Session> {
     // Create a streaming model wrapper if needed
-    const streamingModel = this.model?.supportsStreaming 
-      ? this.model 
+    const streamingModel = this.model?.supportsStreaming
+      ? this.model
       : new StreamingModelAdapter(this.model!);
-    
+
     // Execute with streaming
     let finalContent = '';
     let finalSession = session;
-    
+
     for await (const chunk of streamingModel.sendAsync(session)) {
       finalContent += chunk.content;
       if (this.options.onChunk) {
@@ -270,7 +276,7 @@ class StreamingTemplate extends Template {
         this.options.onProgress(0.5); // Example
       }
     }
-    
+
     // Return the final session with complete response
     return finalSession.addMessage({
       type: 'assistant',
@@ -288,18 +294,18 @@ class StreamingTemplate extends Template {
 const streamingTemplate = new StreamingTemplate({
   template: new LinearTemplate()
     .addSystem("You're a storyteller.")
-    .addUser("Tell me a story about dragons.")
+    .addUser('Tell me a story about dragons.')
     .addAssistant({ model }),
-  
+
   onChunk: (chunk) => {
     // Process each chunk as it arrives
     console.log(chunk);
   },
-  
+
   onProgress: (progress) => {
     // Update progress bar
     updateProgressBar(progress);
-  }
+  },
 });
 
 const session = await streamingTemplate.execute(createSession());
@@ -317,7 +323,7 @@ class FewShotTemplate extends Template {
       exampleCount: number;
       selectionStrategy: 'random' | 'similar' | 'diverse';
       promptTemplate: Template;
-    }
+    },
   ) {
     super();
   }
@@ -325,28 +331,35 @@ class FewShotTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     // Select examples based on the strategy
     const examples = await this.selectExamples(session);
-    
+
     // Build a session with the examples
     let exampleSession = session;
     for (const example of examples) {
       exampleSession = exampleSession.addMessage(example.input);
       exampleSession = exampleSession.addMessage(example.output);
     }
-    
+
     // Execute the prompt template with the examples
     return this.options.promptTemplate.execute(exampleSession);
   }
-  
+
   private async selectExamples(session: Session): Promise<Example[]> {
     // Implementation depends on the selection strategy
     switch (this.options.selectionStrategy) {
       case 'random':
-        return this.options.exampleDatabase.getRandom(this.options.exampleCount);
+        return this.options.exampleDatabase.getRandom(
+          this.options.exampleCount,
+        );
       case 'similar':
         const query = session.getLastMessage()?.content || '';
-        return this.options.exampleDatabase.getSimilar(query, this.options.exampleCount);
+        return this.options.exampleDatabase.getSimilar(
+          query,
+          this.options.exampleCount,
+        );
       case 'diverse':
-        return this.options.exampleDatabase.getDiverse(this.options.exampleCount);
+        return this.options.exampleDatabase.getDiverse(
+          this.options.exampleCount,
+        );
       default:
         return [];
     }
@@ -374,10 +387,13 @@ const exampleDatabase = new VectorExampleDatabase({
   examples: [
     {
       input: { type: 'user', content: 'Translate "hello" to French' },
-      output: { type: 'assistant', content: 'In French, "hello" is "bonjour".' }
+      output: {
+        type: 'assistant',
+        content: 'In French, "hello" is "bonjour".',
+      },
     },
     // More examples...
-  ]
+  ],
 });
 
 // Create a few-shot template
@@ -386,22 +402,21 @@ const fewShotTemplate = new FewShotTemplate({
   exampleCount: 3,
   selectionStrategy: 'similar',
   promptTemplate: new LinearTemplate()
-    .addSystem("You are a language translation assistant. Follow the examples.")
+    .addSystem('You are a language translation assistant. Follow the examples.')
     .addUser("Translate '${word}' to ${language}")
-    .addAssistant({ model })
+    .addAssistant({ model }),
 });
 
 // Use in a conversation
-const template = new LinearTemplate()
-  .addTemplate(fewShotTemplate);
+const template = new LinearTemplate().addTemplate(fewShotTemplate);
 
 const session = await template.execute(
-  createSession({ 
-    metadata: { 
-      word: 'goodbye', 
-      language: 'Spanish' 
-    } 
-  })
+  createSession({
+    metadata: {
+      word: 'goodbye',
+      language: 'Spanish',
+    },
+  }),
 );
 ```
 
@@ -417,7 +432,7 @@ class AgentTemplate extends Template {
       executionModel: Model;
       tools: Tool[];
       maxIterations?: number;
-    }
+    },
   ) {
     super();
   }
@@ -426,23 +441,25 @@ class AgentTemplate extends Template {
     let currentSession = session;
     let iterations = 0;
     const maxIterations = this.options.maxIterations || 5;
-    
+
     while (iterations < maxIterations) {
       // Planning phase
       const planningTemplate = new LinearTemplate()
-        .addSystem("You are a planning agent. Create a plan to solve the user's request.")
+        .addSystem(
+          "You are a planning agent. Create a plan to solve the user's request.",
+        )
         .addUser(currentSession.getLastMessage()?.content || '')
         .addAssistant({ model: this.options.planningModel });
-      
+
       const planSession = await planningTemplate.execute(currentSession);
       const plan = planSession.getLastMessage()?.content || '';
-      
+
       // Extract actions from plan
       const actions = this.extractActions(plan);
-      
+
       // Execute actions
       for (const action of actions) {
-        const tool = this.options.tools.find(t => t.name === action.tool);
+        const tool = this.options.tools.find((t) => t.name === action.tool);
         if (tool) {
           const result = await tool.execute(action.parameters);
           currentSession = currentSession.addMessage({
@@ -452,30 +469,30 @@ class AgentTemplate extends Template {
           });
         }
       }
-      
+
       // Generate response based on tool results
       const responseTemplate = new LinearTemplate()
-        .addSystem("Generate a response based on the tool results.")
+        .addSystem('Generate a response based on the tool results.')
         .addAssistant({ model: this.options.executionModel });
-      
+
       currentSession = await responseTemplate.execute(currentSession);
-      
+
       // Check if we need another iteration
       if (this.isComplete(currentSession)) {
         break;
       }
-      
+
       iterations++;
     }
-    
+
     return currentSession;
   }
-  
+
   private extractActions(plan: string): { tool: string; parameters: any }[] {
     // Implementation to extract actions from the plan
     return [];
   }
-  
+
   private isComplete(session: Session): boolean {
     // Implementation to determine if the task is complete
     return false;
@@ -492,11 +509,14 @@ const calculator = createTool({
   description: 'Perform calculations',
   schema: {
     properties: {
-      expression: { type: 'string', description: 'Math expression to evaluate' }
+      expression: {
+        type: 'string',
+        description: 'Math expression to evaluate',
+      },
     },
-    required: ['expression']
+    required: ['expression'],
   },
-  execute: async (input) => eval(input.expression)
+  execute: async (input) => eval(input.expression),
 });
 
 const weatherApi = createTool({
@@ -504,11 +524,11 @@ const weatherApi = createTool({
   description: 'Get weather information',
   schema: {
     properties: {
-      location: { type: 'string', description: 'City or location' }
+      location: { type: 'string', description: 'City or location' },
     },
-    required: ['location']
+    required: ['location'],
   },
-  execute: async (input) => getWeatherData(input.location)
+  execute: async (input) => getWeatherData(input.location),
 });
 
 // Create an agent template
@@ -516,13 +536,15 @@ const agentTemplate = new AgentTemplate({
   planningModel: new OpenAIModel({ modelName: 'gpt-4o-mini' }),
   executionModel: new OpenAIModel({ modelName: 'gpt-4o-mini' }),
   tools: [calculator, weatherApi],
-  maxIterations: 3
+  maxIterations: 3,
 });
 
 // Use in a conversation
 const template = new LinearTemplate()
   .addSystem("I'm an AI assistant that can help with various tasks.")
-  .addUser("What's the temperature in New York plus the temperature in Los Angeles divided by 2?")
+  .addUser(
+    "What's the temperature in New York plus the temperature in Los Angeles divided by 2?",
+  )
   .addTemplate(agentTemplate);
 
 const session = await template.execute(createSession());
@@ -541,7 +563,7 @@ class VersioningTemplate extends Template {
       selectionStrategy?: 'fixed' | 'random' | 'weighted';
       weights?: Record<string, number>;
       onVersionSelected?: (version: string) => void;
-    }
+    },
   ) {
     super();
   }
@@ -549,43 +571,47 @@ class VersioningTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     // Select a version based on the strategy
     const version = this.selectVersion();
-    
+
     // Notify about the selected version
     if (this.options.onVersionSelected) {
       this.options.onVersionSelected(version);
     }
-    
+
     // Execute the selected version
     const template = this.options.versions[version];
     if (!template) {
       throw new Error(`Version ${version} not found`);
     }
-    
+
     // Add version metadata
     const sessionWithVersion = session.updateMetadata({
       promptVersion: version,
     });
-    
+
     // Execute the template
     const result = await template.execute(sessionWithVersion);
-    
+
     return result;
   }
-  
+
   private selectVersion(): string {
     switch (this.options.selectionStrategy) {
       case 'fixed':
-        return this.options.activeVersion || Object.keys(this.options.versions)[0];
+        return (
+          this.options.activeVersion || Object.keys(this.options.versions)[0]
+        );
       case 'random':
         const versions = Object.keys(this.options.versions);
         return versions[Math.floor(Math.random() * versions.length)];
       case 'weighted':
         return this.selectWeightedVersion();
       default:
-        return this.options.activeVersion || Object.keys(this.options.versions)[0];
+        return (
+          this.options.activeVersion || Object.keys(this.options.versions)[0]
+        );
     }
   }
-  
+
   private selectWeightedVersion(): string {
     // Implementation for weighted random selection
     return '';
@@ -598,39 +624,38 @@ class VersioningTemplate extends Template {
 ```typescript
 // Create different versions of a prompt
 const versions = {
-  'v1': new LinearTemplate()
-    .addSystem("You are a helpful assistant.")
-    .addUser("${query}")
+  v1: new LinearTemplate()
+    .addSystem('You are a helpful assistant.')
+    .addUser('${query}')
     .addAssistant({ model }),
-  
-  'v2': new LinearTemplate()
-    .addSystem("You are a knowledgeable expert.")
-    .addUser("${query}")
+
+  v2: new LinearTemplate()
+    .addSystem('You are a knowledgeable expert.')
+    .addUser('${query}')
     .addAssistant({ model }),
-  
-  'v3': new LinearTemplate()
-    .addSystem("You are a friendly guide.")
-    .addUser("${query}")
-    .addAssistant({ model })
+
+  v3: new LinearTemplate()
+    .addSystem('You are a friendly guide.')
+    .addUser('${query}')
+    .addAssistant({ model }),
 };
 
 // Create a versioning template for A/B testing
 const versioningTemplate = new VersioningTemplate({
   versions,
   selectionStrategy: 'weighted',
-  weights: { 'v1': 0.2, 'v2': 0.3, 'v3': 0.5 },
+  weights: { v1: 0.2, v2: 0.3, v3: 0.5 },
   onVersionSelected: (version) => {
     // Log the selected version for analytics
     logVersionSelection(version);
-  }
+  },
 });
 
 // Use in a conversation
-const template = new LinearTemplate()
-  .addTemplate(versioningTemplate);
+const template = new LinearTemplate().addTemplate(versioningTemplate);
 
 const session = await template.execute(
-  createSession({ metadata: { query: 'Explain quantum computing' } })
+  createSession({ metadata: { query: 'Explain quantum computing' } }),
 );
 
 // Access version information
@@ -650,7 +675,7 @@ class CachingTemplate extends Template {
       cacheKey?: (session: Session) => string;
       cacheTTL?: number; // Time to live in milliseconds
       similarityThreshold?: number; // For fuzzy matching
-    }
+    },
   ) {
     super();
     this.cache = new Map();
@@ -660,54 +685,56 @@ class CachingTemplate extends Template {
 
   async execute(session: Session): Promise<Session> {
     // Generate cache key
-    const cacheKey = this.options.cacheKey 
+    const cacheKey = this.options.cacheKey
       ? this.options.cacheKey(session)
       : this.defaultCacheKey(session);
-    
+
     // Check cache
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       return cached;
     }
-    
+
     // Execute template
     const result = await this.options.template.execute(session);
-    
+
     // Store in cache
     this.cache.set(cacheKey, {
       response: result,
       timestamp: Date.now(),
     });
-    
+
     return result;
   }
-  
+
   private defaultCacheKey(session: Session): string {
     // Default implementation uses the last user message
     const lastUserMessage = session.getMessagesByType('user').pop();
     return lastUserMessage?.content || '';
   }
-  
+
   private getFromCache(key: string): Session | null {
     // Check exact match
     if (this.cache.has(key)) {
       const cached = this.cache.get(key)!;
-      
+
       // Check TTL
-      if (this.options.cacheTTL && 
-          Date.now() - cached.timestamp > this.options.cacheTTL) {
+      if (
+        this.options.cacheTTL &&
+        Date.now() - cached.timestamp > this.options.cacheTTL
+      ) {
         this.cache.delete(key);
         return null;
       }
-      
+
       return cached.response;
     }
-    
+
     // Check fuzzy match if threshold is set
     if (this.options.similarityThreshold) {
       // Implementation for fuzzy matching
     }
-    
+
     return null;
   }
 }
@@ -719,26 +746,25 @@ class CachingTemplate extends Template {
 // Create a caching template for expensive operations
 const cachingTemplate = new CachingTemplate({
   template: new LinearTemplate()
-    .addSystem("You are a research assistant.")
-    .addUser("Summarize the latest research on ${topic}")
+    .addSystem('You are a research assistant.')
+    .addUser('Summarize the latest research on ${topic}')
     .addAssistant({ model }),
-  
+
   cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
-  similarityThreshold: 0.8 // Allow fuzzy matching
+  similarityThreshold: 0.8, // Allow fuzzy matching
 });
 
 // Use in a conversation
-const template = new LinearTemplate()
-  .addTemplate(cachingTemplate);
+const template = new LinearTemplate().addTemplate(cachingTemplate);
 
 // First execution will call the model
 const session1 = await template.execute(
-  createSession({ metadata: { topic: 'quantum computing' } })
+  createSession({ metadata: { topic: 'quantum computing' } }),
 );
 
 // Second execution with similar query will use cache
 const session2 = await template.execute(
-  createSession({ metadata: { topic: 'quantum computers' } })
+  createSession({ metadata: { topic: 'quantum computers' } }),
 );
 ```
 
@@ -756,8 +782,10 @@ class GuardrailTemplate extends Template {
       maxAttempts?: number;
       scoreThreshold?: number;
       onRejection?: (score: number, content: string, attempt: number) => void;
-      customEvaluator?: (session: Session) => Promise<{score: number; feedback?: string}>;
-    }
+      customEvaluator?: (
+        session: Session,
+      ) => Promise<{ score: number; feedback?: string }>;
+    },
   ) {
     super();
   }
@@ -765,56 +793,58 @@ class GuardrailTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     const maxAttempts = this.options.maxAttempts || 3;
     const scoreThreshold = this.options.scoreThreshold || 0.7; // Default threshold
-    
+
     let attempts = 0;
     let resultSession: Session;
-    let evaluationResult: {score: number; feedback?: string};
-    
+    let evaluationResult: { score: number; feedback?: string };
+
     do {
       attempts++;
-      
+
       // Execute the template
       resultSession = await this.options.template.execute(session);
-      
+
       // Evaluate the result
       if (this.options.customEvaluator) {
         evaluationResult = await this.options.customEvaluator(resultSession);
       } else {
         evaluationResult = await this.evaluateWithModel(resultSession);
       }
-      
+
       // Call rejection handler if provided
       if (evaluationResult.score < scoreThreshold && this.options.onRejection) {
         this.options.onRejection(
-          evaluationResult.score, 
+          evaluationResult.score,
           resultSession.getLastMessage()?.content || '',
-          attempts
+          attempts,
         );
       }
-      
+
       // Add evaluation metadata
       resultSession = resultSession.updateMetadata({
         guardrail: {
           attempt: attempts,
           score: evaluationResult.score,
           feedback: evaluationResult.feedback,
-          passed: evaluationResult.score >= scoreThreshold
-        }
+          passed: evaluationResult.score >= scoreThreshold,
+        },
       });
-      
     } while (evaluationResult.score < scoreThreshold && attempts < maxAttempts);
-    
+
     return resultSession;
   }
-  
-  private async evaluateWithModel(session: Session): Promise<{score: number; feedback?: string}> {
+
+  private async evaluateWithModel(
+    session: Session,
+  ): Promise<{ score: number; feedback?: string }> {
     const lastMessage = session.getLastMessage();
     if (!lastMessage) {
-      return { score: 0, feedback: "No message to evaluate" };
+      return { score: 0, feedback: 'No message to evaluate' };
     }
-    
+
     // Create evaluation prompt
-    const evaluationPrompt = this.options.evaluationPrompt || 
+    const evaluationPrompt =
+      this.options.evaluationPrompt ||
       `Evaluate the following AI response for quality, accuracy, and safety.
        
        Response to evaluate:
@@ -827,24 +857,26 @@ class GuardrailTemplate extends Template {
        Format your response as:
        Score: [number between 0.0 and 1.0]
        Feedback: [explanation of the score]`;
-    
+
     // Create evaluation session
     const evaluationSession = createSession().addMessage({
       type: 'system',
       content: evaluationPrompt,
       metadata: createMetadata(),
     });
-    
+
     // Get evaluation from model
-    const evaluationResponse = await this.options.evaluationModel.send(evaluationSession);
-    
+    const evaluationResponse =
+      await this.options.evaluationModel.send(evaluationSession);
+
     // Parse score and feedback
     const scoreMatch = evaluationResponse.content.match(/Score:\s*([\d.]+)/i);
-    const feedbackMatch = evaluationResponse.content.match(/Feedback:\s*(.*)/is);
-    
+    const feedbackMatch =
+      evaluationResponse.content.match(/Feedback:\s*(.*)/is);
+
     const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0;
     const feedback = feedbackMatch ? feedbackMatch[1].trim() : undefined;
-    
+
     return { score, feedback };
   }
 }
@@ -856,12 +888,12 @@ class GuardrailTemplate extends Template {
 // Create a guardrail template that ensures safe and high-quality responses
 const guardrailTemplate = new GuardrailTemplate({
   template: new LinearTemplate()
-    .addSystem("You are a helpful assistant.")
-    .addUser("Tell me about nuclear energy.")
+    .addSystem('You are a helpful assistant.')
+    .addUser('Tell me about nuclear energy.')
     .addAssistant({ model: mainModel }),
-  
+
   evaluationModel: evaluationModel, // A separate model for evaluation
-  
+
   evaluationPrompt: `
     Evaluate the following AI response for accuracy, balance, and educational value.
     
@@ -877,14 +909,14 @@ const guardrailTemplate = new GuardrailTemplate({
     Score: [total score]
     Feedback: [detailed explanation]
   `,
-  
+
   maxAttempts: 3,
   scoreThreshold: 0.8,
-  
+
   onRejection: (score, content, attempt) => {
     console.log(`Attempt ${attempt} rejected with score ${score}`);
     console.log(`Rejected content: ${content.substring(0, 100)}...`);
-  }
+  },
 });
 
 // Execute the template
@@ -893,7 +925,9 @@ const session = await guardrailTemplate.execute(createSession());
 // Access the final response and metadata
 const response = session.getLastMessage()?.content;
 const guardrailInfo = session.metadata.get('guardrail');
-console.log(`Final response (score: ${guardrailInfo.score}) after ${guardrailInfo.attempt} attempts`);
+console.log(
+  `Final response (score: ${guardrailInfo.score}) after ${guardrailInfo.attempt} attempts`,
+);
 ```
 
 ## Integration Patterns
@@ -912,7 +946,7 @@ const template = new GuardrailTemplate({
       new AssistantTemplate({ model: model3 }),
     ],
     rankingStrategy: new ModelBasedRanking(rankingModel),
-    count: 1
+    count: 1,
   }),
   evaluationModel: evaluationModel,
   // other options
@@ -926,15 +960,15 @@ const template = new GuardrailTemplate({
 const template = new CachingTemplate({
   template: new ParallelTemplate({
     templates: [
-      new LinearTemplate().addSystem("Task 1").addAssistant({ model }),
-      new LinearTemplate().addSystem("Task 2").addAssistant({ model }),
-      new LinearTemplate().addSystem("Task 3").addAssistant({ model }),
+      new LinearTemplate().addSystem('Task 1').addAssistant({ model }),
+      new LinearTemplate().addSystem('Task 2').addAssistant({ model }),
+      new LinearTemplate().addSystem('Task 3').addAssistant({ model }),
     ],
     combineWith: (sessions) => {
       // Combine results
-    }
+    },
   }),
-  cacheTTL: 3600000 // 1 hour
+  cacheTTL: 3600000, // 1 hour
 });
 ```
 
@@ -944,19 +978,23 @@ const template = new CachingTemplate({
 // Agent with context compression for long-running tasks
 const template = new LinearTemplate()
   .addSystem("I'm an AI assistant that can help with various tasks.")
-  .addUser("${query}")
-  .addTemplate(new AgentTemplate({
-    planningModel,
-    executionModel,
-    tools: [calculator, weatherApi, searchTool],
-    maxIterations: 5
-  }))
-  .addTransformer(createSessionCompressor({
-    strategy: 'summarize',
-    model: summaryModel,
-    maxTokens: 2000
-  }))
-  .addUser("Can you explain your reasoning?")
+  .addUser('${query}')
+  .addTemplate(
+    new AgentTemplate({
+      planningModel,
+      executionModel,
+      tools: [calculator, weatherApi, searchTool],
+      maxIterations: 5,
+    }),
+  )
+  .addTransformer(
+    createSessionCompressor({
+      strategy: 'summarize',
+      model: summaryModel,
+      maxTokens: 2000,
+    }),
+  )
+  .addUser('Can you explain your reasoning?')
   .addAssistant({ model });
 ```
 
@@ -976,7 +1014,7 @@ class VectorSearchTemplate extends Template {
       contextTemplate: Template;
       includeMetadata?: boolean;
       reranker?: (documents: Document[], query: string) => Promise<Document[]>;
-    }
+    },
   ) {
     super();
   }
@@ -984,22 +1022,22 @@ class VectorSearchTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     // 1. Generate search query from the session
     const query = await this.generateQuery(session);
-    
+
     // 2. Retrieve relevant documents from vector store
     let documents = await this.options.vectorStore.search({
       query,
       limit: this.options.retrievalCount || 5,
       similarityThreshold: this.options.similarityThreshold,
     });
-    
+
     // 3. Optional reranking step
     if (this.options.reranker && documents.length > 0) {
       documents = await this.options.reranker(documents, query);
     }
-    
+
     // 4. Add retrieved context to session
     let contextSession = session;
-    
+
     if (documents.length > 0) {
       // Add system message with retrieved context
       const contextContent = this.formatDocumentsAsContext(documents);
@@ -1008,31 +1046,31 @@ class VectorSearchTemplate extends Template {
         content: `Here is relevant information to help answer the query:\n\n${contextContent}`,
         metadata: createMetadata().set('source', 'vector_search'),
       });
-      
+
       // Optionally add document metadata to session metadata
       if (this.options.includeMetadata) {
-        const docsMetadata = documents.map(doc => ({
+        const docsMetadata = documents.map((doc) => ({
           id: doc.id,
           score: doc.score,
           metadata: doc.metadata,
         }));
-        
+
         contextSession = contextSession.updateMetadata({
           retrievedDocuments: docsMetadata,
         });
       }
     }
-    
+
     // 5. Execute the context template with the augmented session
     return this.options.contextTemplate.execute(contextSession);
   }
-  
+
   private async generateQuery(session: Session): Promise<string> {
     // If custom query generator is provided, use it
     if (this.options.queryGenerator) {
       return this.options.queryGenerator(session);
     }
-    
+
     // If query model is provided, use it to generate a search query
     if (this.options.queryModel) {
       const queryGenSession = createSession().addMessage({
@@ -1045,32 +1083,34 @@ class VectorSearchTemplate extends Template {
                  Search query:`,
         metadata: createMetadata(),
       });
-      
+
       const response = await this.options.queryModel.send(queryGenSession);
       return response.content.trim();
     }
-    
+
     // Default: use the last user message as the query
     const lastUserMessage = session.getMessagesByType('user').pop();
     return lastUserMessage?.content || '';
   }
-  
+
   private formatDocumentsAsContext(documents: Document[]): string {
-    return documents.map((doc, index) => {
-      let content = `[Document ${index + 1}]`;
-      
-      if (doc.metadata?.title) {
-        content += `\nTitle: ${doc.metadata.title}`;
-      }
-      
-      if (doc.metadata?.source) {
-        content += `\nSource: ${doc.metadata.source}`;
-      }
-      
-      content += `\n\n${doc.content}\n\n`;
-      
-      return content;
-    }).join('---\n\n');
+    return documents
+      .map((doc, index) => {
+        let content = `[Document ${index + 1}]`;
+
+        if (doc.metadata?.title) {
+          content += `\nTitle: ${doc.metadata.title}`;
+        }
+
+        if (doc.metadata?.source) {
+          content += `\nSource: ${doc.metadata.source}`;
+        }
+
+        content += `\n\n${doc.content}\n\n`;
+
+        return content;
+      })
+      .join('---\n\n');
   }
 }
 
@@ -1082,7 +1122,7 @@ interface VectorStore {
     similarityThreshold?: number;
     filter?: Record<string, any>;
   }): Promise<Document[]>;
-  
+
   add(documents: Document[]): Promise<void>;
   delete(ids: string[]): Promise<void>;
 }
@@ -1102,42 +1142,46 @@ interface Document {
 // Create a vector store implementation
 class SimpleVectorStore implements VectorStore {
   constructor(private documents: Document[] = []) {}
-  
-  async search(options: { query: string; limit?: number; similarityThreshold?: number }): Promise<Document[]> {
+
+  async search(options: {
+    query: string;
+    limit?: number;
+    similarityThreshold?: number;
+  }): Promise<Document[]> {
     // In a real implementation, this would use vector embeddings and similarity search
     // This is just a simple example using keyword matching
     const results = this.documents
-      .map(doc => ({
+      .map((doc) => ({
         ...doc,
         score: this.calculateScore(doc.content, options.query),
       }))
-      .filter(doc => doc.score > (options.similarityThreshold || 0))
+      .filter((doc) => doc.score > (options.similarityThreshold || 0))
       .sort((a, b) => b.score! - a.score!)
       .slice(0, options.limit || 5);
-    
+
     return results;
   }
-  
+
   async add(documents: Document[]): Promise<void> {
     this.documents.push(...documents);
   }
-  
+
   async delete(ids: string[]): Promise<void> {
-    this.documents = this.documents.filter(doc => !ids.includes(doc.id));
+    this.documents = this.documents.filter((doc) => !ids.includes(doc.id));
   }
-  
+
   private calculateScore(content: string, query: string): number {
     // Simple keyword matching for demonstration
     const words = query.toLowerCase().split(/\s+/);
     const contentLower = content.toLowerCase();
-    
+
     let matches = 0;
     for (const word of words) {
       if (contentLower.includes(word)) {
         matches++;
       }
     }
-    
+
     return matches / words.length;
   }
 }
@@ -1146,19 +1190,22 @@ class SimpleVectorStore implements VectorStore {
 const vectorStore = new SimpleVectorStore([
   {
     id: '1',
-    content: 'TypeScript is a strongly typed programming language that builds on JavaScript.',
-    metadata: { title: 'TypeScript Overview', source: 'docs' }
+    content:
+      'TypeScript is a strongly typed programming language that builds on JavaScript.',
+    metadata: { title: 'TypeScript Overview', source: 'docs' },
   },
   {
     id: '2',
-    content: 'React is a JavaScript library for building user interfaces, particularly single-page applications.',
-    metadata: { title: 'React Introduction', source: 'docs' }
+    content:
+      'React is a JavaScript library for building user interfaces, particularly single-page applications.',
+    metadata: { title: 'React Introduction', source: 'docs' },
   },
   {
     id: '3',
-    content: 'Node.js is a JavaScript runtime built on Chrome\'s V8 JavaScript engine.',
-    metadata: { title: 'Node.js Overview', source: 'docs' }
-  }
+    content:
+      "Node.js is a JavaScript runtime built on Chrome's V8 JavaScript engine.",
+    metadata: { title: 'Node.js Overview', source: 'docs' },
+  },
 ]);
 
 // Create a vector search template
@@ -1167,20 +1214,22 @@ const vectorSearchTemplate = new VectorSearchTemplate({
   retrievalCount: 2,
   similarityThreshold: 0.3,
   contextTemplate: new LinearTemplate()
-    .addSystem("You are a helpful programming assistant. Use the provided context to answer the user's question.")
-    .addUser("${query}")
+    .addSystem(
+      "You are a helpful programming assistant. Use the provided context to answer the user's question.",
+    )
+    .addUser('${query}')
     .addAssistant({ model }),
-  includeMetadata: true
+  includeMetadata: true,
 });
 
 // Use in a conversation
 const template = new LinearTemplate()
   .addSystem("I'm a programming assistant with access to documentation.")
-  .addUser("Tell me about TypeScript")
+  .addUser('Tell me about TypeScript')
   .addTemplate(vectorSearchTemplate);
 
 const session = await template.execute(
-  createSession({ metadata: { query: 'Tell me about TypeScript' } })
+  createSession({ metadata: { query: 'Tell me about TypeScript' } }),
 );
 ```
 
@@ -1193,12 +1242,12 @@ For better coverage of the information space, you can implement multi-query retr
 ```typescript
 class VectorSearchTemplate extends Template {
   // ... existing implementation
-  
+
   private async generateMultipleQueries(session: Session): Promise<string[]> {
     if (!this.options.queryModel) {
       return [this.getLastUserMessage(session)];
     }
-    
+
     const queryGenSession = createSession().addMessage({
       type: 'system',
       content: `Generate 3 different search queries to find information that would help answer the user's question.
@@ -1210,34 +1259,34 @@ class VectorSearchTemplate extends Template {
                Queries:`,
       metadata: createMetadata(),
     });
-    
+
     const response = await this.options.queryModel.send(queryGenSession);
-    
+
     // Parse the numbered list of queries
     const queries = response.content
       .split('\n')
-      .filter(line => /^\d+\./.test(line))
-      .map(line => line.replace(/^\d+\.\s*/, '').trim());
-    
+      .filter((line) => /^\d+\./.test(line))
+      .map((line) => line.replace(/^\d+\.\s*/, '').trim());
+
     return queries.length > 0 ? queries : [this.getLastUserMessage(session)];
   }
-  
+
   private async multiQuerySearch(queries: string[]): Promise<Document[]> {
     // Perform searches for each query
     const searchResults = await Promise.all(
-      queries.map(query => 
+      queries.map((query) =>
         this.options.vectorStore.search({
           query,
           limit: Math.ceil((this.options.retrievalCount || 5) / queries.length),
           similarityThreshold: this.options.similarityThreshold,
-        })
-      )
+        }),
+      ),
     );
-    
+
     // Merge and deduplicate results
     const seenIds = new Set<string>();
     const mergedResults: Document[] = [];
-    
+
     for (const results of searchResults) {
       for (const doc of results) {
         if (!seenIds.has(doc.id)) {
@@ -1246,7 +1295,7 @@ class VectorSearchTemplate extends Template {
         }
       }
     }
-    
+
     return mergedResults.slice(0, this.options.retrievalCount || 5);
   }
 }
@@ -1267,42 +1316,45 @@ class VectorSearchTemplate extends Template {
       // ... existing options
       keywordIndex?: KeywordIndex;
       hybridRatio?: number; // 0 = all keyword, 1 = all vector
-    }
+    },
   ) {
     super();
   }
-  
+
   private async hybridSearch(query: string): Promise<Document[]> {
     const hybridRatio = this.options.hybridRatio ?? 0.5;
     const limit = this.options.retrievalCount || 5;
-    
+
     // Allocate limits based on hybrid ratio
     const vectorLimit = Math.ceil(limit * hybridRatio);
     const keywordLimit = Math.ceil(limit * (1 - hybridRatio));
-    
+
     // Perform vector search
     const vectorResults = await this.options.vectorStore.search({
       query,
       limit: vectorLimit,
       similarityThreshold: this.options.similarityThreshold,
     });
-    
+
     // Perform keyword search if available
     let keywordResults: Document[] = [];
     if (this.options.keywordIndex) {
-      keywordResults = await this.options.keywordIndex.search(query, keywordLimit);
+      keywordResults = await this.options.keywordIndex.search(
+        query,
+        keywordLimit,
+      );
     }
-    
+
     // Combine and deduplicate results
     const seenIds = new Set<string>();
     const mergedResults: Document[] = [];
-    
+
     // Add vector results first
     for (const doc of vectorResults) {
       seenIds.add(doc.id);
       mergedResults.push(doc);
     }
-    
+
     // Add keyword results if not already included
     for (const doc of keywordResults) {
       if (!seenIds.has(doc.id)) {
@@ -1310,7 +1362,7 @@ class VectorSearchTemplate extends Template {
         mergedResults.push(doc);
       }
     }
-    
+
     return mergedResults.slice(0, limit);
   }
 }
@@ -1327,18 +1379,21 @@ class VectorSearchTemplate extends Template {
       // ... existing options
       compressDocuments?: boolean;
       compressionModel?: Model;
-    }
+    },
   ) {
     super();
   }
-  
-  private async compressDocuments(documents: Document[], query: string): Promise<Document[]> {
+
+  private async compressDocuments(
+    documents: Document[],
+    query: string,
+  ): Promise<Document[]> {
     if (!this.options.compressionModel) {
       return documents;
     }
-    
+
     const compressedDocs = await Promise.all(
-      documents.map(async doc => {
+      documents.map(async (doc) => {
         const compressionSession = createSession().addMessage({
           type: 'system',
           content: `Compress the following document to contain only information relevant to the query: "${query}"
@@ -1350,9 +1405,10 @@ class VectorSearchTemplate extends Template {
                    Compressed version:`,
           metadata: createMetadata(),
         });
-        
-        const response = await this.options.compressionModel.send(compressionSession);
-        
+
+        const response =
+          await this.options.compressionModel.send(compressionSession);
+
         return {
           ...doc,
           content: response.content.trim(),
@@ -1361,11 +1417,11 @@ class VectorSearchTemplate extends Template {
             compressed: true,
             originalLength: doc.content.length,
             compressedLength: response.content.trim().length,
-          }
+          },
         };
-      })
+      }),
     );
-    
+
     return compressedDocs;
   }
 }
