@@ -99,8 +99,8 @@ describe('Templates', () => {
       const messages = Array.from(result.messages);
 
       // Get the actual content from the messages
-      const actualContents = messages.map(msg => msg.content);
-      
+      const actualContents = messages.map((msg) => msg.content);
+
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
       expect(messages[0].type).toBe('system');
@@ -110,12 +110,16 @@ describe('Templates', () => {
       expect(messages[4].type).toBe('user');
       expect(messages[5].type).toBe('assistant');
       expect(messages[6].type).toBe('assistant');
-      
+
       // Verify specific content that should be consistent
       expect(messages[0].content).toBe("You're a math teacher bot.");
-      expect(messages[2].content).toBe('Dividing a number by zero is undefined in mathematics because...');
+      expect(messages[2].content).toBe(
+        'Dividing a number by zero is undefined in mathematics because...',
+      );
       expect(messages[3].content).toBe('Are you satisfied?');
-      expect(messages[5].content).toBe('The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.');
+      expect(messages[5].content).toBe(
+        'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
+      );
       expect(messages[6].content).toBe('END');
 
       // No need to verify mock calls as MockModel handles responses directly
@@ -160,8 +164,8 @@ describe('Templates', () => {
       const messages = Array.from(result.messages);
 
       // Get the actual content from the messages
-      const actualContents = messages.map(msg => msg.content);
-      
+      const actualContents = messages.map((msg) => msg.content);
+
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
       expect(messages[0].type).toBe('system');
@@ -171,12 +175,16 @@ describe('Templates', () => {
       expect(messages[4].type).toBe('user');
       expect(messages[5].type).toBe('assistant');
       expect(messages[6].type).toBe('assistant');
-      
+
       // Verify specific content that should be consistent
       expect(messages[0].content).toBe("You're a math teacher bot.");
-      expect(messages[2].content).toBe('Dividing a number by zero is undefined in mathematics because...');
+      expect(messages[2].content).toBe(
+        'Dividing a number by zero is undefined in mathematics because...',
+      );
       expect(messages[3].content).toBe('Are you satisfied?');
-      expect(messages[5].content).toBe('The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.');
+      expect(messages[5].content).toBe(
+        'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
+      );
       expect(messages[6].content).toBe('END');
 
       // No need to verify mock calls as MockModel handles responses directly

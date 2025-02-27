@@ -11,41 +11,32 @@ packages/core/src/__tests__/
 ├── unit/                           # Unit tests for individual components
 │   ├── model/                      # Tests for model implementations
 │   │   ├── openai.test.ts
+│   │   ├── temperature.test.ts
 │   │   ├── anthropic/
 │   │   │   ├── model.test.ts
-│   │   │   ├── mcp.test.ts
-│   │   │   └── types.test.ts
-│   │   └── base.test.ts
+│   │   │   └── schema.test.ts
 │   ├── templates/                  # Tests for template implementations
 │   │   ├── linear.test.ts
-│   │   ├── loop.test.ts
-│   │   ├── system.test.ts
-│   │   ├── user.test.ts
-│   │   ├── assistant.test.ts
-│   │   ├── subroutine.test.ts
-│   │   ├── if.test.ts
-│   │   ├── guardrail.test.ts
-│   │   └── schema.test.ts
+│   │   └── nested_templates.test.ts
 │   ├── utils/                      # Tests for utility functions
 │   │   ├── extractors/
 │   │   │   ├── markdown.test.ts
 │   │   │   └── pattern.test.ts
-│   │   ├── schema.test.ts
-│   │   ├── session_transformer.test.ts
-│   │   └── template_interpolation.test.ts
 │   ├── validators/                 # Tests for validators
-│   │   ├── base_validators.test.ts
-│   │   ├── model_validators.test.ts
 │   │   └── schema_validator.test.ts
 │   ├── session.test.ts             # Core session tests
 │   ├── metadata.test.ts            # Metadata tests
 │   ├── input_source.test.ts        # Input source tests
-│   └── tool.test.ts                # Tool tests
+│   └── browser_compatibility.test.ts # Browser compatibility tests
 ├── integration/                    # Integration tests
 │   ├── mcp_integration.test.ts     # MCP integration tests
+│   ├── real_mcp_integration.test.ts # Real MCP server integration tests
 │   ├── schema_template.test.ts     # Schema template integration
 │   ├── guardrail_template.test.ts  # Guardrail template integration
 │   └── end_to_end.test.ts          # End-to-end workflow tests
+├── examples/                       # Example usage tests
+│   ├── simple_example.test.ts      # Simple example tests
+│   └── path_alias_example.test.ts  # Path alias example tests
 ├── fixtures/                       # Mock implementations and test data
 │   ├── mcp_client/
 │   ├── mcp_model/
@@ -107,6 +98,33 @@ Consider the following improvements to the test suite:
 3. **Test Coverage Analysis**: Add coverage reporting to identify gaps
 4. **Test Documentation**: Add more descriptive comments explaining test scenarios
 5. **Test Helpers**: Create additional helper functions for common test operations
+
+## End-to-End Tests
+
+The end-to-end tests in `integration/end_to_end.test.ts` demonstrate complete workflows using PromptTrail, showcasing how different components work together:
+
+1. **Weather Information Workflow with Data Extraction**
+   - Creates a template that asks for weather information
+   - Uses a mock model to generate a response with structured data
+   - Extracts markdown headings and code blocks using transformers
+   - Verifies the extracted data is correctly stored in session metadata
+
+2. **Tool Usage Workflow**
+   - Creates a template that uses a calculator tool
+   - Demonstrates function calling with the model
+   - Verifies tool calls are correctly generated and processed
+
+3. **Conversation with Guardrails**
+   - Creates a template with content validation using RegexMatchValidator
+   - Ensures responses meet specific criteria
+   - Verifies guardrail metadata is correctly stored
+
+4. **Conversation with a Loop**
+   - Creates a template with a loop for interactive dialogues
+   - Demonstrates conditional exit from loops
+   - Tests the flow of messages through the loop
+
+These tests serve as both validation of the library's functionality and examples of how to use PromptTrail's features in real-world scenarios.
 
 ## Running Tests
 

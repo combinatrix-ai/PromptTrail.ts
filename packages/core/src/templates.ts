@@ -209,7 +209,14 @@ export class LinearTemplate extends Template {
       if (options.model) {
         this.model = options.model;
       }
-      this.templates.push(new AssistantTemplate(options));
+
+      // Create AssistantTemplate with the model from options or from LinearTemplate
+      const assistantOptions = {
+        ...options,
+        model: options.model || this.model,
+      };
+
+      this.templates.push(new AssistantTemplate(assistantOptions));
     }
     return this;
   }
@@ -388,7 +395,18 @@ export class LoopTemplate extends Template {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      this.templates.push(new AssistantTemplate(options));
+      // Set the model on the LoopTemplate if provided
+      if (options.model) {
+        this.model = options.model;
+      }
+
+      // Create AssistantTemplate with the model from options or from LoopTemplate
+      const assistantOptions = {
+        ...options,
+        model: options.model || this.model,
+      };
+
+      this.templates.push(new AssistantTemplate(assistantOptions));
     }
     return this;
   }
