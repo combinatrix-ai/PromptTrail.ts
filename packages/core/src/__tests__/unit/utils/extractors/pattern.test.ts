@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createSession } from '../session';
-import { extractPattern } from '../utils/pattern_extractor';
-import { createMessage } from './utils';
+import { createSession } from '../../../../session';
+import { extractPattern } from '../../../../utils/pattern_extractor';
+import { createMessage } from '../../../utils';
 
 describe('Pattern Extractor', () => {
   it('should extract content using regex patterns', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createSession } from '../session';
-import { extractMarkdown } from '../utils/markdown_extractor';
-import { createMessage } from './utils';
+import { createSession } from '../../../../session';
+import { extractMarkdown } from '../../../../utils/markdown_extractor';
+import { createMessage } from '../../../utils';
 
 describe('Markdown Extractor', () => {
   it('should extract markdown headings', () => {

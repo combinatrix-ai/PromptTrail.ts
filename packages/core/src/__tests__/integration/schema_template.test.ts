@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
-import { createSession } from '../session';
-import { SchemaTemplate } from '../templates/schema_template';
-import { OpenAIModel } from '../model/openai/model';
+import { createSession } from '../../session';
+import { SchemaTemplate } from '../../templates/schema_template';
+import { OpenAIModel } from '../../model/openai/model';
 import {
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
-} from '../utils/schema';
-import { createMetadata } from '../metadata';
+} from '../../utils/schema';
+import { createMetadata } from '../../metadata';
 
 // Mock OpenAI model
-vi.mock('../model/openai/model');
+vi.mock('../../model/openai/model');
 
 describe('SchemaTemplate', () => {
   let model: OpenAIModel;

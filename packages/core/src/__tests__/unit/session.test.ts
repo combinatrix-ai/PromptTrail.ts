@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createSession } from '../session';
-import { createMessage, createSystemMessage, createUserMessage } from './utils';
+import { createSession } from '../../session';
+import { createMessage, createSystemMessage, createUserMessage } from '../utils';
 
 describe('Session', () => {
   it('should create empty session', () => {

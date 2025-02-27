@@ -4,6 +4,8 @@
 
 - Build all packages: `pnpm -r build`
 - Run all tests: `pnpm test` or `vitest --run --watch=false`
+- Run all tests: `cd packages/core && pnpm exec vitest --run --watch=false`
+- Run specific tests: `cd packages/core && pnpm exec vitest run src/__tests__/unit/model --watch=false`
 - Run single test: `cd packages/core && pnpm exec vitest --run --watch=false src/__tests__/filename.test.ts`
 - Run tests with pattern: `cd packages/core && pnpm exec vitest --run --watch=false "pattern"`
 - Check types: `pnpm -C packages/core typecheck`

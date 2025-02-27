@@ -5,11 +5,11 @@
  * with a mock Anthropic model.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import type { MCPServerConfig } from '../model/anthropic/mcp';
-import { createSession } from '../session';
-import { MCPTestServer } from './fixtures/mcp_server/test_server';
-import { MockMCPClientWrapper } from './fixtures/mcp_client/mock_mcp_client';
-import { MockAnthropicModel } from './fixtures/mcp_model/mock_anthropic_model';
+import type { MCPServerConfig } from '../../model/anthropic/mcp';
+import { createSession } from '../../session';
+import { MCPTestServer } from '../fixtures/mcp_server/test_server';
+import { MockMCPClientWrapper } from '../fixtures/mcp_client/mock_mcp_client';
+import { MockAnthropicModel } from '../fixtures/mcp_model/mock_anthropic_model';
 
 describe('Real MCP Integration', () => {
   let mcpServer: MCPTestServer;

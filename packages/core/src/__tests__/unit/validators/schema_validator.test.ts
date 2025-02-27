@@ -4,7 +4,7 @@ import {
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
-} from '../';
+} from '../../../utils/schema';
 import { z } from 'zod';
 
 describe('Schema validation', () => {

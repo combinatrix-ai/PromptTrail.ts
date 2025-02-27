@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../session';
-import { SchemaTemplate } from '../templates/schema_template';
+import { createSession } from '../../../../session';
+import { SchemaTemplate } from '../../../../templates/schema_template';
 import {
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
-} from '../utils/schema';
-import { createMetadata } from '../metadata';
-import { AnthropicModel } from '../model/anthropic/model';
+} from '../../../../utils/schema';
+import { createMetadata } from '../../../../metadata';
+import { AnthropicModel } from '../../../../model/anthropic/model';
 
 // Mock Anthropic model
-vi.mock('../model/anthropic/model');
+vi.mock('../../../../model/anthropic/model');
 
 describe('SchemaTemplate with Anthropic', () => {
   let model: AnthropicModel;

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AnthropicModel } from '../model/anthropic/model';
-import { MCPClientWrapper } from '../model/anthropic/mcp';
-import type { MCPServerConfig } from '../model/anthropic/mcp';
-import { createSession } from '../session';
-import { createTool } from '../tool';
+import { AnthropicModel } from '../../model/anthropic/model';
+import { MCPClientWrapper } from '../../model/anthropic/mcp';
+import type { MCPServerConfig } from '../../model/anthropic/mcp';
+import { createSession } from '../../session';
+import { createTool } from '../../tool';
 
 // Mock the require function for MCP SDK
-vi.mock('../model/anthropic/mcp', async () => {
-  const actual = await vi.importActual('../model/anthropic/mcp');
+vi.mock('../../model/anthropic/mcp', async () => {
+  const actual = await vi.importActual('../../model/anthropic/mcp');
 
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
   const mockMCPClientWrapper = vi.fn().mockImplementation((config) => ({

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createSession } from '../session';
+import { createSession } from '../../session';
 import {
   GuardrailTemplate,
   OnFailAction,
-} from '../templates/guardrail_template';
-import { AssistantTemplate } from '../templates';
-import { BaseValidator } from '../validators/base_validators';
+} from '../../templates/guardrail_template';
+import { AssistantTemplate } from '../../templates';
+import { BaseValidator } from '../../validators/base_validators';
 
 // Mock model for testing
 const mockModel = {
