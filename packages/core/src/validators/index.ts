@@ -35,3 +35,4 @@
 export * from '../templates/guardrail_template';
 export * from './base_validators';
 export * from './model_validators';
+export * from './schema_validator';

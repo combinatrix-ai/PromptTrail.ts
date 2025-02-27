@@ -70,9 +70,11 @@ class AnthropicModel extends Model {
       mcpServers: config.mcpServers, // MCP server configurations
     });
   }
-  
+
   // MCP integration methods
-  private async initializeMcpClients(serverConfigs: MCPServerConfig[]): Promise<void>;
+  private async initializeMcpClients(
+    serverConfigs: MCPServerConfig[],
+  ): Promise<void>;
   getAllTools(): Tool<SchemaType>[]; // Get all tools including MCP tools
 }
 ```
@@ -301,26 +303,28 @@ Transforms sessions to extract structured data from LLM outputs.
  */
 interface SessionTransformer<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput
+  TOutput extends Record<string, unknown> = TInput,
 > {
-  transform(session: Session<TInput>): Promise<Session<TOutput>> | Session<TOutput>;
+  transform(
+    session: Session<TInput>,
+  ): Promise<Session<TOutput>> | Session<TOutput>;
 }
 
 // Function-based transformers
 type SessionTransformerFn<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput
+  TOutput extends Record<string, unknown> = TInput,
 > = (session: Session<TInput>) => Promise<Session<TOutput>> | Session<TOutput>;
 
 // Create a transformer from a function
 function createTransformer<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput
+  TOutput extends Record<string, unknown> = TInput,
 >(
-  transformFn: SessionTransformerFn<TInput, TOutput>
+  transformFn: SessionTransformerFn<TInput, TOutput>,
 ): SessionTransformer<TInput, TOutput> {
   return {
-    transform: (session) => transformFn(session)
+    transform: (session) => transformFn(session),
   };
 }
 
@@ -328,7 +332,7 @@ function createTransformer<
 class LinearTemplate extends Template {
   // Add a transformer to the template sequence
   addTransformer<U extends Record<string, unknown>>(
-    transformer: SessionTransformer<any, U>
+    transformer: SessionTransformer<any, U>,
   ): this {
     this.templates.push(createTransformerTemplate(transformer));
     return this;
@@ -363,9 +367,9 @@ interface ValidationResult {
  */
 enum OnFailAction {
   EXCEPTION = 'exception', // Throw an exception
-  RETRY = 'retry',         // Retry with the model
-  FIX = 'fix',             // Apply the suggested fix
-  CONTINUE = 'continue'    // Continue despite the failure
+  RETRY = 'retry', // Retry with the model
+  FIX = 'fix', // Apply the suggested fix
+  CONTINUE = 'continue', // Continue despite the failure
 }
 
 /**
@@ -377,54 +381,51 @@ class GuardrailTemplate extends Template {
     validators: Validator[];
     onFail?: OnFailAction;
     maxAttempts?: number;
-    onRejection?: (result: ValidationResult, content: string, attempt: number) => void;
+    onRejection?: (
+      result: ValidationResult,
+      content: string,
+      attempt: number,
+    ) => void;
   }) {}
-  
+
   async execute(session: Session): Promise<Session>;
 }
 
 // Base validator class
 abstract class BaseValidator implements Validator {
   abstract validate(content: string): Promise<ValidationResult>;
-  
+
   protected createResult(
-    passed: boolean, 
-    options?: { 
-      score?: number; 
-      feedback?: string; 
+    passed: boolean,
+    options?: {
+      score?: number;
+      feedback?: string;
       fix?: string;
-    }
+    },
   ): ValidationResult;
 }
 
 // Example validators
 class RegexMatchValidator extends BaseValidator {
-  constructor(options: { 
-    regex: RegExp | string;
-    description?: string;
-  }) {}
-  
+  constructor(options: { regex: RegExp | string; description?: string }) {}
+
   async validate(content: string): Promise<ValidationResult>;
 }
 
 class KeywordValidator extends BaseValidator {
-  constructor(options: { 
+  constructor(options: {
     keywords: string[];
     mode: 'include' | 'exclude';
     description?: string;
     caseSensitive?: boolean;
   }) {}
-  
+
   async validate(content: string): Promise<ValidationResult>;
 }
 
 class LengthValidator extends BaseValidator {
-  constructor(options: { 
-    min?: number;
-    max?: number;
-    description?: string;
-  }) {}
-  
+  constructor(options: { min?: number; max?: number; description?: string }) {}
+
   async validate(content: string): Promise<ValidationResult>;
 }
 
@@ -446,7 +447,7 @@ class ModelValidator extends BaseValidator {
     prompt?: string;
     scoreThreshold?: number;
   }) {}
-  
+
   async validate(content: string): Promise<ValidationResult>;
 }
 
@@ -456,31 +457,125 @@ class ToxicLanguageValidator extends BaseValidator {
     threshold?: number;
     validationMethod?: 'full' | 'sentence';
   }) {}
-  
+
   async validate(content: string): Promise<ValidationResult>;
 }
 
 // Create a guardrail transformer for session validation
 function createGuardrailTransformer<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput & { guardrail: { passed: boolean; validationResults: ValidationResult[] } }
+  TOutput extends Record<string, unknown> = TInput & {
+    guardrail: { passed: boolean; validationResults: ValidationResult[] };
+  },
 >(options: {
   validators: Validator[];
   messageTypes?: string[];
 }): SessionTransformer<TInput, TOutput>;
 ```
 
+### 11. Schema Validation
+
+System for enforcing structured output from LLMs using schemas.
+
+```typescript
+/**
+ * Schema property types
+ */
+type SchemaPropertyType = 'string' | 'number' | 'boolean';
+
+/**
+ * Schema property definition
+ */
+interface SchemaProperty {
+  type: SchemaPropertyType;
+  description: string;
+}
+
+/**
+ * Schema definition
+ */
+interface Schema {
+  properties: Record<string, SchemaProperty>;
+  required?: string[];
+}
+
+/**
+ * Create a schema definition
+ */
+function defineSchema(schema: Schema): Schema;
+
+/**
+ * Create a string property
+ */
+function createStringProperty(description: string): SchemaProperty;
+
+/**
+ * Create a number property
+ */
+function createNumberProperty(description: string): SchemaProperty;
+
+/**
+ * Create a boolean property
+ */
+function createBooleanProperty(description: string): SchemaProperty;
+
+/**
+ * Schema validation options
+ */
+interface SchemaValidationOptions<TModel extends Model = Model> {
+  model: TModel;
+  maxAttempts?: number;
+  onValidationFail?: (error: Error, attempt: number) => void;
+}
+
+/**
+ * Add schema validation to a template
+ */
+class LinearTemplate extends Template {
+  /**
+   * Add schema validation to ensure structured output
+   * @param schema The schema to validate against (can be a native schema or a Zod schema)
+   * @param options Options for schema validation
+   */
+  async addSchema<TSchema>(
+    schema: TSchema | z.ZodType<any>,
+    options: SchemaValidationOptions,
+  ): Promise<this>;
+}
+
+/**
+ * Schema validator for enforcing structured output
+ */
+class SchemaValidator {
+  constructor(options: {
+    schema: Schema | z.ZodType<any>;
+    model: Model;
+    maxAttempts?: number;
+  });
+
+  /**
+   * Validate a response against the schema
+   */
+  async validate(content: string): Promise<any>;
+
+  /**
+   * Format the schema for the model
+   */
+  formatSchema(): string | object;
+}
+```
+
+This feature is inspired by Zod-GPT but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
+
 #### Specialized Extractors
 
 ```typescript
 // Markdown extractor for headings and code blocks
-function extractMarkdown<T extends Record<string, unknown>>(
-  options: {
-    messageTypes?: MessageRole[];  // Default to ['assistant']
-    headingMap?: Record<string, keyof T>;  // Map heading to metadata key
-    codeBlockMap?: Record<string, keyof T>;  // Map language to metadata key
-  }
-): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
+function extractMarkdown<T extends Record<string, unknown>>(options: {
+  messageTypes?: MessageRole[]; // Default to ['assistant']
+  headingMap?: Record<string, keyof T>; // Map heading to metadata key
+  codeBlockMap?: Record<string, keyof T>; // Map language to metadata key
+}): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
   return createTransformer((session) => {
     // Implementation that extracts markdown sections and code blocks
     // and returns a new session with updated metadata
@@ -489,17 +584,19 @@ function extractMarkdown<T extends Record<string, unknown>>(
 
 // Pattern extractor for regex-based extraction
 function extractPattern<T extends Record<string, unknown>>(
-  options: {
-    pattern: RegExp | string;
-    key: keyof T;
-    transform?: (match: string) => unknown;
-    defaultValue?: unknown;
-  } | Array<{
-    pattern: RegExp | string;
-    key: keyof T;
-    transform?: (match: string) => unknown;
-    defaultValue?: unknown;
-  }>
+  options:
+    | {
+        pattern: RegExp | string;
+        key: keyof T;
+        transform?: (match: string) => unknown;
+        defaultValue?: unknown;
+      }
+    | Array<{
+        pattern: RegExp | string;
+        key: keyof T;
+        transform?: (match: string) => unknown;
+        defaultValue?: unknown;
+      }>,
 ): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
   return createTransformer((session) => {
     // Implementation that extracts data based on patterns
@@ -527,22 +624,27 @@ interface MCPServerConfig {
  */
 class MCPClientWrapper {
   constructor(config: MCPServerConfig) {}
-  
+
   // Connection management
   async connect(): Promise<void>;
   async disconnect(): Promise<void>;
-  
+
   // Tool management
   async loadTools(): Promise<Tool<SchemaType>[]>;
   getTool(name: string): Tool<SchemaType> | undefined;
   getAllTools(): Tool<SchemaType>[];
-  
+
   // Resource management
   async readResource(uri: string): Promise<string>;
-  async listResources(): Promise<{ uri: string; name: string; description?: string }[]>;
-  
+  async listResources(): Promise<
+    { uri: string; name: string; description?: string }[]
+  >;
+
   // Prompt management
-  async getPrompt(name: string, params?: Record<string, unknown>): Promise<{ role: string; content: string }[]>;
+  async getPrompt(
+    name: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ role: string; content: string }[]>;
 }
 
 // Enhanced Anthropic configuration
@@ -681,91 +783,101 @@ const session = await mainFlow.execute(createSession());
 // Create a template with conditional branching
 const conditionalTemplate = new LinearTemplate()
   .addSystem("I'm a programming assistant")
-  .addUser("Help me with: ${task}")
+  .addUser('Help me with: ${task}')
   .addAssistant({ model })
   .addIf({
-    condition: (session) => 
+    condition: (session) =>
       session.getLastMessage()?.content.toLowerCase().includes('error'),
     thenTemplate: new LinearTemplate()
-      .addSystem("Switching to debugging mode")
-      .addUser("Please explain the error in detail")
+      .addSystem('Switching to debugging mode')
+      .addUser('Please explain the error in detail')
       .addAssistant({ model }),
     elseTemplate: new LinearTemplate()
-      .addSystem("Continuing with implementation")
-      .addUser("Show me how to implement this")
-      .addAssistant({ model })
+      .addSystem('Continuing with implementation')
+      .addUser('Show me how to implement this')
+      .addAssistant({ model }),
   });
 
 // Execute with different tasks
 const debugSession = await conditionalTemplate.execute(
   createSession({
-    metadata: { task: "I'm getting a TypeError in my code" }
-  })
+    metadata: { task: "I'm getting a TypeError in my code" },
+  }),
 );
 // Will execute the thenTemplate branch
 
 const implementSession = await conditionalTemplate.execute(
   createSession({
-    metadata: { task: "I need to create a sorting algorithm" }
-  })
+    metadata: { task: 'I need to create a sorting algorithm' },
+  }),
 );
 // Will execute the elseTemplate branch
 ```
 
 ### 5. Metadata Extraction
 
-```typescript
+````typescript
 // Extract code blocks from LLM responses
 const codeTemplate = new LinearTemplate()
-  .addSystem("You're a TypeScript expert. Include code in ```typescript blocks.")
-  .addUser("Write a function to calculate the factorial of a number.")
+  .addSystem(
+    "You're a TypeScript expert. Include code in ```typescript blocks.",
+  )
+  .addUser('Write a function to calculate the factorial of a number.')
   .addAssistant({ model })
-  .addTransformer(extractMarkdown({
-    codeBlockMap: { 'typescript': 'factorialCode' }
-  }))
-  .addUser("Now optimize it for performance.")
+  .addTransformer(
+    extractMarkdown({
+      codeBlockMap: { typescript: 'factorialCode' },
+    }),
+  )
+  .addUser('Now optimize it for performance.')
   .addAssistant({ model })
-  .addTransformer(extractMarkdown({
-    codeBlockMap: { 'typescript': 'optimizedCode' }
-  }));
+  .addTransformer(
+    extractMarkdown({
+      codeBlockMap: { typescript: 'optimizedCode' },
+    }),
+  );
 
 const session = await codeTemplate.execute(createSession());
-console.log("Original code:", session.metadata.get('factorialCode'));
-console.log("Optimized code:", session.metadata.get('optimizedCode'));
+console.log('Original code:', session.metadata.get('factorialCode'));
+console.log('Optimized code:', session.metadata.get('optimizedCode'));
 
 // Extract structured analysis from LLM responses
 const analysisTemplate = new LinearTemplate()
   .addSystem("You're a code reviewer. Use ## headings for different sections.")
-  .addUser("Analyze this function: function add(a,b) { return a+b; }")
+  .addUser('Analyze this function: function add(a,b) { return a+b; }')
   .addAssistant({ model })
-  .addTransformer(extractMarkdown({
-    headingMap: {
-      'Summary': 'summary',
-      'Strengths': 'strengths',
-      'Weaknesses': 'weaknesses',
-      'Suggestions': 'suggestions'
-    }
-  }));
+  .addTransformer(
+    extractMarkdown({
+      headingMap: {
+        Summary: 'summary',
+        Strengths: 'strengths',
+        Weaknesses: 'weaknesses',
+        Suggestions: 'suggestions',
+      },
+    }),
+  );
 
 const session = await analysisTemplate.execute(createSession());
-console.log("Analysis summary:", session.metadata.get('summary'));
-console.log("Suggestions:", session.metadata.get('suggestions'));
+console.log('Analysis summary:', session.metadata.get('summary'));
+console.log('Suggestions:', session.metadata.get('suggestions'));
 
 // Extract data using regex patterns
 const jsonTemplate = new LinearTemplate()
-  .addSystem("Generate user profile data in JSON format")
-  .addUser("Create a profile for a software developer")
+  .addSystem('Generate user profile data in JSON format')
+  .addUser('Create a profile for a software developer')
   .addAssistant({ model })
-  .addTransformer(extractPattern({
-    pattern: /```json\n([\s\S]*?)\n```/,
-    key: 'profile',
-    transform: (json) => JSON.parse(json)
-  }));
+  .addTransformer(
+    extractPattern({
+      pattern: /```json\n([\s\S]*?)\n```/,
+      key: 'profile',
+      transform: (json) => JSON.parse(json),
+    }),
+  );
 
 const session = await jsonTemplate.execute(createSession());
 const profile = session.metadata.get('profile');
-console.log("Name:", profile.name);
-console.log("Skills:", profile.skills);
+console.log('Name:', profile.name);
+console.log('Skills:', profile.skills);
 
 // Custom transformer for specific needs
 const customTransformer = createTransformer((session) => {
@@ -782,15 +894,19 @@ const customTransformer = createTransformer((session) => {
 // Chain multiple transformers
 const template = new LinearTemplate()
   .addSystem("I'm a coding assistant")
-  .addUser("Write a factorial function with explanation")
+  .addUser('Write a factorial function with explanation')
   .addAssistant({ model })
-  .addTransformer(extractMarkdown({
-    codeBlockMap: { 'typescript': 'code' }
-  }))
-  .addTransformer(extractMarkdown({
-    headingMap: { 'Explanation': 'explanation' }
-  }));
-```
+  .addTransformer(
+    extractMarkdown({
+      codeBlockMap: { typescript: 'code' },
+    }),
+  )
+  .addTransformer(
+    extractMarkdown({
+      headingMap: { Explanation: 'explanation' },
+    }),
+  );
+````
 
 ### 6. MCP Integration
 
@@ -811,8 +927,10 @@ const model = new AnthropicModel({
 
 // Create a template that uses the model with MCP tools
 const template = new LinearTemplate()
-  .addSystem(`You are a helpful assistant with access to external tools.
-             You can use these tools when needed to provide accurate information.`)
+  .addSystem(
+    `You are a helpful assistant with access to external tools.
+             You can use these tools when needed to provide accurate information.`,
+  )
   .addUser('Can you check the latest commits in our repository?', '')
   .addAssistant({ model });
 
@@ -821,6 +939,54 @@ const session = await template.execute(createSession());
 
 // The model will automatically discover and use tools from the MCP server
 // For example, it might use a git_list_commits tool to fetch commit information
+```
+
+### 7. Schema Validation
+
+```typescript
+// Create a model
+const model = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.7,
+});
+
+// Define a schema using PromptTrail's native schema format
+const productSchema = defineSchema({
+  properties: {
+    name: createStringProperty('The name of the product'),
+    price: createNumberProperty('The price of the product in USD'),
+    inStock: createBooleanProperty('Whether the product is in stock'),
+    description: createStringProperty('A short description of the product'),
+  },
+  required: ['name', 'price', 'inStock'],
+});
+
+// Or define a schema using Zod
+const userSchema = z.object({
+  username: z.string().min(3).max(20).describe('Username (3-20 characters)'),
+  email: z.string().email().describe('Valid email address'),
+  age: z.number().int().min(18).max(120).describe('Age (must be 18 or older)'),
+  roles: z.array(z.enum(['admin', 'user', 'moderator'])).describe('User roles'),
+});
+
+// Create a template with schema validation
+const template = new LinearTemplate()
+  .addSystem('Extract product information from the text.')
+  .addUser(
+    'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock.',
+  );
+
+// Add schema validation
+await template.addSchema(productSchema, { model, maxAttempts: 3 });
+
+// Execute the template
+const session = await template.execute(createSession());
+
+// Get the structured output from the session metadata
+const product = session.metadata.get('structured_output');
+console.log(product);
+// Output: { name: 'iPhone 15 Pro', price: 999, inStock: true, description: 'Smartphone with a titanium frame' }
 ```
 
 ## Key Features
@@ -858,6 +1024,7 @@ const session = await template.execute(createSession());
    - Chain multiple transformers for complex extraction
 
 6. **External Tool Integration**
+
    - Native function calling with OpenAI
    - Anthropic MCP support for external tools and resources
    - Automatic tool discovery and loading
@@ -888,6 +1055,7 @@ const session = await template.execute(createSession());
    - Handle large conversations efficiently
 
 4. **Template Design**
+
    - Keep templates focused and composable
    - Pass dependencies explicitly
    - Use SubroutineTemplate for complex flows

@@ -8,7 +8,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  OpenAIModel
+  OpenAIModel,
 } from '../packages/core/src';
 
 /**
@@ -31,22 +31,22 @@ async function main() {
     // Ensure the name is a single word
     new RegexMatchValidator({
       regex: /^[A-Za-z]+$/,
-      description: "Pet name must be a single word with only letters"
+      description: 'Pet name must be a single word with only letters',
     }),
-    
+
     // Ensure the name is between 3 and 10 characters
     new LengthValidator({
       min: 3,
       max: 10,
-      description: "Pet name must be between 3 and 10 characters"
+      description: 'Pet name must be between 3 and 10 characters',
     }),
-    
+
     // Ensure the name doesn't contain inappropriate words
     new KeywordValidator({
       keywords: ['inappropriate', 'offensive', 'rude', 'vulgar'],
       mode: 'exclude',
-      description: "Pet name must not be inappropriate"
-    })
+      description: 'Pet name must not be inappropriate',
+    }),
   ];
 
   // Combine all validators with AND logic
@@ -61,13 +61,13 @@ async function main() {
     onRejection: (result, content, attempt) => {
       console.log(`Attempt ${attempt} rejected: ${content}`);
       console.log(`Reason: ${result.feedback}`);
-    }
+    },
   });
 
   // Create a new template with system and user messages
   const systemTemplate = new LinearTemplate()
-    .addSystem("You are a helpful assistant that suggests pet names.")
-    .addUser("Suggest a name for a pet cat.", "");
+    .addSystem('You are a helpful assistant that suggests pet names.')
+    .addUser('Suggest a name for a pet cat.', '');
 
   // Note: In a future version, it would be nice to have an addTemplate method
   // on LinearTemplate to make this more elegant
@@ -75,17 +75,17 @@ async function main() {
   // Execute the templates in sequence
   let session = createSession();
   session = await systemTemplate.execute(session);
-  
+
   // Execute the guardrail template directly
   session = await guardrailTemplate.execute(session);
 
   // Get the final response
   const response = session.getLastMessage();
-  console.log("Final pet name:", response?.content);
+  console.log('Final pet name:', response?.content);
 
   // Get guardrail metadata
   const guardrailInfo = session.metadata.get('guardrail');
-  console.log("Guardrail info:", guardrailInfo);
+  console.log('Guardrail info:', guardrailInfo);
 }
 
 main().catch(console.error);

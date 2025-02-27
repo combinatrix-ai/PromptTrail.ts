@@ -8,6 +8,8 @@ export * from './templates';
 
 // Session transformers and extractors
 export * from './utils/extractors';
+export * from './utils/schema';
+export * from './templates/schema_template';
 
 // Validators and guardrails
 export * from './validators';

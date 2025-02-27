@@ -6,6 +6,8 @@ import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
+import type { SchemaType, InferSchemaType } from './tool';
+import { z } from 'zod';
 
 /**
  * Base class for all templates
@@ -179,13 +181,13 @@ export class LinearTemplate extends Template {
     return this;
   }
 
-  addUser(description: string, defaultValue: string): this {
+  addUser(content: string, defaultValue?: string): this {
     this.templates.push(
       new UserTemplate({
-        description,
+        description: content,
         default: defaultValue,
         inputSource: new CallbackInputSource(
-          async ({ defaultValue }) => defaultValue || '',
+          async ({ description }) => description,
         ),
       }),
     );
@@ -203,6 +205,10 @@ export class LinearTemplate extends Template {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
+      // Set the model on the LinearTemplate if provided
+      if (options.model) {
+        this.model = options.model;
+      }
       this.templates.push(new AssistantTemplate(options));
     }
     return this;
@@ -256,6 +262,81 @@ export class LinearTemplate extends Template {
     return this;
   }
 
+  /**
+   * Add a schema validation template to enforce structured output
+   *
+   * This method adds a template that enforces the LLM output to match a specified schema.
+   * The structured output will be available in the session metadata under the key 'structured_output'.
+   *
+   * @example
+   * ```typescript
+   * // Example 1: Using PromptTrail's native schema
+   * const productSchema = defineSchema({
+   *   properties: {
+   *     name: createStringProperty('The name of the product'),
+   *     price: createNumberProperty('The price of the product in USD'),
+   *     inStock: createBooleanProperty('Whether the product is in stock'),
+   *   },
+   *   required: ['name', 'price', 'inStock'],
+   * });
+   *
+   * // Example 2: Using Zod schema
+   * const userSchema = z.object({
+   *   name: z.string().describe('User name'),
+   *   age: z.number().describe('User age'),
+   *   email: z.string().email().describe('User email')
+   * });
+   *
+   * // Create a template with schema validation
+   * const template = new LinearTemplate()
+   *   .addSystem('Extract information from the text.')
+   *   .addUser('The new iPhone 15 Pro costs $999 and comes with a titanium frame.')
+   *   .addSchema(productSchema); // or userSchema
+   *
+   * // Execute the template
+   * const session = await template.execute(createSession());
+   *
+   * // Access the structured output
+   * const data = session.metadata.get('structured_output');
+   * ```
+   *
+   * @param schema The schema to validate against (either a SchemaType or a Zod schema)
+   * @param options Additional options for schema validation
+   * @returns The template instance for chaining
+   */
+  async addSchema<TSchema extends SchemaType | z.ZodType>(
+    schema: TSchema,
+    options?: {
+      model?: Model;
+      maxAttempts?: number;
+      functionName?: string;
+    },
+  ): Promise<this> {
+    const model = options?.model || this.model;
+
+    if (!model) {
+      throw new Error(
+        'Model must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
+      );
+    }
+
+    // Import SchemaTemplate dynamically to avoid circular dependency
+    // Use dynamic import for ESM compatibility
+    const SchemaTemplateModule = await import('./templates/schema_template');
+    const { SchemaTemplate } = SchemaTemplateModule;
+
+    this.templates.push(
+      new SchemaTemplate({
+        model,
+        schema,
+        maxAttempts: options?.maxAttempts,
+        functionName: options?.functionName,
+      }),
+    );
+
+    return this;
+  }
+
   async execute(session: Session): Promise<Session> {
     let currentSession = session;
     for (const template of this.templates) {
@@ -283,13 +364,13 @@ export class LoopTemplate extends Template {
     }
   }
 
-  addUser(description: string, defaultValue: string): this {
+  addUser(content: string, defaultValue?: string): this {
     this.templates.push(
       new UserTemplate({
-        description,
+        description: content,
         default: defaultValue,
         inputSource: new CallbackInputSource(
-          async ({ defaultValue }) => defaultValue || '',
+          async ({ description }) => description,
         ),
       }),
     );

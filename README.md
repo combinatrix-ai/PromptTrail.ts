@@ -17,6 +17,7 @@ PromptTrail provides a robust TypeScript framework for creating structured, type
 - 🧩 **Composable Patterns** - Mix and match templates for complex flows
 - 📊 **Structured Data Extraction** - Extract and transform data from LLM outputs
 - 🛡️ **Guardrails** - Validate and ensure quality of LLM responses
+- 🧩 **Schema Validation** - Force LLMs to produce structured outputs using schemas
 - 🌐 **Browser Compatible** - Works in both Node.js and browser environments
 
 ## 🔧 Installation
@@ -161,8 +162,8 @@ const session = createSession({
 // Templates use ${variable} syntax for direct interpolation
 const template = new LinearTemplate()
   .addSystem("I'll use ${tone} language to explain ${topics[0]}")
-  .addAssistant("Let me explain ${topics[0]} in ${language}")
-  .addUser("Can you also cover ${topics[1]}?");
+  .addAssistant('Let me explain ${topics[0]} in ${language}')
+  .addUser('Can you also cover ${topics[1]}?');
 
 // Sessions are immutable - operations return new instances
 const updatedSession = session.addMessage({
@@ -199,55 +200,63 @@ for await (const chunk of model.sendAsync(session)) {
 
 Extract structured data from LLM outputs:
 
-```typescript
-import { 
-  LinearTemplate, 
-  OpenAIModel, 
-  createSession, 
-  extractMarkdown, 
-  extractPattern 
+````typescript
+import {
+  LinearTemplate,
+  OpenAIModel,
+  createSession,
+  extractMarkdown,
+  extractPattern,
 } from '@prompttrail/core';
 
 // Create a template that extracts structured data from responses
 const codeTemplate = new LinearTemplate()
-  .addSystem("You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.")
-  .addUser("Write a function to calculate the factorial of a number with explanation.")
+  .addSystem(
+    "You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.",
+  )
+  .addUser(
+    'Write a function to calculate the factorial of a number with explanation.',
+  )
   .addAssistant({ model })
   // Extract markdown headings and code blocks
-  .addTransformer(extractMarkdown({
-    headingMap: { 
-      'Explanation': 'explanation',
-      'Usage Example': 'usageExample'
-    },
-    codeBlockMap: { 'typescript': 'code' }
-  }));
+  .addTransformer(
+    extractMarkdown({
+      headingMap: {
+        Explanation: 'explanation',
+        'Usage Example': 'usageExample',
+      },
+      codeBlockMap: { typescript: 'code' },
+    }),
+  );
 
 // Execute the template
 const session = await codeTemplate.execute(createSession());
 
 // Access the extracted data
-console.log("Code:", session.metadata.get('code'));
-console.log("Explanation:", session.metadata.get('explanation'));
+console.log('Code:', session.metadata.get('code'));
+console.log('Explanation:', session.metadata.get('explanation'));
 
 // You can also extract data using regex patterns
 const dataTemplate = new LinearTemplate()
-  .addUser("Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running")
-  .addTransformer(extractPattern([
-    {
-      pattern: /IP ([\d\.]+)/,
-      key: 'ipAddress'
-    },
-    {
-      pattern: /Uptime ([\d\.]+)%/,
-      key: 'uptime',
-      transform: (value) => parseFloat(value) / 100
-    }
-  ]));
+  .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
+  .addTransformer(
+    extractPattern([
+      {
+        pattern: /IP ([\d\.]+)/,
+        key: 'ipAddress',
+      },
+      {
+        pattern: /Uptime ([\d\.]+)%/,
+        key: 'uptime',
+        transform: (value) => parseFloat(value) / 100,
+      },
+    ]),
+  );
 
 const dataSession = await dataTemplate.execute(createSession());
-console.log("IP:", dataSession.metadata.get('ipAddress')); // "192.168.1.100"
-console.log("Uptime:", dataSession.metadata.get('uptime')); // 0.9999
-```
+console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
+console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
+````
 
 ### 🛡️ Guardrails
 
@@ -263,7 +272,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  OpenAIModel
+  OpenAIModel,
 } from '@prompttrail/core';
 
 // Create validators to ensure responses meet criteria
@@ -271,22 +280,22 @@ const validators = [
   // Ensure response is a single word with only letters
   new RegexMatchValidator({
     regex: /^[A-Za-z]+$/,
-    description: "Response must be a single word with only letters"
+    description: 'Response must be a single word with only letters',
   }),
-  
+
   // Ensure response is between 3 and 10 characters
   new LengthValidator({
     min: 3,
     max: 10,
-    description: "Response must be between 3 and 10 characters"
+    description: 'Response must be between 3 and 10 characters',
   }),
-  
+
   // Ensure response doesn't contain inappropriate words
   new KeywordValidator({
     keywords: ['inappropriate', 'offensive'],
     mode: 'exclude',
-    description: "Response must not be inappropriate"
-  })
+    description: 'Response must not be inappropriate',
+  }),
 ];
 
 // Combine all validators with AND logic
@@ -297,13 +306,13 @@ const guardrailTemplate = new GuardrailTemplate({
   template: new AssistantTemplate({ model }),
   validators: [combinedValidator],
   onFail: OnFailAction.RETRY,
-  maxAttempts: 3
+  maxAttempts: 3,
 });
 
 // Create a template that asks for a pet name
 const petNameTemplate = new LinearTemplate()
-  .addSystem("You are a helpful assistant that suggests pet names.")
-  .addUser("Suggest a name for a pet cat.");
+  .addSystem('You are a helpful assistant that suggests pet names.')
+  .addUser('Suggest a name for a pet cat.');
 
 // Execute the templates in sequence
 let session = createSession();
@@ -311,8 +320,82 @@ session = await petNameTemplate.execute(session);
 session = await guardrailTemplate.execute(session);
 
 // Get the final response
-console.log("Pet name:", session.getLastMessage()?.content);
+console.log('Pet name:', session.getLastMessage()?.content);
 ```
+
+### 🧩 Schema Validation
+
+Force LLMs to produce structured outputs using schemas:
+
+```typescript
+import {
+  LinearTemplate,
+  OpenAIModel,
+  AnthropicModel,
+  createSession,
+  defineSchema,
+  createStringProperty,
+  createNumberProperty,
+  createBooleanProperty,
+} from '@prompttrail/core';
+import { z } from 'zod';
+
+// Option 1: Using PromptTrail's native schema format
+const productSchema = defineSchema({
+  properties: {
+    name: createStringProperty('The name of the product'),
+    price: createNumberProperty('The price of the product in USD'),
+    inStock: createBooleanProperty('Whether the product is in stock'),
+    description: createStringProperty('A short description of the product'),
+  },
+  required: ['name', 'price', 'inStock'],
+});
+
+// Option 2: Using Zod schemas (more powerful validation)
+const userSchema = z.object({
+  username: z.string().min(3).max(20).describe('Username (3-20 characters)'),
+  email: z.string().email().describe('Valid email address'),
+  age: z.number().int().min(18).max(120).describe('Age (must be 18 or older)'),
+  roles: z.array(z.enum(['admin', 'user', 'moderator'])).describe('User roles'),
+  settings: z
+    .object({
+      darkMode: z.boolean().describe('Dark mode preference'),
+      notifications: z.boolean().describe('Notification preference'),
+    })
+    .describe('User settings'),
+});
+
+// Create a model (works with both OpenAI and Anthropic)
+const model = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
+  modelName: 'claude-3-5-haiku-latest',
+  temperature: 0.7,
+});
+
+// Create a template with schema validation
+const template = new LinearTemplate()
+  .addSystem('Extract product information from the text.')
+  .addUser(
+    'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock.',
+  );
+
+// Add schema validation (works with both native schemas and Zod schemas)
+await template.addSchema(productSchema, { model, maxAttempts: 3 });
+
+// Execute the template
+const session = await template.execute(createSession());
+
+// Get the structured output from the session metadata
+const product = session.metadata.get('structured_output');
+console.log(product);
+// Output: { name: 'iPhone 15 Pro', price: 999, inStock: true, description: 'Smartphone with a titanium frame' }
+
+// Access individual fields with proper typing
+console.log(`Product: ${product.name} - $${product.price}`);
+console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
+```
+
+This feature is inspired by Zod-GPT but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
 
 ### 🛠️ Tool Integration
 
@@ -328,20 +411,24 @@ const calculator = new Tool({
     properties: {
       a: { type: 'number', description: 'First number' },
       b: { type: 'number', description: 'Second number' },
-      operation: { 
-        type: 'string', 
+      operation: {
+        type: 'string',
         enum: ['add', 'subtract', 'multiply', 'divide'],
-        description: 'Operation to perform' 
+        description: 'Operation to perform',
       },
     },
     required: ['a', 'b', 'operation'],
   },
   execute: async (input) => {
     switch (input.operation) {
-      case 'add': return { result: input.a + input.b };
-      case 'subtract': return { result: input.a - input.b };
-      case 'multiply': return { result: input.a * input.b };
-      case 'divide': return { result: input.a / input.b };
+      case 'add':
+        return { result: input.a + input.b };
+      case 'subtract':
+        return { result: input.a - input.b };
+      case 'multiply':
+        return { result: input.a * input.b };
+      case 'divide':
+        return { result: input.a / input.b };
     }
   },
 });
@@ -354,7 +441,7 @@ const smartModel = new OpenAIModel({
 });
 
 const mathChat = new LinearTemplate()
-  .addSystem("I can help with calculations.")
+  .addSystem('I can help with calculations.')
   .addUser("What's 123 * 456?")
   .addAssistant({ model: smartModel });
 ```
@@ -364,10 +451,10 @@ const mathChat = new LinearTemplate()
 Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
 
 ```typescript
-import { 
-  AnthropicModel, 
-  createSession, 
-  LinearTemplate 
+import {
+  AnthropicModel,
+  createSession,
+  LinearTemplate,
 } from '@prompttrail/core';
 
 // Create an Anthropic model with MCP integration
@@ -386,8 +473,10 @@ const model = new AnthropicModel({
 
 // Create a template that uses the model with MCP tools
 const template = new LinearTemplate()
-  .addSystem(`You are a helpful assistant with access to external tools.
-             You can use these tools when needed to provide accurate information.`)
+  .addSystem(
+    `You are a helpful assistant with access to external tools.
+             You can use these tools when needed to provide accurate information.`,
+  )
   .addUser('Can you check the weather in San Francisco?', '')
   .addAssistant({ model });
 
@@ -419,27 +508,28 @@ PromptTrail provides comprehensive TypeScript definitions with full documentatio
 ```typescript
 import {
   // Templates
-  LinearTemplate,   // Sequential conversation flow
-  LoopTemplate,     // Conditional looping conversations
-  
+  LinearTemplate, // Sequential conversation flow
+  LoopTemplate, // Conditional looping conversations
+
   // Models
-  OpenAIModel,      // OpenAI API integration
-  AnthropicModel,   // Anthropic API integration
-  
+  OpenAIModel, // OpenAI API integration
+  AnthropicModel, // Anthropic API integration
+
   // Core utilities
-  createSession,    // Session factory
-  Tool,             // Function calling
-  CLIInputSource,   // Command-line input
+  createSession, // Session factory
+  Tool, // Function calling
+  CLIInputSource, // Command-line input
   MCPClientWrapper, // Anthropic MCP client
-  
+
   // Data extraction
-  extractMarkdown,  // Extract structured data from markdown
-  extractPattern,   // Extract data using regex patterns
+  extractMarkdown, // Extract structured data from markdown
+  extractPattern, // Extract data using regex patterns
   createTransformer, // Create custom transformers
 } from '@prompttrail/core';
 ```
 
 Leverage TypeScript's IDE features for:
+
 - 💡 Inline documentation
 - ⚡ Type-aware autocomplete
 - 🔍 Jump-to-definition navigation
