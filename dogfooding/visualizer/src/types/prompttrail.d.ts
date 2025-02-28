@@ -18,7 +18,22 @@ declare module '@prompttrail/core' {
             onInput?: (input: string) => Promise<void>;
             validate?: (input: string) => Promise<boolean>;
           },
+      defaultValue?: string,
     );
+
+    // Add method for chaining
+    addUser(
+      optionsOrDescription:
+        | string
+        | {
+            description: string;
+            default?: string;
+            inputSource?: InputSource;
+            onInput?: (input: string) => Promise<void>;
+            validate?: (input: string) => Promise<boolean>;
+          },
+      defaultValue?: string,
+    ): this;
   }
 
   export class AssistantTemplate extends Template {
@@ -28,7 +43,18 @@ declare module '@prompttrail/core' {
   export class LinearTemplate extends Template {
     constructor(templates?: Template[]);
     addSystem(content: string): this;
-    addUser(description: string, defaultValue: string): this;
+    addUser(
+      optionsOrDescription:
+        | string
+        | {
+            description: string;
+            default?: string;
+            inputSource?: InputSource;
+            onInput?: (input: string) => Promise<void>;
+            validate?: (input: string) => Promise<boolean>;
+          },
+      defaultValue?: string,
+    ): this;
     addAssistant(
       options:
         | string
@@ -45,7 +71,18 @@ declare module '@prompttrail/core' {
       templates: Template[];
       exitCondition: (session: Session) => boolean;
     });
-    addUser(description: string, defaultValue: string): this;
+    addUser(
+      optionsOrDescription:
+        | string
+        | {
+            description: string;
+            default?: string;
+            inputSource?: InputSource;
+            onInput?: (input: string) => Promise<void>;
+            validate?: (input: string) => Promise<boolean>;
+          },
+      defaultValue?: string,
+    ): this;
     addAssistant(
       options:
         | string
@@ -84,6 +121,28 @@ declare module '@prompttrail/core' {
   }
 
   export interface Model {
+    send(session: Session): Promise<Message>;
+  }
+
+  export class OpenAIModel implements Model {
+    constructor(config: {
+      apiKey: string;
+      modelName: string;
+      temperature?: number;
+      maxTokens?: number;
+      dangerouslyAllowBrowser?: boolean;
+    });
+    send(session: Session): Promise<Message>;
+  }
+
+  export class AnthropicModel implements Model {
+    constructor(config: {
+      apiKey: string;
+      modelName: string;
+      temperature?: number;
+      maxTokens?: number;
+      dangerouslyAllowBrowser?: boolean;
+    });
     send(session: Session): Promise<Message>;
   }
 

@@ -2,6 +2,7 @@ import React from 'react';
 import TemplateToolbar from './TemplateToolbar';
 import TemplateContainer from './TemplateContainer';
 import TemplateCodePanel from './TemplateCodePanel';
+import SessionPanel from './SessionPanel';
 
 /**
  * Main application component
@@ -21,8 +22,13 @@ const App: React.FC = () => {
         </div>
 
         <div className="right-panel w-1/2 flex flex-col">
-          {/* Code panel (now takes full height) */}
-          <div className="code-panel h-full overflow-hidden">
+          {/* Session panel for API key and running */}
+          <div className="session-panel-container p-2 border-b">
+            <SessionPanel />
+          </div>
+
+          {/* Code panel */}
+          <div className="code-panel flex-grow overflow-hidden">
             <TemplateCodePanel />
           </div>
         </div>

@@ -17,7 +17,12 @@ const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
   content,
   nodeId,
 }) => {
-  const { updateTemplate } = useTemplateStore();
+  const { updateTemplate, templates } = useTemplateStore();
+
+  // Get the current assistantType from the store to ensure it's up-to-date
+  const currentNode = nodeId ? templates.find((t) => t.id === nodeId) : null;
+  const currentAssistantType =
+    currentNode?.data?.assistantType || assistantType;
 
   const [editingField, setEditingField] = useState<'model' | 'content' | null>(
     null,
@@ -64,26 +69,52 @@ const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
   return (
     <div className="assistant-template-content">
       <div className="text-xs text-gray-500 mb-1">Type:</div>
-      <div className="mb-2">
-        <select
-          className="text-sm p-2 bg-white rounded border border-purple-200 hover:border-purple-500 w-full focus:outline-none focus:ring-2 focus:ring-purple-300"
-          value={assistantType}
-          onChange={(e) => {
-            if (nodeId) {
-              updateTemplate(nodeId, {
-                data: {
-                  assistantType: e.target.value as 'model' | 'content',
-                },
-              });
-            }
-          }}
-        >
-          <option value="model">Use LLM to generate content</option>
-          <option value="content">Fixed content (impersonating LLM)</option>
-        </select>
+      <div className="mb-3 flex flex-col space-y-2">
+        <label className="flex items-center">
+          <input
+            type="radio"
+            name={`assistant-type-${nodeId}`}
+            value="model"
+            checked={currentAssistantType === 'model'}
+            onChange={() => {
+              if (nodeId) {
+                updateTemplate(nodeId, {
+                  data: {
+                    assistantType: 'model',
+                  },
+                });
+              }
+            }}
+            className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
+          />
+          <span className="ml-2 text-sm text-gray-700">
+            Use LLM to generate content
+          </span>
+        </label>
+        <label className="flex items-center">
+          <input
+            type="radio"
+            name={`assistant-type-${nodeId}`}
+            value="content"
+            checked={currentAssistantType === 'content'}
+            onChange={() => {
+              if (nodeId) {
+                updateTemplate(nodeId, {
+                  data: {
+                    assistantType: 'content',
+                  },
+                });
+              }
+            }}
+            className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
+          />
+          <span className="ml-2 text-sm text-gray-700">
+            Fixed content (impersonating LLM)
+          </span>
+        </label>
       </div>
 
-      {assistantType === 'model' && (
+      {currentAssistantType === 'model' && (
         <>
           <div className="text-xs text-gray-500 mb-1">Model:</div>
           {editingField === 'model' ? (
@@ -112,7 +143,7 @@ const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
         </>
       )}
 
-      {assistantType === 'content' && (
+      {currentAssistantType === 'content' && (
         <>
           <div className="text-xs text-gray-500 mb-1">Content:</div>
           {editingField === 'content' ? (
