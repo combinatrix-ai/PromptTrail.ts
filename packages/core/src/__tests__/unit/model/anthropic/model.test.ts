@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { AnthropicModel } from '../../../../model/anthropic/model';
 import type {
   Session,
-  Tool,
   AssistantMessage,
   AssistantMetadata,
-  ToolResultMetadata,
 } from '../../../../types';
 import { createTool } from '../../../../tool';
 import { createMetadata } from '../../../../metadata';

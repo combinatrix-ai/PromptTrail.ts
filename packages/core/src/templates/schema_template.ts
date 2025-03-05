@@ -1,10 +1,9 @@
 import type { Session } from '../session';
 import type { Model } from '../model/base';
-import type { SchemaType, InferSchemaType } from '../tool';
+import type { SchemaType } from '../tool';
 import { createMetadata } from '../metadata';
 import { SchemaValidator } from '../validators/schema_validator';
 import { GuardrailTemplate, OnFailAction } from './guardrail_template';
-import type { ModelConfig } from '../types';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 

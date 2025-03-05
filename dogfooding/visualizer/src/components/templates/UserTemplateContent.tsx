@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, KeyboardEvent, FC } from 'react';
 import { useTemplateStore } from '../../utils/templateStore';
 
 interface UserTemplateContentProps {
@@ -11,7 +11,7 @@ interface UserTemplateContentProps {
 /**
  * Component to display User template content with in-place editing
  */
-const UserTemplateContent: React.FC<UserTemplateContentProps> = ({
+const UserTemplateContent: FC<UserTemplateContentProps> = ({
   description,
   defaultValue,
   inputType = 'runtime',
@@ -41,7 +41,7 @@ const UserTemplateContent: React.FC<UserTemplateContentProps> = ({
 
   const handleBlur = () => {
     if (nodeId && editingField) {
-      const updates: any = {};
+      const updates: Record<string, string | undefined> = {};
 
       if (editingField === 'description' && editedDescription !== description) {
         updates.description = editedDescription;
@@ -56,7 +56,7 @@ const UserTemplateContent: React.FC<UserTemplateContentProps> = ({
     setEditingField(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       handleBlur();
     } else if (e.key === 'Escape') {

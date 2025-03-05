@@ -2,7 +2,6 @@ import { useState } from 'react';
 import styled from '@emotion/styled';
 import {
   LinearTemplate,
-  AssistantTemplate,
   createSession,
 } from '../../../packages/core/src/index';
 import { OpenAIModel } from '../../../packages/core/src/model/openai/model';

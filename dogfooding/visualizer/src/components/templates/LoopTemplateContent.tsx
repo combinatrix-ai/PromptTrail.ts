@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, KeyboardEvent, FC } from 'react';
 import { useTemplateStore } from '../../utils/templateStore';
 
 interface LoopTemplateContentProps {
@@ -10,7 +10,7 @@ interface LoopTemplateContentProps {
 /**
  * Component to display Loop template content with in-place editing
  */
-const LoopTemplateContent: React.FC<LoopTemplateContentProps> = ({
+const LoopTemplateContent: FC<LoopTemplateContentProps> = ({
   exitCondition,
   name = 'Loop Template',
   nodeId,
@@ -52,7 +52,7 @@ const LoopTemplateContent: React.FC<LoopTemplateContentProps> = ({
     setEditingField(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       handleBlur();
     } else if (e.key === 'Escape') {

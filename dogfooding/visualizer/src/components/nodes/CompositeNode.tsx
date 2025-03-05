@@ -1,10 +1,10 @@
-import React, { memo } from 'react';
+import { memo, ReactNode, FC } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 
 interface CompositeNodeProps extends NodeProps {
   data: {
     label: string;
-    children: React.ReactNode;
+    children: ReactNode;
     expanded?: boolean;
     onToggleExpand?: () => void;
     onAddChild?: () => void;
@@ -15,7 +15,7 @@ interface CompositeNodeProps extends NodeProps {
   contentClassName?: string;
 }
 
-const CompositeNode: React.FC<CompositeNodeProps> = memo(
+const CompositeNode: FC<CompositeNodeProps> = memo(
   ({
     data,
     className = 'composite-node',

@@ -1,4 +1,4 @@
-import React from 'react';
+import { FC, useCallback } from 'react';
 import { NodeProps } from 'reactflow';
 import CompositeNode from './CompositeNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -9,10 +9,7 @@ interface LinearNodeData {
   label?: string;
 }
 
-const LinearNode: React.FC<NodeProps<LinearNodeData>> = ({
-  data,
-  ...props
-}) => {
+const LinearNode: FC<NodeProps<LinearNodeData>> = ({ data, ...props }) => {
   const {
     isNodeExpanded,
     toggleNodeExpansion,
@@ -22,7 +19,7 @@ const LinearNode: React.FC<NodeProps<LinearNodeData>> = ({
   } = useVisualizerStore();
   const expanded = isNodeExpanded(data.id);
 
-  const handleAddChild = React.useCallback(() => {
+  const handleAddChild = useCallback(() => {
     // Let the user choose which type to add
     const type = window.prompt(
       'Choose template type to add (System, User, or Assistant):',

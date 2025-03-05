@@ -51,9 +51,11 @@ const chat = new LinearTemplate()
   .addAssistant({ model });
 
 // Execute the template with print mode enabled
-const session = await chat.execute(createSession({
-  print: true, // Enable console logging of the conversation
-}));
+const session = await chat.execute(
+  createSession({
+    print: true, // Enable console logging of the conversation
+  }),
+);
 console.log(session.getLastMessage()?.content);
 ```
 

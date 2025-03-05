@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback, ChangeEvent, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import BaseNode from './BaseNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -12,7 +12,7 @@ interface SubroutineNodeData {
   parentId?: string;
 }
 
-const SubroutineNode: React.FC<NodeProps<SubroutineNodeData>> = ({
+const SubroutineNode: FC<NodeProps<SubroutineNodeData>> = ({
   data,
   ...props
 }) => {
@@ -27,7 +27,7 @@ const SubroutineNode: React.FC<NodeProps<SubroutineNodeData>> = ({
 
   const handleChange =
     (field: keyof typeof draftData) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setDraftData((prev) => ({ ...prev, [field]: e.target.value }));
     };
 

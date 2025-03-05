@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useTemplateStore, TemplateNode } from '../utils/templateStore';
+import { useState, useEffect, FormEvent, FC } from 'react';
+import { useTemplateStore } from '../utils/templateStore';
 
 /**
  * Component to edit template properties
  */
-const TemplatePropertyPanel: React.FC = () => {
+const TemplatePropertyPanel: FC = () => {
   const { templates, selectedId, updateTemplate } = useTemplateStore();
-  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [formData, setFormData] = useState<
+    Record<string, string | number | boolean>
+  >({});
 
   // Find the selected template
   const selectedTemplate = selectedId
@@ -16,7 +18,9 @@ const TemplatePropertyPanel: React.FC = () => {
   // Update form data when selection changes
   useEffect(() => {
     if (selectedTemplate) {
-      setFormData({ ...selectedTemplate.data });
+      setFormData({
+        ...(selectedTemplate.data as Record<string, string | number | boolean>),
+      });
     } else {
       setFormData({});
     }
@@ -35,7 +39,7 @@ const TemplatePropertyPanel: React.FC = () => {
   }
 
   // Handle input changes
-  const handleInputChange = (key: string, value: any) => {
+  const handleInputChange = (key: string, value: string) => {
     setFormData((prev) => ({
       ...prev,
       [key]: value,
@@ -43,7 +47,7 @@ const TemplatePropertyPanel: React.FC = () => {
   };
 
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     updateTemplate(selectedTemplate.id, { data: formData });
   };
@@ -61,7 +65,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <textarea
                 className="w-full p-2 border border-gray-300 rounded"
                 rows={5}
-                value={formData.content || ''}
+                value={(formData.content as string) || ''}
                 onChange={(e) => handleInputChange('content', e.target.value)}
               />
             </div>
@@ -78,7 +82,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <input
                 type="text"
                 className="w-full p-2 border border-gray-300 rounded"
-                value={formData.description || ''}
+                value={(formData.description as string) || ''}
                 onChange={(e) =>
                   handleInputChange('description', e.target.value)
                 }
@@ -91,7 +95,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <input
                 type="text"
                 className="w-full p-2 border border-gray-300 rounded"
-                value={formData.default || ''}
+                value={(formData.default as string) || ''}
                 onChange={(e) => handleInputChange('default', e.target.value)}
               />
             </div>
@@ -107,7 +111,7 @@ const TemplatePropertyPanel: React.FC = () => {
               </label>
               <select
                 className="w-full p-2 border border-gray-300 rounded"
-                value={formData.assistantType || 'model'}
+                value={(formData.assistantType as string) || 'model'}
                 onChange={(e) =>
                   handleInputChange('assistantType', e.target.value)
                 }
@@ -127,7 +131,7 @@ const TemplatePropertyPanel: React.FC = () => {
                 <input
                   type="text"
                   className="w-full p-2 border border-gray-300 rounded"
-                  value={formData.model || ''}
+                  value={(formData.model as string) || ''}
                   onChange={(e) => handleInputChange('model', e.target.value)}
                 />
               </div>
@@ -141,7 +145,7 @@ const TemplatePropertyPanel: React.FC = () => {
                 <textarea
                   className="w-full p-2 border border-gray-300 rounded"
                   rows={5}
-                  value={formData.content || ''}
+                  value={(formData.content as string) || ''}
                   onChange={(e) => handleInputChange('content', e.target.value)}
                 />
               </div>
@@ -159,7 +163,9 @@ const TemplatePropertyPanel: React.FC = () => {
               <textarea
                 className="w-full p-2 border border-gray-300 rounded font-mono text-sm"
                 rows={8}
-                value={formData.exitCondition || '(session) => false'}
+                value={
+                  (formData.exitCondition as string) || '(session) => false'
+                }
                 onChange={(e) =>
                   handleInputChange('exitCondition', e.target.value)
                 }
@@ -181,7 +187,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <input
                 type="text"
                 className="w-full p-2 border border-gray-300 rounded"
-                value={formData.templateId || ''}
+                value={(formData.templateId as string) || ''}
                 onChange={(e) =>
                   handleInputChange('templateId', e.target.value)
                 }
@@ -194,7 +200,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <textarea
                 className="w-full p-2 border border-gray-300 rounded font-mono text-sm"
                 rows={5}
-                value={formData.initWith || '(session) => ({})'}
+                value={(formData.initWith as string) || '(session) => ({})'}
                 onChange={(e) => handleInputChange('initWith', e.target.value)}
               />
             </div>
@@ -205,7 +211,7 @@ const TemplatePropertyPanel: React.FC = () => {
               <textarea
                 className="w-full p-2 border border-gray-300 rounded font-mono text-sm"
                 rows={5}
-                value={formData.squashWith || ''}
+                value={(formData.squashWith as string) || ''}
                 onChange={(e) =>
                   handleInputChange('squashWith', e.target.value)
                 }

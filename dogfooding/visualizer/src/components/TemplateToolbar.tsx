@@ -1,10 +1,10 @@
-import React from 'react';
+import { FC } from 'react';
 import { useTemplateStore } from '../utils/templateStore';
 
 /**
  * Toolbar component for the template visualizer
  */
-const TemplateToolbar: React.FC = () => {
+const TemplateToolbar: FC = () => {
   const { resetStore } = useTemplateStore();
 
   const handleReset = () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState, ChangeEvent, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import BaseNode from './BaseNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -9,10 +9,7 @@ interface SystemNodeData {
   parentId?: string;
 }
 
-const SystemNode: React.FC<NodeProps<SystemNodeData>> = ({
-  data,
-  ...props
-}) => {
+const SystemNode: FC<NodeProps<SystemNodeData>> = ({ data, ...props }) => {
   const { removeNode, removeChildFromNode, updateNode } = useVisualizerStore();
   const [draftContent, setDraftContent] = useState(data.content || '');
 
@@ -34,7 +31,7 @@ const SystemNode: React.FC<NodeProps<SystemNodeData>> = ({
     [props.id, data, updateNode],
   );
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleContentChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setDraftContent(e.target.value);
   };
 

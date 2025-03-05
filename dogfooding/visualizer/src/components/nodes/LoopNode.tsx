@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useCallback, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import CompositeNode from './CompositeNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -10,7 +10,7 @@ interface LoopNodeData {
   label?: string;
 }
 
-const LoopNode: React.FC<NodeProps<LoopNodeData>> = ({ data, ...props }) => {
+const LoopNode: FC<NodeProps<LoopNodeData>> = ({ data, ...props }) => {
   const {
     isNodeExpanded,
     toggleNodeExpansion,
@@ -27,7 +27,7 @@ const LoopNode: React.FC<NodeProps<LoopNodeData>> = ({ data, ...props }) => {
     data.exitCondition || '(session) => false',
   );
 
-  const handleAddChild = React.useCallback(() => {
+  const handleAddChild = useCallback(() => {
     // Types of nodes that can be added as children
     const nodeTypes: ('System' | 'User' | 'Assistant')[] = [
       'System',

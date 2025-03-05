@@ -1,9 +1,5 @@
 import React from 'react';
-import {
-  useTemplateStore,
-  TemplateNode,
-  TemplateType,
-} from '../utils/templateStore';
+import { useTemplateStore } from '../utils/templateStore';
 import TemplateNodeComponent from './TemplateNode';
 
 /**

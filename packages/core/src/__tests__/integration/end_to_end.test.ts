@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { OpenAIModel } from '../../model/openai/model';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import {
@@ -7,19 +6,11 @@ import {
   OnFailAction,
 } from '../../templates/guardrail_template';
 import { createTool } from '../../tool';
-import { extractPattern } from '../../utils/pattern_extractor';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/base_validators';
 import { Model } from '../../model/base';
 import { createMetadata } from '../../metadata';
-import type {
-  AssistantMetadata,
-  ToolResultMetadata,
-  Session,
-  Message,
-  Tool,
-  SchemaType,
-} from '../../types';
+import type { Session, Message, Tool, SchemaType } from '../../types';
 
 // Create a mock model class that extends Model
 class MockOpenAIModel extends Model {

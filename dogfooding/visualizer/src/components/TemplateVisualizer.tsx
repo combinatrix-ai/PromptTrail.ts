@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, MouseEvent, FC } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -62,9 +62,7 @@ const initialEdges: Edge[] = [
   { id: 'edge-1-2', source: 'node-1', target: 'system-1', type: 'smoothstep' },
 ];
 
-const TemplateVisualizer: React.FC<TemplateVisualizerProps> = ({
-  onNodeSelect,
-}) => {
+const TemplateVisualizer: FC<TemplateVisualizerProps> = ({ onNodeSelect }) => {
   // Get store functions
   const { setNodes: setStoreNodes, setEdges: setStoreEdges } =
     useVisualizerStore();
@@ -104,7 +102,7 @@ const TemplateVisualizer: React.FC<TemplateVisualizerProps> = ({
 
   // Handle node changes
   const handleNodesChange = useCallback(
-    (changes: any) => {
+    (changes: unknown) => {
       onNodesChange(changes);
       // Update store after local state changes
       setTimeout(() => {
@@ -116,7 +114,7 @@ const TemplateVisualizer: React.FC<TemplateVisualizerProps> = ({
 
   // Handle edge changes
   const handleEdgesChange = useCallback(
-    (changes: any) => {
+    (changes: unknown) => {
       onEdgesChange(changes);
       // Update store after local state changes
       setTimeout(() => {
@@ -179,7 +177,7 @@ const TemplateVisualizer: React.FC<TemplateVisualizerProps> = ({
 
   // Handle node click
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
+    (_: MouseEvent, node: Node) => {
       if (onNodeSelect) {
         onNodeSelect(node.id);
       }

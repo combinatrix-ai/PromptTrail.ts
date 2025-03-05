@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState, ChangeEvent, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import BaseNode from './BaseNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -11,7 +11,7 @@ interface AssistantNodeData {
   assistantType?: 'model' | 'content';
 }
 
-const AssistantNode: React.FC<NodeProps<AssistantNodeData>> = ({
+const AssistantNode: FC<NodeProps<AssistantNodeData>> = ({
   data,
   ...props
 }) => {
@@ -45,7 +45,7 @@ const AssistantNode: React.FC<NodeProps<AssistantNodeData>> = ({
   const handleChange =
     (field: keyof typeof draftData) =>
     (
-      e: React.ChangeEvent<
+      e: ChangeEvent<
         HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
       >,
     ) => {

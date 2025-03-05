@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, ReactNode, FC } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 
 interface BaseNodeProps extends NodeProps {
@@ -6,17 +6,17 @@ interface BaseNodeProps extends NodeProps {
     label?: string;
     parentId?: string; // ID of parent container if this is a child node
     onDelete?: () => void; // Function to handle deletion
-    onUpdate?: (data: any) => void; // Function to handle updates
+    onUpdate?: (data: unknown) => void; // Function to handle updates
     [key: string]: unknown;
   };
   className?: string;
   headerClassName?: string;
   contentClassName?: string;
-  children?: React.ReactNode;
-  editableContent?: React.ReactNode; // Editable fields when in edit mode
+  children?: ReactNode;
+  editableContent?: ReactNode; // Editable fields when in edit mode
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({
+const BaseNode: FC<BaseNodeProps> = ({
   data,
   className = 'node',
   headerClassName = 'node-header',

@@ -73,7 +73,6 @@ Integration tests verify that different components work together correctly. They
 
 Fixtures provide mock implementations and test data for use in tests. They help create a consistent testing environment and reduce duplication.
 
-
 ## Writing Tests
 
 When writing tests, follow these guidelines:
@@ -104,17 +103,20 @@ Consider the following improvements to the test suite:
 The end-to-end tests in `integration/end_to_end.test.ts` demonstrate complete workflows using PromptTrail, showcasing how different components work together:
 
 1. **Weather Information Workflow with Data Extraction**
+
    - Creates a template that asks for weather information
    - Uses a mock model to generate a response with structured data
    - Extracts markdown headings and code blocks using transformers
    - Verifies the extracted data is correctly stored in session metadata
 
 2. **Tool Usage Workflow**
+
    - Creates a template that uses a calculator tool
    - Demonstrates function calling with the model
    - Verifies tool calls are correctly generated and processed
 
 3. **Conversation with Guardrails**
+
    - Creates a template with content validation using RegexMatchValidator
    - Ensures responses meet specific criteria
    - Verifies guardrail metadata is correctly stored

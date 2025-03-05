@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState, ChangeEvent, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import BaseNode from './BaseNode';
 import { useVisualizerStore } from '../../utils/store';
@@ -12,7 +12,7 @@ interface UserNodeData {
   parentId?: string;
 }
 
-const UserNode: React.FC<NodeProps<UserNodeData>> = ({ data, ...props }) => {
+const UserNode: FC<NodeProps<UserNodeData>> = ({ data, ...props }) => {
   const { removeNode, removeChildFromNode, updateNode } = useVisualizerStore();
 
   // Create state for editable fields
@@ -43,7 +43,7 @@ const UserNode: React.FC<NodeProps<UserNodeData>> = ({ data, ...props }) => {
 
   const handleChange =
     (field: keyof typeof draftData) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setDraftData((prev) => ({ ...prev, [field]: e.target.value }));
     };
 

@@ -6,7 +6,7 @@ import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
-import type { SchemaType, InferSchemaType } from './tool';
+import type { SchemaType } from './tool';
 import { z } from 'zod';
 
 /**

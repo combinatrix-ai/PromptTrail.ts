@@ -1,10 +1,10 @@
-import React from 'react';
+import { FC } from 'react';
 
 interface ToolbarProps {
   onReset?: () => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ onReset }) => {
+const Toolbar: FC<ToolbarProps> = ({ onReset }) => {
   return (
     <div className="toolbar">
       <h1 className="text-xl font-bold">PromptTrail Template Visualizer</h1>

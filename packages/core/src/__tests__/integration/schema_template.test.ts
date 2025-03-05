@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { z } from 'zod';
 import { createSession } from '../../session';
 import { SchemaTemplate } from '../../templates/schema_template';
 import { OpenAIModel } from '../../model/openai/model';

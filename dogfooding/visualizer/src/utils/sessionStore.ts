@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { OpenAIModel, createSession, Session } from '@prompttrail/core';
+import { OpenAIModel, Session } from '@prompttrail/core';
 
 // Define a message type for the chat interface
 export interface ChatMessage {

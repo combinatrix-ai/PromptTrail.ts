@@ -40,8 +40,8 @@ interface VisualizerState {
   removeChildFromNode: (parentId: string, childId: string) => void;
 
   // React Flow handlers
-  onNodesChange: (changes: any) => void;
-  onEdgesChange: (changes: any) => void;
+  onNodesChange: (changes: unknown) => void;
+  onEdgesChange: (changes: unknown) => void;
 }
 
 // Create the store
@@ -183,14 +183,14 @@ export const useVisualizerStore = create<VisualizerState>((set, get) => ({
     }),
 
   // React Flow handlers
-  onNodesChange: (changes: any) =>
+  onNodesChange: (changes: unknown) =>
     set((state) => {
       const newNodes = [...state.nodes];
       // Apply changes to nodes (simplified)
       return { nodes: newNodes };
     }),
 
-  onEdgesChange: (changes: any) =>
+  onEdgesChange: (changes: unknown) =>
     set((state) => {
       const newEdges = [...state.edges];
       // Apply changes to edges (simplified)

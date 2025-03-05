@@ -269,7 +269,7 @@ const TemplateNodeComponent: React.FC<TemplateNodeProps> = ({
                     // Only allow conversion between container types
                     if (['Linear', 'Loop', 'Subroutine'].includes(newType)) {
                       // Create default data for the new type
-                      let newData: Record<string, any> = { ...node.data };
+                      const newData: Record<string, any> = { ...node.data };
 
                       // Preserve name if it exists
                       const name = node.data.name;

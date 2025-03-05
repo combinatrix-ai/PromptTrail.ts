@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, KeyboardEvent, FC } from 'react';
 import { useTemplateStore } from '../../utils/templateStore';
 
 interface AssistantTemplateContentProps {
@@ -11,7 +11,7 @@ interface AssistantTemplateContentProps {
 /**
  * Component to display Assistant template content with in-place editing
  */
-const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
+const AssistantTemplateContent: FC<AssistantTemplateContentProps> = ({
   assistantType = 'model',
   model,
   content,
@@ -41,7 +41,7 @@ const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
 
   const handleBlur = () => {
     if (nodeId && editingField) {
-      const updates: any = {};
+      const updates: Record<string, string | undefined> = {};
 
       if (editingField === 'model' && editedModel !== model) {
         updates.model = editedModel || undefined;
@@ -56,7 +56,7 @@ const AssistantTemplateContent: React.FC<AssistantTemplateContentProps> = ({
     setEditingField(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       handleBlur();
     } else if (e.key === 'Escape') {

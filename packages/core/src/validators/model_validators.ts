@@ -1,8 +1,5 @@
 import type { Model } from '../model/base';
-import type {
-  Validator,
-  ValidationResult,
-} from '../templates/guardrail_template';
+import type { ValidationResult } from '../templates/guardrail_template';
 import { BaseValidator } from './base_validators';
 import { createSession } from '../session';
 

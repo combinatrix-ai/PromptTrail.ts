@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, KeyboardEvent, FC } from 'react';
 import { useTemplateStore } from '../../utils/templateStore';
 
 interface LinearTemplateContentProps {
@@ -9,7 +9,7 @@ interface LinearTemplateContentProps {
 /**
  * Component to display Linear template content with in-place editing
  */
-const LinearTemplateContent: React.FC<LinearTemplateContentProps> = ({
+const LinearTemplateContent: FC<LinearTemplateContentProps> = ({
   name = 'Linear Template',
   nodeId,
 }) => {
@@ -31,7 +31,7 @@ const LinearTemplateContent: React.FC<LinearTemplateContentProps> = ({
     setEditingField(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleBlur();
     } else if (e.key === 'Escape') {

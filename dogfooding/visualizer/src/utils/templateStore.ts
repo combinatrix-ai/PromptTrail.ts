@@ -16,7 +16,7 @@ export interface TemplateNode {
   type: TemplateType;
   parentId?: string;
   position: number; // Order within parent
-  data: Record<string, any>;
+  data: Record<string, string | number | boolean | string[] | undefined>;
 }
 
 // Specific template interfaces
@@ -51,7 +51,7 @@ export interface LinearTemplateNode extends TemplateNode {
   type: 'Linear';
   data: {
     name?: string;
-    [key: string]: any; // Allow any other properties
+    [key: string]: string | number | boolean | string[] | undefined; // Allow other properties
   };
 }
 
@@ -469,7 +469,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
         ['linear', 'loop', 'subroutine'].includes(type)
       ) {
         // Convert the name to a valid JavaScript variable name
-        const validName = template.data.name
+        const validName = String(template.data.name)
           .replace(/[^a-zA-Z0-9_]/g, '_')
           .replace(/^[0-9]/, '_'); // Ensure the name doesn't start with a number
 
@@ -514,23 +514,23 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
 
       switch (template.type) {
         case 'System':
-          return `const ${varName} = new SystemTemplate(${formatString(template.data.content)});\n`;
+          return `const ${varName} = new SystemTemplate(${formatString(String(template.data.content))});\n`;
 
         case 'User':
           return (
             `const ${varName} = new UserTemplate({\n` +
-            `  description: ${formatString(template.data.description || '')},\n` +
+            `  description: ${formatString(String(template.data.description || ''))},\n` +
             (template.data.default
-              ? `  default: ${formatString(template.data.default)},\n`
+              ? `  default: ${formatString(String(template.data.default))},\n`
               : '') +
             (template.data.inputType === 'runtime'
               ? `  inputSource: customInputSource,\n`
               : '') +
             (template.data.validate
-              ? `  validate: ${template.data.validate},\n`
+              ? `  validate: ${String(template.data.validate)},\n`
               : '') +
             (template.data.onInput
-              ? `  onInput: ${template.data.onInput},\n`
+              ? `  onInput: ${String(template.data.onInput)},\n`
               : '') +
             `});\n`
           );
@@ -541,16 +541,16 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             template.data.content
           ) {
             // If using content, we can use the simpler string constructor
-            return `const ${varName} = new AssistantTemplate(${formatString(template.data.content)});\n`;
+            return `const ${varName} = new AssistantTemplate(${formatString(String(template.data.content))});\n`;
           } else {
             // Otherwise use the full object syntax
             return (
               `const ${varName} = new AssistantTemplate({\n` +
               (template.data.model
-                ? `  model: ${formatString(template.data.model)},\n`
+                ? `  model: ${formatString(String(template.data.model))},\n`
                 : '') +
               (template.data.content
-                ? `  content: ${formatString(template.data.content)},\n`
+                ? `  content: ${formatString(String(template.data.content))},\n`
                 : '') +
               `});\n`
             );
@@ -568,7 +568,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
 
               switch (childType) {
                 case 'System':
-                  loopCode += `    new SystemTemplate(${formatString(child.data.content || '')})`;
+                  loopCode += `    new SystemTemplate(${formatString(String(child.data.content || ''))})`;
                   break;
 
                 case 'User':
@@ -576,18 +576,18 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                   if (child.data.inputType === 'runtime') {
                     loopCode +=
                       `    new UserTemplate({\n` +
-                      `      description: ${formatString(child.data.description || '')},\n` +
+                      `      description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `      default: ${formatString(child.data.default)},\n`
+                        ? `      default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `      inputSource: customInputSource,\n` +
                       `    })`;
                   } else {
                     loopCode +=
                       `    new UserTemplate({\n` +
-                      `      description: ${formatString(child.data.description || '')},\n` +
+                      `      description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `      default: ${formatString(child.data.default)},\n`
+                        ? `      default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `    })`;
                   }
@@ -599,14 +599,14 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     child.data.content
                   ) {
                     // Use the simple string constructor for content-only
-                    loopCode += `    new AssistantTemplate(${formatString(child.data.content)})`;
+                    loopCode += `    new AssistantTemplate(${formatString(String(child.data.content))})`;
                   } else {
                     // Use the full object syntax
                     loopCode += `    new AssistantTemplate({`;
                     if (child.data.model)
-                      loopCode += `\n      model: ${formatString(child.data.model)},`;
+                      loopCode += `\n      model: ${formatString(String(child.data.model))},`;
                     if (child.data.content)
-                      loopCode += `\n      content: ${formatString(child.data.content)},`;
+                      loopCode += `\n      content: ${formatString(String(child.data.content))},`;
                     loopCode += `\n    })`;
                   }
                   break;
@@ -635,7 +635,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
           }
 
           // Add exit condition
-          loopCode += `  exitCondition: ${template.data.exitCondition || '(session) => false'},\n`;
+          loopCode += `  exitCondition: ${String(template.data.exitCondition || '(session) => false')},\n`;
           loopCode += `});\n`;
 
           return loopCode;
@@ -652,7 +652,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             children.forEach((child) => {
               switch (child.type) {
                 case 'System':
-                  subroutineCode += `\n    .addSystem(${formatString(child.data.content || '')})`;
+                  subroutineCode += `\n    .addSystem(${formatString(String(child.data.content || ''))})`;
                   break;
 
                 case 'User':
@@ -660,18 +660,18 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                   if (child.data.inputType === 'runtime') {
                     subroutineCode +=
                       `\n    .addUser({\n` +
-                      `      description: ${formatString(child.data.description || '')},\n` +
+                      `      description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `      default: ${formatString(child.data.default)},\n`
+                        ? `      default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `      inputSource: customInputSource,\n` +
                       `    })`;
                   } else {
                     subroutineCode +=
                       `\n    .addUser({\n` +
-                      `      description: ${formatString(child.data.description || '')},\n` +
+                      `      description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `      default: ${formatString(child.data.default)},\n`
+                        ? `      default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `    })`;
                   }
@@ -682,13 +682,13 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     child.data.assistantType === 'content' &&
                     child.data.content
                   ) {
-                    subroutineCode += `\n    .addAssistant(${formatString(child.data.content)})`;
+                    subroutineCode += `\n    .addAssistant(${formatString(String(child.data.content))})`;
                   } else {
                     subroutineCode += `\n    .addAssistant({`;
                     if (child.data.model)
-                      subroutineCode += `\n      model: ${formatString(child.data.model)},`;
+                      subroutineCode += `\n      model: ${formatString(String(child.data.model))},`;
                     if (child.data.content)
-                      subroutineCode += `\n      content: ${formatString(child.data.content)},`;
+                      subroutineCode += `\n      content: ${formatString(String(child.data.content))},`;
                     subroutineCode += `\n    })`;
                   }
                   break;
@@ -709,16 +709,16 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             subroutineCode += `,\n`;
           } else if (template.data.templateId) {
             // Use legacy templateId if no children but templateId exists
-            subroutineCode += `  templateId: ${formatString(template.data.templateId)},\n`;
+            subroutineCode += `  templateId: ${formatString(String(template.data.templateId))},\n`;
           } else {
             // Default to empty template
             subroutineCode += `  template: new LinearTemplate(),\n`;
           }
 
           // Add other required properties
-          subroutineCode += `  initWith: ${template.data.initWith || '(session) => ({})'},\n`;
+          subroutineCode += `  initWith: ${String(template.data.initWith || '(session) => ({})')},\n`;
           if (template.data.squashWith) {
-            subroutineCode += `  squashWith: ${template.data.squashWith},\n`;
+            subroutineCode += `  squashWith: ${String(template.data.squashWith)},\n`;
           }
 
           subroutineCode += `});\n`;
@@ -733,7 +733,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             children.forEach((child) => {
               switch (child.type) {
                 case 'System':
-                  linearCode += `\n  .addSystem(${formatString(child.data.content || '')})`;
+                  linearCode += `\n  .addSystem(${formatString(String(child.data.content || ''))})`;
                   break;
 
                 case 'User':
@@ -741,9 +741,9 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                   if (child.data.inputType === 'runtime') {
                     linearCode +=
                       `\n  .addUser({\n` +
-                      `    description: ${formatString(child.data.description || '')},\n` +
+                      `    description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `    default: ${formatString(child.data.default)},\n`
+                        ? `    default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `    inputSource: customInputSource,\n` +
                       `  })`;
@@ -751,9 +751,9 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     // Fixed input (not using runtime input)
                     linearCode +=
                       `\n  .addUser({\n` +
-                      `    description: ${formatString(child.data.description || '')},\n` +
+                      `    description: ${formatString(String(child.data.description || ''))},\n` +
                       (child.data.default
-                        ? `    default: ${formatString(child.data.default)},\n`
+                        ? `    default: ${formatString(String(child.data.default))},\n`
                         : '') +
                       `  })`;
                   }
@@ -765,14 +765,14 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     child.data.content
                   ) {
                     // Use the simple string constructor for content-only assistants
-                    linearCode += `\n  .addAssistant(${formatString(child.data.content)})`;
+                    linearCode += `\n  .addAssistant(${formatString(String(child.data.content))})`;
                   } else {
                     // Use the full object syntax
                     linearCode += `\n  .addAssistant({`;
                     if (child.data.model)
-                      linearCode += `\n    model: ${formatString(child.data.model)},`;
+                      linearCode += `\n    model: ${formatString(String(child.data.model))},`;
                     if (child.data.content)
-                      linearCode += `\n    content: ${formatString(child.data.content)},`;
+                      linearCode += `\n    content: ${formatString(String(child.data.content))},`;
                     linearCode += `\n  })`;
                   }
                   break;

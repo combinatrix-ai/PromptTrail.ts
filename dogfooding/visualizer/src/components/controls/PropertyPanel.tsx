@@ -1,4 +1,4 @@
-import React from 'react';
+import { FC } from 'react';
 import { TemplateNode } from '../../utils/templateTypes';
 
 interface PropertyPanelProps {
@@ -6,10 +6,7 @@ interface PropertyPanelProps {
   onNodeUpdate?: (id: string, data: Partial<TemplateNode>) => void;
 }
 
-const PropertyPanel: React.FC<PropertyPanelProps> = ({
-  node,
-  onNodeUpdate,
-}) => {
+const PropertyPanel: FC<PropertyPanelProps> = ({ node, onNodeUpdate }) => {
   if (!node) {
     return (
       <div className="property-panel">

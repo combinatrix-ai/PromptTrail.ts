@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LinearTemplate, OpenAIModel, createSession } from '../../../src';
-import { createMessage } from '../utils';
 
 // Mock OpenAI model
 vi.mock('../../../src/model/openai/model', () => {
