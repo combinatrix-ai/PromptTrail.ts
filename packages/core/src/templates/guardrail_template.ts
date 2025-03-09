@@ -194,15 +194,16 @@ export class GuardrailTemplate<
 
         // Handle based on onFail action
         switch (this.options.onFail) {
-          case OnFailAction.EXCEPTION:
+          case OnFailAction.EXCEPTION: {
             const failedFeedback = validationResults
               .filter((result) => !result.passed)
               .map((result) => result.feedback)
               .filter(Boolean)
               .join('; ');
             throw new Error(`Validation failed: ${failedFeedback}`);
+          }
 
-          case OnFailAction.FIX:
+          case OnFailAction.FIX: {
             // If any validator provides a fix, apply it and return
             const fixResult = validationResults.find(
               (result) => !result.passed && result.fix,
@@ -220,6 +221,7 @@ export class GuardrailTemplate<
             }
             // If no fix available, continue to retry
             break;
+          }
 
           case OnFailAction.CONTINUE:
             // Continue with the failed result but keep allPassed as false

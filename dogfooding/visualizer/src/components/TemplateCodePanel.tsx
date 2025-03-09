@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useTemplateStore } from '../utils/templateStore';
 import MonacoEditor, { OnMount } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 
 /**
  * Component to display the generated code
@@ -8,7 +9,7 @@ import MonacoEditor, { OnMount } from '@monaco-editor/react';
 const TemplateCodePanel: React.FC = () => {
   const { generateCode, templates } = useTemplateStore();
   const [code, setCode] = useState<string>('');
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   // Handle editor mount
   const handleEditorDidMount: OnMount = (editor) => {

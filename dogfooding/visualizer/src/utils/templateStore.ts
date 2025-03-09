@@ -249,37 +249,42 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
 
     // Add type-specific defaults
     switch (type) {
-      case 'System':
+      case 'System': {
         (newTemplate as SystemTemplateNode).data = {
           content: 'System content',
         };
         break;
-      case 'User':
+      }
+      case 'User': {
         (newTemplate as UserTemplateNode).data = {
           description: 'Your message:',
           default: '',
           inputType: 'runtime', // Default to runtime input
         };
         break;
-      case 'Assistant':
+      }
+      case 'Assistant': {
         (newTemplate as AssistantTemplateNode).data = {
           assistantType: 'model',
           model: 'gpt-4o-mini',
         };
         break;
-      case 'Loop':
+      }
+      case 'Loop': {
         (newTemplate as LoopTemplateNode).data = {
           name: defaultName,
           exitCondition:
             '(session) => {\n  // Exit condition\n  return false;\n}',
         };
         break;
-      case 'Linear':
+      }
+      case 'Linear': {
         (newTemplate as LinearTemplateNode).data = {
           name: defaultName,
         };
         break;
-      case 'Subroutine':
+      }
+      case 'Subroutine': {
         (newTemplate as SubroutineTemplateNode).data = {
           name: defaultName,
           childIds: [],
@@ -287,6 +292,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
           initWith: '(session) => ({})',
         };
         break;
+      }
     }
 
     // Update the templates array
@@ -499,7 +505,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
       const children = get().getChildTemplates(template.id);
 
       // Helper function to handle multi-line strings
-      const formatString = (str: string): string => {
+      function formatString(str: string): string {
         if (!str) return '';
 
         // Check if the string contains newlines
@@ -510,7 +516,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
           // Use single quotes for single-line strings, escaping any single quotes
           return `'${str.replace(/'/g, "\\'")}'`;
         }
-      };
+      }
 
       switch (template.type) {
         case 'System':
@@ -567,11 +573,12 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
               const childType = child.type;
 
               switch (childType) {
-                case 'System':
+                case 'System': {
                   loopCode += `    new SystemTemplate(${formatString(String(child.data.content || ''))})`;
                   break;
+                }
 
-                case 'User':
+                case 'User': {
                   // Check if this is a runtime input user template
                   if (child.data.inputType === 'runtime') {
                     loopCode +=
@@ -592,8 +599,9 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                       `    })`;
                   }
                   break;
+                }
 
-                case 'Assistant':
+                case 'Assistant': {
                   if (
                     child.data.assistantType === 'content' &&
                     child.data.content
@@ -610,16 +618,18 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     loopCode += `\n    })`;
                   }
                   break;
+                }
 
                 case 'Loop':
                 case 'Linear':
-                case 'Subroutine':
+                case 'Subroutine': {
                   // For complex template types, reference the variable name
                   const childVarName = varNames.get(child.id);
                   if (childVarName) {
                     loopCode += `    ${childVarName}`;
                   }
                   break;
+                }
               }
 
               if (idx < children.length - 1) {
@@ -651,11 +661,12 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             // Add children using chained API
             children.forEach((child) => {
               switch (child.type) {
-                case 'System':
+                case 'System': {
                   subroutineCode += `\n    .addSystem(${formatString(String(child.data.content || ''))})`;
                   break;
+                }
 
-                case 'User':
+                case 'User': {
                   // Check if this is a runtime input user template
                   if (child.data.inputType === 'runtime') {
                     subroutineCode +=
@@ -676,8 +687,9 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                       `    })`;
                   }
                   break;
+                }
 
-                case 'Assistant':
+                case 'Assistant': {
                   if (
                     child.data.assistantType === 'content' &&
                     child.data.content
@@ -692,17 +704,20 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     subroutineCode += `\n    })`;
                   }
                   break;
+                }
 
-                case 'Loop':
+                case 'Loop': {
                   const loopVarName = varNames.get(child.id) || 'loopTemplate';
                   subroutineCode += `\n    .addLoop(${loopVarName})`;
                   break;
+                }
 
-                case 'Subroutine':
+                case 'Subroutine': {
                   const subVarName =
                     varNames.get(child.id) || 'subroutineTemplate';
                   subroutineCode += `\n    .addSubroutine(${subVarName})`;
                   break;
+                }
               }
             });
 
@@ -732,11 +747,12 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
             // Add children using chained API
             children.forEach((child) => {
               switch (child.type) {
-                case 'System':
+                case 'System': {
                   linearCode += `\n  .addSystem(${formatString(String(child.data.content || ''))})`;
                   break;
+                }
 
-                case 'User':
+                case 'User': {
                   // Check if this is a runtime input user template
                   if (child.data.inputType === 'runtime') {
                     linearCode +=
@@ -758,8 +774,9 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                       `  })`;
                   }
                   break;
+                }
 
-                case 'Assistant':
+                case 'Assistant': {
                   if (
                     child.data.assistantType === 'content' &&
                     child.data.content
@@ -776,17 +793,20 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
                     linearCode += `\n  })`;
                   }
                   break;
+                }
 
-                case 'Loop':
+                case 'Loop': {
                   const loopVarName = varNames.get(child.id) || 'loopTemplate';
                   linearCode += `\n  .addLoop(${loopVarName})`;
                   break;
+                }
 
-                case 'Subroutine':
+                case 'Subroutine': {
                   const subVarName =
                     varNames.get(child.id) || 'subroutineTemplate';
                   linearCode += `\n  .addSubroutine(${subVarName})`;
                   break;
+                }
               }
             });
 

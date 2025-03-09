@@ -1,6 +1,14 @@
 import React from 'react';
 import { useVisualizerStore } from '../utils/store';
-import { TemplateNode } from '../utils/templateTypes';
+import {
+  TemplateNode,
+  ISystemTemplateNode,
+  IUserTemplateNode,
+  IAssistantTemplateNode,
+  ILinearTemplateNode,
+  ILoopTemplateNode,
+  ISubroutineTemplateNode,
+} from '../utils/templateTypes';
 
 interface NodeEditorProps {
   nodeId: string | null;
@@ -30,7 +38,6 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
 
   const handleChange = (key: string, value: string) => {
     if (onNodeUpdate && selectedNode) {
-      // Use type assertion to avoid TypeScript errors
       const updatedNode = {
         ...selectedNode,
         data: {
@@ -38,7 +45,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
           [key]: value,
         },
       };
-      onNodeUpdate(selectedNode.id, updatedNode as any);
+      onNodeUpdate(selectedNode.id, updatedNode as TemplateNode);
     }
   };
 
@@ -52,7 +59,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <label className="property-label">Content</label>
               <textarea
                 className="property-input h-32"
-                value={(selectedNode.data as any).content || ''}
+                value={(selectedNode as ISystemTemplateNode).data.content || ''}
                 onChange={(e) => handleChange('content', e.target.value)}
                 placeholder="Enter system message content..."
               />
@@ -68,7 +75,9 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <input
                 type="text"
                 className="property-input"
-                value={(selectedNode.data as any).description || ''}
+                value={
+                  (selectedNode as IUserTemplateNode).data.description || ''
+                }
                 onChange={(e) => handleChange('description', e.target.value)}
                 placeholder="Enter description..."
               />
@@ -78,7 +87,7 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <input
                 type="text"
                 className="property-input"
-                value={(selectedNode.data as any).default || ''}
+                value={(selectedNode as IUserTemplateNode).data.default || ''}
                 onChange={(e) => handleChange('default', e.target.value)}
                 placeholder="Enter default value..."
               />
@@ -93,7 +102,9 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <label className="property-label">Content (optional)</label>
               <textarea
                 className="property-input h-32"
-                value={(selectedNode.data as any).content || ''}
+                value={
+                  (selectedNode as IAssistantTemplateNode).data.content || ''
+                }
                 onChange={(e) => handleChange('content', e.target.value)}
                 placeholder="Enter fixed response content..."
               />
@@ -103,7 +114,9 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <input
                 type="text"
                 className="property-input"
-                value={(selectedNode.data as any).model || ''}
+                value={
+                  (selectedNode as IAssistantTemplateNode).data.model || ''
+                }
                 onChange={(e) => handleChange('model', e.target.value)}
                 placeholder="e.g., gpt-4o-mini"
               />
@@ -118,14 +131,21 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
             <div className="property-group">
               <label className="property-label">Child Templates</label>
               <div className="text-xs bg-gray-100 p-2 rounded">
-                {((selectedNode.data as any).childIds || []).length > 0 ? (
-                  ((selectedNode.data as any).childIds || []).map(
-                    (id: string, index: number) => (
-                      <div key={id} className="mb-1">
-                        {index + 1}. {id}
-                      </div>
-                    ),
-                  )
+                {(selectedNode.type === 'Linear' || selectedNode.type === 'Loop'
+                  ? (selectedNode as ILinearTemplateNode | ILoopTemplateNode)
+                      .data.childIds
+                  : []
+                ).length > 0 ? (
+                  (selectedNode.type === 'Linear' ||
+                  selectedNode.type === 'Loop'
+                    ? (selectedNode as ILinearTemplateNode | ILoopTemplateNode)
+                        .data.childIds
+                    : []
+                  ).map((id: string, index: number) => (
+                    <div key={id} className="mb-1">
+                      {index + 1}. {id}
+                    </div>
+                  ))
                 ) : (
                   <div className="text-gray-500">No child templates</div>
                 )}
@@ -136,7 +156,9 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
                 <label className="property-label">Exit Condition</label>
                 <textarea
                   className="property-input h-24"
-                  value={(selectedNode.data as any).exitCondition || ''}
+                  value={
+                    (selectedNode as ILoopTemplateNode).data.exitCondition || ''
+                  }
                   onChange={(e) =>
                     handleChange('exitCondition', e.target.value)
                   }
@@ -155,7 +177,10 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <input
                 type="text"
                 className="property-input"
-                value={(selectedNode.data as any).templateId || ''}
+                value={
+                  (selectedNode as ISubroutineTemplateNode).data.templateId ||
+                  ''
+                }
                 onChange={(e) => handleChange('templateId', e.target.value)}
                 placeholder="Enter template ID..."
               />
@@ -164,7 +189,9 @@ const NodeEditor: React.FC<NodeEditorProps> = ({
               <label className="property-label">Init Function</label>
               <textarea
                 className="property-input h-24"
-                value={(selectedNode.data as any).initWith || ''}
+                value={
+                  (selectedNode as ISubroutineTemplateNode).data.initWith || ''
+                }
                 onChange={(e) => handleChange('initWith', e.target.value)}
                 placeholder="Enter init function..."
               />

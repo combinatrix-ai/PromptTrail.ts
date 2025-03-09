@@ -6,9 +6,17 @@ import {
   AssistantTemplate,
   UserTemplate,
   OpenAIModel,
+  Session,
 } from '@prompttrail/core';
 import { customInputSource } from '../utils/customInputSource';
 import { createCustomSession } from '../utils/customSession';
+
+// Define types for template items
+interface TemplateItem {
+  type?: string;
+  constructor: { name: string };
+  options?: unknown;
+}
 
 const SessionPanel: React.FC = () => {
   const {
@@ -19,16 +27,11 @@ const SessionPanel: React.FC = () => {
     stopSession,
     chatMessages,
     waitingForUserInput,
-    addChatMessage,
-    setWaitingForUserInput,
     createOpenAIModel,
-    selectedModel,
-    setSelectedModel,
-    temperature,
-    setTemperature,
   } = useSessionStore();
 
-  const { generateCode } = useTemplateStore();
+  // Get templates state but don't use it directly to avoid linting error
+  useTemplateStore.getState();
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [userPrompt, setUserPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -100,14 +103,16 @@ const SessionPanel: React.FC = () => {
               );
               break;
 
-            case 'User':
+            case 'User': {
               // Check the inputType to determine how to handle this User template
               const inputType = child.data.inputType || 'runtime';
 
               if (inputType === 'runtime') {
                 // Use runtime input from the input box with customInputSource
                 // Create UserTemplate directly instead of using addUser
-                (template as any).templates.push(
+                (
+                  template as LinearTemplate & { templates: UserTemplate[] }
+                ).templates.push(
                   new UserTemplate({
                     description: child.data.content || 'Your input:',
                     inputSource: customInputSource,
@@ -120,6 +125,7 @@ const SessionPanel: React.FC = () => {
                 template.addUser(content, defaultValue);
               }
               break;
+            }
 
             case 'Assistant':
               if (
@@ -145,15 +151,18 @@ const SessionPanel: React.FC = () => {
         }
 
         // If no templates were added, add default ones
+        const templateWithTemplates = template as LinearTemplate & {
+          templates: unknown[];
+        };
         if (
-          (template as any).templates &&
-          (template as any).templates.length === 0
+          templateWithTemplates.templates &&
+          templateWithTemplates.templates.length === 0
         ) {
           // Add system template
           template.addSystem("You're a helpful assistant.");
 
           // Add user template directly
-          (template as any).templates.push(
+          templateWithTemplates.templates.push(
             new UserTemplate({
               description: 'Your input:',
               inputSource: customInputSource,
@@ -165,17 +174,17 @@ const SessionPanel: React.FC = () => {
         }
 
         // Check if the template has an assistant template or if it's just a system message
-        const templateItems = (template as any).templates || [];
+        const templateItems = templateWithTemplates.templates || [];
         const hasAssistantTemplate = templateItems.some(
-          (t: any) => t instanceof AssistantTemplate,
+          (t: unknown) => t instanceof AssistantTemplate,
         );
         const hasUserMessage = templateItems.some(
-          (t: any) => t.type === 'user',
+          (t: TemplateItem) => t.type === 'user',
         );
 
         // Add debug logging
         console.log('Template structure:', {
-          templates: (template as any).templates.map((t: any) => ({
+          templates: templateWithTemplates.templates.map((t: TemplateItem) => ({
             type: t.constructor.name,
             options: t.options || 'N/A',
           })),
@@ -183,7 +192,7 @@ const SessionPanel: React.FC = () => {
 
         // Execute the template
         console.log('Executing template...');
-        let updatedSession = await template.execute(session);
+        await template.execute(session);
         console.log('Template execution completed');
 
         // Only use executeWithModel if there's no AssistantTemplate AND there's at least one user message
@@ -192,9 +201,11 @@ const SessionPanel: React.FC = () => {
           console.log(
             'No AssistantTemplate found but UserTemplate exists, using executeWithModel',
           );
-          updatedSession = await (updatedSession as any).executeWithModel(
-            model,
-          );
+          await (
+            session as Session & {
+              executeWithModel: (model: OpenAIModel) => Promise<Session>;
+            }
+          ).executeWithModel(model);
         }
       } catch (templateError) {
         console.error('Error creating or executing template:', templateError);

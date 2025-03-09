@@ -137,52 +137,84 @@ const TemplateNodeComponent: React.FC<TemplateNodeProps> = ({
   // Render the content based on the node type
   const renderContent = () => {
     switch (node.type) {
-      case 'System':
-        return (
-          <SystemTemplateContent content={node.data.content} nodeId={node.id} />
-        );
+      case 'System': {
+        const content = node.data.content ? String(node.data.content) : '';
+        return <SystemTemplateContent content={content} nodeId={node.id} />;
+      }
 
-      case 'User':
+      case 'User': {
+        const description = node.data.description
+          ? String(node.data.description)
+          : '';
+        const defaultValue = node.data.default
+          ? String(node.data.default)
+          : undefined;
         return (
           <UserTemplateContent
-            description={node.data.description}
-            defaultValue={node.data.default}
+            description={description}
+            defaultValue={defaultValue}
             nodeId={node.id}
           />
         );
+      }
 
-      case 'Assistant':
+      case 'Assistant': {
+        const assistantType = node.data.assistantType as
+          | 'model'
+          | 'content'
+          | undefined;
+        const model = node.data.model ? String(node.data.model) : undefined;
+        const content = node.data.content
+          ? String(node.data.content)
+          : undefined;
         return (
           <AssistantTemplateContent
-            assistantType={node.data.assistantType}
-            model={node.data.model}
-            content={node.data.content}
+            assistantType={assistantType}
+            model={model}
+            content={content}
             nodeId={node.id}
           />
         );
+      }
 
-      case 'Loop':
+      case 'Loop': {
+        const exitCondition = node.data.exitCondition
+          ? String(node.data.exitCondition)
+          : '';
+        const name = node.data.name ? String(node.data.name) : undefined;
         return (
           <LoopTemplateContent
-            exitCondition={node.data.exitCondition}
-            name={node.data.name}
+            exitCondition={exitCondition}
+            name={name}
             nodeId={node.id}
           />
         );
+      }
 
-      case 'Subroutine':
+      case 'Subroutine': {
+        const templateId = node.data.templateId
+          ? String(node.data.templateId)
+          : undefined;
+        const initWith = node.data.initWith ? String(node.data.initWith) : '';
+        const squashWith = node.data.squashWith
+          ? String(node.data.squashWith)
+          : undefined;
+        const name = node.data.name ? String(node.data.name) : undefined;
         return (
           <SubroutineTemplateContent
-            templateId={node.data.templateId}
-            initWith={node.data.initWith}
-            squashWith={node.data.squashWith}
-            name={node.data.name}
+            templateId={templateId}
+            initWith={initWith}
+            squashWith={squashWith}
+            name={name}
             nodeId={node.id}
           />
         );
+      }
 
-      case 'Linear':
-        return <LinearTemplateContent name={node.data.name} nodeId={node.id} />;
+      case 'Linear': {
+        const name = node.data.name ? String(node.data.name) : undefined;
+        return <LinearTemplateContent name={name} nodeId={node.id} />;
+      }
 
       default:
         return <div className="text-sm">Unknown Template Type</div>;
@@ -269,10 +301,7 @@ const TemplateNodeComponent: React.FC<TemplateNodeProps> = ({
                     // Only allow conversion between container types
                     if (['Linear', 'Loop', 'Subroutine'].includes(newType)) {
                       // Create default data for the new type
-                      const newData: Record<string, any> = { ...node.data };
-
-                      // Preserve name if it exists
-                      const name = node.data.name;
+                      const newData: Record<string, unknown> = { ...node.data };
 
                       // Add type-specific default properties
                       if (newType === 'Loop' && !newData.exitCondition) {

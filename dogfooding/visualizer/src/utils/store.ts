@@ -183,14 +183,14 @@ export const useVisualizerStore = create<VisualizerState>((set, get) => ({
     }),
 
   // React Flow handlers
-  onNodesChange: (changes: unknown) =>
+  onNodesChange: () =>
     set((state) => {
       const newNodes = [...state.nodes];
       // Apply changes to nodes (simplified)
       return { nodes: newNodes };
     }),
 
-  onEdgesChange: (changes: unknown) =>
+  onEdgesChange: () =>
     set((state) => {
       const newEdges = [...state.edges];
       // Apply changes to edges (simplified)

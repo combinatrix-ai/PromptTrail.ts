@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { memo, ReactNode, FC } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 
@@ -21,7 +22,6 @@ const CompositeNode: FC<CompositeNodeProps> = memo(
     className = 'composite-node',
     headerClassName = 'composite-node-header',
     contentClassName = 'composite-node-content',
-    ...props
   }) => {
     const {
       label,
@@ -65,5 +65,7 @@ const CompositeNode: FC<CompositeNodeProps> = memo(
     );
   },
 );
+
+CompositeNode.displayName = 'CompositeNode';
 
 export default CompositeNode;

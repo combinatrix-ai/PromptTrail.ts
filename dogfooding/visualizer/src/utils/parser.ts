@@ -325,7 +325,7 @@ function extractTemplateData(
   const data: Record<string, unknown> = {};
 
   switch (type) {
-    case 'System':
+    case 'System': {
       // Look for content in constructor or in addSystem call
       const systemContentRegex = new RegExp(
         `new SystemTemplate\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*\\)`,
@@ -339,8 +339,9 @@ function extractTemplateData(
         data.content = 'System content';
       }
       break;
+    }
 
-    case 'User':
+    case 'User': {
       // Extract description and default value
       const userRegex = new RegExp(
         `new UserTemplate\\s*\\(\\s*\\{\\s*description\\s*:\\s*['"\`]([^'"\`]+)['"\`](?:,\\s*default\\s*:\\s*['"\`]([^'"\`]*)['"\`])?`,
@@ -356,8 +357,9 @@ function extractTemplateData(
         data.default = '';
       }
       break;
+    }
 
-    case 'Assistant':
+    case 'Assistant': {
       // Extract model and content
       const assistantRegex = new RegExp(
         `new AssistantTemplate\\s*\\(\\s*\\{\\s*(?:model\\s*:\\s*['"\`]([^'"\`]+)['"\`])?(?:,\\s*content\\s*:\\s*['"\`]([^'"\`]+)['"\`])?`,
@@ -372,14 +374,16 @@ function extractTemplateData(
         data.model = 'gpt-4o-mini';
       }
       break;
+    }
 
-    case 'Linear':
+    case 'Linear': {
       // Linear template has childIds
       data.childIds = [];
       data.id = `node-${varName}`; // Save id for references
       break;
+    }
 
-    case 'Loop':
+    case 'Loop': {
       // Loop template has childIds and exitCondition
       data.childIds = [];
       data.id = `node-${varName}`; // Save id for references
@@ -395,8 +399,9 @@ function extractTemplateData(
         data.exitCondition = '(session) => false';
       }
       break;
+    }
 
-    case 'Subroutine':
+    case 'Subroutine': {
       // Extract templateId and initWith
       const subroutineRegex = new RegExp(
         `new SubroutineTemplate\\s*\\(\\s*\\{\\s*templateId\\s*:\\s*['"\`]([^'"\`]+)['"\`]`,
@@ -411,6 +416,7 @@ function extractTemplateData(
       }
       data.initWith = '(session) => ({})';
       break;
+    }
   }
 
   return data;
@@ -447,7 +453,7 @@ function extractMethodArguments(
 
   // Different handling based on method type
   switch (methodType) {
-    case 'System':
+    case 'System': {
       // Usually a string argument
       if (
         argsStr.startsWith("'") ||
@@ -457,8 +463,9 @@ function extractMethodArguments(
         return { content: argsStr.slice(1, -1) };
       }
       return { content: 'System content' };
+    }
 
-    case 'User':
+    case 'User': {
       // Could be a string or object
       if (argsStr.startsWith('{')) {
         // Object format
@@ -498,8 +505,9 @@ function extractMethodArguments(
         }
         return { description: 'User input', default: '' };
       }
+    }
 
-    case 'Assistant':
+    case 'Assistant': {
       // Could be object with model and content
       if (argsStr.startsWith('{')) {
         const modelMatch = argsStr.match(/model\s*:\s*(['"`])([^'"`]*)\1/);
@@ -512,6 +520,7 @@ function extractMethodArguments(
         return data;
       }
       return { model: 'gpt-4o-mini' };
+    }
 
     default:
       return {};
@@ -614,9 +623,10 @@ export function generateTemplateCode(graph: {
   loopNodes.forEach((node) => {
     const varName = nodeVarNames.get(node.id) || 'loopTemplate';
     const children = getChildNodes(node.id);
-    const childVars = children
-      .map((child) => nodeVarNames.get(child.id))
-      .filter(Boolean);
+    // We don't need childVars here, so we'll comment it out
+    // const childVars = children
+    //   .map((child) => nodeVarNames.get(child.id))
+    //   .filter(Boolean);
 
     // Generate Loop template
     if (children.length > 0) {
@@ -628,15 +638,16 @@ export function generateTemplateCode(graph: {
         const isLast = idx === children.length - 1;
 
         switch (child.type) {
-          case 'User':
+          case 'User': {
             code += `    new UserTemplate({\n`;
             code += `      description: '${child.data.description || ''}',\n`;
             if (child.data.default)
               code += `      default: '${child.data.default}',\n`;
             code += `    })${isLast ? '' : ','}\n`;
             break;
+          }
 
-          case 'Assistant':
+          case 'Assistant': {
             code += `    new AssistantTemplate({\n`;
             if (child.data.model)
               code += `      model: '${child.data.model}',\n`;
@@ -644,10 +655,12 @@ export function generateTemplateCode(graph: {
               code += `      content: '${child.data.content}',\n`;
             code += `    })${isLast ? '' : ','}\n`;
             break;
+          }
 
-          case 'System':
+          case 'System': {
             code += `    new SystemTemplate('${child.data.content || ''}')${isLast ? '' : ','}\n`;
             break;
+          }
         }
       });
 
@@ -672,25 +685,28 @@ export function generateTemplateCode(graph: {
     const varName = nodeVarNames.get(node.id) || 'template';
 
     switch (node.type) {
-      case 'System':
+      case 'System': {
         code += `const ${varName} = new SystemTemplate('${node.data.content || ''}');\n\n`;
         break;
+      }
 
-      case 'User':
+      case 'User': {
         code += `const ${varName} = new UserTemplate({\n`;
         code += `  description: '${node.data.description || ''}',\n`;
         if (node.data.default) code += `  default: '${node.data.default}',\n`;
         code += `});\n\n`;
         break;
+      }
 
-      case 'Assistant':
+      case 'Assistant': {
         code += `const ${varName} = new AssistantTemplate({\n`;
         if (node.data.model) code += `  model: '${node.data.model}',\n`;
         if (node.data.content) code += `  content: '${node.data.content}',\n`;
         code += `});\n\n`;
         break;
+      }
 
-      case 'Subroutine':
+      case 'Subroutine': {
         code += `const ${varName} = new SubroutineTemplate({\n`;
         code += `  templateId: '${node.data.templateId || ''}',\n`;
         code += `  initWith: ${node.data.initWith || '(session) => ({})'},\n`;
@@ -698,6 +714,7 @@ export function generateTemplateCode(graph: {
           code += `  squashWith: ${node.data.squashWith},\n`;
         code += `});\n\n`;
         break;
+      }
     }
   });
 
