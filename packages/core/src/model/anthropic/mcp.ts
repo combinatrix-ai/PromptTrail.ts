@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
 /**
  * Anthropic Model Context Protocol (MCP) integration for PromptTrail
  */

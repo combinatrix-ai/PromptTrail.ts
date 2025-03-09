@@ -5,7 +5,7 @@ declare module 'reactflow' {
     [key: string]: React.ComponentType<NodeProps>;
   };
 
-  export interface NodeProps<T = any> {
+  export interface NodeProps<T = unknown> {
     id: string;
     type?: string;
     data: T;
@@ -27,7 +27,7 @@ declare module 'reactflow' {
     Bottom = 'bottom',
   }
 
-  export interface Node<T = any> {
+  export interface Node<T = unknown> {
     id: string;
     position: {
       x: number;
@@ -54,7 +54,7 @@ declare module 'reactflow' {
     expandParent?: boolean;
   }
 
-  export interface Edge<T = any> {
+  export interface Edge<T = unknown> {
     id: string;
     type?: string;
     source: string;
@@ -115,7 +115,7 @@ declare module 'reactflow' {
   ): [
     Node[],
     React.Dispatch<React.SetStateAction<Node[]>>,
-    (changes: any) => void,
+    (changes: unknown) => void,
   ];
 
   export function useEdgesState(
@@ -123,7 +123,7 @@ declare module 'reactflow' {
   ): [
     Edge[],
     React.Dispatch<React.SetStateAction<Edge[]>>,
-    (changes: any) => void,
+    (changes: unknown) => void,
   ];
 
   export function addEdge(edgeParams: Edge | Connection, edges: Edge[]): Edge[];
@@ -133,8 +133,8 @@ declare module 'reactflow' {
     edges: Edge[];
     defaultNodes?: Node[];
     defaultEdges?: Edge[];
-    onNodesChange?: (changes: any) => void;
-    onEdgesChange?: (changes: any) => void;
+    onNodesChange?: (changes: unknown) => void;
+    onEdgesChange?: (changes: unknown) => void;
     onConnect?: (connection: Connection) => void;
     onNodeClick?: (event: MouseEvent, node: Node) => void;
     onNodeDoubleClick?: (event: MouseEvent, node: Node) => void;
@@ -155,11 +155,11 @@ declare module 'reactflow' {
     onEdgeUpdateStart?: (event: MouseEvent, edge: Edge) => void;
     onEdgeUpdateEnd?: (event: MouseEvent, edge: Edge) => void;
     nodeTypes?: NodeTypes;
-    edgeTypes?: any;
+    edgeTypes?: unknown;
     connectionLineType?: ConnectionLineType;
     connectionLineStyle?: CSSProperties;
-    connectionLineComponent?: any;
-    connectionMode?: any;
+    connectionLineComponent?: unknown;
+    connectionMode?: unknown;
     deleteKeyCode?: string | null;
     selectionKeyCode?: string | null;
     multiSelectionKeyCode?: string | null;
@@ -184,19 +184,19 @@ declare module 'reactflow' {
     zoomOnPinch?: boolean;
     panOnScroll?: boolean;
     panOnScrollSpeed?: number;
-    panOnScrollMode?: any;
+    panOnScrollMode?: unknown;
     zoomOnDoubleClick?: boolean;
     fitView?: boolean;
-    fitViewOptions?: any;
+    fitViewOptions?: unknown;
     connectOnClick?: boolean;
-    attributionPosition?: any;
-    proOptions?: any;
+    attributionPosition?: unknown;
+    proOptions?: unknown;
     children?: ReactNode;
   }
 
-  export function Background(props?: any): JSX.Element;
-  export function Controls(props?: any): JSX.Element;
-  export function MiniMap(props?: any): JSX.Element;
+  export function Background(props?: unknown): JSX.Element;
+  export function Controls(props?: unknown): JSX.Element;
+  export function MiniMap(props?: unknown): JSX.Element;
 
   export default function ReactFlow(props: ReactFlowProps): JSX.Element;
 }

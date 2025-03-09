@@ -73,7 +73,6 @@ export enum OnFailAction {
  */
 export interface GuardrailTemplateOptions<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput,
 > {
   /**
    * The template to execute and validate
@@ -137,11 +136,10 @@ export interface GuardrailTemplateOptions<
  */
 export class GuardrailTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput,
-> extends Template<TInput, TOutput> {
-  private options: GuardrailTemplateOptions<TInput, TOutput>;
+> extends Template<TInput> {
+  private options: GuardrailTemplateOptions<TInput>;
 
-  constructor(options: GuardrailTemplateOptions<TInput, TOutput>) {
+  constructor(options: GuardrailTemplateOptions<TInput>) {
     super();
     this.options = {
       ...options,
@@ -150,11 +148,11 @@ export class GuardrailTemplate<
     };
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+  async execute(session: Session<TInput>): Promise<Session<TInput>> {
     const maxAttempts = this.options.maxAttempts || 3;
 
     let attempts = 0;
-    let resultSession: Session;
+    let resultSession: Session<TInput>;
     let validationResults: ValidationResult[] = [];
     let allPassed = false;
 
@@ -217,7 +215,7 @@ export class GuardrailTemplate<
                   originalContent: lastMessage.content,
                   validationResults,
                 }),
-              }) as unknown as Session<TOutput>;
+              });
             }
             // If no fix available, continue to retry
             break;
@@ -232,7 +230,7 @@ export class GuardrailTemplate<
                 passed: false,
                 validationResults,
               },
-            }) as unknown as Session<TOutput>;
+            });
 
           case OnFailAction.RETRY:
           default:
@@ -249,7 +247,7 @@ export class GuardrailTemplate<
         passed: allPassed,
         validationResults,
       },
-    }) as unknown as Session<TOutput>;
+    });
   }
 }
 

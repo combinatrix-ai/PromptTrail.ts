@@ -8,15 +8,7 @@ import type {
 } from '../../types';
 import { MCPClientWrapper } from './mcp';
 import type { MCPServerConfig } from './mcp';
-
-interface AnthropicToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-}
+import type { InferSchemaType } from '../../tool';
 
 interface TextBlock {
   type: 'text';
@@ -153,7 +145,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
       system,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens || 1024,
-      tools: formattedTools as any,
+      tools: formattedTools as AnthropicTool[],
     })) as unknown as AnthropicResponse;
 
     const metadata = createMetadata<AssistantMetadata>();
@@ -179,7 +171,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
     // If there are tool calls, execute them
     const toolCalls = metadata.get('toolCalls');
     if (toolCalls && toolCalls.length > 0) {
-      await this.handleToolCalls(toolCalls, session);
+      await this.handleToolCalls(toolCalls);
     }
 
     return {
@@ -196,12 +188,10 @@ export class AnthropicModel extends Model<AnthropicConfig> {
     toolCalls: Array<{
       name: string;
       arguments: Record<string, unknown>;
-      id: string;
     }>,
-    session: Session,
   ): Promise<void> {
     for (const toolCall of toolCalls) {
-      const { name, arguments: args, id } = toolCall;
+      const { name, arguments: args } = toolCall;
 
       // Find the tool
       const tool = this.getAllTools().find((t) => t.name === name);
@@ -213,7 +203,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
 
       try {
         // Execute the tool
-        const result = await tool.execute(args as any);
+        const result = await tool.execute(args as InferSchemaType<SchemaType>);
 
         // Add the result to the session
         // Note: This would require modifying the Session interface to allow adding messages

@@ -8,10 +8,11 @@
 
 // Import types from the core library
 // In a real implementation, these would be properly imported
-import type { LinearTemplate, OpenAIModel, Session } from '@prompttrail/core';
+import { LinearTemplate, OpenAIModel } from '@prompttrail/core';
+import type { Session } from '@prompttrail/core';
 
 // Mock function to avoid TypeScript errors
-const createSession = () => ({}) as any;
+const createSession = () => ({}) as Session<Record<string, unknown>>;
 
 // These types would be defined in the core library
 export type MessageRole =
@@ -73,7 +74,10 @@ interface MarkdownExtractorOptions<T extends Record<string, unknown>> {
 function extractMarkdown<T extends Record<string, unknown>>(
   options: MarkdownExtractorOptions<T>,
 ): SessionTransformer<Record<string, unknown>, Record<string, unknown> & T> {
-  return createTransformer((session: Session<Record<string, unknown>>) => {
+  return createTransformer<
+    Record<string, unknown>,
+    Record<string, unknown> & T
+  >((session: Session<Record<string, unknown>>) => {
     const messageTypes = options.messageTypes || ['assistant'];
 
     // Get relevant messages
@@ -81,7 +85,7 @@ function extractMarkdown<T extends Record<string, unknown>>(
       messageTypes.includes(msg.type as MessageRole),
     );
 
-    let updatedSession = session;
+    let updatedSession = session as Session<Record<string, unknown> & T>;
 
     for (const message of messages) {
       // Extract headings and their content

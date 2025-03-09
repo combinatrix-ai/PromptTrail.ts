@@ -7,7 +7,7 @@ import { ValidationError } from './types';
  * Session interface for maintaining conversation state
  */
 export interface Session<
-  T extends Record<string, unknown> = Record<string, unknown>,
+  T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;

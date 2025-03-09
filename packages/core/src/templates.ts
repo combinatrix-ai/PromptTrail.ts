@@ -166,8 +166,12 @@ export class AssistantTemplate extends Template {
 /**
  * Template for linear sequence of templates
  */
-export class LinearTemplate extends Template {
-  private templates: Template[] = [];
+export class LinearTemplate<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> extends Template<TInput, TOutput> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private templates: Template<any, any>[] = [];
 
   constructor(templates?: Template[]) {
     super();
@@ -264,9 +268,11 @@ export class LinearTemplate extends Template {
    * @param transformer The transformer to add
    * @returns The template instance for chaining
    */
-  addTransformer(transformer: SessionTransformer<any, any>): this {
+  addTransformer<TNewOutput extends Record<string, unknown>>(
+    transformer: SessionTransformer<TOutput, TNewOutput>,
+  ): LinearTemplate<TInput, TNewOutput> {
     this.templates.push(createTransformerTemplate(transformer) as Template);
-    return this;
+    return this as unknown as LinearTemplate<TInput, TNewOutput>;
   }
 
   /**
@@ -344,12 +350,13 @@ export class LinearTemplate extends Template {
     return this;
   }
 
-  async execute(session: Session): Promise<Session> {
-    let currentSession = session;
+  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let currentSession: Session<any> = session;
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }
-    return currentSession;
+    return currentSession as Session<TOutput>;
   }
 }
 
