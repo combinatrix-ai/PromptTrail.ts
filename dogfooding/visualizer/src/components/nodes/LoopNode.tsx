@@ -1,4 +1,4 @@
-import { useState, useCallback, FC } from 'react';
+import React, { useState, useCallback, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import CompositeNode from './CompositeNode';
 import { useVisualizerStore } from '../../utils/store';

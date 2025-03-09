@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import React, { FC } from 'react';
 import { TemplateNode } from '../../utils/templateTypes';
 
 interface PropertyPanelProps {

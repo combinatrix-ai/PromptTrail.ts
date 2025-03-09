@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent, FC } from 'react';
+import React, { useState, useEffect, FormEvent, FC } from 'react';
 import { useTemplateStore } from '../utils/templateStore';
 
 /**

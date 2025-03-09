@@ -1,4 +1,4 @@
-import { useState, ReactNode, FC } from 'react';
+import React, { useState, ReactNode, FC } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 
 interface BaseNodeProps extends NodeProps {

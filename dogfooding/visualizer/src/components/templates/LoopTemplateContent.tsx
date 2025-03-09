@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent, FC } from 'react';
+import React, { useState, KeyboardEvent, FC } from 'react';
 import { useTemplateStore } from '../../utils/templateStore';
 
 interface LoopTemplateContentProps {

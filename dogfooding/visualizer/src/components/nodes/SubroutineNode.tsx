@@ -1,4 +1,4 @@
-import { useState, useCallback, ChangeEvent, FC } from 'react';
+import React, { useState, useCallback, ChangeEvent, FC } from 'react';
 import { NodeProps } from 'reactflow';
 import BaseNode from './BaseNode';
 import { useVisualizerStore } from '../../utils/store';
