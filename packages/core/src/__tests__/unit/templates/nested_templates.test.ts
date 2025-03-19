@@ -21,7 +21,7 @@ class MockModel extends Model<ModelConfig> {
     });
   }
 
-  async send(session: Session): Promise<any> {
+  async send(_session: Session): Promise<unknown> {
     const response = this.responses.shift() || 'Default mock response';
     return {
       type: 'assistant',
@@ -30,11 +30,11 @@ class MockModel extends Model<ModelConfig> {
     };
   }
 
-  async *sendAsync(): AsyncGenerator<any, void, unknown> {
+  async *sendAsync(): AsyncGenerator<unknown, void, unknown> {
     throw new Error('Not implemented');
   }
 
-  protected formatTool(): Record<string, any> {
+  protected formatTool(): Record<string, unknown> {
     throw new Error('Not implemented');
   }
 
@@ -75,10 +75,10 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Final question')
         .addAssistant({ model: mockModel }),
-      initWith: (parentSession: Session) => createSession(),
-      squashWith: (parentSession, childSession) => {
+      initWith: (_parentSession: Session) => createSession(),
+      squashWith: (_parentSession, childSession) => {
         // Create a new session with all messages from both sessions
-        let result = parentSession;
+        let result = _parentSession;
         const childMessages = Array.from(childSession.messages);
         for (const message of childMessages) {
           result = result.addMessage(message);
@@ -140,19 +140,19 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Tell me about ${topic}.')
         .addAssistant({ model: mockModel }),
-      initWith: (parentSession: Session) => {
+      initWith: (_parentSession: Session) => {
         // Copy metadata from parent to child
         const childSession = createSession();
         childSession.metadata.set(
           'username',
-          parentSession.metadata.get('username'),
+          _parentSession.metadata.get('username'),
         );
-        childSession.metadata.set('topic', parentSession.metadata.get('topic'));
+        childSession.metadata.set('topic', _parentSession.metadata.get('topic'));
         return childSession;
       },
-      squashWith: (parentSession, childSession) => {
+      squashWith: (_parentSession, childSession) => {
         // Create a new session with all messages from both sessions
-        let result = parentSession;
+        let result = _parentSession;
         const childMessages = Array.from(childSession.messages);
         for (const message of childMessages) {
           result = result.addMessage(message);

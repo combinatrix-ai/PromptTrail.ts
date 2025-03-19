@@ -23,7 +23,7 @@ class MockModel extends Model<ModelConfig> {
     });
   }
 
-  async send(session: Session): Promise<Message> {
+  async send(_session: Session): Promise<Message> {
     const response = this.responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
@@ -37,7 +37,7 @@ class MockModel extends Model<ModelConfig> {
     throw new Error('Not implemented');
   }
 
-  protected formatTool(): Record<string, any> {
+  protected formatTool(): Record<string, unknown> {
     throw new Error('Not implemented');
   }
 
@@ -99,7 +99,7 @@ describe('Templates', () => {
       const messages = Array.from(result.messages);
 
       // Get the actual content from the messages
-      const actualContents = messages.map((msg) => msg.content);
+      const _actualContents = messages.map((msg) => msg.content);
 
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
@@ -164,7 +164,7 @@ describe('Templates', () => {
       const messages = Array.from(result.messages);
 
       // Get the actual content from the messages
-      const actualContents = messages.map((msg) => msg.content);
+      const _actualContents = messages.map((msg) => msg.content);
 
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
@@ -520,7 +520,7 @@ describe('Templates', () => {
         .addSystem('Child context')
         .addAssistant({ model: mockModel });
 
-      const parentTemplate = new LinearTemplate()
+      const _parentTemplate = new LinearTemplate()
         .addSystem('Parent context')
         .addAssistant({ model: mockModel })
         .addLoop(
