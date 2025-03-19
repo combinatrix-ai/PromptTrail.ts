@@ -9,6 +9,7 @@ import {
   createBooleanProperty,
 } from '../../utils/schema';
 import { createMetadata } from '../../metadata';
+import type { Message } from '../../types';
 
 // Mock OpenAI model
 vi.mock('../../model/openai/model');
@@ -182,7 +183,7 @@ describe('SchemaTemplate', () => {
     });
 
     // Mock the model to return a function call
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
+    vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
       return {
         type: 'assistant',
         content: 'I will use the function to provide structured output.',
@@ -202,7 +203,7 @@ describe('SchemaTemplate', () => {
             ],
           },
         }),
-      } as any;
+      } as unknown as Message;
     });
 
     // Execute the template
