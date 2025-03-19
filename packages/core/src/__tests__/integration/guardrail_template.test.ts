@@ -6,6 +6,8 @@ import {
 } from '../../templates/guardrail_template';
 import { AssistantTemplate } from '../../templates';
 import { BaseValidator } from '../../validators/base_validators';
+import { Model } from '../../model/base';
+import type { ModelConfig } from '../../types';
 
 // Mock model for testing
 const mockModel = {
@@ -25,7 +27,7 @@ class TestValidator extends BaseValidator {
     super();
   }
 
-  async validate(_content: string): Promise<any> {
+  async validate(_content: string): Promise<{ passed: boolean; feedback?: string }> {
     return this.createResult(this.shouldPass, {
       feedback: this.shouldPass
         ? undefined
@@ -38,7 +40,7 @@ describe('GuardrailTemplate', () => {
   it('should pass validation when all validators pass', async () => {
     // Create a guardrail template with a passing validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ model: mockModel as any }),
+      template: new AssistantTemplate({ model: mockModel as unknown as Model<ModelConfig, unknown> }),
       validators: [new TestValidator(true)],
     });
 
@@ -46,7 +48,7 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that the validation passed
-    const guardrailInfo = session.metadata.get('guardrail') as any;
+    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
     expect(guardrailInfo.passed).toBe(true);
     expect(guardrailInfo.attempt).toBe(1);
   });
@@ -68,7 +70,7 @@ describe('GuardrailTemplate', () => {
 
     // Create a guardrail template with the conditional validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ model: mockModel as any }),
+      template: new AssistantTemplate({ model: mockModel as unknown as Model<ModelConfig, unknown> }),
       validators: [conditionalValidator],
       onFail: OnFailAction.RETRY,
       maxAttempts: 3,
@@ -78,7 +80,7 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that it retried and eventually passed
-    const guardrailInfo = session.metadata.get('guardrail') as any;
+    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
     expect(guardrailInfo.passed).toBe(true);
     expect(guardrailInfo.attempt).toBe(2);
   });
@@ -86,7 +88,7 @@ describe('GuardrailTemplate', () => {
   it('should throw an exception when validation fails and onFail is EXCEPTION', async () => {
     // Create a guardrail template with a failing validator and EXCEPTION action
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ model: mockModel as any }),
+      template: new AssistantTemplate({ model: mockModel as unknown as Model<ModelConfig, unknown> }),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.EXCEPTION,
     });
@@ -100,7 +102,7 @@ describe('GuardrailTemplate', () => {
   it('should continue when validation fails and onFail is CONTINUE', async () => {
     // Create a guardrail template with a failing validator and CONTINUE action
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ model: mockModel as any }),
+      template: new AssistantTemplate({ model: mockModel as unknown as Model<ModelConfig, unknown> }),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.CONTINUE,
     });
@@ -109,7 +111,7 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that it continued despite failing validation
-    const guardrailInfo = session.metadata.get('guardrail') as any;
+    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
     expect(guardrailInfo.passed).toBe(false);
     expect(guardrailInfo.attempt).toBe(1);
     expect(session.getLastMessage()?.content).toBe('This is a test response');
@@ -121,7 +123,7 @@ describe('GuardrailTemplate', () => {
 
     // Create a guardrail template with a failing validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ model: mockModel as any }),
+      template: new AssistantTemplate({ model: mockModel as unknown as Model<ModelConfig, unknown> }),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.CONTINUE,
       onRejection,
