@@ -25,6 +25,7 @@ class MockModel extends Model<ModelConfig> {
 
   async send(_session: Session): Promise<Message> {
     // Unused parameter is intentionally prefixed with underscore
+    // We don't use the session parameter in this mock implementation
     const response = this.responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
@@ -477,7 +478,8 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (_parentSession: Session) => {
+        initWith: () => {
+          // Parent session not needed in this test
           const childSession = createSession();
           childSession.metadata.set('childValue', 'child');
           return childSession;
@@ -499,9 +501,10 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (_parentSession: Session) => createSession(),
-        squashWith: (_parentSession: Session, _childSession: Session) => {
-          return _parentSession.addMessage({
+        initWith: () => createSession(), // Parent session not needed
+        squashWith: (parentSession: Session) => {
+          // Child session not needed in this test
+          return parentSession.addMessage({
             type: 'system',
             content: 'Merged child messages',
             metadata: createMetadata(),
