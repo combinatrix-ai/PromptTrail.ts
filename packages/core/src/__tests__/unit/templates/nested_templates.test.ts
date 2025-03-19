@@ -32,7 +32,10 @@ class MockModel extends Model<ModelConfig, unknown> {
   }
 
   async *sendAsync(): AsyncGenerator<Message, void, unknown> {
-    if (false) yield { type: 'assistant', content: '', metadata: createMetadata() };
+    // This is a mock implementation that needs to have a yield statement
+    // but will never actually yield anything in practice
+    const shouldYield = this.responses.length > 1000; // Will never be true in tests
+    if (shouldYield) yield { type: 'assistant', content: '', metadata: createMetadata() };
     throw new Error('Not implemented');
   }
 
@@ -77,10 +80,10 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Final question')
         .addAssistant({ model: mockModel }),
-      initWith: (_parentSession: Session) => createSession(), // Unused parameter
-      squashWith: (_parentSession, childSession) => {
+      initWith: () => createSession(), // Don't need parent session in this test
+      squashWith: (parentSession, childSession) => {
         // Create a new session with all messages from both sessions
-        let result = _parentSession;
+        let result = parentSession;
         const childMessages = Array.from(childSession.messages);
         for (const message of childMessages) {
           result = result.addMessage(message);
