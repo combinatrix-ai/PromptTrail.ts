@@ -24,6 +24,7 @@ describe('SchemaTemplate', () => {
     // Create a mock OpenAI model
     model = {
       send: vi.fn().mockImplementation(async (_session) => {
+        // Session parameter intentionally unused (prefixed with underscore)
         // Default implementation for the first test
         return {
           type: 'assistant',
@@ -40,7 +41,10 @@ describe('SchemaTemplate', () => {
 
     // Mock the instanceof check
     Object.defineProperty(model, Symbol.hasInstance, {
-      value: (_obj: unknown) => true,
+      value: (_obj: unknown) => {
+        // Parameter is intentionally unused (prefixed with underscore)
+        return true;
+      },
     });
   });
 
@@ -186,6 +190,7 @@ describe('SchemaTemplate', () => {
 
     // Mock the model to return a function call
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
+      // Session parameter intentionally unused (prefixed with underscore)
       return {
         type: 'assistant',
         content: 'I will use the function to provide structured output.',
