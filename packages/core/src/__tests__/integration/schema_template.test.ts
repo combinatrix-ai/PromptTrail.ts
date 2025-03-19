@@ -26,7 +26,7 @@ describe('SchemaTemplate', () => {
       send: vi.fn().mockImplementation(async (_session) => {
         // Session parameter is intentionally unused (prefixed with underscore)
         // We don't use the session in this mock implementation
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         // Default implementation for the first test
         return {
           type: 'assistant',
@@ -45,7 +45,7 @@ describe('SchemaTemplate', () => {
     Object.defineProperty(model, Symbol.hasInstance, {
       value: (_obj: unknown) => {
         // Parameter is intentionally unused (prefixed with underscore)
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         return true;
       },
     });
@@ -106,7 +106,7 @@ describe('SchemaTemplate', () => {
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
       // Session parameter is intentionally unused (prefixed with underscore)
       // We don't use the session in this mock implementation
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       return {
         type: 'assistant',
         content:
@@ -152,7 +152,7 @@ describe('SchemaTemplate', () => {
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
       // Session parameter is intentionally unused (prefixed with underscore)
       // We don't use the session in this mock implementation
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       return {
         type: 'assistant',
         content:
@@ -199,7 +199,7 @@ describe('SchemaTemplate', () => {
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
       // Session parameter is intentionally unused (prefixed with underscore)
       // We don't use the session in this mock implementation
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       return {
         type: 'assistant',
         content: 'I will use the function to provide structured output.',
