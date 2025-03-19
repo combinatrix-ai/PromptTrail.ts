@@ -22,6 +22,7 @@ class MockModel extends Model<ModelConfig, unknown> {
   }
 
   async send(_session: Session): Promise<Message> {
+    // Unused parameter is intentionally prefixed with underscore
     const response = this.responses.shift() || 'Default mock response';
     return {
       type: 'assistant',
@@ -31,6 +32,7 @@ class MockModel extends Model<ModelConfig, unknown> {
   }
 
   async *sendAsync(): AsyncGenerator<Message, void, unknown> {
+    if (false) yield { type: 'assistant', content: '', metadata: createMetadata() };
     throw new Error('Not implemented');
   }
 
