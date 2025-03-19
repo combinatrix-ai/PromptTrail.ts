@@ -77,7 +77,7 @@ export interface GuardrailTemplateOptions<
   /**
    * The template to execute and validate
    */
-  template: Template<TInput, any>;
+  template: Template<TInput, Record<string, unknown>>;
 
   /**
    * Validators to apply to the response
@@ -148,11 +148,11 @@ export class GuardrailTemplate<
     };
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TInput>> {
+  async execute(session: Session<TInput>): Promise<Session<TInput & { guardrail?: { attempt: number; passed: boolean; validationResults: ValidationResult[] } }>> {
     const maxAttempts = this.options.maxAttempts || 3;
 
     let attempts = 0;
-    let resultSession: Session<TInput>;
+    let resultSession: Session<TInput & { guardrail?: { attempt: number; passed: boolean; validationResults: ValidationResult[] } }>;
     let validationResults: ValidationResult[] = [];
     let allPassed = false;
 
@@ -160,7 +160,9 @@ export class GuardrailTemplate<
       attempts++;
 
       // Execute the template
-      resultSession = await this.options.template.execute(session as any);
+      // Use type assertion to handle template execution
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resultSession = await this.options.template.execute(session as any) as any;
 
       // Get the last message content
       const lastMessage = resultSession.getLastMessage();
@@ -224,13 +226,15 @@ export class GuardrailTemplate<
           case OnFailAction.CONTINUE:
             // Continue with the failed result but keep allPassed as false
             // This will exit the loop but preserve the failed status
+            // Use type assertion to handle return type
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return resultSession.updateMetadata({
               guardrail: {
                 attempt: attempts,
                 passed: false,
                 validationResults,
               },
-            });
+            }) as any;
 
           case OnFailAction.RETRY:
           default:
@@ -241,13 +245,15 @@ export class GuardrailTemplate<
     } while (!allPassed && attempts < maxAttempts);
 
     // Add validation metadata to the result
+    // Use type assertion to handle return type
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return resultSession.updateMetadata({
       guardrail: {
         attempt: attempts,
         passed: allPassed,
         validationResults,
       },
-    });
+    }) as any;
   }
 }
 
