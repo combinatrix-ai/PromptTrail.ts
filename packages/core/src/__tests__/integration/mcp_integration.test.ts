@@ -10,11 +10,9 @@ vi.mock('../../model/anthropic/mcp', async () => {
   const actual = await vi.importActual('../../model/anthropic/mcp');
 
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
-  const mockMCPClientWrapper = vi.fn().mockImplementation((_config) => {
-    // Config parameter is intentionally unused (prefixed with underscore)
-    // We don't use the config parameter in this mock implementation
+  const mockMCPClientWrapper = vi.fn().mockImplementation(() => {
+    // We don't use any config parameter in this mock implementation
     // This mock returns a predefined set of methods and responses
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     return {
       connect: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),

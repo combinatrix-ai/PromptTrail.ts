@@ -227,7 +227,7 @@ export class GuardrailTemplate<
             // Continue with the failed result but keep allPassed as false
             // This will exit the loop but preserve the failed status
             // Use type assertion to handle return type
-             
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return resultSession.updateMetadata({
               guardrail: {
                 attempt: attempts,
@@ -246,7 +246,7 @@ export class GuardrailTemplate<
 
     // Add validation metadata to the result
     // Use type assertion to handle return type
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return resultSession.updateMetadata({
       guardrail: {
         attempt: attempts,

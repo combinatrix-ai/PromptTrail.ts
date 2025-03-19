@@ -23,9 +23,8 @@ class MockModel extends Model<ModelConfig> {
     });
   }
 
-  async send(_session: Session): Promise<Message> {
-    // Unused parameter is intentionally prefixed with underscore
-    // We don't use the session parameter in this mock implementation
+  async send(): Promise<Message> {
+    // We don't need any session parameter in this mock implementation
     const response = this.responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
