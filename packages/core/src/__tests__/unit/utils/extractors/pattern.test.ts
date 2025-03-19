@@ -183,7 +183,7 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const assistantTransformedSession = assistantTransformer.transform(
       session,
     ) as any;
