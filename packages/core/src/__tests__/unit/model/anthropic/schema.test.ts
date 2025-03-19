@@ -90,7 +90,8 @@ describe('SchemaTemplate with Anthropic', () => {
     });
 
     // Mock the model to return a different JSON format
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
+    vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
+      // Session parameter intentionally unused (prefixed with underscore)
       return {
         type: 'assistant',
         content:
