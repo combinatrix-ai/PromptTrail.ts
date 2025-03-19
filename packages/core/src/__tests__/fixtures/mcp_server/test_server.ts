@@ -90,6 +90,8 @@ export class MCPTestServer {
             res.end(JSON.stringify({ error: `Unknown method: ${method}` }));
         }
       } catch (_error) {
+        // Error parameter is intentionally unused (prefixed with underscore)
+        // We don't need the error details for this generic error response
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid request' }));
       }
