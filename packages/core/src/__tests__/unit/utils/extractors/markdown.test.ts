@@ -230,6 +230,7 @@ const assistantCode = 'assistant';
      
     const assistantTransformedSession = assistantTransformer.transform(
       session,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ) as any;
 
     // Check that only assistant content was extracted

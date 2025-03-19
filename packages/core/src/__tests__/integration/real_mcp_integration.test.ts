@@ -80,11 +80,12 @@ describe('Real MCP Integration', () => {
     // Execute the tool with type assertion to bypass type checking in tests
      
      
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = await calculator.execute({
       operation: 'add',
       a: 5,
       b: 3,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
     // Check the result
@@ -104,9 +105,10 @@ describe('Real MCP Integration', () => {
     // Execute the tool with type assertion to bypass type checking in tests
      
      
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = await weather.execute({
       location: 'San Francisco',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
     // Check the result
@@ -176,11 +178,12 @@ describe('Real MCP Integration', () => {
     // Execute the tool with invalid arguments and type assertion
      
      
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = await calculator.execute({
       operation: 'divide',
       a: 10,
       b: 0,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
     // Check the result
