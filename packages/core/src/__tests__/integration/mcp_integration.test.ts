@@ -12,6 +12,8 @@ vi.mock('../../model/anthropic/mcp', async () => {
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
   const mockMCPClientWrapper = vi.fn().mockImplementation((_config) => {
     // Config parameter is intentionally unused (prefixed with underscore)
+    // We don't use the config parameter in this mock implementation
+    // This mock returns a predefined set of methods and responses
     return {
       connect: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),
