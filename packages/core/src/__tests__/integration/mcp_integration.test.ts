@@ -10,31 +10,34 @@ vi.mock('../../model/anthropic/mcp', async () => {
   const actual = await vi.importActual('../../model/anthropic/mcp');
 
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
-  const mockMCPClientWrapper = vi.fn().mockImplementation((_config) => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    loadTools: vi.fn().mockResolvedValue([
-      {
-        name: 'weather',
-        description: 'Get weather information',
-        schema: {
-          properties: {
-            location: {
-              type: 'string',
-              description: 'Location to get weather for',
+  const mockMCPClientWrapper = vi.fn().mockImplementation((_config) => {
+    // Config parameter is intentionally unused (prefixed with underscore)
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      loadTools: vi.fn().mockResolvedValue([
+        {
+          name: 'weather',
+          description: 'Get weather information',
+          schema: {
+            properties: {
+              location: {
+                type: 'string',
+                description: 'Location to get weather for',
+              },
             },
+            required: ['location'],
           },
-          required: ['location'],
+          execute: vi.fn().mockResolvedValue({ result: 'Sunny, 75°F' }),
         },
-        execute: vi.fn().mockResolvedValue({ result: 'Sunny, 75°F' }),
-      },
-    ]),
-    getTool: vi.fn(),
-    getAllTools: vi.fn().mockReturnValue([]),
-    readResource: vi.fn(),
-    listResources: vi.fn(),
-    getPrompt: vi.fn(),
-  }));
+      ]),
+      getTool: vi.fn(),
+      getAllTools: vi.fn().mockReturnValue([]),
+      readResource: vi.fn(),
+      listResources: vi.fn(),
+      getPrompt: vi.fn(),
+    };
+  });
 
   return {
     ...actual,
@@ -108,7 +111,8 @@ describe('MCP Integration', () => {
       execute: async () => 'result',
     });
 
-    // Access private method using any type
+    // Access private method using type assertion
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const formattedTool = (model as any).formatTool(tool);
 
     expect(formattedTool).toEqual({
@@ -139,6 +143,7 @@ describe('MCP Integration', () => {
     expect(response.content).toBe('I can help with that!');
 
     // Check if tool calls are in metadata
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const metadata = response.metadata?.toJSON() as any;
     expect(metadata?.toolCalls).toBeDefined();
     if (metadata?.toolCalls) {
