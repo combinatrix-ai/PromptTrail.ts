@@ -6,15 +6,9 @@ import type {
   SchemaType,
   AssistantMetadata,
 } from '../../types';
-
-interface AnthropicToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-}
+import { MCPClientWrapper } from './mcp';
+import type { MCPServerConfig } from './mcp';
+import type { InferSchemaType } from '../../tool';
 
 interface TextBlock {
   type: 'text';
@@ -38,6 +32,8 @@ import { createMetadata } from '../../metadata';
 
 export class AnthropicModel extends Model<AnthropicConfig> {
   private client: Anthropic;
+  private mcpClients: MCPClientWrapper[] = [];
+  private mcpTools: Tool<SchemaType>[] = [];
 
   constructor(config: AnthropicConfig) {
     super(config);
@@ -45,6 +41,43 @@ export class AnthropicModel extends Model<AnthropicConfig> {
       apiKey: config.apiKey,
       baseURL: config.apiBase,
     });
+
+    // Initialize MCP clients if configured
+    if (config.mcpServers && config.mcpServers.length > 0) {
+      this.initializeMcpClients(config.mcpServers);
+    }
+  }
+
+  /**
+   * Initialize MCP clients and load tools
+   */
+  private async initializeMcpClients(
+    serverConfigs: readonly MCPServerConfig[],
+  ): Promise<void> {
+    for (const serverConfig of serverConfigs) {
+      try {
+        const mcpClient = new MCPClientWrapper(serverConfig);
+        this.mcpClients.push(mcpClient);
+
+        // Connect and load tools
+        await mcpClient.connect();
+        const tools = await mcpClient.loadTools();
+        this.mcpTools.push(...tools);
+      } catch (error) {
+        console.error(
+          `Failed to initialize MCP client for ${serverConfig.url}:`,
+          error,
+        );
+      }
+    }
+  }
+
+  /**
+   * Get all tools, including MCP tools
+   */
+  getAllTools(): Tool<SchemaType>[] {
+    const configTools = this.config.tools || [];
+    return [...configTools, ...this.mcpTools];
   }
 
   protected validateConfig(): void {
@@ -103,16 +136,16 @@ export class AnthropicModel extends Model<AnthropicConfig> {
   async send(session: Session): Promise<Message> {
     const { messages, system } = this.convertToAnthropicMessages(session);
 
-    const formattedTools = this.config.tools?.map((tool) =>
-      this.formatTool(tool),
-    );
+    // Get all tools, including MCP tools
+    const allTools = this.getAllTools();
+    const formattedTools = allTools.map((tool) => this.formatTool(tool));
     const response = (await this.client.messages.create({
       model: this.config.modelName,
       messages,
       system,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens || 1024,
-      tools: formattedTools as any,
+      tools: formattedTools as AnthropicTool[],
     })) as unknown as AnthropicResponse;
 
     const metadata = createMetadata<AssistantMetadata>();
@@ -135,11 +168,51 @@ export class AnthropicModel extends Model<AnthropicConfig> {
       }
     }
 
+    // If there are tool calls, execute them
+    const toolCalls = metadata.get('toolCalls');
+    if (toolCalls && toolCalls.length > 0) {
+      await this.handleToolCalls(toolCalls);
+    }
+
     return {
       type: 'assistant',
       content,
       metadata,
     };
+  }
+
+  /**
+   * Handle tool calls from the model
+   */
+  private async handleToolCalls(
+    toolCalls: Array<{
+      name: string;
+      arguments: Record<string, unknown>;
+    }>,
+  ): Promise<void> {
+    for (const toolCall of toolCalls) {
+      const { name, arguments: args } = toolCall;
+
+      // Find the tool
+      const tool = this.getAllTools().find((t) => t.name === name);
+
+      if (!tool) {
+        console.error(`Tool not found: ${name}`);
+        continue;
+      }
+
+      try {
+        // Execute the tool
+        const result = await tool.execute(args as InferSchemaType<SchemaType>);
+
+        // Add the result to the session
+        // Note: This would require modifying the Session interface to allow adding messages
+        // For now, we'll just log the result
+        console.log(`Tool ${name} executed with result:`, result);
+      } catch (error) {
+        console.error(`Error executing tool ${name}:`, error);
+      }
+    }
   }
 
   async *sendAsync(session: Session): AsyncGenerator<Message, void, unknown> {

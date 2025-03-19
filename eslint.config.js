@@ -5,7 +5,6 @@ import pluginReact from 'eslint-plugin-react';
 import unusedImports from 'eslint-plugin-unused-imports';
 
 /** @type {import('eslint').Linter.Config[]} */
-/** @type {import('eslint').Linter.Config[]} */
 export default [
   {
     files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'],
@@ -29,5 +28,12 @@ export default [
   },
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
-  pluginReact.configs.flat.recommended,
+  {
+    ...pluginReact.configs.flat.recommended,
+    settings: {
+      react: {
+        version: 'detect'
+      }
+    }
+  },
 ];

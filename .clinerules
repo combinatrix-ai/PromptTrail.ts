@@ -10,3 +10,4 @@
   - You're working with the library developer. So, don't hesitate to fix the core code.
   - Current implementation may have bugs
   - Investigate core code if results are unexpected
+- First, read README.md in the root directory. This covers the high-level architecture and design.

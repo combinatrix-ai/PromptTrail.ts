@@ -4,11 +4,18 @@ import { DefaultInputSource, CallbackInputSource } from './input_source';
 import type { Model } from './model/base';
 import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
+import type { SessionTransformer } from './utils/session_transformer';
+import { createTransformerTemplate } from './templates/transformer_template';
+import type { SchemaType } from './tool';
+import { z } from 'zod';
 
 /**
  * Base class for all templates
  */
-export abstract class Template {
+export abstract class Template<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> {
   protected model?: Model;
 
   constructor(options?: { model?: Model }) {
@@ -18,11 +25,14 @@ export abstract class Template {
   /**
    * Helper method to interpolate content with session metadata
    */
-  protected interpolateContent(content: string, session: Session): string {
+  protected interpolateContent(
+    content: string,
+    session: Session<TInput>,
+  ): string {
     return interpolateTemplate(content, session.metadata);
   }
 
-  abstract execute(session: Session): Promise<Session>;
+  abstract execute(session: Session<TInput>): Promise<Session<TOutput>>;
 }
 
 /**
@@ -156,8 +166,11 @@ export class AssistantTemplate extends Template {
 /**
  * Template for linear sequence of templates
  */
-export class LinearTemplate extends Template {
-  private templates: Template[] = [];
+export class LinearTemplate<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> extends Template<TInput, TOutput> {
+  private templates: Template<Record<string, unknown>, Record<string, unknown>>[] = [];
 
   constructor(templates?: Template[]) {
     super();
@@ -171,13 +184,13 @@ export class LinearTemplate extends Template {
     return this;
   }
 
-  addUser(description: string, defaultValue: string): this {
+  addUser(content: string, defaultValue?: string): this {
     this.templates.push(
       new UserTemplate({
-        description,
+        description: content,
         default: defaultValue,
         inputSource: new CallbackInputSource(
-          async ({ defaultValue }) => defaultValue || '',
+          async ({ description }) => description,
         ),
       }),
     );
@@ -195,7 +208,18 @@ export class LinearTemplate extends Template {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      this.templates.push(new AssistantTemplate(options));
+      // Set the model on the LinearTemplate if provided
+      if (options.model) {
+        this.model = options.model;
+      }
+
+      // Create AssistantTemplate with the model from options or from LinearTemplate
+      const assistantOptions = {
+        ...options,
+        model: options.model || this.model,
+      };
+
+      this.templates.push(new AssistantTemplate(assistantOptions));
     }
     return this;
   }
@@ -205,12 +229,132 @@ export class LinearTemplate extends Template {
     return this;
   }
 
-  async execute(session: Session): Promise<Session> {
-    let currentSession = session;
+  /**
+   * Add a conditional template to the sequence
+   *
+   * @param options The if template options
+   * @returns The template instance for chaining
+   */
+  addIf(options: {
+    condition: (session: Session) => boolean;
+    thenTemplate: Template;
+    elseTemplate?: Template;
+  }): this {
+    this.templates.push(new IfTemplate(options));
+    return this;
+  }
+
+  /**
+   * Add a transformer to the template sequence
+   *
+   * Transformers can extract structured data from messages and store it in the session metadata.
+   *
+   * @example
+   * ```typescript
+   * // Extract markdown sections and code blocks
+   * template.addTransformer(extractMarkdown({
+   *   headingMap: { 'Summary': 'summary' },
+   *   codeBlockMap: { 'typescript': 'code' }
+   * }));
+   *
+   * // Extract data using regex patterns
+   * template.addTransformer(extractPattern({
+   *   pattern: /API Endpoint: (.+)/,
+   *   key: 'apiEndpoint'
+   * }));
+   * ```
+   *
+   * @param transformer The transformer to add
+   * @returns The template instance for chaining
+   */
+  addTransformer<TNewOutput extends Record<string, unknown>>(
+    transformer: SessionTransformer<TOutput, TNewOutput>,
+  ): LinearTemplate<TInput, TNewOutput> {
+    this.templates.push(createTransformerTemplate(transformer) as Template);
+    return this as unknown as LinearTemplate<TInput, TNewOutput>;
+  }
+
+  /**
+   * Add a schema validation template to enforce structured output
+   *
+   * This method adds a template that enforces the LLM output to match a specified schema.
+   * The structured output will be available in the session metadata under the key 'structured_output'.
+   *
+   * @example
+   * ```typescript
+   * // Example 1: Using PromptTrail's native schema
+   * const productSchema = defineSchema({
+   *   properties: {
+   *     name: createStringProperty('The name of the product'),
+   *     price: createNumberProperty('The price of the product in USD'),
+   *     inStock: createBooleanProperty('Whether the product is in stock'),
+   *   },
+   *   required: ['name', 'price', 'inStock'],
+   * });
+   *
+   * // Example 2: Using Zod schema
+   * const userSchema = z.object({
+   *   name: z.string().describe('User name'),
+   *   age: z.number().describe('User age'),
+   *   email: z.string().email().describe('User email')
+   * });
+   *
+   * // Create a template with schema validation
+   * const template = new LinearTemplate()
+   *   .addSystem('Extract information from the text.')
+   *   .addUser('The new iPhone 15 Pro costs $999 and comes with a titanium frame.')
+   *   .addSchema(productSchema); // or userSchema
+   *
+   * // Execute the template
+   * const session = await template.execute(createSession());
+   *
+   * // Access the structured output
+   * const data = session.metadata.get('structured_output');
+   * ```
+   *
+   * @param schema The schema to validate against (either a SchemaType or a Zod schema)
+   * @param options Additional options for schema validation
+   * @returns The template instance for chaining
+   */
+  async addSchema<TSchema extends SchemaType | z.ZodType>(
+    schema: TSchema,
+    options?: {
+      model?: Model;
+      maxAttempts?: number;
+      functionName?: string;
+    },
+  ): Promise<this> {
+    const model = options?.model || this.model;
+
+    if (!model) {
+      throw new Error(
+        'Model must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
+      );
+    }
+
+    // Import SchemaTemplate dynamically to avoid circular dependency
+    // Use dynamic import for ESM compatibility
+    const SchemaTemplateModule = await import('./templates/schema_template');
+    const { SchemaTemplate } = SchemaTemplateModule;
+
+    this.templates.push(
+      new SchemaTemplate({
+        model,
+        schema,
+        maxAttempts: options?.maxAttempts,
+        functionName: options?.functionName,
+      }),
+    );
+
+    return this;
+  }
+
+  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+    let currentSession: Session<Record<string, unknown>> = session as unknown as Session<Record<string, unknown>>;
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }
-    return currentSession;
+    return currentSession as Session<TOutput>;
   }
 }
 
@@ -232,13 +376,13 @@ export class LoopTemplate extends Template {
     }
   }
 
-  addUser(description: string, defaultValue: string): this {
+  addUser(content: string, defaultValue?: string): this {
     this.templates.push(
       new UserTemplate({
-        description,
+        description: content,
         default: defaultValue,
         inputSource: new CallbackInputSource(
-          async ({ defaultValue }) => defaultValue || '',
+          async ({ description }) => description,
         ),
       }),
     );
@@ -256,7 +400,18 @@ export class LoopTemplate extends Template {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      this.templates.push(new AssistantTemplate(options));
+      // Set the model on the LoopTemplate if provided
+      if (options.model) {
+        this.model = options.model;
+      }
+
+      // Create AssistantTemplate with the model from options or from LoopTemplate
+      const assistantOptions = {
+        ...options,
+        model: options.model || this.model,
+      };
+
+      this.templates.push(new AssistantTemplate(assistantOptions));
     }
     return this;
   }
@@ -311,5 +466,29 @@ export class SubroutineTemplate extends Template {
 
     // Otherwise just return parent session unchanged
     return session;
+  }
+}
+
+/**
+ * Template for conditional execution based on a condition
+ */
+export class IfTemplate extends Template {
+  constructor(
+    private options: {
+      condition: (session: Session) => boolean;
+      thenTemplate: Template;
+      elseTemplate?: Template;
+    },
+  ) {
+    super();
+  }
+
+  async execute(session: Session): Promise<Session> {
+    if (this.options.condition(session)) {
+      return this.options.thenTemplate.execute(session);
+    } else if (this.options.elseTemplate) {
+      return this.options.elseTemplate.execute(session);
+    }
+    return session; // If no else template and condition is false, return session unchanged
   }
 }

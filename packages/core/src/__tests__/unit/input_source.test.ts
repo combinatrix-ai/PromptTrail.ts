@@ -3,9 +3,9 @@ import {
   DefaultInputSource,
   CallbackInputSource,
   CLIInputSource,
-} from '../input_source';
-import { UserTemplate } from '../templates';
-import { createSession } from '../session';
+} from '../../input_source';
+import { UserTemplate } from '../../templates';
+import { createSession } from '../../session';
 
 // Mock readline module
 const mockQuestion = vi.fn();

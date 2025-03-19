@@ -12,7 +12,6 @@ import {
   type OpenAIConfig,
   type AnthropicConfig,
   type AssistantMetadata,
-  createTemperature,
   createMetadata,
 } from '@prompttrail/core';
 import { exec } from 'child_process';
@@ -97,7 +96,7 @@ export class CodingAgent {
     if (config.provider === 'openai') {
       const modelConfig: OpenAIConfig = {
         modelName: 'gpt-4',
-        temperature: createTemperature(0.7),
+        temperature: 0.7,
         apiKey: config.apiKey,
         tools: this.tools,
       };
@@ -105,7 +104,7 @@ export class CodingAgent {
     } else {
       const modelConfig: AnthropicConfig = {
         modelName: 'claude-3-opus-20240229',
-        temperature: createTemperature(0.7),
+        temperature: 0.7,
         apiKey: config.apiKey,
         tools: this.tools,
       };

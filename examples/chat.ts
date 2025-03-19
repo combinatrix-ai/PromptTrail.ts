@@ -8,7 +8,6 @@ import {
 import { CLIInputSource } from '../packages/core/src/input_source';
 import { OpenAIModel } from '../packages/core/src/model/openai/model';
 import type { OpenAIConfig } from '../packages/core/src/model/openai/types';
-import { createTemperature } from '../packages/core/src/types';
 import type { Session } from '../packages/core/src/session';
 import type { Message } from '../packages/core/src/types';
 import type { Metadata } from '../packages/core/src/metadata';
@@ -85,7 +84,7 @@ async function main() {
     // Create OpenAI model instance
     const model = new OpenAIModel({
       modelName: 'gpt-4o-mini',
-      temperature: createTemperature(0.7),
+      temperature: 0.7,
       apiKey: apiKey as string, // We've checked it's not undefined above
     } satisfies OpenAIConfig);
 

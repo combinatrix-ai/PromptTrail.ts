@@ -69,7 +69,7 @@ function validateSchema<T extends SchemaType>(
 
   // Validate each property
   for (const [key, propSchema] of Object.entries(schema.properties)) {
-    const propValue = (value as any)[key];
+    const propValue = (value as Record<string, unknown>)[key];
     if (propValue !== undefined) {
       if (propSchema.type === 'string' && typeof propValue !== 'string') {
         return false;

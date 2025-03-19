@@ -6,6 +6,14 @@ export type { Session } from './session';
 export { createSession } from './session';
 export * from './templates';
 
+// Session transformers and extractors
+export * from './utils/extractors';
+export * from './utils/schema';
+export * from './templates/schema_template';
+
+// Validators and guardrails
+export * from './validators';
+
 // Base implementations
 export * from './model/base';
 
@@ -16,3 +24,4 @@ export * from './model/openai/types';
 // Anthropic implementation
 export * from './model/anthropic/model';
 export * from './model/anthropic/types';
+export * from './model/anthropic/mcp';

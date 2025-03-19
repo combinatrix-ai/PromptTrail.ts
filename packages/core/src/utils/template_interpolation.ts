@@ -3,11 +3,13 @@ import type { Metadata } from '../metadata';
 /**
  * Type guard for Metadata interface
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isMetadata(value: unknown): value is Metadata<any> {
   return (
     value !== null &&
     typeof value === 'object' &&
     'get' in value &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     typeof (value as Metadata<any>).get === 'function'
   );
 }
