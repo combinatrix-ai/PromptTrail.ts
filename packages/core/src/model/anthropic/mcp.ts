@@ -45,7 +45,7 @@ export class MCPClientWrapper {
     try {
       // In a real implementation, we would use proper imports
       // This is just a workaround for the current implementation
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const mcpSdk = require('@modelcontextprotocol/sdk');
       this.client = new mcpSdk.Client(
         {
@@ -75,7 +75,7 @@ export class MCPClientWrapper {
     if (this.connected) return;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const mcpSdk = require('@modelcontextprotocol/sdk');
       const transport = new mcpSdk.HttpClientTransport({
         url: this.config.url,
