@@ -234,6 +234,7 @@ export class GuardrailTemplate<
                 passed: false,
                 validationResults,
               },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             }) as any;
 
           case OnFailAction.RETRY:
@@ -253,6 +254,7 @@ export class GuardrailTemplate<
         passed: allPassed,
         validationResults,
       },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any;
   }
 }
