@@ -24,7 +24,8 @@ describe('SchemaTemplate', () => {
     // Create a mock OpenAI model
     model = {
       send: vi.fn().mockImplementation(async (_session) => {
-        // Session parameter intentionally unused (prefixed with underscore)
+        // Session parameter is intentionally unused (prefixed with underscore)
+        // We don't use the session in this mock implementation
         // Default implementation for the first test
         return {
           type: 'assistant',
@@ -101,7 +102,8 @@ describe('SchemaTemplate', () => {
 
     // Mock the model to return a markdown code block
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
-      // Session parameter intentionally unused (prefixed with underscore)
+      // Session parameter is intentionally unused (prefixed with underscore)
+      // We don't use the session in this mock implementation
       return {
         type: 'assistant',
         content:
@@ -145,7 +147,8 @@ describe('SchemaTemplate', () => {
 
     // Mock the model to return plain JSON
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
-      // Session parameter intentionally unused (prefixed with underscore)
+      // Session parameter is intentionally unused (prefixed with underscore)
+      // We don't use the session in this mock implementation
       return {
         type: 'assistant',
         content:
@@ -190,7 +193,8 @@ describe('SchemaTemplate', () => {
 
     // Mock the model to return a function call
     vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
-      // Session parameter intentionally unused (prefixed with underscore)
+      // Session parameter is intentionally unused (prefixed with underscore)
+      // We don't use the session in this mock implementation
       return {
         type: 'assistant',
         content: 'I will use the function to provide structured output.',
