@@ -115,6 +115,9 @@ export class MockAnthropicModel {
 
       try {
         // Execute the tool
+        // Using type assertion for the tool arguments in test environment
+        // We need to use 'any' here as we don't have access to the exact schema type
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await tool.execute(args as any);
 
         // Log the result
