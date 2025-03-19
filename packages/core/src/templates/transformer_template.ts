@@ -10,7 +10,7 @@ import type { SessionTransformer } from '../utils/session_transformer';
  * @returns A template-like object that can execute the transformer
  */
 export function createTransformerTemplate(
-  transformer: SessionTransformer<any, any>,
+  transformer: SessionTransformer<Record<string, unknown>, Record<string, unknown>>,
 ) {
   return {
     execute: async (session: Session): Promise<Session> => {
