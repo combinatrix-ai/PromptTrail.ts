@@ -4,7 +4,14 @@ A type-safe, composable framework for building structured LLM conversations with
 
 ## 📋 Overview
 
-PromptTrail provides a robust TypeScript framework for creating structured, type-safe interactions with Large Language Models. It enables developers to build complex conversation flows, implement tool usage, and manage chat state with full TypeScript support.
+- 📝 **Smart Templates**: Build conversations like Lego - piece by piece!
+- 🔄 **Interactive Loops**: Create dynamic, branching conversations
+- 🛠️ **Tool Power**: Let your LLMs use real functions
+- 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
+- 📝 **Type-Safe**: Full TypeScript support - catch errors before they happen
+- 🌊 **Streaming**: Get responses in real-time
+- 🧩 **Composable**: Mix and match templates for complex flows
+- 🌐 **Browser Ready**: Works seamlessly in both Node.js and browser environments
 
 ## ✨ Features
 
@@ -497,7 +504,9 @@ const mathChat = new LinearTemplate()
   .addAssistant({ model: smartModel });
 ```
 
-### 🔌 Anthropic MCP Integration
+## 📚 API Explorer
+
+Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
 Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
 
