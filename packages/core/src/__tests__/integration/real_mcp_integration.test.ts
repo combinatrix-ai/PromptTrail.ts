@@ -78,7 +78,7 @@ describe('Real MCP Integration', () => {
     if (!calculator) return; // TypeScript guard
 
     // Execute the tool with type assertion to bypass type checking in tests
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await calculator.execute({
       operation: 'add',
       a: 5,
@@ -100,7 +100,7 @@ describe('Real MCP Integration', () => {
     if (!weather) return; // TypeScript guard
 
     // Execute the tool with type assertion to bypass type checking in tests
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await weather.execute({
       location: 'San Francisco',
     } as any);
@@ -170,7 +170,7 @@ describe('Real MCP Integration', () => {
     if (!calculator) return; // TypeScript guard
 
     // Execute the tool with invalid arguments and type assertion
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await calculator.execute({
       operation: 'divide',
       a: 10,
