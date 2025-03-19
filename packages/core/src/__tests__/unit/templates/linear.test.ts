@@ -474,7 +474,7 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (parentSession: Session) => {
+        initWith: (_parentSession: Session) => {
           const childSession = createSession();
           childSession.metadata.set('childValue', 'child');
           return childSession;
@@ -496,9 +496,9 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (parentSession: Session) => createSession(),
-        squashWith: (parentSession: Session, childSession: Session) => {
-          return parentSession.addMessage({
+        initWith: (_parentSession: Session) => createSession(),
+        squashWith: (_parentSession: Session, _childSession: Session) => {
+          return _parentSession.addMessage({
             type: 'system',
             content: 'Merged child messages',
             metadata: createMetadata(),
@@ -532,17 +532,17 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (parentSession: Session) => {
+        initWith: (_parentSession: Session) => {
           const childSession = createSession();
           // Copy relevant metadata from parent to child
-          const context = parentSession.metadata.get('context') as string;
+          const context = _parentSession.metadata.get('context') as string;
           childSession.metadata.set('context', context);
           return childSession;
         },
-        squashWith: (parentSession: Session, childSession: Session) => {
+        squashWith: (_parentSession: Session, _childSession: Session) => {
           // Merge child messages into parent
-          let updatedSession = parentSession;
-          for (const message of childSession.messages) {
+          let updatedSession = _parentSession;
+          for (const message of _childSession.messages) {
             updatedSession = updatedSession.addMessage(message);
           }
           return updatedSession;
