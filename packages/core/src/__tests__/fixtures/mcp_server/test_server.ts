@@ -92,6 +92,7 @@ export class MCPTestServer {
       } catch (_error) {
         // Error parameter is intentionally unused (prefixed with underscore)
         // We don't need the error details for this generic error response
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid request' }));
       }

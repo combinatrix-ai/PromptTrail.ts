@@ -54,6 +54,7 @@ export class MockAnthropicModel {
   /**
    * Send a message to the model
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async send(_session: Session): Promise<Message> {
     // Session parameter is intentionally unused (prefixed with underscore)
     // We don't use the session in this mock implementation
