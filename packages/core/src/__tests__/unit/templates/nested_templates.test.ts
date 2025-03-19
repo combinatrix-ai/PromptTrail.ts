@@ -10,10 +10,10 @@ import {
 import { createSession } from '../../../session';
 import { createMetadata } from '../../../metadata';
 import { Model } from '../../../model/base';
-import type { Session, ModelConfig } from '../../../types';
+import type { Session, ModelConfig, Message } from '../../../types';
 
 // Create a mock model for testing
-class MockModel extends Model<ModelConfig> {
+class MockModel extends Model<ModelConfig, unknown> {
   constructor(private responses: string[] = ['Mock response']) {
     super({
       modelName: 'mock-model',
@@ -21,7 +21,7 @@ class MockModel extends Model<ModelConfig> {
     });
   }
 
-  async send(_session: Session): Promise<unknown> {
+  async send(_session: Session): Promise<Message> {
     const response = this.responses.shift() || 'Default mock response';
     return {
       type: 'assistant',
@@ -30,7 +30,7 @@ class MockModel extends Model<ModelConfig> {
     };
   }
 
-  async *sendAsync(): AsyncGenerator<unknown, void, unknown> {
+  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
     throw new Error('Not implemented');
   }
 
@@ -75,7 +75,7 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Final question')
         .addAssistant({ model: mockModel }),
-      initWith: (_parentSession: Session) => createSession(),
+      initWith: (_parentSession: Session) => createSession(), // Unused parameter
       squashWith: (_parentSession, childSession) => {
         // Create a new session with all messages from both sessions
         let result = _parentSession;
