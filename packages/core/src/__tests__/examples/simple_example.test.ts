@@ -103,6 +103,8 @@ describe('Simple Example', () => {
       .addAssistant({ model });
 
     // Execute the template with print mode enabled
+    // Session variable is intentionally unused (prefixed with underscore)
+    // We only care about the side effect of console.log being called
     const _session = await chat.execute(createSession({ print: true }));
 
     // Verify console.log was called for each message
