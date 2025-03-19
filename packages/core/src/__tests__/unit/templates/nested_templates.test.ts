@@ -21,8 +21,9 @@ class MockModel extends Model<ModelConfig, unknown> {
     });
   }
 
-  async send(_session: Session): Promise<Message> {
-    // Unused parameter is intentionally prefixed with underscore
+  async send(session: Session): Promise<Message> {
+    // Use session parameter to avoid unused variable warning
+    void session; // Explicitly mark as used
     const response = this.responses.shift() || 'Default mock response';
     return {
       type: 'assistant',
