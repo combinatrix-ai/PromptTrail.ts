@@ -78,6 +78,7 @@ describe('Real MCP Integration', () => {
     if (!calculator) return; // TypeScript guard
 
     // Execute the tool with type assertion to bypass type checking in tests
+     
     const result = await calculator.execute({
       operation: 'add',
       a: 5,
@@ -99,6 +100,7 @@ describe('Real MCP Integration', () => {
     if (!weather) return; // TypeScript guard
 
     // Execute the tool with type assertion to bypass type checking in tests
+     
     const result = await weather.execute({
       location: 'San Francisco',
     } as any);
@@ -140,6 +142,7 @@ describe('Real MCP Integration', () => {
     expect(response.content).toBe('I can help with that!');
 
     // Check if tool calls are in metadata
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const metadata = response.metadata?.toJSON() as any;
     expect(metadata?.toolCalls).toBeDefined();
     if (metadata?.toolCalls) {
@@ -167,6 +170,7 @@ describe('Real MCP Integration', () => {
     if (!calculator) return; // TypeScript guard
 
     // Execute the tool with invalid arguments and type assertion
+     
     const result = await calculator.execute({
       operation: 'divide',
       a: 10,

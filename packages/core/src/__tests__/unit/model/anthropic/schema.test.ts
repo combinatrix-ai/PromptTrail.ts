@@ -22,9 +22,8 @@ describe('SchemaTemplate with Anthropic', () => {
 
     // Create a mock Anthropic model
     model = {
-      send: vi.fn().mockImplementation(async (_session) => {
-        // Session parameter is intentionally unused (prefixed with underscore)
-        // We don't use the session in this mock implementation
+      send: vi.fn().mockImplementation(async () => {
+        // We don't use any session parameter in this mock implementation
         // Default implementation for Anthropic response
         return {
           type: 'assistant',
@@ -92,9 +91,8 @@ describe('SchemaTemplate with Anthropic', () => {
     });
 
     // Mock the model to return a different JSON format
-    vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
-      // Session parameter is intentionally unused (prefixed with underscore)
-      // We don't use the session in this mock implementation
+    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
+      // We don't use any session parameter in this mock implementation
       return {
         type: 'assistant',
         content:

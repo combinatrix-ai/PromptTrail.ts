@@ -28,6 +28,7 @@ Rate Limit: 100 requests per minute
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly
@@ -61,6 +62,7 @@ Average response time: 120ms
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly with the transformed value
@@ -107,6 +109,7 @@ Server Information:
     ]);
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly
@@ -140,6 +143,7 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the default value was used
@@ -163,6 +167,7 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userTransformedSession = userTransformer.transform(session) as any;
 
     // Check that only user content was extracted
@@ -178,6 +183,7 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
+     
     const assistantTransformedSession = assistantTransformer.transform(
       session,
     ) as any;
@@ -201,6 +207,7 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the full match was used

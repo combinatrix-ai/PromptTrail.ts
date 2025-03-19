@@ -36,6 +36,7 @@ This is the conclusion.
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly
@@ -88,6 +89,7 @@ def factorial(n):
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly
@@ -141,6 +143,7 @@ console.log(factorial(5)); // 120
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
     // Check that the metadata was updated correctly
@@ -197,6 +200,7 @@ const assistantCode = 'assistant';
     });
 
     // Apply the transformer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userTransformedSession = userTransformer.transform(session) as any;
 
     // Check that only user content was extracted
@@ -223,6 +227,7 @@ const assistantCode = 'assistant';
     });
 
     // Apply the transformer
+     
     const assistantTransformedSession = assistantTransformer.transform(
       session,
     ) as any;

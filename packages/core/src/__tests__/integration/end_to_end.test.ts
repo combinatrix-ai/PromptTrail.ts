@@ -10,11 +10,11 @@ import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/base_validators';
 import { Model } from '../../model/base';
 import { createMetadata } from '../../metadata';
-import type { Session, Message, Tool, SchemaType } from '../../types';
+import type { Session, Message, Tool, SchemaType, ModelConfig } from '../../types';
 
 // Create a mock model class that extends Model
 class MockOpenAIModel extends Model {
-  constructor(config: any) {
+  constructor(config: ModelConfig) {
     super(config);
   }
 
@@ -22,7 +22,7 @@ class MockOpenAIModel extends Model {
     // No validation needed for mock
   }
 
-  protected formatTool(tool: Tool<SchemaType>): Record<string, any> {
+  protected formatTool(tool: Tool<SchemaType>): Record<string, unknown> {
     return {
       type: 'function',
       function: {
@@ -109,7 +109,7 @@ The weather in San Francisco is currently 72°F and sunny.
 
 describe('End-to-End Workflows', () => {
   let model: MockOpenAIModel;
-  let calculatorTool: any;
+  let calculatorTool: Tool<SchemaType>;
 
   beforeEach(() => {
     // Create a calculator tool
@@ -147,7 +147,6 @@ describe('End-to-End Workflows', () => {
 
     // Create a mock model with tools
     model = new MockOpenAIModel({
-      apiKey: 'test-api-key',
       modelName: 'gpt-4o-mini',
       temperature: 0.7,
       tools: [calculatorTool],
@@ -213,7 +212,7 @@ describe('End-to-End Workflows', () => {
     expect(messages[2].type).toBe('assistant');
 
     // Verify the tool call
-    const metadata = messages[2].metadata?.toJSON() as any;
+    const metadata = messages[2].metadata?.toJSON() as { toolCalls?: Array<{ name: string; arguments: Record<string, unknown>; id: string }> };
     expect(metadata?.toolCalls).toBeDefined();
     if (metadata?.toolCalls) {
       expect(metadata.toolCalls[0].name).toBe('calculator');
@@ -254,7 +253,7 @@ describe('End-to-End Workflows', () => {
     expect(messages[2].type).toBe('assistant');
 
     // Verify the guardrail metadata
-    const guardrailInfo = session.metadata.get('guardrail') as any;
+    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number; validationResults: Array<{ passed: boolean; feedback?: string }> };
     expect(guardrailInfo).toBeDefined();
     if (guardrailInfo) {
       expect(guardrailInfo.passed).toBe(true);
