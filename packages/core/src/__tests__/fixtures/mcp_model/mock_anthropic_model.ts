@@ -57,6 +57,7 @@ export class MockAnthropicModel {
   async send(_session: Session): Promise<Message> {
     // Session parameter is intentionally unused (prefixed with underscore)
     // We don't use the session in this mock implementation
+    // This is a mock implementation that returns a predefined response
     // Mock response with tool call
     const metadata = createMetadata<AssistantMetadata>();
 
