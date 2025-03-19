@@ -24,6 +24,7 @@ class MockModel extends Model<ModelConfig> {
   }
 
   async send(_session: Session): Promise<Message> {
+    // Unused parameter is intentionally prefixed with underscore
     const response = this.responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
@@ -34,6 +35,8 @@ class MockModel extends Model<ModelConfig> {
   }
 
   async *sendAsync(): AsyncGenerator<Message, void, unknown> {
+    // Add yield to satisfy generator function requirement
+    if (this.responses.length > 1000) yield { type: 'assistant', content: '', metadata: createMetadata() };
     throw new Error('Not implemented');
   }
 
@@ -98,8 +101,8 @@ describe('Templates', () => {
       // Verify the conversation flow
       const messages = Array.from(result.messages);
 
-      // Get the actual content from the messages
-      const _actualContents = messages.map((msg) => msg.content);
+      // Get the actual content from the messages (unused in this test but useful for debugging)
+      // const actualContents = messages.map((msg) => msg.content);
 
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
@@ -163,8 +166,8 @@ describe('Templates', () => {
       // Verify the conversation flow
       const messages = Array.from(result.messages);
 
-      // Get the actual content from the messages
-      const _actualContents = messages.map((msg) => msg.content);
+      // Get the actual content from the messages (unused in this test but useful for debugging)
+      // const actualContents = messages.map((msg) => msg.content);
 
       // Verify the conversation flow structure
       expect(messages).toHaveLength(7);
@@ -243,7 +246,7 @@ describe('Templates', () => {
       expect(
         messages.map((msg) => ({
           ...msg,
-          metadata: (msg.metadata as any).toJSON(),
+          metadata: msg.metadata ? msg.metadata.toJSON() : {},
         })),
       ).toEqual([
         {
@@ -520,15 +523,16 @@ describe('Templates', () => {
         .addSystem('Child context')
         .addAssistant({ model: mockModel });
 
-      const _parentTemplate = new LinearTemplate()
-        .addSystem('Parent context')
-        .addAssistant({ model: mockModel })
-        .addLoop(
-          new LoopTemplate()
-            .addUser('Input:', 'test')
-            .addAssistant('Response')
-            .setExitCondition(() => true),
-        );
+      // This template is defined but not used in this test
+      // const parentTemplate = new LinearTemplate()
+      //   .addSystem('Parent context')
+      //   .addAssistant({ model: mockModel })
+      //   .addLoop(
+      //     new LoopTemplate()
+      //       .addUser('Input:', 'test')
+      //       .addAssistant('Response')
+      //       .setExitCondition(() => true),
+      //   );
 
       const template = new SubroutineTemplate({
         template: childTemplate,
