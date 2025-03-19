@@ -186,6 +186,7 @@ This message doesn't contain the pattern we're looking for.
      
     const assistantTransformedSession = assistantTransformer.transform(
       session,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ) as any;
 
     // Check that only assistant content was extracted
