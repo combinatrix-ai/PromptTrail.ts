@@ -8,18 +8,18 @@ import * as http from 'http';
 
 // Type guards for tool arguments
 const isCalculatorArgs = (
-  args: any,
+  args: unknown,
 ): args is { operation: string; a: number; b: number } =>
   typeof args === 'object' &&
   args !== null &&
-  typeof args.operation === 'string' &&
-  typeof args.a === 'number' &&
-  typeof args.b === 'number';
+  typeof (args as Record<string, unknown>).operation === 'string' &&
+  typeof (args as Record<string, unknown>).a === 'number' &&
+  typeof (args as Record<string, unknown>).b === 'number';
 
-const isWeatherArgs = (args: any): args is { location: string } =>
+const isWeatherArgs = (args: unknown): args is { location: string } =>
   typeof args === 'object' &&
   args !== null &&
-  typeof args.location === 'string';
+  typeof (args as Record<string, unknown>).location === 'string';
 
 /**
  * Mock MCP Test Server class
@@ -148,7 +148,7 @@ export class MCPTestServer {
   /**
    * Handle callTool method
    */
-  private handleCallTool(params: any, res: http.ServerResponse): void {
+  private handleCallTool(params: { name: string; arguments: unknown }, res: http.ServerResponse): void {
     const { name, arguments: args } = params;
 
     switch (name) {
@@ -276,7 +276,7 @@ export class MCPTestServer {
   /**
    * Handle readResource method
    */
-  private handleReadResource(params: any, res: http.ServerResponse): void {
+  private handleReadResource(params: { uri: string }, res: http.ServerResponse): void {
     const { uri } = params;
 
     if (uri === 'test://info') {
