@@ -25,7 +25,7 @@ class TestValidator extends BaseValidator {
     super();
   }
 
-  async validate(content: string): Promise<any> {
+  async validate(_content: string): Promise<any> {
     return this.createResult(this.shouldPass, {
       feedback: this.shouldPass
         ? undefined
