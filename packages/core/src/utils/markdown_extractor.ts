@@ -74,6 +74,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
 
             if (options.headingMap[trimmedHeading]) {
               const key = options.headingMap[trimmedHeading] as keyof T;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               extractedData[key] = content.trim() as any;
             }
           }
@@ -88,6 +89,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
 
             if (options.codeBlockMap[language]) {
               const key = options.codeBlockMap[language] as keyof T;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               extractedData[key] = code.trim() as any;
             }
           }

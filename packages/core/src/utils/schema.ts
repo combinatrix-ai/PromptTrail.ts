@@ -48,8 +48,10 @@ export function defineSchema<
  * Convert a Zod schema to JSON Schema format
  * This is a simplified implementation that works for our basic schema types
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function zodToJsonSchema(schema: z.ZodType): any {
   if (schema instanceof z.ZodObject) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const properties: Record<string, any> = {};
     const required: string[] = [];
 
@@ -86,7 +88,9 @@ export function zodToJsonSchema(schema: z.ZodType): any {
       }
 
       // Check if the property is required
-      if (!value.isOptional()) {
+      // Use type assertion for zod schema methods
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!(value as any).isOptional()) {
         required.push(key);
       }
     });

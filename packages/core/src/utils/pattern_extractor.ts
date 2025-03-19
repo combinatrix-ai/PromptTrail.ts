@@ -101,6 +101,7 @@ export function extractPattern<T extends Record<string, unknown>>(
             ? option.transform(extractedContent)
             : extractedContent;
 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           extractedData[option.key] = transformedValue as any;
           matched = true;
           break; // Stop after first match unless we want to collect all matches
@@ -109,6 +110,7 @@ export function extractPattern<T extends Record<string, unknown>>(
 
       // Apply default value if no match found and default is provided
       if (!matched && option.defaultValue !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         extractedData[option.key] = option.defaultValue as any;
       }
     }
