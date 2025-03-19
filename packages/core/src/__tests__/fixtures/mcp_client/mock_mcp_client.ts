@@ -62,7 +62,8 @@ export class MockMCPClientWrapper {
           name: def.name,
           description: def.description || `MCP Tool: ${def.name}`,
           schema: {
-            properties: def.inputSchema.properties as Record<string, any>,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            properties: def.inputSchema.properties as any,
             required: def.inputSchema.required || [],
           },
           execute: async (args) => {
@@ -75,7 +76,7 @@ export class MockMCPClientWrapper {
               if (result.isError) {
                 const errorMsg =
                   result.content
-                    ?.map((c: any) => c.text)
+                    ?.map((c: { text?: string }) => c.text)
                     .filter(Boolean)
                     .join('\n') || 'Unknown error';
 
@@ -84,7 +85,7 @@ export class MockMCPClientWrapper {
 
               // Concatenate text outputs
               const outputText = result.content
-                ?.map((c: any) => {
+                ?.map((c: { type?: string; text?: string; resource?: { text?: string } }) => {
                   if (c.type === 'text') return c.text;
                   if (c.type === 'resource' && c.resource?.text)
                     return c.resource.text;
@@ -145,7 +146,7 @@ export class MockMCPClientWrapper {
       }
 
       return result.contents
-        .map((content: any) => content.text || '')
+        .map((content: { text?: string }) => content.text || '')
         .filter(Boolean)
         .join('\n');
     } catch (error) {
@@ -168,7 +169,7 @@ export class MockMCPClientWrapper {
     try {
       const result = await this.makeRequest('listResources', {});
 
-      return (result.resources || []).map((resource: any) => ({
+      return (result.resources || []).map((resource: { uri: string; name: string; description?: string }) => ({
         uri: resource.uri,
         name: resource.name,
         description: resource.description,
@@ -183,7 +184,8 @@ export class MockMCPClientWrapper {
   /**
    * Make a request to the MCP server
    */
-  private makeRequest(method: string, params: any): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private makeRequest(method: string, params: Record<string, unknown>): Promise<any> {
     return new Promise((resolve, reject) => {
       const data = JSON.stringify({
         jsonrpc: '2.0',
