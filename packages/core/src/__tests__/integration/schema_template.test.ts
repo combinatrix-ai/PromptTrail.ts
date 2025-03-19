@@ -96,7 +96,8 @@ describe('SchemaTemplate', () => {
     });
 
     // Mock the model to return a markdown code block
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
+    vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
+      // Session parameter intentionally unused (prefixed with underscore)
       return {
         type: 'assistant',
         content:
@@ -139,7 +140,8 @@ describe('SchemaTemplate', () => {
     });
 
     // Mock the model to return plain JSON
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
+    vi.spyOn(model, 'send').mockImplementationOnce(async (_session) => {
+      // Session parameter intentionally unused (prefixed with underscore)
       return {
         type: 'assistant',
         content:
