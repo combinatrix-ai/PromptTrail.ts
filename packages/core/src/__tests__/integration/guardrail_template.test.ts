@@ -27,6 +27,7 @@ class TestValidator extends BaseValidator {
     super();
   }
 
+  // Parameter is intentionally unused (prefixed with underscore)
   async validate(_content: string): Promise<{ passed: boolean; feedback?: string }> {
     return this.createResult(this.shouldPass, {
       feedback: this.shouldPass
