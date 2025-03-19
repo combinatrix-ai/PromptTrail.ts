@@ -14,6 +14,7 @@ vi.mock('../../model/anthropic/mcp', async () => {
     // Config parameter is intentionally unused (prefixed with underscore)
     // We don't use the config parameter in this mock implementation
     // This mock returns a predefined set of methods and responses
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     return {
       connect: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),
