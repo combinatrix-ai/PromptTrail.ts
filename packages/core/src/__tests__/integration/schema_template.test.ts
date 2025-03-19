@@ -22,7 +22,7 @@ describe('SchemaTemplate', () => {
 
     // Create a mock OpenAI model
     model = {
-      send: vi.fn().mockImplementation(async (session) => {
+      send: vi.fn().mockImplementation(async (_session) => {
         // Default implementation for the first test
         return {
           type: 'assistant',
@@ -39,7 +39,7 @@ describe('SchemaTemplate', () => {
 
     // Mock the instanceof check
     Object.defineProperty(model, Symbol.hasInstance, {
-      value: (obj: any) => true,
+      value: (_obj: unknown) => true,
     });
   });
 

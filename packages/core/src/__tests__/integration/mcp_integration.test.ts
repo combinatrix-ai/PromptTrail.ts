@@ -10,7 +10,7 @@ vi.mock('../../model/anthropic/mcp', async () => {
   const actual = await vi.importActual('../../model/anthropic/mcp');
 
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
-  const mockMCPClientWrapper = vi.fn().mockImplementation((config) => ({
+  const mockMCPClientWrapper = vi.fn().mockImplementation((_config) => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
     loadTools: vi.fn().mockResolvedValue([

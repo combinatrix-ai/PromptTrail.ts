@@ -103,7 +103,7 @@ describe('Simple Example', () => {
       .addAssistant({ model });
 
     // Execute the template with print mode enabled
-    const session = await chat.execute(createSession({ print: true }));
+    const _session = await chat.execute(createSession({ print: true }));
 
     // Verify console.log was called for each message
     expect(consoleSpy).toHaveBeenCalledTimes(3);

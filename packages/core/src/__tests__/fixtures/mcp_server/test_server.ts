@@ -89,7 +89,7 @@ export class MCPTestServer {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: `Unknown method: ${method}` }));
         }
-      } catch (error) {
+      } catch (_error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid request' }));
       }

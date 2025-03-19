@@ -1,9 +1,15 @@
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Anthropic Model Context Protocol (MCP) integration for PromptTrail
  */
 import type { Tool, SchemaType } from '../../tool';
 import { createTool } from '../../tool';
+
+// Define PropertySchema locally since it's not exported from tool.ts
+type PropertySchema =
+  | { type: 'string'; description: string }
+  | { type: 'number'; description: string }
+  | { type: 'boolean'; description: string };
 
 /**
  * MCP server configuration
@@ -21,7 +27,16 @@ export interface MCPServerConfig {
  * but handles the types internally to avoid dependency issues.
  */
 export class MCPClientWrapper {
-  private client: any; // Using any for the client to avoid type issues
+  // Define a minimal interface for the MCP client to avoid using 'any'
+  private client: {
+    connect: (transport: unknown) => Promise<void>;
+    close: () => Promise<void>;
+    listTools: () => Promise<{ tools?: Array<{ name: string; description?: string; inputSchema: { properties: Record<string, unknown>; required?: string[] } }> }>;
+    callTool: (params: { name: string; arguments: unknown }) => Promise<{ isError: boolean; content?: Array<{ type?: string; text?: string; resource?: { text?: string } }> }>;
+    readResource: (params: { uri: string }) => Promise<{ contents?: Array<{ text?: string }> }>;
+    listResources: () => Promise<{ resources?: Array<{ uri: string; name: string; description?: string }> }>;
+    getPrompt: (params: { name: string; parameters: Record<string, unknown> }) => Promise<{ messages?: Array<{ role: string; content: string }> }>;
+  };
   private connected: boolean = false;
   private tools: Map<string, Tool<SchemaType>> = new Map();
 
@@ -105,7 +120,7 @@ export class MCPClientWrapper {
           name: def.name,
           description: def.description || `MCP Tool: ${def.name}`,
           schema: {
-            properties: def.inputSchema.properties as Record<string, any>,
+            properties: def.inputSchema.properties as Record<string, PropertySchema>,
             required: def.inputSchema.required || [],
           },
           execute: async (args) => {
@@ -118,7 +133,7 @@ export class MCPClientWrapper {
               if (result.isError) {
                 const errorMsg =
                   result.content
-                    ?.map((c: any) => c.text)
+                    ?.map((c: { text?: string }) => c.text)
                     .filter(Boolean)
                     .join('\n') || 'Unknown error';
 
@@ -127,7 +142,7 @@ export class MCPClientWrapper {
 
               // Concatenate text outputs
               const outputText = result.content
-                ?.map((c: any) => {
+                ?.map((c: { type?: string; text?: string; resource?: { text?: string } }) => {
                   if (c.type === 'text') return c.text;
                   if (c.type === 'resource' && c.resource?.text)
                     return c.resource.text;
@@ -188,7 +203,7 @@ export class MCPClientWrapper {
       }
 
       return result.contents
-        .map((content: any) => content.text || '')
+        .map((content: { text?: string }) => content.text || '')
         .filter(Boolean)
         .join('\n');
     } catch (error) {
@@ -211,7 +226,7 @@ export class MCPClientWrapper {
     try {
       const result = await this.client.listResources();
 
-      return (result.resources || []).map((resource: any) => ({
+      return (result.resources || []).map((resource: { uri: string; name: string; description?: string }) => ({
         uri: resource.uri,
         name: resource.name,
         description: resource.description,
@@ -240,7 +255,7 @@ export class MCPClientWrapper {
         parameters: params || {},
       });
 
-      return (result.messages || []).map((message: any) => ({
+      return (result.messages || []).map((message: { role: string; content: string }) => ({
         role: message.role,
         content: message.content,
       }));
