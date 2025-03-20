@@ -270,7 +270,7 @@ export class LinearTemplate<
 
   /**
    * Add a tool result message to the sequence
-   * 
+   *
    * @param toolCallId The ID of the tool call this result is for
    * @param content The content of the tool result
    * @returns The template instance for chaining

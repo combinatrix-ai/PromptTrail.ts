@@ -13,7 +13,7 @@ import {
 /**
  * This example demonstrates how to use model-based validators with GuardrailTemplate
  * to ensure that LLM responses meet specific quality criteria.
- * 
+ *
  * NOTE: This example is currently not working because the model validators still expect
  * a Model instance, but we're passing a GenerateOptions object. The model validators
  * need to be updated to use generateOptions instead of model.

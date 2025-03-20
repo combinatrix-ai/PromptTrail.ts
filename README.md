@@ -1,17 +1,8 @@
 # 🚀 PromptTrail
 
-A type-safe, composable framework for building structured LLM conversations with OpenAI and Anthropic models.
+A type-safe, composable framework for building structured LLM conversations with various LLMs and tools.
 
-## 📋 Overview
-
-- 📝 **Smart Templates**: Build conversations like Lego - piece by piece!
-- 🔄 **Interactive Loops**: Create dynamic, branching conversations
-- 🛠️ **Tool Power**: Let your LLMs use real functions
-- 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
-- 📝 **Type-Safe**: Full TypeScript support - catch errors before they happen
-- 🌊 **Streaming**: Get responses in real-time
-- 🧩 **Composable**: Mix and match templates for complex flows
-- 🌐 **Browser Ready**: Works seamlessly in both Node.js and browser environments
+PromptTrail helps TypeScript developers build robust, maintainable LLM applications with strong typing, composable templates, and powerful validation tools. Built on Vercel's widely-adopted [ai-sdk](https://github.com/vercel/ai), PromptTrail leverages its ecosystem for LLM and tool interactions, enabling seamless integration with a broad range of language models and function calling capabilities.
 
 ## ✨ Features
 
@@ -43,7 +34,11 @@ yarn add @prompttrail/core
 ## 🚀 Quick Start
 
 ```typescript
-import { LinearTemplate, createSession, type GenerateOptions } from '@prompttrail/core';
+import {
+  LinearTemplate,
+  createSession,
+  type GenerateOptions,
+} from '@prompttrail/core';
 
 // Define generateOptions for OpenAI
 const generateOptions: GenerateOptions = {

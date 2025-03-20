@@ -104,11 +104,13 @@ async function toolExample() {
   // Check if there are tool calls
   const lastMessage = session.getLastMessage();
   const metadata = lastMessage?.metadata?.toJSON() || {};
-  const toolCalls = metadata.toolCalls as Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }> | undefined;
+  const toolCalls = metadata.toolCalls as
+    | Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+        id: string;
+      }>
+    | undefined;
 
   if (toolCalls && toolCalls.length > 0) {
     // Execute each tool call
@@ -150,8 +152,9 @@ async function toolExample() {
     };
 
     // Continue the conversation with the tool results
-    const continueTemplate = new LinearTemplate()
-      .addAssistant({ generateOptions: continueOptions });
+    const continueTemplate = new LinearTemplate().addAssistant({
+      generateOptions: continueOptions,
+    });
 
     session = await continueTemplate.execute(session);
   }

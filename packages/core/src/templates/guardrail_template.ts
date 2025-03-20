@@ -148,9 +148,7 @@ export class GuardrailTemplate<
     };
   }
 
-  async execute(
-    session: Session<TInput>,
-  ): Promise<
+  async execute(session: Session<TInput>): Promise<
     Session<
       TInput & {
         guardrail?: {

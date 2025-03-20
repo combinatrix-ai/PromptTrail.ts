@@ -15,13 +15,17 @@ describe('Browser Compatibility', () => {
     // Setup mocks for each test
     vi.mocked(generateText).mockImplementation(async (session, options) => {
       // Check if browser flag is set
-      if (options.provider.type === 'openai' && !options.provider.dangerouslyAllowBrowser) {
+      if (
+        options.provider.type === 'openai' &&
+        !options.provider.dangerouslyAllowBrowser
+      ) {
         throw new Error('Browser flag not set');
       }
 
       return {
         type: 'assistant',
-        content: 'This is a response from the OpenAI API in a browser environment.',
+        content:
+          'This is a response from the OpenAI API in a browser environment.',
         metadata: createMetadata(),
       };
     });
