@@ -1,10 +1,7 @@
-import { z } from 'zod';
-import type { Message, Tool, SchemaType } from '../types';
 import type { Session } from '../session';
 import { Template } from '../templates';
 import { createMetadata } from '../metadata';
-import type { AssistantMetadata } from '../types';
-import { generateText, generateTextStream, type GenerateOptions } from '../generate';
+import { generateText, type GenerateOptions } from '../generate';
 
 /**
  * Template for assistant messages using the generateText function
@@ -42,7 +39,10 @@ export class GenerateTemplate<
 
     // Use the generateText function
     // Cast session to any to avoid type issues with the generateText function
-    const response = await generateText(session as any, this.options.generateOptions);
+    const response = await generateText(
+      session as any,
+      this.options.generateOptions,
+    );
     return session.addMessage(response) as unknown as Session<TOutput>;
   }
 }
@@ -66,7 +66,7 @@ export class ToolResultTemplate<
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
     const metadata = createMetadata<{ toolCallId: string }>();
     metadata.set('toolCallId', this.options.toolCallId);
-    
+
     return session.addMessage({
       type: 'tool_result',
       content: this.options.content,

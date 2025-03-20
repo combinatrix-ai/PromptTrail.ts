@@ -38,7 +38,8 @@ describe('Browser Compatibility', () => {
 
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
-      content: 'This is a response from the OpenAI API in a browser environment.',
+      content:
+        'This is a response from the OpenAI API in a browser environment.',
       metadata: createMetadata(),
     });
   });

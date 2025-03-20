@@ -1,4 +1,8 @@
-import { AIProvider, AISDKModelConfig, AISDKModel } from '../model/ai_sdk_model';
+import {
+  AIProvider,
+  AISDKModelConfig,
+  AISDKModel,
+} from '../model/ai_sdk_model';
 import type { OpenAIConfig } from '../model/openai/types';
 import type { AnthropicConfig } from '../model/anthropic/types';
 
@@ -16,7 +20,7 @@ export function migrateOpenAIToAISDK(config: OpenAIConfig): AISDKModel {
     maxTokens: config.maxTokens,
     tools: config.tools,
   };
-  
+
   return new AISDKModel(aiSdkConfig);
 }
 
@@ -33,6 +37,6 @@ export function migrateAnthropicToAISDK(config: AnthropicConfig): AISDKModel {
     maxTokens: config.maxTokens,
     tools: config.tools,
   };
-  
+
   return new AISDKModel(aiSdkConfig);
 }

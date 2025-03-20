@@ -149,7 +149,10 @@ export class MCPTestServer {
   /**
    * Handle callTool method
    */
-  private handleCallTool(params: { name: string; arguments: unknown }, res: http.ServerResponse): void {
+  private handleCallTool(
+    params: { name: string; arguments: unknown },
+    res: http.ServerResponse,
+  ): void {
     const { name, arguments: args } = params;
 
     switch (name) {
@@ -277,7 +280,10 @@ export class MCPTestServer {
   /**
    * Handle readResource method
    */
-  private handleReadResource(params: { uri: string }, res: http.ServerResponse): void {
+  private handleReadResource(
+    params: { uri: string },
+    res: http.ServerResponse,
+  ): void {
     const { uri } = params;
 
     if (uri === 'test://info') {

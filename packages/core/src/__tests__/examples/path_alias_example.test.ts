@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LinearTemplate, createSession, type GenerateOptions } from '../../../src';
+import {
+  LinearTemplate,
+  createSession,
+  type GenerateOptions,
+} from '../../../src';
 import { createMessage } from '../utils';
 
 // Mock generateText function

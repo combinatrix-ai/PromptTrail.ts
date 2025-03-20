@@ -37,7 +37,10 @@ export class SchemaValidator<T extends SchemaType> extends BaseValidator {
     }
   }
 
-  private validateSchema(schema: SchemaType, value: Record<string, unknown>): string[] {
+  private validateSchema(
+    schema: SchemaType,
+    value: Record<string, unknown>,
+  ): string[] {
     const errors: string[] = [];
 
     // Check required properties

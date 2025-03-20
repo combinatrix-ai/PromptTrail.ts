@@ -85,12 +85,18 @@ export class MockMCPClientWrapper {
 
               // Concatenate text outputs
               const outputText = result.content
-                ?.map((c: { type?: string; text?: string; resource?: { text?: string } }) => {
-                  if (c.type === 'text') return c.text;
-                  if (c.type === 'resource' && c.resource?.text)
-                    return c.resource.text;
-                  return '';
-                })
+                ?.map(
+                  (c: {
+                    type?: string;
+                    text?: string;
+                    resource?: { text?: string };
+                  }) => {
+                    if (c.type === 'text') return c.text;
+                    if (c.type === 'resource' && c.resource?.text)
+                      return c.resource.text;
+                    return '';
+                  },
+                )
                 .filter(Boolean)
                 .join('\n');
 
@@ -169,11 +175,13 @@ export class MockMCPClientWrapper {
     try {
       const result = await this.makeRequest('listResources', {});
 
-      return (result.resources || []).map((resource: { uri: string; name: string; description?: string }) => ({
-        uri: resource.uri,
-        name: resource.name,
-        description: resource.description,
-      }));
+      return (result.resources || []).map(
+        (resource: { uri: string; name: string; description?: string }) => ({
+          uri: resource.uri,
+          name: resource.name,
+          description: resource.description,
+        }),
+      );
     } catch (error) {
       throw new Error(
         `Failed to list resources: ${error instanceof Error ? error.message : String(error)}`,
@@ -185,7 +193,10 @@ export class MockMCPClientWrapper {
    * Make a request to the MCP server
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private makeRequest(method: string, params: Record<string, unknown>): Promise<any> {
+  private makeRequest(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
       const data = JSON.stringify({
         jsonrpc: '2.0',

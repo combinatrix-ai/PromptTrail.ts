@@ -8,7 +8,7 @@ import { zodToJsonSchema } from '../utils/schema';
 
 // Import Template class to extend it
 import { Template } from '../templates';
-import { generateText, type GenerateOptions } from '../generate';
+import { type GenerateOptions } from '../generate';
 import { GenerateTemplate } from './generate_template';
 
 // Type to handle both SchemaType and Zod schemas
@@ -139,7 +139,9 @@ Please call this function with the appropriate parameters to structure your resp
     });
 
     // Execute the guardrail template
-    const resultSession = await guardrailTemplate.execute(systemSession as unknown as Session<Record<string, unknown>>);
+    const resultSession = await guardrailTemplate.execute(
+      systemSession as unknown as Session<Record<string, unknown>>,
+    );
 
     // Get the last message
     const lastMessage = resultSession.getLastMessage();

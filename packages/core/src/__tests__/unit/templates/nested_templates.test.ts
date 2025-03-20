@@ -49,7 +49,8 @@ describe('Nested Templates', () => {
 
     // Setup mock implementation for generateText
     vi.mocked(generateText).mockImplementation(async () => {
-      const response = mockResponses[responseIndex++] || 'Default mock response';
+      const response =
+        mockResponses[responseIndex++] || 'Default mock response';
       return {
         type: 'assistant',
         content: response,
@@ -59,7 +60,6 @@ describe('Nested Templates', () => {
   });
 
   it('should execute deeply nested templates', async () => {
-
     // Create a complex nested template structure
     // Note: We're using array-based construction instead of chaining for templates
     // that don't have specific add methods
@@ -157,7 +157,10 @@ describe('Nested Templates', () => {
           'username',
           _parentSession.metadata.get('username'),
         );
-        childSession.metadata.set('topic', _parentSession.metadata.get('topic'));
+        childSession.metadata.set(
+          'topic',
+          _parentSession.metadata.get('topic'),
+        );
         return childSession;
       },
       squashWith: (_parentSession, childSession) => {

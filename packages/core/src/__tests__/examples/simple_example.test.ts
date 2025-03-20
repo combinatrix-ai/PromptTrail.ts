@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LinearTemplate, createSession, type GenerateOptions } from '../../../src';
+import {
+  LinearTemplate,
+  createSession,
+  type GenerateOptions,
+} from '../../../src';
 
 // Mock generateText function
 vi.mock('../../../src/generate', () => {

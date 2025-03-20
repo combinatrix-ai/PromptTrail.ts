@@ -74,7 +74,9 @@ describe('End-to-End Workflows', () => {
     vi.mocked(generateText).mockImplementation(async (session) => {
       // Get the last user message
       const messages = Array.from(session.messages);
-      const lastUserMessage = messages.filter((msg) => msg.type === 'user').pop();
+      const lastUserMessage = messages
+        .filter((msg) => msg.type === 'user')
+        .pop();
 
       // Generate different responses based on the user message
       if (lastUserMessage && lastUserMessage.content.includes('weather')) {
@@ -192,7 +194,13 @@ The weather in San Francisco is currently 72°F and sunny.
     expect(messages[2].type).toBe('assistant');
 
     // Verify the tool call
-    const metadata = messages[2].metadata?.toJSON() as { toolCalls?: Array<{ name: string; arguments: Record<string, unknown>; id: string }> };
+    const metadata = messages[2].metadata?.toJSON() as {
+      toolCalls?: Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+        id: string;
+      }>;
+    };
     expect(metadata?.toolCalls).toBeDefined();
     if (metadata?.toolCalls) {
       expect(metadata.toolCalls[0].name).toBe('calculator');
@@ -233,7 +241,11 @@ The weather in San Francisco is currently 72°F and sunny.
     expect(messages[2].type).toBe('assistant');
 
     // Verify the guardrail metadata
-    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number; validationResults: Array<{ passed: boolean; feedback?: string }> };
+    const guardrailInfo = session.metadata.get('guardrail') as {
+      passed: boolean;
+      attempt: number;
+      validationResults: Array<{ passed: boolean; feedback?: string }>;
+    };
     expect(guardrailInfo).toBeDefined();
     if (guardrailInfo) {
       expect(guardrailInfo.passed).toBe(true);

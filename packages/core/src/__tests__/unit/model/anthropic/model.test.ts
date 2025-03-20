@@ -67,17 +67,21 @@ describe('AnthropicModel', () => {
     // Mock the send method for the basic model
     vi.mocked(model.send).mockImplementation(async (session: Session) => {
       const lastMessage = Array.from(session.messages).pop();
-      
+
       if (lastMessage?.content.includes('capital of France')) {
         return {
           type: 'assistant',
           content: 'The capital of France is Paris.',
           metadata: createMetadata(),
         };
-      } else if (lastMessage?.content.includes('space') || lastMessage?.content.includes('Mars')) {
+      } else if (
+        lastMessage?.content.includes('space') ||
+        lastMessage?.content.includes('Mars')
+      ) {
         return {
           type: 'assistant',
-          content: 'Mars appears red because its surface contains iron oxide, commonly known as rust. The iron in the Martian soil has oxidized over time, giving the planet its characteristic reddish hue.',
+          content:
+            'Mars appears red because its surface contains iron oxide, commonly known as rust. The iron in the Martian soil has oxidized over time, giving the planet its characteristic reddish hue.',
           metadata: createMetadata(),
         };
       } else if (lastMessage?.type === 'tool_result') {
@@ -89,7 +93,7 @@ describe('AnthropicModel', () => {
       } else {
         return {
           type: 'assistant',
-          content: 'Bonjour! Comment puis-je vous aider aujourd\'hui?',
+          content: "Bonjour! Comment puis-je vous aider aujourd'hui?",
           metadata: createMetadata(),
         };
       }
@@ -217,7 +221,6 @@ describe('AnthropicModel', () => {
   });
 
   it('should use tools when available', async () => {
-
     const session: Session = {
       messages: [
         {

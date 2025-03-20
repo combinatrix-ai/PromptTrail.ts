@@ -28,7 +28,9 @@ class TestValidator extends BaseValidator {
   // We don't use the content parameter in this mock implementation
   // This validator returns a predefined result based on the shouldPass property
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async validate(_content: string): Promise<{ passed: boolean; feedback?: string }> {
+  async validate(
+    _content: string,
+  ): Promise<{ passed: boolean; feedback?: string }> {
     return this.createResult(this.shouldPass, {
       feedback: this.shouldPass
         ? undefined
@@ -73,7 +75,10 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that the validation passed
-    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
+    const guardrailInfo = session.metadata.get('guardrail') as {
+      passed: boolean;
+      attempt: number;
+    };
     expect(guardrailInfo.passed).toBe(true);
     expect(guardrailInfo.attempt).toBe(1);
   });
@@ -105,7 +110,10 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that it retried and eventually passed
-    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
+    const guardrailInfo = session.metadata.get('guardrail') as {
+      passed: boolean;
+      attempt: number;
+    };
     expect(guardrailInfo.passed).toBe(true);
     expect(guardrailInfo.attempt).toBe(2);
   });
@@ -136,7 +144,10 @@ describe('GuardrailTemplate', () => {
     const session = await guardrailTemplate.execute(createSession());
 
     // Check that it continued despite failing validation
-    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number };
+    const guardrailInfo = session.metadata.get('guardrail') as {
+      passed: boolean;
+      attempt: number;
+    };
     expect(guardrailInfo.passed).toBe(false);
     expect(guardrailInfo.attempt).toBe(1);
     expect(session.getLastMessage()?.content).toBe('This is a test response');

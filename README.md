@@ -548,7 +548,7 @@ import { AISDKSchemaTemplate, createSession } from '@prompttrail/core';
 const userSchema = z.object({
   name: z.string().describe('User name'),
   age: z.number().describe('User age'),
-  email: z.string().email().describe('User email')
+  email: z.string().email().describe('User email'),
 });
 
 // Create a schema template
@@ -564,8 +564,11 @@ initialSession = {
   ...initialSession,
   messages: [
     { type: 'system', content: 'Extract user information from the text.' },
-    { type: 'user', content: 'John Doe is 30 years old. His email is john@example.com.' }
-  ]
+    {
+      type: 'user',
+      content: 'John Doe is 30 years old. His email is john@example.com.',
+    },
+  ],
 };
 
 // Execute the template
@@ -577,7 +580,10 @@ const data = session.metadata.get('structured_output');
 
 ```typescript
 import { AISDKModel, AIProvider } from '@prompttrail/core';
-import { experimental_createMCPClient, Experimental_StdioMCPTransport } from 'ai';
+import {
+  experimental_createMCPClient,
+  Experimental_StdioMCPTransport,
+} from 'ai';
 
 // Create an AI SDK model with MCP configuration
 const model = new AISDKModel({
@@ -612,7 +618,10 @@ await model.close();
 If you're using existing OpenAI or Anthropic models, you can migrate to AI SDK models:
 
 ```typescript
-import { migrateOpenAIToAISDK, migrateAnthropicToAISDK } from '@prompttrail/core';
+import {
+  migrateOpenAIToAISDK,
+  migrateAnthropicToAISDK,
+} from '@prompttrail/core';
 
 // Migrate from OpenAI
 const openAIModel = new OpenAIModel({

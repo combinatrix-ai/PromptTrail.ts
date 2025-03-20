@@ -1,5 +1,4 @@
 import type { Session } from '../session';
-import type { Tool, SchemaType } from '../types';
 import { Template } from '../templates';
 import { SystemTemplate, UserTemplate } from '../templates';
 import { CallbackInputSource } from '../input_source';
@@ -13,7 +12,10 @@ export class LinearGenerateTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
-  private templates: Template<Record<string, unknown>, Record<string, unknown>>[] = [];
+  private templates: Template<
+    Record<string, unknown>,
+    Record<string, unknown>
+  >[] = [];
 
   constructor(options?: GenerateOptions) {
     super({ generateOptions: options });
@@ -57,21 +59,26 @@ export class LinearGenerateTemplate<
       this.templates.push(new GenerateTemplate(mergedOptions));
     } else {
       // No options provided, use template-level generateOptions
-      this.templates.push(new GenerateTemplate({ generateOptions: this.generateOptions }));
+      this.templates.push(
+        new GenerateTemplate({ generateOptions: this.generateOptions }),
+      );
     }
     return this;
   }
 
   addToolResult(toolCallId: string, content: string): this {
-    this.templates.push(new ToolResultTemplate({
-      toolCallId,
-      content,
-    }));
+    this.templates.push(
+      new ToolResultTemplate({
+        toolCallId,
+        content,
+      }),
+    );
     return this;
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    let currentSession: Session<Record<string, unknown>> = session as unknown as Session<Record<string, unknown>>;
+    let currentSession: Session<Record<string, unknown>> =
+      session as unknown as Session<Record<string, unknown>>;
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }

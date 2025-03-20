@@ -170,7 +170,10 @@ export class LinearTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
-  private templates: Template<Record<string, unknown>, Record<string, unknown>>[] = [];
+  private templates: Template<
+    Record<string, unknown>,
+    Record<string, unknown>
+  >[] = [];
 
   constructor(templates?: Template[]) {
     super();
@@ -350,7 +353,8 @@ export class LinearTemplate<
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    let currentSession: Session<Record<string, unknown>> = session as unknown as Session<Record<string, unknown>>;
+    let currentSession: Session<Record<string, unknown>> =
+      session as unknown as Session<Record<string, unknown>>;
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }

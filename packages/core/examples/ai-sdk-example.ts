@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 async function basicExample() {
   console.log('=== Basic Example ===');
-  
+
   // Create an AI SDK model with OpenAI provider
   const model = new AISDKModel({
     provider: AIProvider.OPENAI,
@@ -17,17 +17,17 @@ async function basicExample() {
     modelName: 'gpt-4o',
     temperature: 0.7,
   });
-  
+
   // Create a template
   const template = new LinearTemplate()
     .addSystem('You are a helpful assistant.')
     .addUser('Tell me about the benefits of using TypeScript.')
     .addAssistant({ model });
-  
+
   // Execute the template
   const session = await template.execute(createSession());
   console.log('Response:', session.getLastMessage()?.content);
-  
+
   // Clean up resources
   await model.close();
 }
@@ -37,7 +37,7 @@ async function basicExample() {
  */
 async function schemaExample() {
   console.log('\n=== Schema Example ===');
-  
+
   // Create an AI SDK model with OpenAI provider
   const model = new AISDKModel({
     provider: AIProvider.OPENAI,
@@ -45,7 +45,7 @@ async function schemaExample() {
     modelName: 'gpt-4o',
     temperature: 0.2,
   });
-  
+
   // Define a schema for product information
   const productSchema = z.object({
     name: z.string().describe('The name of the product'),
@@ -53,14 +53,14 @@ async function schemaExample() {
     inStock: z.boolean().describe('Whether the product is in stock'),
     features: z.array(z.string()).describe('List of product features'),
   });
-  
+
   // Create a schema template
   const schemaTemplate = new AISDKSchemaTemplate({
     model,
     schema: productSchema,
     schemaDescription: 'Extract product details from the input',
   });
-  
+
   // Create a session with context
   let initialSession = createSession();
   // Since messages is readonly, we need to create a new session with the messages
@@ -68,14 +68,21 @@ async function schemaExample() {
     ...initialSession,
     messages: [
       { type: 'system', content: 'Extract product information from the text.' },
-      { type: 'user', content: 'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It has 8GB RAM and is currently available for purchase.' }
-    ]
+      {
+        type: 'user',
+        content:
+          'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It has 8GB RAM and is currently available for purchase.',
+      },
+    ],
   };
-  
+
   // Execute the schema template
   const schemaSession = await schemaTemplate.execute(initialSession);
-  console.log('Structured data:', schemaSession.metadata.get('structured_output'));
-  
+  console.log(
+    'Structured data:',
+    schemaSession.metadata.get('structured_output'),
+  );
+
   // Clean up resources
   await model.close();
 }
@@ -86,7 +93,7 @@ async function schemaExample() {
  */
 // async function mcpExample() {
 //   console.log('\n=== MCP Example ===');
-  
+
 //   try {
 //     // Create an AI SDK model with OpenAI provider and MCP configuration
 //     const model = new AISDKModel({
@@ -108,17 +115,17 @@ async function schemaExample() {
 //         },
 //       },
 //     });
-    
+
 //     // Create a template
 //     const template = new LinearTemplate()
 //       .addSystem('You are a helpful assistant with access to tools.')
 //       .addUser('What is the weather in Tokyo?')
 //       .addAssistant({ model });
-    
+
 //     // Execute the template
 //     const session = await template.execute(createSession());
 //     console.log('Response:', session.getLastMessage()?.content);
-    
+
 //     // Clean up resources
 //     await model.close();
 //   } catch (error) {

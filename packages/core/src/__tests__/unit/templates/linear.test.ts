@@ -11,7 +11,6 @@ import {
   IfTemplate,
 } from '../../../templates';
 import { CallbackInputSource } from '../../../input_source';
-import type { Message } from '../../../types';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
 import type { GenerateOptions } from '../../../generate';
@@ -19,7 +18,7 @@ import type { GenerateOptions } from '../../../generate';
 // Mock the generateText function
 vi.mock('../../../generate', () => {
   const responses: string[] = [];
-  
+
   return {
     generateText: vi.fn().mockImplementation(async () => {
       const response = responses.shift();
@@ -49,7 +48,7 @@ function createMockGenerateOptions(responses: string[]): GenerateOptions {
       metadata: createMetadata(),
     };
   });
-  
+
   return {
     provider: {
       type: 'openai',

@@ -9,7 +9,7 @@ import { z } from 'zod';
 // Example 1: Basic usage with OpenAI
 async function basicExample() {
   console.log('Example 1: Basic usage with OpenAI');
-  
+
   // Define generateOptions
   const generateOptions: GenerateOptions = {
     provider: {
@@ -32,7 +32,7 @@ async function basicExample() {
       print: true, // Enable console logging of the conversation
     }),
   );
-  
+
   console.log('\nFinal response:');
   console.log(session.getLastMessage()?.content);
 }
@@ -40,7 +40,7 @@ async function basicExample() {
 // Example 2: Using tools with AI SDK
 async function toolExample() {
   console.log('\nExample 2: Using tools with AI SDK');
-  
+
   // Define a calculator tool
   const calculator = createTool({
     name: 'calculator',
@@ -49,16 +49,18 @@ async function toolExample() {
       properties: {
         a: { type: 'number', description: 'First number' },
         b: { type: 'number', description: 'Second number' },
-        operation: { 
-          type: 'string', 
-          description: 'Operation to perform (add, subtract, multiply, divide)' 
+        operation: {
+          type: 'string',
+          description: 'Operation to perform (add, subtract, multiply, divide)',
         },
       },
       required: ['a', 'b', 'operation'],
     },
     execute: async (input) => {
-      console.log(`Executing calculator: ${input.a} ${input.operation} ${input.b}`);
-      
+      console.log(
+        `Executing calculator: ${input.a} ${input.operation} ${input.b}`,
+      );
+
       switch (input.operation) {
         case 'add':
           return input.a + input.b;
@@ -74,7 +76,7 @@ async function toolExample() {
       }
     },
   });
-  
+
   // Define generateOptions with tools
   const generateOptions: GenerateOptions = {
     provider: {
@@ -85,20 +87,20 @@ async function toolExample() {
     temperature: 0.7,
     tools: [calculator],
   };
-  
+
   // Create a conversation template
   const chat = new LinearTemplate()
     .addSystem("I'm a helpful assistant with access to tools.")
-    .addUser("What is 123 * 456?")
+    .addUser('What is 123 * 456?')
     .addAssistant({ generateOptions });
-  
+
   // Execute the template
   const session = await chat.execute(
     createSession({
       print: true,
     }),
   );
-  
+
   console.log('\nFinal response:');
   console.log(session.getLastMessage()?.content);
 }
@@ -106,7 +108,7 @@ async function toolExample() {
 // Example 3: Schema validation with AI SDK
 async function schemaExample() {
   console.log('\nExample 3: Schema validation with AI SDK');
-  
+
   // Define a schema using Zod
   const productSchema = z.object({
     name: z.string().describe('The name of the product'),
@@ -115,7 +117,7 @@ async function schemaExample() {
     description: z.string().describe('A short description of the product'),
     features: z.array(z.string()).describe('List of product features'),
   });
-  
+
   // Define generateOptions
   const generateOptions: GenerateOptions = {
     provider: {
@@ -125,20 +127,22 @@ async function schemaExample() {
     },
     temperature: 0.7,
   };
-  
+
   // Create a conversation template
   const chat = await new LinearTemplate()
     .addSystem("I'll extract product information from text.")
-    .addUser("The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock. It features a 48MP camera, A17 Pro chip, and all-day battery life.")
+    .addUser(
+      'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock. It features a 48MP camera, A17 Pro chip, and all-day battery life.',
+    )
     .addSchema(productSchema, { generateOptions, maxAttempts: 3 });
-  
+
   // Execute the template
   const session = await chat.execute(
     createSession({
       print: true,
     }),
   );
-  
+
   // Get the structured output
   const product = session.metadata.get('structured_output');
   console.log('\nExtracted product information:');
@@ -148,7 +152,7 @@ async function schemaExample() {
 // Example 4: Using Anthropic with AI SDK
 async function anthropicExample() {
   console.log('\nExample 4: Using Anthropic with AI SDK');
-  
+
   // Define generateOptions for Anthropic
   const generateOptions: GenerateOptions = {
     provider: {
@@ -158,20 +162,20 @@ async function anthropicExample() {
     },
     temperature: 0.7,
   };
-  
+
   // Create a conversation template
   const chat = new LinearTemplate()
     .addSystem("I'm a helpful assistant powered by Claude.")
-    .addUser("Explain the concept of functional programming in simple terms.")
+    .addUser('Explain the concept of functional programming in simple terms.')
     .addAssistant({ generateOptions });
-  
+
   // Execute the template
   const session = await chat.execute(
     createSession({
       print: true,
     }),
   );
-  
+
   console.log('\nFinal response:');
   console.log(session.getLastMessage()?.content);
 }
