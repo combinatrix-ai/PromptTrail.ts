@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { AnthropicModel } from '../../../../model/anthropic/model';
 import type {
   Session,
-  Tool,
   AssistantMessage,
   AssistantMetadata,
-  ToolResultMetadata,
 } from '../../../../types';
 import { createTool } from '../../../../tool';
 import { createMetadata } from '../../../../metadata';
@@ -27,7 +25,7 @@ const calculatorTool = createTool({
     },
     required: ['a', 'b'],
   },
-  execute: async (input) => input.a + input.b,
+  execute: async (input: { a: number; b: number }) => input.a + input.b,
 });
 
 describe('AnthropicModel', () => {

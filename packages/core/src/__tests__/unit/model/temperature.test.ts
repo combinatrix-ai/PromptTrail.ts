@@ -2,30 +2,39 @@ import { describe, it, expect, vi } from 'vitest';
 import { OpenAIModel } from '../../../model/openai/model';
 import { createSession } from '../../../session';
 
-// Mock the OpenAI API client
-vi.mock('openai', () => {
+// Mock the ai-sdk and ai modules
+vi.mock('@ai-sdk/openai', () => {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      chat: {
-        completions: {
-          create: vi.fn().mockImplementation(async (params) => {
-            // Return the temperature that was passed to the API
-            return {
-              choices: [
-                {
-                  message: {
-                    content: `Response with temperature: ${params.temperature}`,
-                    role: 'assistant',
-                  },
-                  index: 0,
-                  finish_reason: 'stop',
-                },
-              ],
-            };
-          }),
+    openai: vi.fn().mockImplementation(() => 'mocked-openai-model'),
+  };
+});
+
+vi.mock('ai', () => {
+  return {
+    generateText: vi.fn().mockImplementation(async (params) => {
+      // Return the temperature that was passed to the API
+      return {
+        text: `Response with temperature: ${params.temperature}`,
+        response: {
+          choices: [
+            {
+              message: {
+                content: `Response with temperature: ${params.temperature}`,
+                role: 'assistant',
+              },
+              index: 0,
+              finish_reason: 'stop',
+            },
+          ],
         },
-      },
-    })),
+      };
+    }),
+    streamText: vi.fn().mockImplementation(async () => {
+      return {
+        textStream: [],
+        response: Promise.resolve({}),
+      };
+    }),
   };
 });
 

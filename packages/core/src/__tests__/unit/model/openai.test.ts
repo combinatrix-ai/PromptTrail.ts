@@ -26,7 +26,7 @@ const calculatorTool = createTool({
     },
     required: ['a', 'b'],
   },
-  execute: async (input) => input.a + input.b,
+  execute: async (input: { a: number; b: number }) => input.a + input.b,
 });
 
 describe('OpenAIModel', () => {
