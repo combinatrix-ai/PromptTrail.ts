@@ -25,3 +25,11 @@ export * from './model/openai/types';
 export * from './model/anthropic/model';
 export * from './model/anthropic/types';
 export * from './model/anthropic/mcp';
+
+// AI SDK implementation
+export * from './model/ai-sdk/model';
+export * from './model/ai-sdk/types';
+export * from './templates/ai_sdk_schema_template';
+
+// Migration utilities
+export * from './utils/migration';
