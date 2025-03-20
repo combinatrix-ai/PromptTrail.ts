@@ -508,6 +508,129 @@ const mathChat = new LinearTemplate()
 
 Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
+### 🔌 AI SDK Integration
+
+PromptTrail.ts now supports [Vercel's AI SDK](https://sdk.vercel.ai/docs) for model communication. This provides a unified interface for working with multiple AI providers.
+
+#### Basic Usage
+
+```typescript
+import { createSession } from '@prompttrail/core';
+import { LinearTemplate } from '@prompttrail/core';
+import { AISDKModel, AIProvider } from '@prompttrail/core';
+
+// Create an AI SDK model
+const model = new AISDKModel({
+  provider: AIProvider.OPENAI,
+  apiKey: process.env.OPENAI_API_KEY!,
+  modelName: 'gpt-4o',
+  temperature: 0.7,
+});
+
+// Create a template
+const template = new LinearTemplate()
+  .addSystem('You are a helpful assistant.')
+  .addUser('Tell me about AI.')
+  .addAssistant({ model });
+
+// Execute the template
+const session = await template.execute(createSession());
+console.log(session.getLastMessage()?.content);
+```
+
+#### Schema Templates with AI SDK
+
+```typescript
+import { z } from 'zod';
+import { AISDKSchemaTemplate, createSession } from '@prompttrail/core';
+
+// Define a schema using Zod
+const userSchema = z.object({
+  name: z.string().describe('User name'),
+  age: z.number().describe('User age'),
+  email: z.string().email().describe('User email')
+});
+
+// Create a schema template
+const schemaTemplate = new AISDKSchemaTemplate({
+  model,
+  schema: userSchema,
+  schemaDescription: 'Extract user information from the text',
+});
+
+// Create a session with context
+let initialSession = createSession();
+initialSession = {
+  ...initialSession,
+  messages: [
+    { type: 'system', content: 'Extract user information from the text.' },
+    { type: 'user', content: 'John Doe is 30 years old. His email is john@example.com.' }
+  ]
+};
+
+// Execute the template
+const session = await schemaTemplate.execute(initialSession);
+const data = session.metadata.get('structured_output');
+```
+
+#### MCP Support with AI SDK
+
+```typescript
+import { AISDKModel, AIProvider } from '@prompttrail/core';
+import { experimental_createMCPClient, Experimental_StdioMCPTransport } from 'ai';
+
+// Create an AI SDK model with MCP configuration
+const model = new AISDKModel({
+  provider: AIProvider.OPENAI,
+  apiKey: process.env.OPENAI_API_KEY!,
+  modelName: 'gpt-4o',
+  temperature: 0.7,
+  mcpConfig: {
+    transport: new Experimental_StdioMCPTransport({
+      command: 'node',
+      args: ['./mcp-server.js'], // Path to your MCP server implementation
+    }),
+  },
+});
+
+// Use the model with MCP tools
+const template = new LinearTemplate()
+  .addSystem('You are a helpful assistant with access to tools.')
+  .addUser('What is the weather in Tokyo?')
+  .addAssistant({ model });
+
+// Execute the template
+const session = await template.execute(createSession());
+console.log(session.getLastMessage()?.content);
+
+// Clean up resources
+await model.close();
+```
+
+#### Migrating from Existing Models
+
+If you're using existing OpenAI or Anthropic models, you can migrate to AI SDK models:
+
+```typescript
+import { migrateOpenAIToAISDK, migrateAnthropicToAISDK } from '@prompttrail/core';
+
+// Migrate from OpenAI
+const openAIModel = new OpenAIModel({
+  apiKey: process.env.OPENAI_API_KEY!,
+  modelName: 'gpt-4',
+  temperature: 0.7,
+});
+const aiSdkModel = migrateOpenAIToAISDK(openAIModel.config);
+
+// Migrate from Anthropic
+const anthropicModel = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  modelName: 'claude-3-sonnet-20240229',
+  temperature: 0.7,
+});
+const aiSdkModel2 = migrateAnthropicToAISDK(anthropicModel.config);
+```
+
 Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
 
 ```typescript
