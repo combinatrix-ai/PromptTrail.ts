@@ -1,11 +1,14 @@
 /**
  * Tool implementation with type-safe schema validation
+ * Updated to use Vercel's ai-sdk
  */
 
 import { ValidationError } from './types';
+import type { z } from 'zod';
 
 /**
  * JSON Schema primitive types
+ * Maintained for backward compatibility
  */
 export type SchemaType = {
   properties: Record<string, PropertySchema>;
@@ -19,16 +22,19 @@ type PropertySchema =
 
 /**
  * Infer TypeScript type from JSON Schema
+ * Maintained for backward compatibility
  */
-export type InferSchemaType<T extends SchemaType> = {
-  [K in keyof T['properties']]: T['properties'][K] extends { type: 'string' }
-    ? string
-    : T['properties'][K] extends { type: 'number' }
-      ? number
-      : T['properties'][K] extends { type: 'boolean' }
-        ? boolean
-        : never;
-};
+export type InferSchemaType<T> = 
+  T extends z.ZodType ? z.infer<T> : 
+  T extends SchemaType ? {
+    [K in keyof T['properties']]: T['properties'][K] extends { type: 'string' }
+      ? string
+      : T['properties'][K] extends { type: 'number' }
+        ? number
+        : T['properties'][K] extends { type: 'boolean' }
+          ? boolean
+          : never;
+  } : never;
 
 /**
  * Tool result type
@@ -39,8 +45,9 @@ export type ToolResult<T> = {
 
 /**
  * Enhanced Tool interface with type-safe schema
+ * Updated to support both legacy SchemaType and Zod schemas
  */
-export interface Tool<TSchema extends SchemaType, TOutput = unknown> {
+export interface Tool<TSchema = SchemaType, TOutput = unknown> {
   readonly name: string;
   readonly description: string;
   readonly schema: TSchema;
@@ -69,6 +76,7 @@ function validateSchema<T extends SchemaType>(
 
   // Validate each property
   for (const [key, propSchema] of Object.entries(schema.properties)) {
+    // Using type assertion for property access
     const propValue = (value as Record<string, unknown>)[key];
     if (propValue !== undefined) {
       if (propSchema.type === 'string' && typeof propValue !== 'string') {
@@ -87,9 +95,26 @@ function validateSchema<T extends SchemaType>(
 }
 
 /**
- * Create a new tool with type inference and runtime validation
+ * Validate input using Zod schema
  */
-export function createTool<TSchema extends SchemaType, TOutput>(config: {
+function validateZodSchema<T extends z.ZodType>(
+  schema: T,
+  value: unknown,
+): value is z.infer<T> {
+  try {
+    schema.parse(value);
+    return true;
+  } catch {
+    // Ignore error details
+    return false;
+  }
+}
+
+/**
+ * Create a new tool with type inference and runtime validation
+ * Updated to support both legacy SchemaType and Zod schemas
+ */
+export function createTool<TSchema, TOutput>(config: {
   name: string;
   description: string;
   schema: TSchema;
@@ -100,10 +125,26 @@ export function createTool<TSchema extends SchemaType, TOutput>(config: {
     description: config.description,
     schema: config.schema,
     execute: async (input) => {
-      // Validate input at runtime
-      if (!validateSchema(config.schema, input)) {
+      // Validate input at runtime based on schema type
+      // @ts-expect-error Schema type can be either Zod or SchemaType
+      const isZodSchema = typeof config.schema.parse === 'function';
+      
+      if (isZodSchema) {
+        if (!validateZodSchema(config.schema as z.ZodType, input)) {
+          throw new ValidationError(
+            `Invalid input for tool "${config.name}". Input must match Zod schema.`,
+          );
+        }
+      // @ts-expect-error Schema type can be either Zod or SchemaType
+      } else if (typeof config.schema.properties === 'object') {
+        if (!validateSchema(config.schema as SchemaType, input)) {
+          throw new ValidationError(
+            `Invalid input for tool "${config.name}". Input must match schema: ${JSON.stringify(config.schema, null, 2)}`,
+          );
+        }
+      } else {
         throw new ValidationError(
-          `Invalid input for tool "${config.name}". Input must match schema: ${JSON.stringify(config.schema, null, 2)}`,
+          `Invalid schema for tool "${config.name}". Schema must be either a Zod schema or a SchemaType object.`,
         );
       }
 
@@ -133,3 +174,55 @@ export function createTool<TSchema extends SchemaType, TOutput>(config: {
  *   execute: async (input) => input.a + input.b
  * });
  */
+
+/**
+ * Convert a PromptTrail Tool to an ai-sdk tool
+ * This is used internally by the model implementations
+ */
+export function convertToAiSdkTool<TSchema, TOutput>(tool: Tool<TSchema, TOutput>) {
+  // Convert PromptTrail.ts tool to a format compatible with ai-sdk
+  // Using Record<string, unknown> instead of any
+  const aiSdkTools: Record<string, unknown> = {};
+  
+  // Ensure schema is not null
+  if (!tool.schema) {
+    throw new Error(`Tool ${tool.name} has no schema`);
+  }
+  
+  // Create a simple JSON schema for the tool
+  const jsonSchema: {
+    type: string;
+    properties: Record<string, unknown>;
+    required: string[];
+  } = {
+    type: 'object',
+    properties: {},
+    required: [],
+  };
+  
+  // Handle SchemaType objects
+  if (typeof tool.schema === 'object' && 'properties' in tool.schema) {
+    // Type assertion for SchemaType
+    const schemaWithProps = tool.schema as SchemaType;
+    jsonSchema.properties = schemaWithProps.properties;
+    if (schemaWithProps.required) {
+      jsonSchema.required = schemaWithProps.required;
+    }
+  }
+  
+  aiSdkTools[tool.name] = {
+    description: tool.description,
+    // Use a simplified schema format that works with ai-sdk
+    schema: jsonSchema,
+    // Execute function that will be called by ai-sdk
+    // @ts-expect-error Using any type for ai-sdk compatibility
+    execute: async (params) => {
+      const result = await tool.execute(params);
+      return result.result;
+    },
+    // Add parse function to handle tool calls
+    parse: (args: Record<string, unknown>) => args
+  };
+  
+  return aiSdkTools;
+}
