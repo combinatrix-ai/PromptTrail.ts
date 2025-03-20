@@ -30,7 +30,7 @@ const calculatorTool = createTool({
 
 describe('AnthropicModel', () => {
   const model = new AnthropicModel({
-    apiKey: 'test-api-key',
+    apiKey: process.env.ANTHROPIC_API_KEY!,
     modelName: 'claude-3-haiku-20240307',
     temperature: 0.7,
   });
@@ -120,7 +120,7 @@ describe('AnthropicModel', () => {
 
   it('should use tools when available', async () => {
     const modelWithTools = new AnthropicModel({
-      apiKey: 'test-api-key',
+      apiKey: process.env.ANTHROPIC_API_KEY!,
       modelName: 'claude-3-haiku-20240307',
       temperature: 0.7,
       tools: [calculatorTool],
