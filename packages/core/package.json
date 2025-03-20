@@ -18,6 +18,7 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest --run --watch=false",
+    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",
