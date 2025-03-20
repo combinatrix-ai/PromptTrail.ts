@@ -9,9 +9,9 @@
  * - An MCP server running (e.g., a GitHub MCP server)
  */
 import {
-  AnthropicModel,
   createSession,
   LinearTemplate,
+  type GenerateOptions,
 } from '../packages/core/src';
 
 // Replace with your actual API key and MCP server URL
@@ -20,10 +20,13 @@ const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:8080';
 
 async function main() {
   try {
-    // Create an Anthropic model with MCP integration
-    const model = new AnthropicModel({
-      apiKey: ANTHROPIC_API_KEY,
-      modelName: 'claude-3-5-haiku-latest', // Use the latest Claude model
+    // Define generateOptions for Anthropic with MCP integration
+    const generateOptions: GenerateOptions = {
+      provider: {
+        type: 'anthropic',
+        apiKey: ANTHROPIC_API_KEY,
+        modelName: 'claude-3-5-haiku-latest', // Use the latest Claude model
+      },
       temperature: 0.7,
       mcpServers: [
         {
@@ -32,7 +35,7 @@ async function main() {
           version: '1.0.0',
         },
       ],
-    });
+    };
 
     console.log('Initializing MCP tools...');
 
@@ -46,7 +49,7 @@ async function main() {
         'What tools do you have access to? Please list them and explain what they do.',
         '',
       )
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     console.log('Executing template...');
 
@@ -66,12 +69,12 @@ async function main() {
                  You can use these tools when needed to provide accurate information.`,
       )
       .addUser('What tools do you have access to?', '')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       .addUser(
         'Please use one of your tools to help me with a task. For example, if you have a weather tool, check the weather in San Francisco.',
         '',
       )
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     console.log('\nExecuting follow-up template...');
 

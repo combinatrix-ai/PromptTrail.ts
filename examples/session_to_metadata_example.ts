@@ -8,7 +8,7 @@
 
 // Import types from the core library
 // In a real implementation, these would be properly imported
-import { LinearTemplate, OpenAIModel } from '@prompttrail/core';
+import { LinearTemplate, type GenerateOptions } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
 
 // Mock function to avoid TypeScript errors
@@ -133,12 +133,15 @@ function extractMarkdown<T extends Record<string, unknown>>(
  * once implemented in the core library.
  */
 async function codeGenerationExample() {
-  // Initialize model with your API key
-  const model = new OpenAIModel({
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
-    modelName: 'gpt-4o-mini',
-    temperature: 0.7, // Required by OpenAIConfig
-  });
+  // Define generateOptions for OpenAI
+  const generateOptions: GenerateOptions = {
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
+      modelName: 'gpt-4o-mini',
+    },
+    temperature: 0.7,
+  };
 
   // Create a template that generates code and explanation
   // NOTE: addTransformer would be added to LinearTemplate in the core library
@@ -149,7 +152,7 @@ async function codeGenerationExample() {
     .addUser(
       'Write a function to calculate the factorial of a number with explanation.',
     )
-    .addAssistant({ model: model })
+    .addAssistant({ generateOptions })
     // This is how the API would look once implemented:
     .addTransformer(
       extractMarkdown({
@@ -187,12 +190,15 @@ async function codeGenerationExample() {
  * once implemented in the core library.
  */
 async function technicalAnalysisExample() {
-  // Initialize model with your API key
-  const model = new OpenAIModel({
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
-    modelName: 'gpt-4o-mini',
-    temperature: 0.7, // Required by OpenAIConfig
-  });
+  // Define generateOptions for OpenAI
+  const generateOptions: GenerateOptions = {
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
+      modelName: 'gpt-4o-mini',
+    },
+    temperature: 0.7,
+  };
 
   // Sample code to analyze
   const codeToAnalyze = `
@@ -216,7 +222,7 @@ function quickSort(arr: number[]): number[] {
     .addUser(
       `Analyze this TypeScript code:\n\`\`\`typescript\n${codeToAnalyze}\n\`\`\``,
     )
-    .addAssistant({ model: model })
+    .addAssistant({ generateOptions })
     // This is how the API would look once implemented:
     .addTransformer(
       extractMarkdown({

@@ -3,9 +3,8 @@ import styled from '@emotion/styled';
 import {
   LinearTemplate,
   createSession,
+  type GenerateOptions,
 } from '../../../packages/core/src/index';
-import { OpenAIModel } from '../../../packages/core/src/model/openai/model';
-import { createTemperature } from '../../../packages/core/src/types';
 import type { Message } from '../../../packages/core/src/types';
 
 const Container = styled.div`
@@ -141,20 +140,23 @@ function App() {
     setMessages(newMessages);
 
     try {
-      // Create model and templates
-      const model = new OpenAIModel({
-        modelName: 'gpt-4o-mini',
-        temperature: createTemperature(0.7),
-        apiKey,
-        dangerouslyAllowBrowser: true,
-      });
+      // Define generateOptions for OpenAI
+      const generateOptions: GenerateOptions = {
+        provider: {
+          type: 'openai',
+          apiKey,
+          modelName: 'gpt-4o-mini',
+          dangerouslyAllowBrowser: true,
+        },
+        temperature: 0.7,
+      };
 
       const template = new LinearTemplate()
         .addSystem(
           'You are a helpful AI assistant. Be concise and friendly in your responses.',
         )
         .addUser('User message:', input)
-        .addAssistant({ model });
+        .addAssistant({ generateOptions });
 
       // Execute template
       const newSession = await template.execute(session);

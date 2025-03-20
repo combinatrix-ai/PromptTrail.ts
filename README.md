@@ -43,19 +43,23 @@ yarn add @prompttrail/core
 ## 🚀 Quick Start
 
 ```typescript
-import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
+import { LinearTemplate, createSession, type GenerateOptions } from '@prompttrail/core';
 
-// Initialize model with your API key
-const model = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
-});
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
 
 // Create a simple conversation template
 const chat = new LinearTemplate()
   .addSystem("I'm a helpful assistant.")
   .addUser("What's TypeScript?")
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute the template with print mode enabled
 const session = await chat.execute(
@@ -131,7 +135,7 @@ const personalizedChat = new LinearTemplate()
   .addSystem("I'll adapt to your preferences.")
   .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?')
   .addUser({ inputSource: new CLIInputSource() })
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute with session metadata
 const session = await personalizedChat.execute(
@@ -156,9 +160,9 @@ const quiz = new LinearTemplate()
   .addLoop(
     new LoopTemplate()
       .addUser('Ready for a question?')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       .addUser('My answer:', 'interfaces are awesome!')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       .addUser('Another question? (yes/no)', 'yes')
       .setExitCondition(
         (session) => session.getLastMessage()?.content.toLowerCase() === 'no',
@@ -168,28 +172,39 @@ const quiz = new LinearTemplate()
 
 ### 🤖 Model Configuration
 
+PromptTrail uses a unified approach to model configuration through `generateOptions`, which is passed to the `generateText` function. This approach is inspired by [Vercel's AI SDK](https://github.com/vercel/ai), a popular unified LLM framework.
+
 Configure models with provider-specific options:
 
 ```typescript
 // OpenAI configuration
-const gpt4 = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
+const openaiOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
   temperature: 0.7,
   maxTokens: 1000,
-});
+};
 
 // Anthropic configuration
-const claude = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+const anthropicOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.5,
-});
+};
 
 // Anthropic with MCP integration
-const claudeWithMCP = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+const anthropicMcpOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
   mcpServers: [
     {
@@ -198,7 +213,7 @@ const claudeWithMCP = new AnthropicModel({
       version: '1.0.0',
     },
   ],
-});
+};
 ```
 
 ### 💾 Session Management
@@ -249,7 +264,7 @@ Process model responses in real-time:
 
 ```typescript
 // Stream responses chunk by chunk
-for await (const chunk of model.sendAsync(session)) {
+for await (const chunk of generateTextStream(session, generateOptions)) {
   process.stdout.write(chunk.content);
 }
 ```
@@ -261,11 +276,21 @@ Extract structured data from LLM outputs:
 ````typescript
 import {
   LinearTemplate,
-  OpenAIModel,
   createSession,
   extractMarkdown,
   extractPattern,
+  type GenerateOptions,
 } from '@prompttrail/core';
+
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
 
 // Create a template that extracts structured data from responses
 const codeTemplate = new LinearTemplate()
@@ -275,7 +300,7 @@ const codeTemplate = new LinearTemplate()
   .addUser(
     'Write a function to calculate the factorial of a number with explanation.',
   )
-  .addAssistant({ model })
+  .addAssistant({ generateOptions })
   // Extract markdown headings and code blocks
   .addTransformer(
     extractMarkdown({
@@ -330,7 +355,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  OpenAIModel,
+  type GenerateOptions,
 } from '@prompttrail/core';
 
 // Create validators to ensure responses meet criteria
@@ -359,9 +384,19 @@ const validators = [
 // Combine all validators with AND logic
 const combinedValidator = new AllValidator(validators);
 
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
+
 // Create a guardrail template
 const guardrailTemplate = new GuardrailTemplate({
-  template: new AssistantTemplate({ model }),
+  template: new AssistantTemplate({ generateOptions }),
   validators: [combinedValidator],
   onFail: OnFailAction.RETRY,
   maxAttempts: 3,
@@ -388,13 +423,12 @@ Force LLMs to produce structured outputs using schemas:
 ```typescript
 import {
   LinearTemplate,
-  OpenAIModel,
-  AnthropicModel,
   createSession,
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
+  type GenerateOptions,
 } from '@prompttrail/core';
 import { z } from 'zod';
 
@@ -423,12 +457,15 @@ const userSchema = z.object({
     .describe('User settings'),
 });
 
-// Create a model (works with both OpenAI and Anthropic)
-const model = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-  modelName: 'claude-3-5-haiku-latest',
+// Define generateOptions for Anthropic
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
-});
+};
 
 // Create a template with schema validation
 const template = new LinearTemplate()
@@ -438,7 +475,7 @@ const template = new LinearTemplate()
   );
 
 // Add schema validation (works with both native schemas and Zod schemas)
-await template.addSchema(productSchema, { model, maxAttempts: 3 });
+await template.addSchema(productSchema, { generateOptions, maxAttempts: 3 });
 
 // Execute the template
 const session = await template.execute(createSession());
@@ -491,168 +528,45 @@ const calculator = new Tool({
   },
 });
 
-// Use tools with models
-const smartModel = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
+// Define generateOptions with tools
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
   tools: [calculator],
-});
+};
 
 const mathChat = new LinearTemplate()
   .addSystem('I can help with calculations.')
   .addUser("What's 123 * 456?")
-  .addAssistant({ model: smartModel });
+  .addAssistant({ generateOptions });
 ```
 
 ## 📚 API Explorer
 
 Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
-### 🔌 AI SDK Integration
-
-PromptTrail.ts now supports [Vercel's AI SDK](https://sdk.vercel.ai/docs) for model communication. This provides a unified interface for working with multiple AI providers.
-
-#### Basic Usage
-
-```typescript
-import { createSession } from '@prompttrail/core';
-import { LinearTemplate } from '@prompttrail/core';
-import { AISDKModel, AIProvider } from '@prompttrail/core';
-
-// Create an AI SDK model
-const model = new AISDKModel({
-  provider: AIProvider.OPENAI,
-  apiKey: process.env.OPENAI_API_KEY!,
-  modelName: 'gpt-4o',
-  temperature: 0.7,
-});
-
-// Create a template
-const template = new LinearTemplate()
-  .addSystem('You are a helpful assistant.')
-  .addUser('Tell me about AI.')
-  .addAssistant({ model });
-
-// Execute the template
-const session = await template.execute(createSession());
-console.log(session.getLastMessage()?.content);
-```
-
-#### Schema Templates with AI SDK
-
-```typescript
-import { z } from 'zod';
-import { AISDKSchemaTemplate, createSession } from '@prompttrail/core';
-
-// Define a schema using Zod
-const userSchema = z.object({
-  name: z.string().describe('User name'),
-  age: z.number().describe('User age'),
-  email: z.string().email().describe('User email'),
-});
-
-// Create a schema template
-const schemaTemplate = new AISDKSchemaTemplate({
-  model,
-  schema: userSchema,
-  schemaDescription: 'Extract user information from the text',
-});
-
-// Create a session with context
-let initialSession = createSession();
-initialSession = {
-  ...initialSession,
-  messages: [
-    { type: 'system', content: 'Extract user information from the text.' },
-    {
-      type: 'user',
-      content: 'John Doe is 30 years old. His email is john@example.com.',
-    },
-  ],
-};
-
-// Execute the template
-const session = await schemaTemplate.execute(initialSession);
-const data = session.metadata.get('structured_output');
-```
-
-#### MCP Support with AI SDK
-
-```typescript
-import { AISDKModel, AIProvider } from '@prompttrail/core';
-import {
-  experimental_createMCPClient,
-  Experimental_StdioMCPTransport,
-} from 'ai';
-
-// Create an AI SDK model with MCP configuration
-const model = new AISDKModel({
-  provider: AIProvider.OPENAI,
-  apiKey: process.env.OPENAI_API_KEY!,
-  modelName: 'gpt-4o',
-  temperature: 0.7,
-  mcpConfig: {
-    transport: new Experimental_StdioMCPTransport({
-      command: 'node',
-      args: ['./mcp-server.js'], // Path to your MCP server implementation
-    }),
-  },
-});
-
-// Use the model with MCP tools
-const template = new LinearTemplate()
-  .addSystem('You are a helpful assistant with access to tools.')
-  .addUser('What is the weather in Tokyo?')
-  .addAssistant({ model });
-
-// Execute the template
-const session = await template.execute(createSession());
-console.log(session.getLastMessage()?.content);
-
-// Clean up resources
-await model.close();
-```
-
-#### Migrating from Existing Models
-
-If you're using existing OpenAI or Anthropic models, you can migrate to AI SDK models:
-
-```typescript
-import {
-  migrateOpenAIToAISDK,
-  migrateAnthropicToAISDK,
-} from '@prompttrail/core';
-
-// Migrate from OpenAI
-const openAIModel = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY!,
-  modelName: 'gpt-4',
-  temperature: 0.7,
-});
-const aiSdkModel = migrateOpenAIToAISDK(openAIModel.config);
-
-// Migrate from Anthropic
-const anthropicModel = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-  modelName: 'claude-3-sonnet-20240229',
-  temperature: 0.7,
-});
-const aiSdkModel2 = migrateAnthropicToAISDK(anthropicModel.config);
-```
+### MCP Support
 
 Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
 
 ```typescript
 import {
-  AnthropicModel,
   createSession,
   LinearTemplate,
+  type GenerateOptions,
 } from '@prompttrail/core';
 
-// Create an Anthropic model with MCP integration
-const model = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+// Define generateOptions for Anthropic with MCP integration
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
   mcpServers: [
     {
@@ -661,16 +575,16 @@ const model = new AnthropicModel({
       version: '1.0.0',
     },
   ],
-});
+};
 
-// Create a template that uses the model with MCP tools
+// Create a template that uses MCP tools
 const template = new LinearTemplate()
   .addSystem(
     `You are a helpful assistant with access to external tools.
              You can use these tools when needed to provide accurate information.`,
   )
   .addUser('Can you check the weather in San Francisco?', '')
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute the template
 const session = await template.execute(createSession());
@@ -683,12 +597,16 @@ MCP allows Claude to access external tools and resources like GitHub repositorie
 PromptTrail works in browser environments with a simple configuration flag:
 
 ```typescript
-// Browser-compatible model initialization
-const model = new OpenAIModel({
-  apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
-  modelName: 'gpt-4o-mini',
-  dangerouslyAllowBrowser: true, // Required for browser usage
-});
+// Browser-compatible configuration
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
+    modelName: 'gpt-4o-mini',
+    dangerouslyAllowBrowser: true, // Required for browser usage
+  },
+  temperature: 0.7,
+};
 ```
 
 For a complete React implementation, check out our [React Chat Example](examples/react-chat).

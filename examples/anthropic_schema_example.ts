@@ -1,11 +1,11 @@
 import {
   createSession,
   LinearTemplate,
-  AnthropicModel,
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
+  type GenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -13,12 +13,15 @@ import {
  * to enforce structured output from LLM responses.
  */
 async function main() {
-  // Create an Anthropic model instance
-  const model = new AnthropicModel({
-    modelName: 'claude-3-5-haiku-latest',
+  // Define generateOptions for Anthropic
+  const generateOptions: GenerateOptions = {
+    provider: {
+      type: 'anthropic',
+      apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
+      modelName: 'claude-3-5-haiku-latest',
+    },
     temperature: 0.7,
-    apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-  });
+  };
 
   // Define a schema for product information
   const productSchema = defineSchema({
@@ -43,7 +46,7 @@ async function main() {
     );
 
   // Add schema validation (async operation)
-  await template.addSchema(productSchema, { model, maxAttempts: 3 });
+  await template.addSchema(productSchema, { generateOptions, maxAttempts: 3 });
 
   // Execute the template
   const session = await template.execute(createSession());
