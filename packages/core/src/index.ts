@@ -32,8 +32,6 @@ export * from './templates/ai_sdk_schema_template';
 
 // Direct generateText implementation
 export * from './generate';
-export * from './templates/generate_template';
-export * from './templates/linear_generate_template';
 
 // Migration utilities
 export * from './utils/migration';

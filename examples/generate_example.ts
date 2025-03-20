@@ -1,26 +1,30 @@
 import {
-  LinearGenerateTemplate,
+  LinearTemplate,
   createSession,
   createTool,
+  type GenerateOptions,
 } from '@prompttrail/core';
 
-// Example of using the LinearGenerateTemplate with generateText
+// Example of using the LinearTemplate with generateText
 
 async function basicExample() {
   console.log('Example: Basic usage with generateText');
 
-  // Create a simple conversation template
-  const chat = new LinearGenerateTemplate({
+  // Define generateOptions
+  const generateOptions: GenerateOptions = {
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  })
+  };
+
+  // Create a simple conversation template
+  const chat = new LinearTemplate()
     .addSystem("I'm a helpful assistant.")
     .addUser("What's TypeScript?")
-    .addAssistant(); // Uses the generateOptions from LinearGenerateTemplate
+    .addAssistant({ generateOptions }); // Pass generateOptions to addAssistant
 
   // Execute the template with print mode enabled
   const session = await chat.execute(
@@ -73,8 +77,8 @@ async function toolExample() {
     },
   });
 
-  // Create a conversation template with tool
-  const chat = new LinearGenerateTemplate({
+  // Define generateOptions with tools
+  const generateOptions: GenerateOptions = {
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
@@ -82,10 +86,13 @@ async function toolExample() {
     },
     temperature: 0.7,
     tools: [calculator],
-  })
+  };
+
+  // Create a conversation template with tool
+  const chat = new LinearTemplate()
     .addSystem("I'm a helpful assistant with access to tools.")
     .addUser('What is 123 * 456?')
-    .addAssistant();
+    .addAssistant({ generateOptions });
 
   // Execute the template
   let session = await chat.execute(
@@ -96,7 +103,12 @@ async function toolExample() {
 
   // Check if there are tool calls
   const lastMessage = session.getLastMessage();
-  const toolCalls = lastMessage?.metadata?.get('toolCalls');
+  const metadata = lastMessage?.metadata?.toJSON() || {};
+  const toolCalls = metadata.toolCalls as Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }> | undefined;
 
   if (toolCalls && toolCalls.length > 0) {
     // Execute each tool call
@@ -106,11 +118,16 @@ async function toolExample() {
 
       if (tool) {
         try {
-          // Execute the tool
-          const result = await tool.execute(toolCall.arguments);
+          // Execute the tool with proper type casting
+          const args = {
+            a: Number(toolCall.arguments.a),
+            b: Number(toolCall.arguments.b),
+            operation: String(toolCall.arguments.operation),
+          };
+          const result = await tool.execute(args);
 
           // Add the tool result to the session
-          const resultTemplate = new LinearGenerateTemplate().addToolResult(
+          const resultTemplate = new LinearTemplate().addToolResult(
             toolCall.id,
             JSON.stringify(result),
           );
@@ -122,15 +139,19 @@ async function toolExample() {
       }
     }
 
-    // Continue the conversation with the tool results
-    const continueTemplate = new LinearGenerateTemplate({
+    // Define generateOptions for continuation
+    const continueOptions: GenerateOptions = {
       provider: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || '',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    }).addAssistant();
+    };
+
+    // Continue the conversation with the tool results
+    const continueTemplate = new LinearTemplate()
+      .addAssistant({ generateOptions: continueOptions });
 
     session = await continueTemplate.execute(session);
   }
@@ -143,18 +164,21 @@ async function toolExample() {
 async function anthropicExample() {
   console.log('\nExample: Using Anthropic with generateText');
 
-  // Create a conversation template
-  const chat = new LinearGenerateTemplate({
+  // Define generateOptions for Anthropic
+  const generateOptions: GenerateOptions = {
     provider: {
       type: 'anthropic',
       apiKey: process.env.ANTHROPIC_API_KEY || '',
       modelName: 'claude-3-5-haiku-latest',
     },
     temperature: 0.7,
-  })
+  };
+
+  // Create a conversation template
+  const chat = new LinearTemplate()
     .addSystem("I'm a helpful assistant powered by Claude.")
     .addUser('Explain the concept of functional programming in simple terms.')
-    .addAssistant();
+    .addAssistant({ generateOptions });
 
   // Execute the template
   const session = await chat.execute(

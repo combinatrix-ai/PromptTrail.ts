@@ -6,10 +6,9 @@ import { GuardrailTemplate, OnFailAction } from './guardrail_template';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
-// Import Template class to extend it
-import { Template } from '../templates';
+// Import Template class and AssistantTemplate to extend it
+import { Template, AssistantTemplate } from '../templates';
 import { type GenerateOptions } from '../generate';
-import { GenerateTemplate } from './generate_template';
 
 // Type to handle both SchemaType and Zod schemas
 type SchemaInput = SchemaType | z.ZodType;
@@ -98,7 +97,7 @@ export class SchemaTemplate<
     });
 
     // Create an assistant template
-    const assistantTemplate = new GenerateTemplate({
+    const assistantTemplate = new AssistantTemplate({
       generateOptions: this.generateOptions,
     });
 
