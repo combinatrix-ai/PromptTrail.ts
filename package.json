@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "test": "vitest --run --watch=false",
     "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
+    "readme:test": "node scripts/generate-readme-tests.js && vitest run --config vitest.readme.config.ts readme.test.ts",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "format": "prettier --write .",
@@ -29,7 +30,8 @@
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.1",
-    "vitest": "^1.6.1"
+    "vitest": "^1.6.1",
+    "zod": "^3.24.2"
   },
   "engines": {
     "node": ">=18.0.0"

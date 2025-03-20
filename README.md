@@ -65,6 +65,24 @@ const session = await chat.execute(
 console.log(session.getLastMessage()?.content);
 ```
 
+<!-- TEST: creates a conversation and returns a session with messages
+  // Create a simple session with predefined messages
+  const testSession = createSession({
+    print: false,
+    messages: [
+      { type: 'system', content: "I'm a helpful assistant." },
+      { type: 'user', content: "What's TypeScript?" },
+      { type: 'assistant', content: 'TypeScript is a programming language.' }
+    ]
+  });
+  
+  // Verify the session structure
+  expect(testSession.messages).toHaveLength(3);
+  expect(testSession.messages[0].type).toBe('system');
+  expect(testSession.messages[1].type).toBe('user');
+  expect(testSession.messages[2].type).toBe('assistant');
+-->
+
 ## 📘 Usage
 
 ### 🔒 TypeScript-First Design
@@ -105,6 +123,41 @@ const updatedSession = session.updateMetadata({
 // updatedSession.metadata.get('lastActive') is now available with correct type
 ```
 
+<!-- TEST: provides type-safe metadata access
+  // Create a session with metadata
+  const testSession = createSession({
+    metadata: {
+      name: 'Alice',
+      preferences: {
+        theme: 'dark',
+        language: 'TypeScript',
+      },
+    },
+  });
+  
+  // Access metadata
+  const testUserName = testSession.metadata.get('name');
+  const preferences = testSession.metadata.get('preferences');
+  const testTheme = preferences ? preferences.theme : undefined;
+  
+  // Update metadata
+  const testUpdatedSession = testSession.updateMetadata({
+    lastActive: new Date(),
+  });
+  
+  // Test assertions
+  expect(testUserName).toBe('Alice');
+  expect(testTheme).toBe('dark');
+  
+  // Test type safety and immutability
+  expect(testSession.metadata.get('name')).toBe('Alice');
+  expect(testUpdatedSession.metadata.get('name')).toBe('Alice');
+  expect(testUpdatedSession.metadata.get('lastActive')).toBeInstanceOf(Date);
+  
+  // Original session should be unchanged
+  expect(testSession.metadata.get('lastActive')).toBeUndefined();
+-->
+
 PromptTrail's immutable architecture ensures predictable state management:
 
 - All session operations return new instances rather than modifying existing ones
@@ -144,6 +197,29 @@ const session = await personalizedChat.execute(
   }),
 );
 ```
+
+<!-- TEST: creates a template with metadata interpolation
+  // Create a template with metadata interpolation
+  const template = new LinearTemplate()
+    .addSystem("I'll adapt to your preferences.")
+    .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?');
+  
+  // Create a session with metadata
+  const testSession = createSession({
+    metadata: {
+      name: 'Alice',
+      expertise: ['generics', 'type inference'],
+    },
+    messages: []
+  });
+  
+  // Execute the template
+  const result = await template.execute(testSession);
+  
+  // Verify the interpolation worked
+  expect(result.messages).toHaveLength(2);
+  expect(result.messages[1].content).toBe('Hello Alice! How can I help with generics?');
+-->
 
 ### 🔄 Interactive Loops
 
@@ -253,6 +329,38 @@ const json = newSession.toJSON();
 const restored = Session.fromJSON(json);
 ```
 
+<!-- TEST: demonstrates session immutability
+  // Create a session
+  const originalSession = createSession({
+    metadata: {
+      userId: 'user-123',
+      tone: 'professional',
+    },
+    messages: []
+  });
+  
+  // Add a message (should return a new session)
+  const updatedSession = originalSession.addMessage({
+    type: 'user',
+    content: 'Hello!',
+  });
+  
+  // Verify immutability
+  expect(updatedSession).not.toBe(originalSession);
+  expect(originalSession.messages).toHaveLength(0);
+  expect(updatedSession.messages).toHaveLength(1);
+  expect(updatedSession.messages[0].content).toBe('Hello!');
+  
+  // Test metadata updates
+  const newSession = updatedSession.updateMetadata({
+    tone: 'casual',
+  });
+  
+  // Verify metadata was updated in new session
+  expect(newSession.metadata.get('tone')).toBe('casual');
+  expect(updatedSession.metadata.get('tone')).toBe('professional');
+-->
+
 ### 🌊 Streaming Responses
 
 Process model responses in real-time:
@@ -335,6 +443,32 @@ const dataSession = await dataTemplate.execute(createSession());
 console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
 console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 ````
+
+<!-- TEST: extracts data using pattern matching
+  // Create a template with pattern extraction
+  const template = new LinearTemplate()
+    .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
+    .addTransformer(
+      extractPattern([
+        {
+          pattern: /IP ([\d\.]+)/,
+          key: 'ipAddress',
+        },
+        {
+          pattern: /Uptime ([\d\.]+)%/,
+          key: 'uptime',
+          transform: (value) => parseFloat(value) / 100,
+        },
+      ]),
+    );
+  
+  // Execute the template
+  const session = await template.execute(createSession());
+  
+  // Verify the extracted data
+  expect(session.metadata.get('ipAddress')).toBe('192.168.1.100');
+  expect(session.metadata.get('uptime')).toBe(0.9999);
+-->
 
 ### 🛡️ Guardrails
 
@@ -484,6 +618,39 @@ console.log(product);
 console.log(`Product: ${product.name} - $${product.price}`);
 console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
 ```
+
+<!-- TEST: validates structured output using schemas
+  // Define a simple product schema
+  const productSchema = defineSchema({
+    properties: {
+      name: createStringProperty('The name of the product'),
+      price: createNumberProperty('The price of the product in USD'),
+      inStock: createBooleanProperty('Whether the product is in stock'),
+    },
+    required: ['name', 'price', 'inStock'],
+  });
+  
+  // Create a mock session with structured output
+  const testSession = createSession({
+    metadata: {
+      structured_output: {
+        name: 'iPhone 15 Pro',
+        price: 999,
+        inStock: true,
+        description: 'Smartphone with a titanium frame'
+      }
+    },
+    messages: []
+  });
+  
+  // Verify the structured output
+  const product = testSession.metadata.get('structured_output');
+  expect(product).toBeDefined();
+  expect(product.name).toBe('iPhone 15 Pro');
+  expect(product.price).toBe(999);
+  expect(product.inStock).toBe(true);
+  expect(product.description).toBe('Smartphone with a titanium frame');
+-->
 
 This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
 
