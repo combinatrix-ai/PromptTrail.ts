@@ -5,13 +5,13 @@ import {
   GuardrailTemplate,
   OnFailAction,
 } from '../../templates/guardrail_template';
-import { createTool } from '../../tool';
+import { tool } from 'ai';
+import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/base_validators';
 import { createMetadata } from '../../metadata';
-import type { Tool, SchemaType } from '../../types';
-import type { GenerateOptions } from '../../generate';
 import { generateText } from '../../generate';
+import { createGenerateOptions } from '../../generate_options';
 
 // Mock the generateText function
 vi.mock('../../generate', () => {
@@ -22,53 +22,45 @@ vi.mock('../../generate', () => {
 });
 
 describe('End-to-End Workflows', () => {
-  let calculatorTool: Tool<SchemaType>;
-  let generateOptions: GenerateOptions;
+  let calculatorTool: any;
+  let generateOptions: any;
 
   beforeEach(() => {
-    // Create a calculator tool
-    calculatorTool = createTool({
-      name: 'calculator',
+    // Create a calculator tool using ai-sdk's tool function
+    calculatorTool = tool({
       description: 'A simple calculator that can perform basic operations',
-      schema: {
-        properties: {
-          a: { type: 'number', description: 'First number' },
-          b: { type: 'number', description: 'Second number' },
-          operation: {
-            type: 'string',
-            enum: ['add', 'subtract', 'multiply', 'divide'],
-            description: 'Operation to perform',
-          },
-        },
-        required: ['a', 'b', 'operation'],
-      },
-      execute: async (input) => {
-        switch (input.operation) {
+      parameters: z.object({
+        a: z.number().describe('First number'),
+        b: z.number().describe('Second number'),
+        operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+          .describe('Operation to perform'),
+      }),
+      execute: async ({ a, b, operation }) => {
+        switch (operation) {
           case 'add':
-            return { result: input.a + input.b };
+            return a + b;
           case 'subtract':
-            return { result: input.a - input.b };
+            return a - b;
           case 'multiply':
-            return { result: input.a * input.b };
+            return a * b;
           case 'divide':
-            if (input.b === 0) throw new Error('Cannot divide by zero');
-            return { result: input.a / input.b };
+            if (b === 0) throw new Error('Cannot divide by zero');
+            return a / b;
           default:
-            throw new Error(`Unknown operation: ${input.operation}`);
+            throw new Error(`Unknown operation: ${operation}`);
         }
       },
     });
 
     // Create generateOptions with tools
-    generateOptions = {
+    generateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-      tools: [calculatorTool],
-    };
+    }).addTool('calculator', calculatorTool);
 
     // Setup mock responses for generateText based on the user's query
     vi.mocked(generateText).mockImplementation(async (session) => {

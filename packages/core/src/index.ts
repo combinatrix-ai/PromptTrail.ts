@@ -1,10 +1,13 @@
 // Core types
 export * from './types';
 export * from './metadata';
-export * from './tool';
 export type { Session } from './session';
 export { createSession } from './session';
 export * from './templates';
+
+// Tool system
+export { tool } from 'ai';
+export { createGenerateOptions, GenerateOptions } from './generate_options';
 
 // Session transformers and extractors
 export * from './utils/extractors';

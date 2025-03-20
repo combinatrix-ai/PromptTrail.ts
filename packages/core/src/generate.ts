@@ -1,18 +1,13 @@
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
-  tool as createAISDKTool,
   experimental_createMCPClient,
 } from 'ai';
-// Define ToolSet type since it's not exported from 'ai'
-type ToolSet = Record<string, unknown>;
 import { openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
-import { z } from 'zod';
-import type { Message, Session, Tool, SchemaType } from './types';
+import type { Message, Session } from './types';
 import { createMetadata } from './metadata';
 import type { AssistantMetadata } from './types';
-import type { InferSchemaType } from './tool';
 
 /**
  * Provider types
@@ -53,31 +48,6 @@ export interface GenerateMCPTransport {
 }
 
 /**
- * Generate options interface
- * This is our stable public API that won't change even if AI SDK changes
- */
-export interface GenerateOptions {
-  // Core provider configuration
-  provider: ProviderConfig;
-
-  // Common generation parameters
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  topK?: number;
-
-  // Tool support
-  tools?: Tool<SchemaType>[];
-  toolChoice?: 'auto' | 'required' | 'none';
-
-  // MCP support
-  mcpServers?: GenerateMCPServerConfig[];
-
-  // Extension point for future options without breaking changes
-  sdkOptions?: Record<string, unknown>;
-}
-
-/**
  * Convert Session to AI SDK compatible format
  */
 function convertSessionToMessages(
@@ -114,73 +84,6 @@ function convertSessionToMessages(
   // In a real implementation, we would need to handle them differently
 
   return messages;
-}
-
-/**
- * Format a tool for AI SDK
- */
-function formatTool(tool: Tool<SchemaType>): Record<string, unknown> {
-  // Convert our tool schema to zod schema
-  const properties = tool.schema.properties;
-
-  // Create an object shape for Zod
-  const shape: Record<string, z.ZodTypeAny> = {};
-
-  for (const [key, prop] of Object.entries(properties)) {
-    const propObj = prop as {
-      type: string;
-      description?: string;
-      properties?: Record<string, unknown>;
-      required?: string[];
-    };
-
-    if (propObj.type === 'string') {
-      shape[key] = z.string().describe(propObj.description || '');
-    } else if (propObj.type === 'number') {
-      shape[key] = z.number().describe(propObj.description || '');
-    } else if (propObj.type === 'boolean') {
-      shape[key] = z.boolean().describe(propObj.description || '');
-    } else if (propObj.type === 'object' && propObj.properties) {
-      // Handle nested objects (simplified implementation)
-      shape[key] = z.object({}).describe(propObj.description || '');
-    } else if (propObj.type === 'array') {
-      // Handle arrays (simplified implementation)
-      shape[key] = z.array(z.unknown()).describe(propObj.description || '');
-    }
-  }
-
-  // Create Zod schema with required fields
-  const zodSchema = z.object(shape);
-  if (tool.schema.required && tool.schema.required.length > 0) {
-    // Mark required fields
-    for (const key of tool.schema.required) {
-      if (shape[key]) {
-        shape[key] = shape[key].optional().unwrap();
-      }
-    }
-  }
-
-  // Create the AI SDK tool definition
-  const aiTool = createAISDKTool({
-    description: tool.description,
-    parameters: zodSchema,
-    execute: async (params: Record<string, unknown>) => {
-      try {
-        const result = await tool.execute(
-          params as InferSchemaType<SchemaType>,
-        );
-        return result.result;
-      } catch (error) {
-        console.error(`Error executing tool ${tool.name}:`, error);
-        throw error;
-      }
-    },
-  });
-
-  // Return tool in AI SDK format
-  return {
-    [tool.name]: aiTool,
-  };
 }
 
 /**
@@ -237,29 +140,12 @@ async function initializeMCPClient(
 }
 
 /**
- * Format tools for AI SDK
- */
-function formatTools(tools?: Tool<SchemaType>[]): ToolSet | undefined {
-  if (!tools || tools.length === 0) {
-    return undefined;
-  }
-
-  const toolsMap: Record<string, unknown> = {};
-
-  for (const tool of tools) {
-    Object.assign(toolsMap, formatTool(tool));
-  }
-
-  return toolsMap as unknown as ToolSet;
-}
-
-/**
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText(
   session: Session,
-  options: GenerateOptions,
+  options: any, // Using any temporarily to avoid circular dependency
 ): Promise<Message> {
   // Convert session to AI SDK message format
   const messages = convertSessionToMessages(session);
@@ -267,25 +153,16 @@ export async function generateText(
   // Create the provider
   const provider = createProvider(options.provider);
 
-  // Format tools if provided
-  const formattedTools = formatTools(options.tools);
-
   // Handle MCP tools if configured
-  // This is a simplified implementation
-  const mcpTools: Record<string, unknown> = {};
   if (options.mcpServers && options.mcpServers.length > 0) {
     // In a real implementation, we would initialize MCP clients and get tools
     // For now, we'll just log a message
     console.log(
-      `MCP servers configured: ${options.mcpServers.map((s) => s.name).join(', ')}`,
+      `MCP servers configured: ${options.mcpServers.map((s: any) => s.name).join(', ')}`,
     );
   }
 
-  // Combine regular tools and MCP tools
-  const tools = formattedTools;
-
   // Generate text using AI SDK
-  // Use any to bypass type checking for AI SDK
   const result = await aiSdkGenerateText({
     model: provider as any,
     messages: messages as [], // Type assertion for AI SDK compatibility
@@ -293,7 +170,7 @@ export async function generateText(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: tools as any,
+    tools: options.tools, // Use tools directly from options
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -334,7 +211,7 @@ export async function generateText(
  */
 export async function* generateTextStream(
   session: Session,
-  options: GenerateOptions,
+  options: any, // Using any temporarily to avoid circular dependency
 ): AsyncGenerator<Message, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToMessages(session);
@@ -342,11 +219,7 @@ export async function* generateTextStream(
   // Create the provider
   const provider = createProvider(options.provider);
 
-  // Format tools if provided
-  const formattedTools = formatTools(options.tools);
-
   // Generate streaming text using AI SDK
-  // Use any to bypass type checking for AI SDK
   const stream = await aiSdkStreamText({
     model: provider as any,
     messages: messages as [], // Type assertion for AI SDK compatibility
@@ -354,7 +227,8 @@ export async function* generateTextStream(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: formattedTools as any,
+    tools: options.tools, // Use tools directly from options
+    toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
 

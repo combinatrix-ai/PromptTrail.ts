@@ -95,11 +95,6 @@ export const isControlMessage = (message: Message): message is ControlMessage =>
 
 // Temperature is now just a regular number
 
-// Import Tool type first
-import type { Tool, SchemaType, ToolResult } from './tool';
-export { createTool } from './tool';
-export type { Tool, SchemaType, ToolResult };
-
 /**
  * Model configuration interface
  */
@@ -110,7 +105,7 @@ export interface ModelConfig {
   readonly topP?: number;
   readonly topK?: number;
   readonly repetitionPenalty?: number;
-  readonly tools?: readonly Tool<SchemaType>[];
+  readonly tools?: Record<string, unknown>;
 }
 
 /**
