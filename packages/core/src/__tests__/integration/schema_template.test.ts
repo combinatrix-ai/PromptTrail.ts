@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { SchemaTemplate } from '../../templates/schema_template';
-import { OpenAIModel } from '../../model/openai/model';
 import {
   defineSchema,
   createStringProperty,
@@ -9,42 +8,39 @@ import {
   createBooleanProperty,
 } from '../../utils/schema';
 import { createMetadata } from '../../metadata';
-import type { Message } from '../../types';
+import { generateText } from '../../generate';
+import type { GenerateOptions } from '../../generate';
 
-// Mock OpenAI model
-vi.mock('../../model/openai/model');
+// Mock the generateText function
+vi.mock('../../generate', () => {
+  return {
+    generateText: vi.fn(),
+  };
+});
 
 describe('SchemaTemplate', () => {
-  let model: OpenAIModel;
+  let generateOptions: GenerateOptions;
 
   beforeEach(() => {
     // Reset mocks
     vi.resetAllMocks();
 
-    // Create a mock OpenAI model
-    model = {
-      send: vi.fn().mockImplementation(async () => {
-        // We don't use any session parameter in this mock implementation
-        // Default implementation for the first test
-        return {
-          type: 'assistant',
-          content:
-            '```json\n{"name":"Test Product","price":99.99,"inStock":true,"description":"This is a test product"}\n```',
-          metadata: createMetadata(),
-        };
-      }),
-      sendAsync: vi.fn(),
-      formatTool: vi.fn(),
-      validateConfig: vi.fn(),
-      config: {},
-    } as unknown as OpenAIModel;
-
-    // Mock the instanceof check
-    Object.defineProperty(model, Symbol.hasInstance, {
-      value: () => {
-        // We don't need any parameters for this mock implementation
-        return true;
+    // Create generateOptions
+    generateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: 'test-api-key',
+        modelName: 'gpt-4o-mini',
       },
+      temperature: 0.7,
+    };
+
+    // Default mock implementation for generateText
+    vi.mocked(generateText).mockResolvedValue({
+      type: 'assistant',
+      content:
+        '```json\n{"name":"Test Product","price":99.99,"inStock":true,"description":"This is a test product"}\n```',
+      metadata: createMetadata(),
     });
   });
 
@@ -62,7 +58,7 @@ describe('SchemaTemplate', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
     });
 
@@ -95,19 +91,16 @@ describe('SchemaTemplate', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
     });
 
-    // Mock the model to return a markdown code block
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
-      // We don't use any session parameter in this mock implementation
-      return {
-        type: 'assistant',
-        content:
-          '```json\n{"name":"Markdown Product","price":49.99,"inStock":true,"description":"This is extracted from markdown"}\n```',
-        metadata: createMetadata(),
-      };
+    // Mock generateText to return a markdown code block
+    vi.mocked(generateText).mockResolvedValueOnce({
+      type: 'assistant',
+      content:
+        '```json\n{"name":"Markdown Product","price":49.99,"inStock":true,"description":"This is extracted from markdown"}\n```',
+      metadata: createMetadata(),
     });
 
     // Execute the template
@@ -139,19 +132,16 @@ describe('SchemaTemplate', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
     });
 
-    // Mock the model to return plain JSON
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
-      // We don't use any session parameter in this mock implementation
-      return {
-        type: 'assistant',
-        content:
-          '{"name":"Plain JSON Product","price":29.99,"inStock":false,"description":"This is plain JSON"}',
-        metadata: createMetadata(),
-      };
+    // Mock generateText to return plain JSON
+    vi.mocked(generateText).mockResolvedValueOnce({
+      type: 'assistant',
+      content:
+        '{"name":"Plain JSON Product","price":29.99,"inStock":false,"description":"This is plain JSON"}',
+      metadata: createMetadata(),
     });
 
     // Execute the template
@@ -183,34 +173,31 @@ describe('SchemaTemplate', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
       functionName: 'custom_function_name',
     });
 
-    // Mock the model to return a function call
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
-      // We don't use any session parameter in this mock implementation
-      return {
-        type: 'assistant',
-        content: 'I will use the function to provide structured output.',
-        metadata: createMetadata({
-          initial: {
-            toolCalls: [
-              {
-                name: 'custom_function_name',
-                arguments: {
-                  name: 'Function Call Product',
-                  price: 199.99,
-                  inStock: true,
-                  description: 'This is from a function call',
-                },
-                id: 'call-456',
-              },
-            ],
-          },
-        }),
-      } as unknown as Message;
+    // Create metadata with toolCalls
+    const metadata = createMetadata();
+    metadata.set('toolCalls', [
+      {
+        name: 'custom_function_name',
+        arguments: {
+          name: 'Function Call Product',
+          price: 199.99,
+          inStock: true,
+          description: 'This is from a function call',
+        },
+        id: 'call-456',
+      },
+    ]);
+
+    // Mock generateText to return a function call
+    vi.mocked(generateText).mockResolvedValueOnce({
+      type: 'assistant',
+      content: 'I will use the function to provide structured output.',
+      metadata,
     });
 
     // Execute the template

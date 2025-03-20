@@ -1,13 +1,13 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
 import { DefaultInputSource, CallbackInputSource } from './input_source';
-import type { Model } from './model/base';
 import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
 import type { SchemaType } from './tool';
 import { z } from 'zod';
+import { generateText, type GenerateOptions } from './generate';
 
 /**
  * Base class for all templates
@@ -16,10 +16,10 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
-  protected model?: Model;
+  protected generateOptions?: GenerateOptions;
 
-  constructor(options?: { model?: Model }) {
-    this.model = options?.model;
+  constructor(options?: { generateOptions?: GenerateOptions }) {
+    this.generateOptions = options?.generateOptions;
   }
 
   /**
@@ -134,10 +134,10 @@ export class AssistantTemplate extends Template {
   constructor(
     private options?: {
       content?: string;
-      model?: Model;
+      generateOptions?: GenerateOptions;
     },
   ) {
-    super(options);
+    super({ generateOptions: options?.generateOptions });
   }
 
   async execute(session: Session): Promise<Session> {
@@ -154,11 +154,11 @@ export class AssistantTemplate extends Template {
       });
     }
 
-    if (!this.model) {
-      throw new Error('No Model provided for AssistantTemplate');
+    if (!this.generateOptions) {
+      throw new Error('No generateOptions provided for AssistantTemplate');
     }
 
-    const response = await this.model.send(session);
+    const response = await generateText(session as any, this.generateOptions);
     return session.addMessage(response);
   }
 }
@@ -201,22 +201,22 @@ export class LinearTemplate<
     options:
       | string
       | {
-          model?: Model;
+          generateOptions?: GenerateOptions;
           content?: string;
         },
   ): this {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      // Set the model on the LinearTemplate if provided
-      if (options.model) {
-        this.model = options.model;
+      // Set the generateOptions on the LinearTemplate if provided
+      if (options.generateOptions) {
+        this.generateOptions = options.generateOptions;
       }
 
-      // Create AssistantTemplate with the model from options or from LinearTemplate
+      // Create AssistantTemplate with the generateOptions from options or from LinearTemplate
       const assistantOptions = {
         ...options,
-        model: options.model || this.model,
+        generateOptions: options.generateOptions || this.generateOptions,
       };
 
       this.templates.push(new AssistantTemplate(assistantOptions));
@@ -319,16 +319,16 @@ export class LinearTemplate<
   async addSchema<TSchema extends SchemaType | z.ZodType>(
     schema: TSchema,
     options?: {
-      model?: Model;
+      generateOptions?: GenerateOptions;
       maxAttempts?: number;
       functionName?: string;
     },
   ): Promise<this> {
-    const model = options?.model || this.model;
+    const generateOptions = options?.generateOptions || this.generateOptions;
 
-    if (!model) {
+    if (!generateOptions) {
       throw new Error(
-        'Model must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
+        'generateOptions must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
       );
     }
 
@@ -339,7 +339,7 @@ export class LinearTemplate<
 
     this.templates.push(
       new SchemaTemplate({
-        model,
+        generateOptions,
         schema,
         maxAttempts: options?.maxAttempts,
         functionName: options?.functionName,
@@ -393,22 +393,22 @@ export class LoopTemplate extends Template {
     options:
       | string
       | {
-          model?: Model;
+          generateOptions?: GenerateOptions;
           content?: string;
         },
   ): this {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      // Set the model on the LoopTemplate if provided
-      if (options.model) {
-        this.model = options.model;
+      // Set the generateOptions on the LoopTemplate if provided
+      if (options.generateOptions) {
+        this.generateOptions = options.generateOptions;
       }
 
-      // Create AssistantTemplate with the model from options or from LoopTemplate
+      // Create AssistantTemplate with the generateOptions from options or from LoopTemplate
       const assistantOptions = {
         ...options,
-        model: options.model || this.model,
+        generateOptions: options.generateOptions || this.generateOptions,
       };
 
       this.templates.push(new AssistantTemplate(assistantOptions));

@@ -8,35 +8,40 @@ import {
   createBooleanProperty,
 } from '../../../../utils/schema';
 import { createMetadata } from '../../../../metadata';
-import { AnthropicModel } from '../../../../model/anthropic/model';
+import { generateText } from '../../../../generate';
+import type { GenerateOptions } from '../../../../generate';
 
-// Mock Anthropic model
-vi.mock('../../../../model/anthropic/model');
+// Mock the generateText function
+vi.mock('../../../../generate', () => {
+  return {
+    generateText: vi.fn(),
+  };
+});
 
 describe('SchemaTemplate with Anthropic', () => {
-  let model: AnthropicModel;
+  let generateOptions: GenerateOptions;
 
   beforeEach(() => {
     // Reset mocks
     vi.resetAllMocks();
 
-    // Create a mock Anthropic model
-    model = {
-      send: vi.fn().mockImplementation(async () => {
-        // We don't use any session parameter in this mock implementation
-        // Default implementation for Anthropic response
-        return {
-          type: 'assistant',
-          content:
-            '```json\n{"name":"Anthropic Product","price":149.99,"inStock":true,"description":"This is a product from Anthropic"}\n```',
-          metadata: createMetadata(),
-        };
-      }),
-      sendAsync: vi.fn(),
-      formatTool: vi.fn(),
-      validateConfig: vi.fn(),
-      config: {},
-    } as unknown as AnthropicModel;
+    // Create generateOptions for Anthropic
+    generateOptions = {
+      provider: {
+        type: 'anthropic',
+        apiKey: 'test-api-key',
+        modelName: 'claude-3-5-haiku-latest',
+      },
+      temperature: 0.7,
+    };
+
+    // Default mock implementation for generateText
+    vi.mocked(generateText).mockResolvedValue({
+      type: 'assistant',
+      content:
+        '```json\n{"name":"Anthropic Product","price":149.99,"inStock":true,"description":"This is a product from Anthropic"}\n```',
+      metadata: createMetadata(),
+    });
   });
 
   it('should validate output from Anthropic models', async () => {
@@ -53,7 +58,7 @@ describe('SchemaTemplate with Anthropic', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
     });
 
@@ -86,19 +91,16 @@ describe('SchemaTemplate with Anthropic', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      model,
+      generateOptions,
       schema: productSchema,
     });
 
-    // Mock the model to return a different JSON format
-    vi.spyOn(model, 'send').mockImplementationOnce(async () => {
-      // We don't use any session parameter in this mock implementation
-      return {
-        type: 'assistant',
-        content:
-          'Here is the product information:\n\n```\n{\n  "name": "Alternative Format",\n  "price": 79.99,\n  "inStock": false,\n  "description": "This is in a different format"\n}\n```',
-        metadata: createMetadata(),
-      };
+    // Mock generateText to return a different JSON format
+    vi.mocked(generateText).mockResolvedValueOnce({
+      type: 'assistant',
+      content:
+        'Here is the product information:\n\n```\n{\n  "name": "Alternative Format",\n  "price": 79.99,\n  "inStock": false,\n  "description": "This is in a different format"\n}\n```',
+      metadata: createMetadata(),
     });
 
     // Execute the template

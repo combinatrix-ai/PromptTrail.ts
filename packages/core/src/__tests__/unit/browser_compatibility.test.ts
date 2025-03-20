@@ -1,38 +1,22 @@
-import { describe, it, expect, vi } from 'vitest';
-import { OpenAIModel } from '../../model/openai/model';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate } from '../../templates';
 import { createMetadata } from '../../metadata';
+import type { GenerateOptions } from '../../generate';
 
-// Mock the OpenAI module
-vi.mock('openai', () => {
-  return {
-    default: vi.fn().mockImplementation(() => ({
-      chat: {
-        completions: {
-          create: vi.fn().mockResolvedValue({
-            choices: [
-              {
-                message: {
-                  content:
-                    'This is a response from the OpenAI API in a browser environment.',
-                  role: 'assistant',
-                },
-                index: 0,
-                finish_reason: 'stop',
-              },
-            ],
-          }),
-        },
-      },
-    })),
-  };
-});
+// Mock modules
+vi.mock('openai');
+vi.mock('../../model/openai/model');
+vi.mock('../../generate');
 
-// Mock the OpenAI model
-vi.mock('../../model/openai/model', () => {
-  return {
-    OpenAIModel: vi.fn().mockImplementation((config) => {
+// Import mocked modules after mocking
+import { OpenAIModel } from '../../model/openai/model';
+import { generateText } from '../../generate';
+
+describe('Browser Compatibility', () => {
+  beforeEach(() => {
+    // Setup mocks for each test
+    vi.mocked(OpenAIModel).mockImplementation((config) => {
       // Check if browser flag is set
       if (config.dangerouslyAllowBrowser !== true) {
         throw new Error('Browser flag not set');
@@ -49,12 +33,16 @@ vi.mock('../../model/openai/model', () => {
         formatTool: vi.fn(),
         validateConfig: vi.fn(),
         config,
-      };
-    }),
-  };
-});
+      } as any;
+    });
 
-describe('Browser Compatibility', () => {
+    vi.mocked(generateText).mockResolvedValue({
+      type: 'assistant',
+      content: 'This is a response from the OpenAI API in a browser environment.',
+      metadata: createMetadata(),
+    });
+  });
+
   it('should initialize with browser flag', () => {
     // Should not throw when dangerouslyAllowBrowser is true
     expect(() => {
@@ -97,19 +85,22 @@ describe('Browser Compatibility', () => {
   });
 
   it('should work with templates in browser context', async () => {
-    // Create model with browser flag
-    const model = new OpenAIModel({
-      apiKey: 'test-api-key',
-      modelName: 'gpt-4o-mini',
+    // Define generateOptions with browser flag
+    const generateOptions: GenerateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: 'test-api-key',
+        modelName: 'gpt-4o-mini',
+        dangerouslyAllowBrowser: true,
+      },
       temperature: 0.7,
-      dangerouslyAllowBrowser: true,
-    });
+    };
 
     // Create a template
     const template = new LinearTemplate()
       .addSystem('You are a helpful assistant in a browser environment.')
       .addUser('Hello from the browser!')
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     // Execute the template
     const result = await template.execute(createSession());

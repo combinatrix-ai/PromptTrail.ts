@@ -8,7 +8,8 @@
     "start": "tsx coding_agent.ts"
   },
   "dependencies": {
-    "@prompttrail/core": "workspace:*"
+    "@prompttrail/core": "workspace:*",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "tsup": "^8.3.6",

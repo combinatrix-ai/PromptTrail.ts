@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import {
@@ -8,108 +8,22 @@ import {
 import { createTool } from '../../tool';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/base_validators';
-import { Model } from '../../model/base';
 import { createMetadata } from '../../metadata';
-import type { Session, Message, Tool, SchemaType, ModelConfig } from '../../types';
+import type { Tool, SchemaType } from '../../types';
+import type { GenerateOptions } from '../../generate';
+import { generateText } from '../../generate';
 
-// Create a mock model class that extends Model
-class MockOpenAIModel extends Model {
-  constructor(config: ModelConfig) {
-    super(config);
-  }
-
-  protected validateConfig(): void {
-    // No validation needed for mock
-  }
-
-  protected formatTool(tool: Tool<SchemaType>): Record<string, unknown> {
-    return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: {
-          type: 'object',
-          properties: tool.schema.properties,
-          required: tool.schema.required || [],
-        },
-      },
-    };
-  }
-
-  async send(session: Session): Promise<Message> {
-    // Get the last user message
-    const messages = Array.from(session.messages);
-    const lastUserMessage = messages.filter((msg) => msg.type === 'user').pop();
-
-    // Generate different responses based on the user message
-    if (lastUserMessage && lastUserMessage.content.includes('weather')) {
-      return {
-        type: 'assistant',
-        content: `
-## Weather Report
-The weather in San Francisco is currently 72°F and sunny.
-
-## Forecast
-- Today: Sunny, high of 75°F
-- Tomorrow: Partly cloudy, high of 70°F
-- Wednesday: Foggy in the morning, high of 68°F
-
-\`\`\`json
-{
-  "location": "San Francisco",
-  "temperature": 72,
-  "condition": "sunny",
-  "forecast": [
-    {"day": "Today", "condition": "Sunny", "high": 75, "low": 58},
-    {"day": "Tomorrow", "condition": "Partly cloudy", "high": 70, "low": 56},
-    {"day": "Wednesday", "condition": "Foggy", "high": 68, "low": 55}
-  ]
-}
-\`\`\`
-        `,
-        metadata: createMetadata(),
-      };
-    } else if (
-      lastUserMessage &&
-      lastUserMessage.content.includes('calculate')
-    ) {
-      // Create metadata with toolCalls
-      const metadata = createMetadata();
-      metadata.set('toolCalls', [
-        {
-          name: 'calculator',
-          arguments: { a: 5, b: 3, operation: 'add' },
-          id: 'call-123',
-        },
-      ]);
-
-      return {
-        type: 'assistant',
-        content: 'I need to calculate something.',
-        metadata,
-      };
-    } else {
-      return {
-        type: 'assistant',
-        content: 'I can help you with that!',
-        metadata: createMetadata(),
-      };
-    }
-  }
-
-  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
-    yield {
-      type: 'assistant',
-      content: 'Streaming response',
-      metadata: createMetadata(),
-    };
-  }
-}
+// Mock the generateText function
+vi.mock('../../generate', () => {
+  return {
+    generateText: vi.fn(),
+    generateTextStream: vi.fn(),
+  };
+});
 
 describe('End-to-End Workflows', () => {
-  let model: MockOpenAIModel;
   let calculatorTool: Tool<SchemaType>;
+  let generateOptions: GenerateOptions;
 
   beforeEach(() => {
     // Create a calculator tool
@@ -145,11 +59,77 @@ describe('End-to-End Workflows', () => {
       },
     });
 
-    // Create a mock model with tools
-    model = new MockOpenAIModel({
-      modelName: 'gpt-4o-mini',
+    // Create generateOptions with tools
+    generateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: 'test-api-key',
+        modelName: 'gpt-4o-mini',
+      },
       temperature: 0.7,
       tools: [calculatorTool],
+    };
+
+    // Setup mock responses for generateText based on the user's query
+    vi.mocked(generateText).mockImplementation(async (session) => {
+      // Get the last user message
+      const messages = Array.from(session.messages);
+      const lastUserMessage = messages.filter((msg) => msg.type === 'user').pop();
+
+      // Generate different responses based on the user message
+      if (lastUserMessage && lastUserMessage.content.includes('weather')) {
+        return {
+          type: 'assistant',
+          content: `
+## Weather Report
+The weather in San Francisco is currently 72°F and sunny.
+
+## Forecast
+- Today: Sunny, high of 75°F
+- Tomorrow: Partly cloudy, high of 70°F
+- Wednesday: Foggy in the morning, high of 68°F
+
+\`\`\`json
+{
+  "location": "San Francisco",
+  "temperature": 72,
+  "condition": "sunny",
+  "forecast": [
+    {"day": "Today", "condition": "Sunny", "high": 75, "low": 58},
+    {"day": "Tomorrow", "condition": "Partly cloudy", "high": 70, "low": 56},
+    {"day": "Wednesday", "condition": "Foggy", "high": 68, "low": 55}
+  ]
+}
+\`\`\`
+          `,
+          metadata: createMetadata(),
+        };
+      } else if (
+        lastUserMessage &&
+        lastUserMessage.content.includes('calculate')
+      ) {
+        // Create metadata with toolCalls
+        const metadata = createMetadata();
+        metadata.set('toolCalls', [
+          {
+            name: 'calculator',
+            arguments: { a: 5, b: 3, operation: 'add' },
+            id: 'call-123',
+          },
+        ]);
+
+        return {
+          type: 'assistant',
+          content: 'I need to calculate something.',
+          metadata,
+        };
+      } else {
+        return {
+          type: 'assistant',
+          content: 'I can help you with that!',
+          metadata: createMetadata(),
+        };
+      }
     });
   });
 
@@ -158,7 +138,7 @@ describe('End-to-End Workflows', () => {
     const weatherTemplate = new LinearTemplate()
       .addSystem('You are a helpful weather assistant.')
       .addUser('What is the weather in San Francisco?')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       // Extract markdown headings and code blocks
       .addTransformer(
         extractMarkdown({
@@ -199,7 +179,7 @@ describe('End-to-End Workflows', () => {
     const calculatorTemplate = new LinearTemplate()
       .addSystem('You are a helpful assistant that can perform calculations.')
       .addUser('Can you calculate 5 + 3 for me?')
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     // Execute the template
     const session = await calculatorTemplate.execute(createSession());
@@ -236,7 +216,7 @@ describe('End-to-End Workflows', () => {
       template: new LinearTemplate()
         .addSystem('You are a helpful assistant.')
         .addUser('Can you assist me?')
-        .addAssistant({ model }),
+        .addAssistant({ generateOptions }),
       validators: [contentValidator],
       onFail: OnFailAction.RETRY,
       maxAttempts: 3,
@@ -270,7 +250,7 @@ describe('End-to-End Workflows', () => {
             'Tell me something interesting.',
             'Tell me something interesting.',
           )
-          .addAssistant({ model })
+          .addAssistant({ generateOptions })
           .addUser('Should we continue? (yes/no)', 'no')
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();

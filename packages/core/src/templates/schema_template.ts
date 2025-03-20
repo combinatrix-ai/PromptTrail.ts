@@ -1,5 +1,4 @@
 import type { Session } from '../session';
-import type { Model } from '../model/base';
 import type { SchemaType } from '../tool';
 import { createMetadata } from '../metadata';
 import { SchemaValidator } from '../validators/schema_validator';
@@ -8,9 +7,9 @@ import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
 // Import Template class to extend it
-import { Template, AssistantTemplate } from '../templates';
-// Import OpenAI model type for type checking
-import { OpenAIModel } from '../model/openai/model';
+import { Template } from '../templates';
+import { generateText, type GenerateOptions } from '../generate';
+import { GenerateTemplate } from './generate_template';
 
 // Type to handle both SchemaType and Zod schemas
 type SchemaInput = SchemaType | z.ZodType;
@@ -49,12 +48,12 @@ export class SchemaTemplate<
   private isZodSchema: boolean;
 
   constructor(options: {
-    model: Model;
+    generateOptions: GenerateOptions;
     schema: SchemaInput;
     maxAttempts?: number;
     functionName?: string;
   }) {
-    super({ model: options.model });
+    super({ generateOptions: options.generateOptions });
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
 
@@ -70,8 +69,8 @@ export class SchemaTemplate<
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    if (!this.model) {
-      throw new Error('No model provided for SchemaTemplate');
+    if (!this.generateOptions) {
+      throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
     // Create a schema validator
@@ -80,8 +79,8 @@ export class SchemaTemplate<
       description: 'Response must match the specified schema',
     });
 
-    // Check if the model is OpenAI to use function calling
-    const isOpenAI = this.model instanceof OpenAIModel;
+    // Check if the provider is OpenAI to use function calling
+    const isOpenAI = this.generateOptions.provider.type === 'openai';
 
     // Create a system message to instruct the model about the expected format
     const schemaDescription = Object.entries(this.nativeSchema.properties)
@@ -99,8 +98,8 @@ export class SchemaTemplate<
     });
 
     // Create an assistant template
-    const assistantTemplate = new AssistantTemplate({
-      model: this.model,
+    const assistantTemplate = new GenerateTemplate({
+      generateOptions: this.generateOptions,
     });
 
     // If using OpenAI, add a system message with function calling instructions

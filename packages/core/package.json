@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "test": "vitest",
+    "test": "vitest --run --watch=false",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",

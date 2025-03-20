@@ -1,24 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LinearTemplate, OpenAIModel, createSession } from '../../../src';
+import { LinearTemplate, createSession, type GenerateOptions } from '../../../src';
 import { createMessage } from '../utils';
 
-// Mock OpenAI model
-vi.mock('../../../src/model/openai/model', () => {
+// Mock generateText function
+vi.mock('../../../src/generate', () => {
   return {
-    OpenAIModel: vi.fn().mockImplementation(() => ({
-      send: vi.fn().mockResolvedValue({
-        type: 'assistant',
-        content: 'This is a mock response from the OpenAI model.',
-        metadata: undefined,
-      }),
-      sendAsync: vi.fn(),
-      formatTool: vi.fn(),
-      validateConfig: vi.fn(),
-      config: {
-        modelName: 'gpt-4o-mini',
-        temperature: 0.7,
-      },
-    })),
+    generateText: vi.fn().mockResolvedValue({
+      type: 'assistant',
+      content: 'This is a mock response from the OpenAI model.',
+      metadata: undefined,
+    }),
+    generateTextStream: vi.fn(),
   };
 });
 
@@ -35,18 +27,21 @@ vi.mock('../../../src/model/openai/model', () => {
  */
 describe('Path Alias Example', () => {
   it('should work with path aliases for imports', async () => {
-    // Create a mock OpenAI model
-    const model = new OpenAIModel({
-      apiKey: 'mock-api-key',
-      modelName: 'gpt-4o-mini',
+    // Define generateOptions
+    const generateOptions: GenerateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'gpt-4o-mini',
+      },
       temperature: 0.7,
-    });
+    };
 
     // Create a simple conversation template
     const chat = new LinearTemplate()
       .addSystem("I'm a helpful assistant.")
       .addUser("What's TypeScript?")
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     // Execute the template
     const session = await chat.execute(createSession());
