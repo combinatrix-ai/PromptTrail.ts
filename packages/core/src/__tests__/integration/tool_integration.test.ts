@@ -45,17 +45,22 @@ describe('Tool Integration with ai-sdk', () => {
       parameters: z.object({
         a: z.number().describe('First number'),
         b: z.number().describe('Second number'),
-        operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+        operation: z
+          .enum(['add', 'subtract', 'multiply', 'divide'])
           .describe('Operation to perform'),
       }),
       execute: async ({ a, b, operation }) => {
         switch (operation) {
-          case 'add': return a + b;
-          case 'subtract': return a - b;
-          case 'multiply': return a * b;
-          case 'divide': return a / b;
+          case 'add':
+            return a + b;
+          case 'subtract':
+            return a - b;
+          case 'multiply':
+            return a * b;
+          case 'divide':
+            return a / b;
         }
-      }
+      },
     });
 
     // Create generate options with fluent API
@@ -82,7 +87,7 @@ describe('Tool Integration with ai-sdk', () => {
     // Verify the response contains tool usage
     expect(session.getLastMessage()).toBeDefined();
     expect(session.getLastMessage()?.content).toContain('56088');
-    
+
     // Verify that generateText was called with the correct tools
     expect(generateText).toHaveBeenCalled();
     const callArgs = vi.mocked(generateText).mock.calls[0][1];
@@ -97,17 +102,22 @@ describe('Tool Integration with ai-sdk', () => {
       parameters: z.object({
         a: z.number().describe('First number'),
         b: z.number().describe('Second number'),
-        operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+        operation: z
+          .enum(['add', 'subtract', 'multiply', 'divide'])
           .describe('Operation to perform'),
       }),
       execute: async ({ a, b, operation }) => {
         switch (operation) {
-          case 'add': return a + b;
-          case 'subtract': return a - b;
-          case 'multiply': return a * b;
-          case 'divide': return a / b;
+          case 'add':
+            return a + b;
+          case 'subtract':
+            return a - b;
+          case 'multiply':
+            return a * b;
+          case 'divide':
+            return a / b;
         }
-      }
+      },
     });
 
     // Define a weather tool
@@ -122,7 +132,7 @@ describe('Tool Integration with ai-sdk', () => {
           location,
           forecast: Array(days).fill({ temp: 72, condition: 'sunny' }),
         };
-      }
+      },
     });
 
     // Create generate options with multiple tools
@@ -150,17 +160,22 @@ describe('Tool Integration with ai-sdk', () => {
         parameters: z.object({
           a: z.number().describe('First number'),
           b: z.number().describe('Second number'),
-          operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+          operation: z
+            .enum(['add', 'subtract', 'multiply', 'divide'])
             .describe('Operation to perform'),
         }),
         execute: async ({ a, b, operation }) => {
           switch (operation) {
-            case 'add': return a + b;
-            case 'subtract': return a - b;
-            case 'multiply': return a * b;
-            case 'divide': return a / b;
+            case 'add':
+              return a + b;
+            case 'subtract':
+              return a - b;
+            case 'multiply':
+              return a * b;
+            case 'divide':
+              return a / b;
           }
-        }
+        },
       }),
       weather: tool({
         description: 'Get weather information',
@@ -173,8 +188,8 @@ describe('Tool Integration with ai-sdk', () => {
             location,
             forecast: Array(days).fill({ temp: 72, condition: 'sunny' }),
           };
-        }
-      })
+        },
+      }),
     };
 
     // Create generate options and add tools in bulk
@@ -199,17 +214,22 @@ describe('Tool Integration with ai-sdk', () => {
       parameters: z.object({
         a: z.number().describe('First number'),
         b: z.number().describe('Second number'),
-        operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+        operation: z
+          .enum(['add', 'subtract', 'multiply', 'divide'])
           .describe('Operation to perform'),
       }),
       execute: async ({ a, b, operation }) => {
         switch (operation) {
-          case 'add': return a + b;
-          case 'subtract': return a - b;
-          case 'multiply': return a * b;
-          case 'divide': return a / b;
+          case 'add':
+            return a + b;
+          case 'subtract':
+            return a - b;
+          case 'multiply':
+            return a * b;
+          case 'divide':
+            return a / b;
         }
-      }
+      },
     });
 
     // Type inference works - TypeScript would error if we passed invalid parameters
@@ -217,7 +237,7 @@ describe('Tool Integration with ai-sdk', () => {
     const validInput: CalculatorInput = {
       a: 10,
       b: 20,
-      operation: 'add'
+      operation: 'add',
     };
 
     // This would cause a TypeScript error:

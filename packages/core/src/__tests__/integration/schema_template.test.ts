@@ -27,15 +27,15 @@ vi.mock('../../generate', () => {
 function expectObjectToMatchPattern(actual: any, pattern: any) {
   // First check that the actual value is defined
   expect(actual).toBeDefined();
-  
+
   // Check each property in the pattern
   for (const key in pattern) {
     // Check that the property exists
     expect(actual).toHaveProperty(key);
-    
+
     const expectedValue = pattern[key];
     const actualValue = actual[key];
-    
+
     if (expectedValue === expect.any(String)) {
       expect(typeof actualValue).toBe('string');
     } else if (expectedValue === expect.any(Number)) {
@@ -270,7 +270,7 @@ describe('SchemaTemplate', () => {
       parameters: productSchema,
       execute: async (params) => {
         return params; // Just return the input for testing
-      }
+      },
     });
 
     // Create generate options with the tool
@@ -313,7 +313,9 @@ describe('SchemaTemplate', () => {
           name: createStringProperty('The name of the product'),
           price: createNumberProperty('The price of the product in USD'),
           inStock: createBooleanProperty('Whether the product is in stock'),
-          description: createStringProperty('A short description of the product'),
+          description: createStringProperty(
+            'A short description of the product',
+          ),
         },
         required: ['name', 'price', 'inStock'],
       }),

@@ -19,23 +19,23 @@ function extractCodeBlocks(content) {
   const codeBlocks = [];
   let match;
   let lastIndex = 0;
-  
+
   while ((match = CODE_BLOCK_REGEX.exec(content)) !== null) {
     // Count the number of newlines before this match to determine line number
     const beforeMatch = content.substring(lastIndex, match.index);
     const lineNumber = (beforeMatch.match(/\n/g) || []).length + 1;
-    
+
     codeBlocks.push({
       code: match[1],
       lineNumber,
       fullMatch: match[0],
       index: match.index,
-      endIndex: match.index + match[0].length
+      endIndex: match.index + match[0].length,
     });
-    
+
     lastIndex = match.index + match[0].length;
   }
-  
+
   return codeBlocks;
 }
 
@@ -46,26 +46,28 @@ function extractCodeBlocks(content) {
  * @returns {Array<{code: string, test: {description: string, code: string} | null}>}
  */
 function extractTestComments(content, codeBlocks) {
-  return codeBlocks.map(codeBlock => {
-    // Look for a test comment after the code block
-    const afterCodeBlock = content.substring(codeBlock.endIndex);
-    const testMatch = afterCodeBlock.match(TEST_COMMENT_REGEX);
-    
-    if (testMatch) {
+  return codeBlocks
+    .map((codeBlock) => {
+      // Look for a test comment after the code block
+      const afterCodeBlock = content.substring(codeBlock.endIndex);
+      const testMatch = afterCodeBlock.match(TEST_COMMENT_REGEX);
+
+      if (testMatch) {
+        return {
+          ...codeBlock,
+          test: {
+            description: testMatch[1].trim(),
+            code: testMatch[2].trim(),
+          },
+        };
+      }
+
       return {
         ...codeBlock,
-        test: {
-          description: testMatch[1].trim(),
-          code: testMatch[2].trim()
-        }
+        test: null,
       };
-    }
-    
-    return {
-      ...codeBlock,
-      test: null
-    };
-  }).filter(block => block.test !== null);
+    })
+    .filter((block) => block.test !== null);
 }
 
 /**
@@ -76,22 +78,22 @@ function extractTestComments(content, codeBlocks) {
 function extractHeadings(content) {
   const headings = [];
   let match;
-  
+
   while ((match = HEADING_REGEX.exec(content)) !== null) {
     const level = match[1].length;
     const text = match[2].trim();
-    
+
     // Count the number of newlines before this match to determine line number
     const beforeMatch = content.substring(0, match.index);
     const lineNumber = (beforeMatch.match(/\n/g) || []).length + 1;
-    
+
     headings.push({
       level,
       text,
-      lineNumber
+      lineNumber,
     });
   }
-  
+
   return headings;
 }
 
@@ -103,14 +105,32 @@ function extractHeadings(content) {
 function mapTestToHeadings(description) {
   // Map specific test descriptions to their desired heading hierarchy
   const testMappings = {
-    'creates a conversation and returns a session with messages': ['PromptTrail 🚀', 'Quick Start'],
-    'provides type-safe metadata access': ['PromptTrail 🚀', 'TypeScript-First Design'],
-    'creates a template with metadata interpolation': ['PromptTrail 🚀', 'Building Templates'],
-    'demonstrates session immutability': ['PromptTrail 🚀', 'Session Management'],
-    'extracts data using pattern matching': ['PromptTrail 🚀', 'Session-to-Metadata Conversion'],
-    'validates structured output using schemas': ['PromptTrail 🚀', 'Schema Validation']
+    'creates a conversation and returns a session with messages': [
+      'PromptTrail 🚀',
+      'Quick Start',
+    ],
+    'provides type-safe metadata access': [
+      'PromptTrail 🚀',
+      'TypeScript-First Design',
+    ],
+    'creates a template with metadata interpolation': [
+      'PromptTrail 🚀',
+      'Building Templates',
+    ],
+    'demonstrates session immutability': [
+      'PromptTrail 🚀',
+      'Session Management',
+    ],
+    'extracts data using pattern matching': [
+      'PromptTrail 🚀',
+      'Session-to-Metadata Conversion',
+    ],
+    'validates structured output using schemas': [
+      'PromptTrail 🚀',
+      'Schema Validation',
+    ],
   };
-  
+
   return testMappings[description] || ['PromptTrail 🚀', 'Other Tests'];
 }
 
@@ -263,11 +283,11 @@ vi.mock('@prompttrail/core', async () => {
 
   // Create a hierarchical structure for tests
   const testHierarchy = {};
-  
+
   // Group tests by their hierarchy
   for (const block of codeBlocksWithTests) {
     const hierarchy = mapTestToHeadings(block.test.description);
-    
+
     // Build the hierarchy structure
     let current = testHierarchy;
     for (const heading of hierarchy) {
@@ -276,7 +296,7 @@ vi.mock('@prompttrail/core', async () => {
       }
       current = current[heading].children;
     }
-    
+
     // Add the test to the last level
     let target = testHierarchy;
     for (let i = 0; i < hierarchy.length - 1; i++) {
@@ -284,76 +304,82 @@ vi.mock('@prompttrail/core', async () => {
     }
     target[hierarchy[hierarchy.length - 1]].tests.push(block);
   }
-  
+
   // Generate nested describe blocks based on heading hierarchy
   function generateNestedDescribes(node, heading, indent = '') {
     let result = `${indent}describe('${heading.replace(/'/g, "\\'")}', () => {\n`;
-    
+
     // Add tests at this level
     if (node.tests && node.tests.length > 0) {
       for (const block of node.tests) {
         result += `${indent}  it('${block.test.description.replace(/'/g, "\\'")}', async () => {\n`;
         result += `${indent}    // Code from README.md\n`;
         result += `${indent}    // Test based on code from README.md\n`;
-        
+
         // Add the test code with proper indentation
         const indentedTestCode = block.test.code
           .split('\n')
-          .map(line => `${indent}    ${line}`)
+          .map((line) => `${indent}    ${line}`)
           .join('\n');
-        
+
         result += `${indentedTestCode}\n`;
         result += `${indent}  });\n\n`;
       }
     }
-    
+
     // Add child describes
     for (const [childHeading, childNode] of Object.entries(node.children)) {
       result += generateNestedDescribes(childNode, childHeading, indent + '  ');
     }
-    
+
     result += `${indent}});\n`;
     return result;
   }
-  
+
   // Generate a single describe block for the root
   testFileContent += `describe('PromptTrail 🚀', () => {\n`;
-  
+
   // Add nested describes for each section
   if (testHierarchy['PromptTrail 🚀']) {
     // Add child describes
-    for (const [childHeading, childNode] of Object.entries(testHierarchy['PromptTrail 🚀'].children)) {
+    for (const [childHeading, childNode] of Object.entries(
+      testHierarchy['PromptTrail 🚀'].children,
+    )) {
       // Generate nested describe blocks with proper indentation
-      const nestedContent = generateNestedDescribes(childNode, childHeading, '  ')
+      const nestedContent = generateNestedDescribes(
+        childNode,
+        childHeading,
+        '  ',
+      )
         .split('\n')
-        .filter(line => line.trim() !== '') // Remove empty lines
+        .filter((line) => line.trim() !== '') // Remove empty lines
         .join('\n');
-      
+
       testFileContent += nestedContent;
     }
-    
+
     // Add tests at the root level if any
     if (testHierarchy['PromptTrail 🚀'].tests.length > 0) {
       for (const block of testHierarchy['PromptTrail 🚀'].tests) {
         testFileContent += `  it('${block.test.description.replace(/'/g, "\\'")}', async () => {\n`;
         testFileContent += `    // Code from README.md\n`;
         testFileContent += `    // Test based on code from README.md\n`;
-        
+
         // Add the test code with proper indentation
         const indentedTestCode = block.test.code
           .split('\n')
-          .map(line => `    ${line}`)
+          .map((line) => `    ${line}`)
           .join('\n');
-        
+
         testFileContent += `${indentedTestCode}\n`;
         testFileContent += `  });\n\n`;
       }
     }
   }
-  
+
   // Close the root describe block
   testFileContent += `});\n`;
-  
+
   return testFileContent;
 }
 
@@ -362,25 +388,25 @@ async function main() {
   try {
     console.log('Reading README.md...');
     const readmeContent = fs.readFileSync(README_PATH, 'utf8');
-    
+
     console.log('Extracting code blocks...');
     const codeBlocks = extractCodeBlocks(readmeContent);
     console.log(`Found ${codeBlocks.length} code blocks`);
-    
+
     console.log('Extracting test comments...');
     const codeBlocksWithTests = extractTestComments(readmeContent, codeBlocks);
     console.log(`Found ${codeBlocksWithTests.length} code blocks with tests`);
-    
+
     console.log('Extracting headings...');
     const headings = extractHeadings(readmeContent);
     console.log(`Found ${headings.length} headings`);
-    
+
     console.log('Generating test file...');
     const testFileContent = generateTestFile(codeBlocksWithTests);
-    
+
     console.log(`Writing test file to ${TEST_OUTPUT_PATH}...`);
     fs.writeFileSync(TEST_OUTPUT_PATH, testFileContent);
-    
+
     console.log('Done!');
   } catch (error) {
     console.error('Error generating tests:', error);

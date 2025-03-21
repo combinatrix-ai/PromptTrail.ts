@@ -4,7 +4,5 @@
     "noImplicitAny": false,
     "strictNullChecks": false
   },
-  "include": [
-    "readme.test.ts"
-  ]
+  "include": ["readme.test.ts"]
 }

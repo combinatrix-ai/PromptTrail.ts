@@ -75,7 +75,7 @@ console.log(session.getLastMessage()?.content);
       { type: 'assistant', content: 'TypeScript is a programming language.' }
     ]
   });
-  
+
   // Verify the session structure
   expect(testSession.messages).toHaveLength(3);
   expect(testSession.messages[0].type).toBe('system');
@@ -134,26 +134,26 @@ const updatedSession = session.updateMetadata({
       },
     },
   });
-  
+
   // Access metadata
   const testUserName = testSession.metadata.get('name');
   const preferences = testSession.metadata.get('preferences');
   const testTheme = preferences ? preferences.theme : undefined;
-  
+
   // Update metadata
   const testUpdatedSession = testSession.updateMetadata({
     lastActive: new Date(),
   });
-  
+
   // Test assertions
   expect(testUserName).toBe('Alice');
   expect(testTheme).toBe('dark');
-  
+
   // Test type safety and immutability
   expect(testSession.metadata.get('name')).toBe('Alice');
   expect(testUpdatedSession.metadata.get('name')).toBe('Alice');
   expect(testUpdatedSession.metadata.get('lastActive')).toBeInstanceOf(Date);
-  
+
   // Original session should be unchanged
   expect(testSession.metadata.get('lastActive')).toBeUndefined();
 -->
@@ -203,7 +203,7 @@ const session = await personalizedChat.execute(
   const template = new LinearTemplate()
     .addSystem("I'll adapt to your preferences.")
     .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?');
-  
+
   // Create a session with metadata
   const testSession = createSession({
     metadata: {
@@ -212,10 +212,10 @@ const session = await personalizedChat.execute(
     },
     messages: []
   });
-  
+
   // Execute the template
   const result = await template.execute(testSession);
-  
+
   // Verify the interpolation worked
   expect(result.messages).toHaveLength(2);
   expect(result.messages[1].content).toBe('Hello Alice! How can I help with generics?');
@@ -338,24 +338,24 @@ const restored = Session.fromJSON(json);
     },
     messages: []
   });
-  
+
   // Add a message (should return a new session)
   const updatedSession = originalSession.addMessage({
     type: 'user',
     content: 'Hello!',
   });
-  
+
   // Verify immutability
   expect(updatedSession).not.toBe(originalSession);
   expect(originalSession.messages).toHaveLength(0);
   expect(updatedSession.messages).toHaveLength(1);
   expect(updatedSession.messages[0].content).toBe('Hello!');
-  
+
   // Test metadata updates
   const newSession = updatedSession.updateMetadata({
     tone: 'casual',
   });
-  
+
   // Verify metadata was updated in new session
   expect(newSession.metadata.get('tone')).toBe('casual');
   expect(updatedSession.metadata.get('tone')).toBe('professional');
@@ -461,10 +461,10 @@ console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
         },
       ]),
     );
-  
+
   // Execute the template
   const session = await template.execute(createSession());
-  
+
   // Verify the extracted data
   expect(session.metadata.get('ipAddress')).toBe('192.168.1.100');
   expect(session.metadata.get('uptime')).toBe(0.9999);
@@ -629,7 +629,7 @@ console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
     },
     required: ['name', 'price', 'inStock'],
   });
-  
+
   // Create a mock session with structured output
   const testSession = createSession({
     metadata: {
@@ -642,7 +642,7 @@ console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
     },
     messages: []
   });
-  
+
   // Verify the structured output
   const product = testSession.metadata.get('structured_output');
   expect(product).toBeDefined();

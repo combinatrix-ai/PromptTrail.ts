@@ -32,7 +32,8 @@ describe('End-to-End Workflows', () => {
       parameters: z.object({
         a: z.number().describe('First number'),
         b: z.number().describe('Second number'),
-        operation: z.enum(['add', 'subtract', 'multiply', 'divide'])
+        operation: z
+          .enum(['add', 'subtract', 'multiply', 'divide'])
           .describe('Operation to perform'),
       }),
       execute: async ({ a, b, operation }) => {
