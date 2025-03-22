@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "test": "vitest",
+    "test": "vitest --run --watch=false",
+    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",
@@ -39,8 +40,11 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.1.18",
+    "@ai-sdk/openai": "^1.2.6",
     "@anthropic-ai/sdk": "^0.36.3",
     "@modelcontextprotocol/sdk": "^1.6.0",
+    "ai": "^4.1.63",
     "openai": "^4.85.4",
     "zod": "^3.24.2"
   }

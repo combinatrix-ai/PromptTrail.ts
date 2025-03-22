@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   LinearTemplate,
   LoopTemplate,
@@ -9,53 +9,57 @@ import {
 } from '../../../templates';
 import { createSession } from '../../../session';
 import { createMetadata } from '../../../metadata';
-import { Model } from '../../../model/base';
-import type { Session, ModelConfig, Message } from '../../../types';
+import { generateText } from '../../../generate';
+import type { GenerateOptions } from '../../../generate';
+import type { Session } from '../../../types';
 
-// Create a mock model for testing
-class MockModel extends Model<ModelConfig, unknown> {
-  constructor(private responses: string[] = ['Mock response']) {
-    super({
-      modelName: 'mock-model',
-      temperature: 0.7,
-    });
-  }
-
-  async send(session: Session): Promise<Message> {
-    // Use session parameter to avoid unused variable warning
-    void session; // Explicitly mark as used
-    const response = this.responses.shift() || 'Default mock response';
-    return {
-      type: 'assistant',
-      content: response,
-      metadata: createMetadata(),
-    };
-  }
-
-  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
-    // This is a mock implementation that needs to have a yield statement
-    // but will never actually yield anything in practice
-    const shouldYield = this.responses.length > 1000; // Will never be true in tests
-    if (shouldYield) yield { type: 'assistant', content: '', metadata: createMetadata() };
-    throw new Error('Not implemented');
-  }
-
-  protected formatTool(): Record<string, unknown> {
-    throw new Error('Not implemented');
-  }
-
-  protected validateConfig(): void {}
-}
+// Mock the generateText function
+vi.mock('../../../generate', () => {
+  return {
+    generateText: vi.fn(),
+  };
+});
 
 describe('Nested Templates', () => {
-  it('should execute deeply nested templates', async () => {
-    // Create a mock model with specific responses
-    const mockModel = new MockModel([
-      'Response to first question',
-      'Response to second question',
-      'Final response',
-    ]);
+  let generateOptions: GenerateOptions;
+  let responseIndex: number;
+  const mockResponses = [
+    'Response to first question',
+    'Response to second question',
+    'Final response',
+    'Response with metadata',
+    'Response A',
+    'Response B',
+  ];
 
+  beforeEach(() => {
+    // Reset mocks
+    vi.resetAllMocks();
+    responseIndex = 0;
+
+    // Create generateOptions
+    generateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: 'test-api-key',
+        modelName: 'gpt-4o-mini',
+      },
+      temperature: 0.7,
+    };
+
+    // Setup mock implementation for generateText
+    vi.mocked(generateText).mockImplementation(async () => {
+      const response =
+        mockResponses[responseIndex++] || 'Default mock response';
+      return {
+        type: 'assistant',
+        content: response,
+        metadata: createMetadata(),
+      };
+    });
+  });
+
+  it('should execute deeply nested templates', async () => {
     // Create a complex nested template structure
     // Note: We're using array-based construction instead of chaining for templates
     // that don't have specific add methods
@@ -63,13 +67,13 @@ describe('Nested Templates', () => {
       condition: () => true, // Always true for this test
       thenTemplate: new LinearTemplate()
         .addUser('First question')
-        .addAssistant({ model: mockModel }),
+        .addAssistant({ generateOptions }),
       elseTemplate: new SystemTemplate({ content: 'Condition was false' }),
     });
 
     const loopTemplate = new LoopTemplate()
       .addUser('Second question')
-      .addAssistant({ model: mockModel })
+      .addAssistant({ generateOptions })
       .addUser('Follow-up question')
       .setExitCondition((session: Session) => {
         // Exit after one iteration
@@ -80,7 +84,7 @@ describe('Nested Templates', () => {
     const subroutineTemplate = new SubroutineTemplate({
       template: new LinearTemplate()
         .addUser('Final question')
-        .addAssistant({ model: mockModel }),
+        .addAssistant({ generateOptions }),
       initWith: () => createSession(), // Don't need parent session in this test
       squashWith: (parentSession, childSession) => {
         // Create a new session with all messages from both sessions
@@ -133,8 +137,8 @@ describe('Nested Templates', () => {
   });
 
   it('should handle nested templates with shared metadata', async () => {
-    // Create a mock model
-    const mockModel = new MockModel(['Response with metadata']);
+    // Reset response index for this test
+    responseIndex = 3; // Index for 'Response with metadata'
 
     // Create a session with metadata
     const session = createSession();
@@ -145,7 +149,7 @@ describe('Nested Templates', () => {
     const subroutineTemplate = new SubroutineTemplate({
       template: new LinearTemplate()
         .addUser('Tell me about ${topic}.')
-        .addAssistant({ model: mockModel }),
+        .addAssistant({ generateOptions }),
       initWith: (_parentSession: Session) => {
         // Copy metadata from parent to child
         const childSession = createSession();
@@ -153,7 +157,10 @@ describe('Nested Templates', () => {
           'username',
           _parentSession.metadata.get('username'),
         );
-        childSession.metadata.set('topic', _parentSession.metadata.get('topic'));
+        childSession.metadata.set(
+          'topic',
+          _parentSession.metadata.get('topic'),
+        );
         return childSession;
       },
       squashWith: (_parentSession, childSession) => {
@@ -191,8 +198,8 @@ describe('Nested Templates', () => {
   });
 
   it('should handle complex conditional logic in nested templates', async () => {
-    // Create a mock model
-    const mockModel = new MockModel(['Response A', 'Response B']);
+    // Reset response index for this test
+    responseIndex = 4; // Index for 'Response A' and 'Response B'
 
     // Create a session with a condition flag
     const session = createSession();
@@ -206,7 +213,7 @@ describe('Nested Templates', () => {
         condition: (session) => Boolean(session.metadata.get('condition')),
         thenTemplate: new LinearTemplate()
           .addUser('Question when condition is true')
-          .addAssistant({ model: mockModel })
+          .addAssistant({ generateOptions })
           // Nested condition
           .addIf({
             condition: (session) => {
@@ -225,7 +232,7 @@ describe('Nested Templates', () => {
           }),
         elseTemplate: new LinearTemplate()
           .addUser('Question when condition is false')
-          .addAssistant({ model: mockModel }),
+          .addAssistant({ generateOptions }),
       });
 
     // Execute the template

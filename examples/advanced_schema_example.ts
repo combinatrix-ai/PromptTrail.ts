@@ -1,12 +1,12 @@
 import {
   createSession,
   LinearTemplate,
-  OpenAIModel,
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
   SchemaTemplate,
+  type GenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -14,12 +14,15 @@ import {
  * with direct use of SchemaTemplate and function calling.
  */
 async function main() {
-  // Create an OpenAI model instance
-  const model = new OpenAIModel({
-    modelName: 'gpt-4o-mini',
+  // Define generateOptions for OpenAI
+  const generateOptions: GenerateOptions = {
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
+      modelName: 'gpt-4o-mini',
+    },
     temperature: 0.7,
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
-  });
+  };
 
   // Define a schema for user profile information
   const userProfileSchema = defineSchema({
@@ -50,7 +53,7 @@ async function main() {
     );
 
   // Add schema validation (async operation)
-  await template1.addSchema(userProfileSchema, { model });
+  await template1.addSchema(userProfileSchema, { generateOptions });
 
   const session1 = await template1.execute(createSession());
 
@@ -91,7 +94,7 @@ async function main() {
 
   // Create and execute the schema template directly
   const schemaTemplate = new SchemaTemplate({
-    model,
+    generateOptions,
     schema: userProfileSchema,
     functionName: 'extract_user_profile', // Custom function name
     maxAttempts: 3,

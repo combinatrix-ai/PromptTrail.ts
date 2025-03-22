@@ -2,7 +2,7 @@
   - Use type inference, generics, and TS-specific features
   - Follow TS best practices and idioms
 - Use `pnpm` for package management
-- Run tests with `cd packages/core && pnpm exec vitest --run --watch=false`
+- Run tests: `pnpm test:cline`
 - Use latest models:
   - OpenAI: `gpt-4o-mini`
   - Anthropic: `claude-3-5-haiku-latest`

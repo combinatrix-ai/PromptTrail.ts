@@ -1,6 +1,8 @@
-import { LinearTemplate, createSession } from '../packages/core/src/index';
-import { OpenAIModel } from '../packages/core/src/model/openai/model';
-import type { OpenAIConfig } from '../packages/core/src/model/openai/types';
+import {
+  LinearTemplate,
+  createSession,
+  type GenerateOptions,
+} from '../packages/core/src/index';
 
 // Get API key from environment variable
 const apiKey = process.env.OPENAI_API_KEY;
@@ -10,18 +12,21 @@ if (!apiKey) {
 
 async function main() {
   try {
-    // Create OpenAI model instance
-    const model = new OpenAIModel({
-      modelName: 'gpt-4o-mini',
+    // Define generateOptions for OpenAI
+    const generateOptions: GenerateOptions = {
+      provider: {
+        type: 'openai',
+        apiKey: apiKey as string,
+        modelName: 'gpt-4o-mini',
+      },
       temperature: 0.7,
-      apiKey: apiKey as string,
-    } satisfies OpenAIConfig);
+    };
 
     // Create conversation template
     const template = new LinearTemplate()
       .addSystem('You are a helpful AI assistant.')
       .addUser('Hello!', 'Hello!')
-      .addAssistant({ model });
+      .addAssistant({ generateOptions });
 
     // Create session with print enabled
     const session = createSession({ print: true });

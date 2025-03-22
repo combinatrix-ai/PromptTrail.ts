@@ -11,50 +11,63 @@ import {
   IfTemplate,
 } from '../../../templates';
 import { CallbackInputSource } from '../../../input_source';
-import type { Message, ModelConfig } from '../../../types';
-import { Model } from '../../../model/base';
 import { createMetadata } from '../../../metadata';
+import { generateText } from '../../../generate';
+import type { GenerateOptions } from '../../../generate';
 
-class MockModel extends Model<ModelConfig> {
-  constructor(private responses: string[]) {
-    super({
-      modelName: 'mock-model',
-      temperature: 0,
-    });
-  }
+// Mock the generateText function
+vi.mock('../../../generate', () => {
+  const responses: string[] = [];
 
-  async send(): Promise<Message> {
-    // We don't need any session parameter in this mock implementation
-    const response = this.responses.shift();
+  return {
+    generateText: vi.fn().mockImplementation(async () => {
+      const response = responses.shift();
+      if (!response) throw new Error('No more mock responses');
+      return {
+        type: 'assistant',
+        content: response,
+        metadata: createMetadata(),
+      };
+    }),
+    setMockResponses: (newResponses: string[]) => {
+      responses.length = 0;
+      responses.push(...newResponses);
+    },
+  };
+});
+
+// Helper function to create mock generate options with predefined responses
+function createMockGenerateOptions(responses: string[]): GenerateOptions {
+  // Set the mock responses for generateText
+  (generateText as any).mockImplementation(async () => {
+    const response = responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
       type: 'assistant',
       content: response,
       metadata: createMetadata(),
     };
-  }
+  });
 
-  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
-    // Add yield to satisfy generator function requirement
-    if (this.responses.length > 1000) yield { type: 'assistant', content: '', metadata: createMetadata() };
-    throw new Error('Not implemented');
-  }
-
-  protected formatTool(): Record<string, unknown> {
-    throw new Error('Not implemented');
-  }
-
-  protected validateConfig(): void {}
+  return {
+    provider: {
+      type: 'openai',
+      apiKey: 'mock-api-key',
+      modelName: 'mock-model',
+    },
+    temperature: 0,
+  };
 }
 
 describe('Templates', () => {
   describe('LinearTemplate with Loop', () => {
     it('should execute a math teacher conversation flow (array-based)', async () => {
-      // Create mock model
-      const mockModel = new MockModel([
+      // Create mock generate options
+      const mockResponses = [
         'Dividing a number by zero is undefined in mathematics because...',
         'END',
-      ]);
+      ];
+      const generateOptions = createMockGenerateOptions(mockResponses);
 
       // Create the template structure
       const template = new LinearTemplate([
@@ -68,7 +81,7 @@ describe('Templates', () => {
               default: "Why can't you divide a number by zero?",
             }),
             new AssistantTemplate({
-              model: mockModel,
+              generateOptions,
             }),
             new AssistantTemplate({
               content: 'Are you satisfied?',
@@ -82,7 +95,7 @@ describe('Templates', () => {
                 'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
             }),
             new AssistantTemplate({
-              model: mockModel,
+              generateOptions,
             }),
           ],
           exitCondition: (session: Session) => {
@@ -124,16 +137,15 @@ describe('Templates', () => {
         'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
       );
       expect(messages[6].content).toBe('END');
-
-      // No need to verify mock calls as MockModel handles responses directly
     });
 
     it('should execute a math teacher conversation flow (chaining API)', async () => {
-      // Create mock model
-      const mockModel = new MockModel([
+      // Create mock generate options
+      const mockResponses = [
         'Dividing a number by zero is undefined in mathematics because...',
         'END',
-      ]);
+      ];
+      const generateOptions = createMockGenerateOptions(mockResponses);
 
       // Create the template structure using chaining API
       const template = new LinearTemplate()
@@ -144,13 +156,13 @@ describe('Templates', () => {
               "Let's ask a question to AI:",
               "Why can't you divide a number by zero?",
             )
-            .addAssistant({ model: mockModel })
+            .addAssistant({ generateOptions })
             .addAssistant('Are you satisfied?')
             .addUser('Input:', 'Yes.')
             .addAssistant(
               'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
             )
-            .addAssistant({ model: mockModel })
+            .addAssistant({ generateOptions })
             .setExitCondition(
               (session: Session) =>
                 session.getLastMessage()?.content.includes('END') ?? false,
@@ -189,18 +201,17 @@ describe('Templates', () => {
         'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
       );
       expect(messages[6].content).toBe('END');
-
-      // No need to verify mock calls as MockModel handles responses directly
     });
 
     it('should handle multiple loop iterations when user is not satisfied', async () => {
-      // Create mock model for multiple iterations
-      const mockModel = new MockModel([
+      // Create mock generate options for multiple iterations
+      const mockResponses = [
         'First explanation about division by zero...',
         'RETRY',
         'Second, more detailed explanation...',
         'END',
-      ]);
+      ];
+      const generateOptions = createMockGenerateOptions(mockResponses);
 
       const template = new LinearTemplate([
         new SystemTemplate({
@@ -213,7 +224,7 @@ describe('Templates', () => {
               default: "Why can't you divide a number by zero?",
             }),
             new AssistantTemplate({
-              model: mockModel,
+              generateOptions,
             }),
             new AssistantTemplate({
               content: 'Are you satisfied?',
@@ -227,7 +238,7 @@ describe('Templates', () => {
                 'The user has stated their feedback. If you think the user is satisfied, you must answer `END`. Otherwise, you must answer `RETRY`.',
             }),
             new AssistantTemplate({
-              model: mockModel,
+              generateOptions,
             }),
           ],
           exitCondition: (session: Session) => {
@@ -317,8 +328,6 @@ describe('Templates', () => {
           metadata: {},
         },
       ]);
-
-      // No need to verify mock calls as MockModel handles responses directly
     });
   });
 
@@ -519,22 +528,13 @@ describe('Templates', () => {
     });
 
     it('should work with nested templates', async () => {
-      const mockModel = new MockModel(['Child response', 'Parent response']);
+      // Create mock generate options
+      const mockResponses = ['Child response', 'Parent response'];
+      const generateOptions = createMockGenerateOptions(mockResponses);
 
       const childTemplate = new LinearTemplate()
         .addSystem('Child context')
-        .addAssistant({ model: mockModel });
-
-      // This template is defined but not used in this test
-      // const parentTemplate = new LinearTemplate()
-      //   .addSystem('Parent context')
-      //   .addAssistant({ model: mockModel })
-      //   .addLoop(
-      //     new LoopTemplate()
-      //       .addUser('Input:', 'test')
-      //       .addAssistant('Response')
-      //       .setExitCondition(() => true),
-      //   );
+        .addAssistant({ generateOptions });
 
       const template = new SubroutineTemplate({
         template: childTemplate,
