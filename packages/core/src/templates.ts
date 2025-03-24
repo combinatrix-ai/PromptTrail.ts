@@ -5,9 +5,15 @@ import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
-import type { SchemaType } from './tool';
 import { z } from 'zod';
-import { generateText, type GenerateOptions } from './generate';
+import { generateText } from './generate';
+import { type GenerateOptions } from './generate_options';
+
+// Define SchemaType interface since tool.ts is empty
+export interface SchemaType {
+  properties: Record<string, { type: string; description: string }>;
+  required?: string[];
+}
 
 /**
  * Base class for all templates
@@ -166,7 +172,81 @@ export class AssistantTemplate<
       session as any,
       this.options.generateOptions,
     );
-    return session.addMessage(response) as unknown as Session<TOutput>;
+
+    // Add the assistant message to the session
+    let updatedSession = session.addMessage(
+      response,
+    ) as unknown as Session<TOutput>;
+
+    // Check if the response has tool calls in its metadata
+    // Handle both Metadata instances and plain objects
+    const metadata =
+      typeof response.metadata?.toJSON === 'function'
+        ? response.metadata.toJSON()
+        : response.metadata || {};
+
+    const toolCalls = metadata.toolCalls as
+      | Array<{
+          name: string;
+          arguments: Record<string, unknown>;
+          id: string;
+        }>
+      | undefined;
+
+    if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
+      // Execute each tool call and add the result as a tool_result message
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.name;
+        const toolArgs = toolCall.arguments;
+        const toolCallId = toolCall.id;
+
+        // Get the tool from the generateOptions
+        const tools = this.options.generateOptions.tools || {};
+        const tool = tools[toolName] as any; // Cast to any to avoid type issues
+
+        if (tool && typeof tool.execute === 'function') {
+          try {
+            // Execute the tool
+            const result = await tool.execute(toolArgs, { toolCallId });
+
+            // Add the tool result to the session
+            const resultStr =
+              typeof result === 'string'
+                ? result
+                : JSON.stringify(result, null, 2);
+
+            // Create a tool result template and execute it
+            const toolResultTemplate = new ToolResultTemplate({
+              toolCallId,
+              content: resultStr,
+            });
+
+            // Cast to any to avoid type issues
+            updatedSession = (await toolResultTemplate.execute(
+              updatedSession as any,
+            )) as any;
+          } catch (error) {
+            // If the tool execution fails, add an error message as the tool result
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : 'Unknown error occurred during tool execution';
+
+            const toolResultTemplate = new ToolResultTemplate({
+              toolCallId,
+              content: `Error: ${errorMessage}`,
+            });
+
+            // Cast to any to avoid type issues
+            updatedSession = (await toolResultTemplate.execute(
+              updatedSession as any,
+            )) as any;
+          }
+        }
+      }
+    }
+
+    return updatedSession;
   }
 }
 
@@ -265,23 +345,6 @@ export class LinearTemplate<
         new AssistantTemplate({ generateOptions: this.generateOptions }),
       );
     }
-    return this;
-  }
-
-  /**
-   * Add a tool result message to the sequence
-   *
-   * @param toolCallId The ID of the tool call this result is for
-   * @param content The content of the tool result
-   * @returns The template instance for chaining
-   */
-  addToolResult(toolCallId: string, content: string): this {
-    this.templates.push(
-      new ToolResultTemplate({
-        toolCallId,
-        content,
-      }),
-    );
     return this;
   }
 
@@ -421,7 +484,7 @@ export class LinearTemplate<
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }
-    return currentSession as Session<TOutput>;
+    return currentSession as unknown as Session<TOutput>;
   }
 }
 

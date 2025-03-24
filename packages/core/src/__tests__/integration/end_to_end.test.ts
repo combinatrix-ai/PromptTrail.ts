@@ -169,41 +169,8 @@ The weather in San Francisco is currently 72°F and sunny.
     expect(weatherData.forecast).toHaveLength(3);
   });
 
-  it('should execute a complete tool usage workflow', async () => {
-    // Create a template that uses a tool
-    const calculatorTemplate = new LinearTemplate()
-      .addSystem('You are a helpful assistant that can perform calculations.')
-      .addUser('Can you calculate 5 + 3 for me?')
-      .addAssistant({ generateOptions });
-
-    // Execute the template
-    const session = await calculatorTemplate.execute(createSession());
-
-    // Verify the conversation flow
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect(messages[0].type).toBe('system');
-    expect(messages[1].type).toBe('user');
-    expect(messages[2].type).toBe('assistant');
-
-    // Verify the tool call
-    const metadata = messages[2].metadata?.toJSON() as {
-      toolCalls?: Array<{
-        name: string;
-        arguments: Record<string, unknown>;
-        id: string;
-      }>;
-    };
-    expect(metadata?.toolCalls).toBeDefined();
-    if (metadata?.toolCalls) {
-      expect(metadata.toolCalls[0].name).toBe('calculator');
-      expect(metadata.toolCalls[0].arguments).toEqual({
-        a: 5,
-        b: 3,
-        operation: 'add',
-      });
-    }
-  });
+  // See human_created.test.ts for the tooling test
+  // TODO: Integrate these two test files
 
   it('should execute a complete conversation with guardrails', async () => {
     // Create a validator that checks for specific content
