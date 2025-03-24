@@ -41,7 +41,7 @@ describe('Basic Text Generation', () => {
     expect(result.text).toBeDefined();
     expect(result.text.toLowerCase()).toContain('deep learning');
     expect(result.usage).toBeDefined();
-  }, 10000);
+  }, 20000);
 
   it('should demonstrate streaming text responses', async () => {
     // Example of streaming text

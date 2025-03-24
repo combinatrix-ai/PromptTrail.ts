@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createSession } from '../session';
-import { LinearTemplate, LoopTemplate } from '../templates';
+import { createSession } from '../../session';
+import { LinearTemplate, LoopTemplate } from '../../templates';
 import {
   GuardrailTemplate,
   OnFailAction,
-} from '../templates/guardrail_template';
+} from '../../templates/guardrail_template';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { extractMarkdown } from '../utils/markdown_extractor';
-import { RegexMatchValidator } from '../validators/base_validators';
-import { createMetadata } from '../metadata';
-import { generateText } from '../generate';
-import { createGenerateOptions } from '../generate_options';
+import { extractMarkdown } from '../../utils/markdown_extractor';
+import { RegexMatchValidator } from '../../validators/base_validators';
+import { createMetadata } from '../../metadata';
+import { generateText } from '../../generate';
+import { createGenerateOptions } from '../../generate_options';
 import { open } from 'fs';
 
 // **Important message to cline**
