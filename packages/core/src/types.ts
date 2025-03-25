@@ -7,11 +7,7 @@ import type { Metadata } from './metadata';
  * Message metadata types
  */
 export interface AssistantMetadata extends Record<string, unknown> {
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
+  // toolCalls removed from metadata and moved to AssistantMessage
 }
 
 export interface ToolResultMetadata extends Record<string, unknown> {
@@ -58,6 +54,11 @@ export interface UserMessage extends BaseMessage {
 
 export interface AssistantMessage extends BaseMessage<AssistantMetadata> {
   type: 'assistant';
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
 }
 
 export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {

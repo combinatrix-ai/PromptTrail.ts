@@ -52,11 +52,17 @@ export interface GenerateMCPTransport {
  */
 function convertSessionToMessages(
   session: Session,
-): Array<{ role: string; content: string; tool_call_id?: string }> {
+): Array<{
+  role: string;
+  content: string;
+  tool_call_id?: string;
+  tool_calls?: Array<any>;
+}> {
   const messages: Array<{
     role: string;
     content: string;
     tool_call_id?: string;
+    tool_calls?: Array<any>;
   }> = [];
 
   // Filter out tool_result messages for now, as AI SDK doesn't support them directly
@@ -69,7 +75,28 @@ function convertSessionToMessages(
     } else if (msg.type === 'user') {
       messages.push({ role: 'user', content: msg.content });
     } else if (msg.type === 'assistant') {
-      messages.push({ role: 'assistant', content: msg.content });
+      const assistantMsg: {
+        role: string;
+        content: string;
+        tool_calls?: Array<any>;
+      } = {
+        role: 'assistant',
+        content: msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
+      };
+
+      // Add tool calls if present
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments),
+          },
+        }));
+      }
+
+      messages.push(assistantMsg);
     } else if (msg.type === 'tool_result') {
       // Store tool results to process later
       toolResults.push({
@@ -80,8 +107,16 @@ function convertSessionToMessages(
     }
   }
 
-  // For now, we'll skip tool results as AI SDK doesn't support them directly
-  // In a real implementation, we would need to handle them differently
+  // Process tool results
+  if (toolResults.length > 0) {
+    for (const result of toolResults) {
+      messages.push({
+        role: 'tool',
+        content: result.content,
+        tool_call_id: result.toolCallId,
+      });
+    }
+  }
 
   return messages;
 }
@@ -178,30 +213,37 @@ export async function generateText(
   // Create metadata for the response
   const metadata = createMetadata<AssistantMetadata>();
 
-  // If there are tool calls, add them to metadata
+  // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
-    metadata.set(
-      'toolCalls',
-      result.toolCalls.map(
-        (tc: {
-          toolName?: string;
-          name?: string;
-          args?: Record<string, unknown>;
-          arguments?: Record<string, unknown>;
-          toolCallId?: string;
-          id?: string;
-        }) => ({
-          name: tc.toolName || tc.name || '',
-          arguments: tc.args || tc.arguments || {},
-          id: tc.toolCallId || tc.id || crypto.randomUUID(),
-        }),
-      ),
+    const formattedToolCalls = result.toolCalls.map(
+      (tc: {
+        toolName?: string;
+        name?: string;
+        args?: Record<string, unknown>;
+        arguments?: Record<string, unknown>;
+        toolCallId?: string;
+        id?: string;
+      }) => ({
+        name: tc.toolName || tc.name || '',
+        arguments: tc.args || tc.arguments || {},
+        id: tc.toolCallId || tc.id || crypto.randomUUID(),
+      }),
     );
+
+    // Ensure content is never empty for Anthropic compatibility
+    const content = result.text || ' ';
+
+    return {
+      type: 'assistant',
+      content: content,
+      metadata,
+      toolCalls: formattedToolCalls,
+    };
   }
 
   return {
     type: 'assistant',
-    content: result.text,
+    content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
     metadata,
   };
 }
@@ -237,24 +279,22 @@ export async function* generateTextStream(
     if (chunk.type === 'text-delta') {
       yield {
         type: 'assistant',
-        content: chunk.textDelta,
+        content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
         metadata: createMetadata(),
       };
     } else if (chunk.type === 'tool-call') {
-      // Create a metadata object for tool calls
-      const metadata = createMetadata<AssistantMetadata>();
-      metadata.set('toolCalls', [
-        {
-          name: chunk.toolName,
-          arguments: chunk.args || {},
-          id: chunk.toolCallId || crypto.randomUUID(),
-        },
-      ]);
+      // Add tool calls directly to the message
+      const toolCall = {
+        name: chunk.toolName,
+        arguments: chunk.args || {},
+        id: chunk.toolCallId || crypto.randomUUID(),
+      };
 
       yield {
         type: 'assistant',
-        content: '',
-        metadata,
+        content: ' ', // Ensure content is never empty for Anthropic compatibility
+        metadata: createMetadata(),
+        toolCalls: [toolCall],
       };
     }
   }

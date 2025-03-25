@@ -167,13 +167,10 @@ describe('e2e workflow test', () => {
     const hasContent = assistantMessage.content.length > 0;
 
     // Check for tool calls in a type-safe way
-    let hasToolCalls = false;
-    if (assistantMessage.metadata) {
-      // Check if metadata has toolCalls key
-      if (assistantMessage.metadata.has('toolCalls')) {
-        hasToolCalls = true;
-      }
-    }
+    const hasToolCalls =
+      assistantMessage.type === 'assistant' &&
+      assistantMessage.toolCalls &&
+      assistantMessage.toolCalls.length > 0;
 
     expect(hasContent || hasToolCalls).toBe(true);
   });

@@ -3,6 +3,7 @@ import { createSession } from '../../session';
 import { LinearTemplate } from '../../templates';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
+import { createMetadata } from '../../metadata';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -22,19 +23,18 @@ describe('Tool Integration with ai-sdk', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'I used the calculator tool to compute 123 * 456 = 56088.',
-      metadata: {
-        toolCalls: [
-          {
-            name: 'calculator',
-            arguments: {
-              a: 123,
-              b: 456,
-              operation: 'multiply',
-            },
-            id: 'call-123',
+      metadata: createMetadata(),
+      toolCalls: [
+        {
+          name: 'calculator',
+          arguments: {
+            a: 123,
+            b: 456,
+            operation: 'multiply',
           },
-        ],
-      },
+          id: 'call-123',
+        },
+      ],
     });
   });
 

@@ -178,20 +178,9 @@ export class AssistantTemplate<
       response,
     ) as unknown as Session<TOutput>;
 
-    // Check if the response has tool calls in its metadata
-    // Handle both Metadata instances and plain objects
-    const metadata =
-      typeof response.metadata?.toJSON === 'function'
-        ? response.metadata.toJSON()
-        : response.metadata || {};
-
-    const toolCalls = metadata.toolCalls as
-      | Array<{
-          name: string;
-          arguments: Record<string, unknown>;
-          id: string;
-        }>
-      | undefined;
+    // Check if the response has tool calls directly in the message
+    const toolCalls =
+      response.type === 'assistant' ? response.toolCalls : undefined;
 
     if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
       // Execute each tool call and add the result as a tool_result message
