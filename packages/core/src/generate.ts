@@ -7,7 +7,6 @@ import { openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 import type { Message, Session } from './types';
 import { createMetadata } from './metadata';
-import type { AssistantMetadata } from './types';
 
 /**
  * Provider types
@@ -209,7 +208,7 @@ export async function generateText(
   });
 
   // Create metadata for the response
-  const metadata = createMetadata<AssistantMetadata>();
+  const metadata = createMetadata();
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {

@@ -8,7 +8,6 @@ import {
   type Session,
   createSession,
   type GenerateOptions,
-  type AssistantMetadata,
   createMetadata,
   generateText,
 } from '@prompttrail/core';
@@ -139,12 +138,10 @@ export class CodingAgent {
       this.session = this.session.addMessage(response);
 
       if (response.type === 'assistant') {
-        const metadata = response.metadata?.get(
-          'toolCalls',
-        ) as AssistantMetadata['toolCalls'];
-        if (metadata) {
+        const toolCalls = response.toolCalls;
+        if (toolCalls && toolCalls.length > 0) {
           // Handle tool calls
-          for (const toolCall of metadata) {
+          for (const toolCall of toolCalls) {
             const result = await this.executeTool(
               toolCall.name as keyof ToolSchemas,
               toolCall.arguments as InferSchemaType<
