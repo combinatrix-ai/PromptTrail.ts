@@ -8,7 +8,7 @@
 
 // Import types from the core library
 // In a real implementation, these would be properly imported
-import { LinearTemplate, type GenerateOptions } from '@prompttrail/core';
+import { LinearTemplate, createGenerateOptions } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
 
 // Mock function to avoid TypeScript errors
@@ -134,14 +134,14 @@ function extractMarkdown<T extends Record<string, unknown>>(
  */
 async function codeGenerationExample() {
   // Define generateOptions for OpenAI
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a template that generates code and explanation
   // NOTE: addTransformer would be added to LinearTemplate in the core library
@@ -191,14 +191,14 @@ async function codeGenerationExample() {
  */
 async function technicalAnalysisExample() {
   // Define generateOptions for OpenAI
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Sample code to analyze
   const codeToAnalyze = `

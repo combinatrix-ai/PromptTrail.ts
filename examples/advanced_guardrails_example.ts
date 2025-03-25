@@ -7,7 +7,7 @@ import {
   ToxicLanguageValidator,
   CompetitorCheckValidator,
   OnFailAction,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -22,23 +22,23 @@ async function main() {
   // Define generateOptions for OpenAI
   const apiKey = process.env.OPENAI_API_KEY || 'your-api-key-here';
 
-  const generationOptions: GenerateOptions = {
+  const generationOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey,
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
-  const validationOptions: GenerateOptions = {
+  const validationOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey,
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.1, // Lower temperature for more consistent validation
-  };
+  });
 
   // Create model-based validators
   const validators = [

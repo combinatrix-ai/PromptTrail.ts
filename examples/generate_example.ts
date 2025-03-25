@@ -1,8 +1,9 @@
 import {
   LinearTemplate,
   createSession,
-  createTool,
-  type GenerateOptions,
+  createGenerateOptions,
+  createMetadata,
+  type ToolResultMetadata,
 } from '@prompttrail/core';
 
 // Example of using the LinearTemplate with generateText
@@ -11,14 +12,14 @@ async function basicExample() {
   console.log('Example: Basic usage with generateText');
 
   // Define generateOptions
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a simple conversation template
   const chat = new LinearTemplate()
@@ -42,21 +43,23 @@ async function toolExample() {
   console.log('\nExample: Using tools with generateText');
 
   // Define a calculator tool
-  const calculator = createTool({
+  const calculator = {
     name: 'calculator',
     description: 'Perform arithmetic operations',
-    schema: {
+    parameters: {
+      type: 'object',
       properties: {
         a: { type: 'number', description: 'First number' },
         b: { type: 'number', description: 'Second number' },
         operation: {
           type: 'string',
-          description: 'Operation to perform (add, subtract, multiply, divide)',
+          enum: ['add', 'subtract', 'multiply', 'divide'],
+          description: 'Operation to perform',
         },
       },
       required: ['a', 'b', 'operation'],
     },
-    execute: async (input) => {
+    execute: async (input: { a: number; b: number; operation: string }) => {
       console.log(
         `Executing calculator: ${input.a} ${input.operation} ${input.b}`,
       );
@@ -75,18 +78,17 @@ async function toolExample() {
           throw new Error(`Unknown operation: ${input.operation}`);
       }
     },
-  });
+  };
 
   // Define generateOptions with tools
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-    tools: [calculator],
-  };
+  }).addTool('calculator', calculator);
 
   // Create a conversation template with tool
   const chat = new LinearTemplate()
@@ -128,13 +130,16 @@ async function toolExample() {
           };
           const result = await tool.execute(args);
 
-          // Add the tool result to the session
-          const resultTemplate = new LinearTemplate().addToolResult(
-            toolCall.id,
-            JSON.stringify(result),
-          );
+          // Add the tool result to the session as a message
+          const toolResultMetadata = createMetadata<ToolResultMetadata>();
+          toolResultMetadata.set('toolCallId', toolCall.id);
 
-          session = await resultTemplate.execute(session);
+          session = await session.addMessage({
+            type: 'tool_result',
+            content: JSON.stringify(result),
+            metadata: toolResultMetadata,
+            result: result,
+          });
         } catch (error) {
           console.error(`Error executing tool: ${error}`);
         }
@@ -142,14 +147,14 @@ async function toolExample() {
     }
 
     // Define generateOptions for continuation
-    const continueOptions: GenerateOptions = {
+    const continueOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || '',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Continue the conversation with the tool results
     const continueTemplate = new LinearTemplate().addAssistant({
@@ -168,14 +173,14 @@ async function anthropicExample() {
   console.log('\nExample: Using Anthropic with generateText');
 
   // Define generateOptions for Anthropic
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'anthropic',
       apiKey: process.env.ANTHROPIC_API_KEY || '',
       modelName: 'claude-3-5-haiku-latest',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a conversation template
   const chat = new LinearTemplate()

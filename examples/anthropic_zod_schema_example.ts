@@ -1,7 +1,7 @@
 import {
   createSession,
   LinearTemplate,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src';
 import { z } from 'zod';
 
@@ -11,14 +11,14 @@ import { z } from 'zod';
  */
 async function main() {
   // Define generateOptions for Anthropic
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'anthropic',
       apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
       modelName: 'claude-3-5-haiku-latest',
     },
     temperature: 0.7,
-  };
+  });
 
   // Define a schema using Zod
   const productSchema = z.object({

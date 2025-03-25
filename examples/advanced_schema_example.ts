@@ -6,7 +6,7 @@ import {
   createNumberProperty,
   createBooleanProperty,
   SchemaTemplate,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -15,14 +15,14 @@ import {
  */
 async function main() {
   // Define generateOptions for OpenAI
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Define a schema for user profile information
   const userProfileSchema = defineSchema({

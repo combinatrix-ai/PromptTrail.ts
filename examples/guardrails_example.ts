@@ -8,7 +8,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -17,14 +17,14 @@ import {
  */
 async function main() {
   // Define generateOptions for OpenAI
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a template that asks for a pet name
   // (We'll use this structure later)

@@ -1,8 +1,7 @@
 import {
   LinearTemplate,
   createSession,
-  createTool,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '@prompttrail/core';
 import { z } from 'zod';
 
@@ -11,14 +10,14 @@ async function basicExample() {
   console.log('Example 1: Basic usage with OpenAI');
 
   // Define generateOptions
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a simple conversation template
   const chat = new LinearTemplate()
@@ -42,51 +41,51 @@ async function toolExample() {
   console.log('\nExample 2: Using tools with AI SDK');
 
   // Define a calculator tool
-  const calculator = createTool({
-    name: 'calculator',
+  const calculator = {
     description: 'Perform arithmetic operations',
-    schema: {
+    parameters: {
+      type: 'object',
       properties: {
         a: { type: 'number', description: 'First number' },
         b: { type: 'number', description: 'Second number' },
         operation: {
           type: 'string',
-          description: 'Operation to perform (add, subtract, multiply, divide)',
+          enum: ['add', 'subtract', 'multiply', 'divide'],
+          description: 'Operation to perform',
         },
       },
       required: ['a', 'b', 'operation'],
     },
-    execute: async (input) => {
+    execute: async (args: { a: number; b: number; operation: string }) => {
       console.log(
-        `Executing calculator: ${input.a} ${input.operation} ${input.b}`,
+        `Executing calculator: ${args.a} ${args.operation} ${args.b}`,
       );
 
-      switch (input.operation) {
+      switch (args.operation) {
         case 'add':
-          return input.a + input.b;
+          return args.a + args.b;
         case 'subtract':
-          return input.a - input.b;
+          return args.a - args.b;
         case 'multiply':
-          return input.a * input.b;
+          return args.a * args.b;
         case 'divide':
-          if (input.b === 0) throw new Error('Division by zero');
-          return input.a / input.b;
+          if (args.b === 0) throw new Error('Division by zero');
+          return args.a / args.b;
         default:
-          throw new Error(`Unknown operation: ${input.operation}`);
+          throw new Error(`Unknown operation: ${args.operation}`);
       }
     },
-  });
+  };
 
   // Define generateOptions with tools
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-    tools: [calculator],
-  };
+  }).addTool('calculator', calculator);
 
   // Create a conversation template
   const chat = new LinearTemplate()
@@ -119,14 +118,14 @@ async function schemaExample() {
   });
 
   // Define generateOptions
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'openai',
       apiKey: process.env.OPENAI_API_KEY || '',
       modelName: 'gpt-4o-mini',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a conversation template
   const chat = await new LinearTemplate()
@@ -154,14 +153,14 @@ async function anthropicExample() {
   console.log('\nExample 4: Using Anthropic with AI SDK');
 
   // Define generateOptions for Anthropic
-  const generateOptions: GenerateOptions = {
+  const generateOptions = createGenerateOptions({
     provider: {
       type: 'anthropic',
       apiKey: process.env.ANTHROPIC_API_KEY || '',
       modelName: 'claude-3-5-haiku-latest',
     },
     temperature: 0.7,
-  };
+  });
 
   // Create a conversation template
   const chat = new LinearTemplate()

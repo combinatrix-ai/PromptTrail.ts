@@ -1,7 +1,7 @@
 import {
   LinearTemplate,
   createSession,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src/index';
 
 // Get API key from environment variable
@@ -13,14 +13,14 @@ if (!apiKey) {
 async function main() {
   try {
     // Define generateOptions for OpenAI
-    const generateOptions: GenerateOptions = {
+    const generateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: apiKey as string,
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Create conversation template
     const template = new LinearTemplate()

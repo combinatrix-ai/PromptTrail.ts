@@ -4,7 +4,7 @@ import {
   UserTemplate,
   AssistantTemplate,
   createSession,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src/index';
 import { CLIInputSource } from '../packages/core/src/input_source';
 import type { Session } from '../packages/core/src/session';
@@ -81,14 +81,14 @@ async function main() {
 
   try {
     // Create generateOptions for OpenAI
-    const generateOptions: GenerateOptions = {
+    const generateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: apiKey as string, // We've checked it's not undefined above
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Create user template with validation
     const userTemplate = new UserTemplate({
