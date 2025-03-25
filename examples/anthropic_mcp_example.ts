@@ -11,7 +11,7 @@
 import {
   createSession,
   LinearTemplate,
-  type GenerateOptions,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 // Replace with your actual API key and MCP server URL
@@ -21,7 +21,7 @@ const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:8080';
 async function main() {
   try {
     // Define generateOptions for Anthropic with MCP integration
-    const generateOptions: GenerateOptions = {
+    const generateOptions = createGenerateOptions({
       provider: {
         type: 'anthropic',
         apiKey: ANTHROPIC_API_KEY,
@@ -35,7 +35,7 @@ async function main() {
           version: '1.0.0',
         },
       ],
-    };
+    });
 
     console.log('Initializing MCP tools...');
 

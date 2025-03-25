@@ -27,7 +27,7 @@ class TestValidator extends BaseValidator {
   // Parameter is intentionally unused (prefixed with underscore)
   // We don't use the content parameter in this mock implementation
   // This validator returns a predefined result based on the shouldPass property
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   async validate(
     _content: string,
   ): Promise<{ passed: boolean; feedback?: string }> {

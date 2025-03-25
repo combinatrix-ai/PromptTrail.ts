@@ -50,9 +50,7 @@ export interface GenerateMCPTransport {
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToMessages(
-  session: Session,
-): Array<{
+function convertSessionToMessages(session: Session): Array<{
   role: string;
   content: string;
   tool_call_id?: string;

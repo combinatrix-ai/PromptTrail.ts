@@ -2,7 +2,6 @@
  * GenerateOptions with fluent API for adding tools
  */
 import type { ProviderConfig, GenerateMCPServerConfig } from './generate';
-import { z } from 'zod';
 
 // Define a type for tool definitions since it's not exported from ai-sdk
 type ToolDefinition<T = any> = any;

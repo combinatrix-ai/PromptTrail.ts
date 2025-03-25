@@ -179,7 +179,7 @@ export class GuardrailTemplate<
 
       // Execute the template
       // Use type assertion to handle template execution
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       resultSession = (await this.options.template.execute(
         session as any,
       )) as any;

@@ -1,18 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
-import {
-  GuardrailTemplate,
-  OnFailAction,
-} from '../../templates/guardrail_template';
+
 import { tool } from 'ai';
 import { z } from 'zod';
-import { extractMarkdown } from '../../utils/markdown_extractor';
-import { RegexMatchValidator } from '../../validators/base_validators';
-import { createMetadata } from '../../metadata';
-import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
-import { open } from 'fs';
 
 // **Important message to cline**
 // - This test is a golden standard for the e2e workflow test
@@ -39,12 +31,12 @@ describe('e2e workflow test', () => {
     temperature: 0.7,
   });
 
-  let partialCalculatorTemplate = new LinearTemplate()
+  const partialCalculatorTemplate = new LinearTemplate()
     .addSystem('You are a helpful assistant.')
     .addUser('100 + 253');
   // TODO: addAssistant without generateOptions will use the default generateOptions from execute
 
-  let weatherTool = tool({
+  const weatherTool = tool({
     description: 'Get weather information',
     parameters: z.object({
       location: z.string().describe('Location to get weather information for'),
@@ -68,7 +60,7 @@ describe('e2e workflow test', () => {
   });
   // TODO: PromptTrail should provide a wrapper for tool providing typed result with zod schema
 
-  let partialWeatherTemplate = new LinearTemplate()
+  const partialWeatherTemplate = new LinearTemplate()
     .addSystem('You are a helpful weather assistant.')
     .addUser('What is the weather in San Francisco?');
 

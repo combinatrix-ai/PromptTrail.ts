@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { tool, generateText, generateObject, streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { anthropic } from '@ai-sdk/anthropic';
 
 // These tests demonstrate the core APIs of Vercel's AI SDK
 // They serve as working documentation of how to use the AI SDK directly
@@ -72,7 +71,7 @@ describe('Basic Text Generation', () => {
 describe('Tool Integration', () => {
   it('should demonstrate tools with function calling', async () => {
     // Define a weather tool with a simple schema
-    let weatherTool = tool({
+    const weatherTool = tool({
       description: 'Get weather information',
       parameters: z.object({
         location: z
