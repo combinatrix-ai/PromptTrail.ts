@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "start": "tsx coding_agent.ts"
+    "start": "tsx coding_agent.ts",
+    "chat": "tsx chat.ts"
   },
   "dependencies": {
     "@prompttrail/core": "workspace:*",

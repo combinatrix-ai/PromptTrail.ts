@@ -92,7 +92,7 @@ async function main() {
 
     // Create user template with validation
     const userTemplate = new UserTemplate({
-      description: 'Your message (type "exit" to end):',
+      description: 'Your message (type "exit" to end)',
       inputSource,
       validate: async (input: string) => {
         const trimmedInput = input.trim();

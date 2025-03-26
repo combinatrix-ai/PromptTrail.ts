@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import styled from '@emotion/styled';
 import {
   LinearTemplate,
+  createGenerateOptions,
   createSession,
   type GenerateOptions,
 } from '../../../packages/core/src/index';
@@ -141,26 +142,29 @@ function App() {
 
     try {
       // Define generateOptions for OpenAI
-      const generateOptions: GenerateOptions = {
+      console.log('apiKey:', apiKey);
+      const generateOptions: GenerateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
-          apiKey,
+          apiKey: apiKey,
           modelName: 'gpt-4o-mini',
           dangerouslyAllowBrowser: true,
         },
         temperature: 0.7,
-      };
+      });
 
       const template = new LinearTemplate()
         .addSystem(
           'You are a helpful AI assistant. Be concise and friendly in your responses.',
         )
         .addUser('User message:', input)
-        .addAssistant({ generateOptions });
+        .addAssistant({ generateOptions: generateOptions });
 
       // Execute template
+      console.log('execute template');
       const newSession = await template.execute(session);
       setSession(newSession);
+      console.log('execute done');
 
       // Get assistant's response
       const response = newSession.getMessagesByType('assistant').slice(-1)[0];
