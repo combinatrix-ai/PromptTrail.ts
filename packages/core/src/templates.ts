@@ -316,19 +316,11 @@ export class LinearTemplate<
   ): this {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
-    } else if (options) {
-      // Set the generateOptions on the LinearTemplate if provided
-      if (options.generateOptions) {
-        this.generateOptions = options.generateOptions;
-      }
-
-      // Create AssistantTemplate with the generateOptions from options or from LinearTemplate
-      const assistantOptions = {
-        ...options,
-        generateOptions: options.generateOptions || this.generateOptions,
-      };
-
-      this.templates.push(new AssistantTemplate(assistantOptions));
+    } else if (options?.generateOptions) {
+      // Generate options provided, use them for the assistant
+      this.templates.push(
+        new AssistantTemplate({ generateOptions: options.generateOptions }),
+      );
     } else {
       // No options provided, use template-level generateOptions
       this.templates.push(

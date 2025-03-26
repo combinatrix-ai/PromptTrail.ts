@@ -4,8 +4,8 @@ import {
   experimental_createMCPClient,
   type ToolSet,
 } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { anthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import type {
   Message,
   Session,
@@ -104,13 +104,17 @@ function createProvider(config: ProviderConfig): unknown {
 
     options.apiKey = config.apiKey;
 
-    return openai(config.modelName, options);
+    const openai = createOpenAI(options);
+
+    return openai(config.modelName);
   } else if (config.type === 'anthropic') {
     if (config.baseURL) {
       options.baseURL = config.baseURL;
     }
 
     options.apiKey = config.apiKey;
+
+    const anthropic = createAnthropic(options);
 
     return anthropic(config.modelName, options);
   }
@@ -154,9 +158,7 @@ export async function generateText(
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  console.log('options.provider:', options.provider);
   const provider = createProvider(options.provider);
-  console.log('create provider done');
 
   // Handle MCP tools if configured
   if (options.mcpServers && options.mcpServers.length > 0) {

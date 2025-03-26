@@ -142,7 +142,6 @@ function App() {
 
     try {
       // Define generateOptions for OpenAI
-      console.log('apiKey:', apiKey);
       const generateOptions: GenerateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
@@ -161,10 +160,8 @@ function App() {
         .addAssistant({ generateOptions: generateOptions });
 
       // Execute template
-      console.log('execute template');
       const newSession = await template.execute(session);
       setSession(newSession);
-      console.log('execute done');
 
       // Get assistant's response
       const response = newSession.getMessagesByType('assistant').slice(-1)[0];

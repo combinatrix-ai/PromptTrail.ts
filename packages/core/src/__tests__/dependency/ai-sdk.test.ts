@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { tool, generateText, generateObject, streamText } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 
 // These tests demonstrate the core APIs of Vercel's AI SDK
 // They serve as working documentation of how to use the AI SDK directly
+
+// Keep API_KEY secret to variable and unset environment variable
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY environment variable is not set');
+}
+// Unset environment variable
+delete process.env.OPENAI_API_KEY;
+
+// API key or related setting are passed when openai instance is created
+const openai = createOpenAI({ apiKey: OPENAI_API_KEY });
 
 describe('Basic Text Generation', () => {
   it('should demonstrate generateText with a simple prompt', async () => {
