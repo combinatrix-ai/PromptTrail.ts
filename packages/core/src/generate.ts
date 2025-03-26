@@ -2,54 +2,24 @@ import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
   experimental_createMCPClient,
+  type ToolSet,
 } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
-import type { Message, Session } from './types';
+import type {
+  Message,
+  Session,
+  ProviderConfig,
+  GenerateMCPServerConfig,
+  GenerateMCPTransport,
+} from './types';
 import { createMetadata } from './metadata';
-
-/**
- * Provider types
- */
-export type OpenAIProviderConfig = {
-  type: 'openai';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
-  organization?: string;
-  dangerouslyAllowBrowser?: boolean;
-};
-
-export type AnthropicProviderConfig = {
-  type: 'anthropic';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
-};
-
-export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
-
-/**
- * MCP Server configuration for generate
- */
-export interface GenerateMCPServerConfig {
-  url: string;
-  name: string;
-  version: string;
-}
-
-/**
- * MCP Transport interface for generate
- */
-export interface GenerateMCPTransport {
-  send(message: unknown): Promise<unknown>;
-  close(): Promise<void>;
-}
+import type { GenerateOptions } from './generate_options';
 
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToMessages(session: Session): Array<{
+function convertSessionToAiSdkMessages(session: Session): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -62,6 +32,7 @@ function convertSessionToMessages(session: Session): Array<{
     tool_calls?: Array<any>;
   }> = [];
 
+  // TODO: Check this implementation is sane?
   // Filter out tool_result messages for now, as AI SDK doesn't support them directly
   // We'll handle them separately
   const toolResults: Array<{ content: string; toolCallId: string }> = [];
@@ -122,24 +93,24 @@ function convertSessionToMessages(session: Session): Array<{
  * Create a provider based on configuration
  */
 function createProvider(config: ProviderConfig): unknown {
+  const options: Record<string, unknown> = {};
   if (config.type === 'openai') {
-    const options: Record<string, unknown> = {};
-
     if (config.baseURL) {
       options.baseURL = config.baseURL;
     }
-
     if (config.organization) {
       options.organization = config.organization;
     }
 
+    options.apiKey = config.apiKey;
+
     return openai(config.modelName, options);
   } else if (config.type === 'anthropic') {
-    const options: Record<string, unknown> = {};
-
     if (config.baseURL) {
       options.baseURL = config.baseURL;
     }
+
+    options.apiKey = config.apiKey;
 
     return anthropic(config.modelName, options);
   }
@@ -177,13 +148,15 @@ async function initializeMCPClient(
  */
 export async function generateText(
   session: Session,
-  options: any, // Using any temporarily to avoid circular dependency
+  options: GenerateOptions,
 ): Promise<Message> {
   // Convert session to AI SDK message format
-  const messages = convertSessionToMessages(session);
+  const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
+  console.log('options.provider:', options.provider);
   const provider = createProvider(options.provider);
+  console.log('create provider done');
 
   // Handle MCP tools if configured
   if (options.mcpServers && options.mcpServers.length > 0) {
@@ -202,7 +175,7 @@ export async function generateText(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools, // Use tools directly from options
+    tools: options.tools as ToolSet, // TODO: Fix this assertion
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -253,7 +226,7 @@ export async function* generateTextStream(
   options: any, // Using any temporarily to avoid circular dependency
 ): AsyncGenerator<Message, void, unknown> {
   // Convert session to AI SDK message format
-  const messages = convertSessionToMessages(session);
+  const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
   const provider = createProvider(options.provider);

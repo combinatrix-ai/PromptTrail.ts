@@ -1,7 +1,8 @@
 /**
  * GenerateOptions with fluent API for adding tools
  */
-import type { ProviderConfig, GenerateMCPServerConfig } from './generate';
+import type { GenerateMCPServerConfig } from './types';
+import type { ProviderConfig } from './types';
 
 // Define a type for tool definitions since it's not exported from ai-sdk
 type ToolDefinition<T = any> = any;

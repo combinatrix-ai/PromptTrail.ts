@@ -1,6 +1,7 @@
 /**
  * Core type definitions for PromptTrail
  */
+import type { GenerateOptions } from './generate_options';
 import type { Metadata } from './metadata';
 
 /**
@@ -88,15 +89,94 @@ export interface ModelConfig {
   readonly tools?: Record<string, unknown>;
 }
 
+// Define SchemaType interface since tool.ts is empty
+export interface SchemaType {
+  properties: Record<string, { type: string; description: string }>;
+  required?: string[];
+}
+
 /**
  * Session interface for maintaining conversation state
  */
 export interface Session<
-  T extends Record<string, unknown> = Record<string, unknown>,
+  T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
+  readonly print: boolean;
+  addMessage(message: Message): Session<T>;
+  updateMetadata<U extends Record<string, unknown>>(
+    metadata: U,
+  ): Session<T & U>;
+  getLastMessage(): Message | undefined;
+  getMessagesByType<U extends Message['type']>(
+    type: U,
+  ): Extract<Message, { type: U }>[];
+  validate(): void;
+  toJSON(): Record<string, unknown>;
 }
+
+/**
+ * Provider types
+ */
+export type OpenAIProviderConfig = {
+  type: 'openai';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+  organization?: string;
+  dangerouslyAllowBrowser?: boolean;
+};
+
+export type AnthropicProviderConfig = {
+  type: 'anthropic';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+};
+
+export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
+
+/**
+ * MCP Server configuration for generate
+ */
+export interface GenerateMCPServerConfig {
+  url: string;
+  name: string;
+  version: string;
+}
+
+/**
+ * MCP Transport interface for generate
+ */
+export interface GenerateMCPTransport {
+  send(message: unknown): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+/**
+ * Generate options interface
+ */
+export interface GenerateOptionsConfig {
+  provider: ProviderConfig;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+  tools?: Record<string, unknown>;
+  toolChoice?: 'auto' | 'required' | 'none';
+  mcpServers?: GenerateMCPServerConfig[];
+  sdkOptions?: Record<string, unknown>;
+}
+
+/**
+ * Template related types
+ */
+export type TemplateArgs =
+  | { content: string; generateOptions?: never }
+  | GenerateOptionsConfig
+  | string
+  | GenerateOptions;
 
 /**
  * Error types

@@ -1,13 +1,13 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
 import { DefaultInputSource, CallbackInputSource } from './input_source';
-import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
 import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
+import type { Session } from './types';
 
 // Define SchemaType interface since tool.ts is empty
 export interface SchemaType {
@@ -132,6 +132,7 @@ export class UserTemplate extends Template {
     });
   }
 }
+
 /**
  * Template for assistant messages
  */

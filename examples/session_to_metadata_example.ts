@@ -50,15 +50,6 @@ export function createTransformer<
   };
 }
 
-// This method would be added to LinearTemplate
-declare module '@prompttrail/core' {
-  interface LinearTemplate {
-    addTransformer<U extends Record<string, unknown>>(
-      transformer: SessionTransformer<Record<string, unknown>, U>,
-    ): this;
-  }
-}
-
 /**
  * Example implementation of the markdown extractor
  */

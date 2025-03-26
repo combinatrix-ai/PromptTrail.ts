@@ -1,28 +1,8 @@
 import type { Message } from './types';
 import type { Metadata } from './metadata';
 import { createMetadata } from './metadata';
+import type { Session } from './types';
 import { ValidationError } from './types';
-
-/**
- * Session interface for maintaining conversation state
- */
-export interface Session<
-  T extends { [key: string]: unknown } = Record<string, unknown>,
-> {
-  readonly messages: readonly Message[];
-  readonly metadata: Metadata<T>;
-  readonly print: boolean;
-  addMessage(message: Message): Session<T>;
-  updateMetadata<U extends Record<string, unknown>>(
-    metadata: U,
-  ): Session<T & U>;
-  getLastMessage(): Message | undefined;
-  getMessagesByType<U extends Message['type']>(
-    type: U,
-  ): Extract<Message, { type: U }>[];
-  validate(): void;
-  toJSON(): Record<string, unknown>;
-}
 
 /**
  * Immutable session implementation
