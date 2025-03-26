@@ -1,7 +1,6 @@
 // Core types
 export * from './types';
 export * from './metadata';
-export type { Session } from './session';
 export { createSession } from './session';
 export * from './templates';
 

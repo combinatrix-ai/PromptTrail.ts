@@ -7,13 +7,7 @@ import { createTransformerTemplate } from './templates/transformer_template';
 import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
-import type { Session } from './types';
-
-// Define SchemaType interface since tool.ts is empty
-export interface SchemaType {
-  properties: Record<string, { type: string; description: string }>;
-  required?: string[];
-}
+import type { Session, SchemaType } from './types';
 
 /**
  * Base class for all templates

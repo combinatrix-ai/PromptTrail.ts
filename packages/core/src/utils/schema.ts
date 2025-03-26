@@ -1,4 +1,4 @@
-import type { SchemaType } from '../tool';
+import type { SchemaType } from '../types';
 import { z } from 'zod';
 
 /**

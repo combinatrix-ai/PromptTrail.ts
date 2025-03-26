@@ -1,4 +1,4 @@
-import type { Session } from '../session';
+import type { Session } from '../types';
 import { createMetadata } from '../metadata';
 import { SchemaValidator } from '../validators/schema_validator';
 import { GuardrailTemplate, OnFailAction } from './guardrail_template';
@@ -7,7 +7,7 @@ import { zodToJsonSchema } from '../utils/schema';
 
 // Import Template class and AssistantTemplate from templates
 import { Template, AssistantTemplate } from '../templates';
-import type { SchemaType } from '../templates';
+import type { SchemaType } from '../types';
 import { GenerateOptions } from '../generate_options';
 
 // Type to handle both SchemaType and Zod schemas

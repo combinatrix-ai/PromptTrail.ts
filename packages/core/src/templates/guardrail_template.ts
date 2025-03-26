@@ -1,4 +1,4 @@
-import type { Session } from '../session';
+import type { Message, Session } from '../types';
 import { Template } from '../templates';
 import { createMetadata } from '../metadata';
 import {
@@ -315,7 +315,7 @@ export function createGuardrailTransformer<
     const messageTypes = options.messageTypes || ['assistant'];
 
     // Get messages to validate
-    const messages = session.messages.filter((msg) =>
+    const messages = session.messages.filter((msg: Message) =>
       messageTypes.includes(msg.type),
     );
 
