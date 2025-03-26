@@ -1,19 +1,12 @@
 /**
  * Core type definitions for PromptTrail
  */
+import type { GenerateOptions } from './generate_options';
 import type { Metadata } from './metadata';
 
 /**
  * Message metadata types
  */
-export interface AssistantMetadata extends Record<string, unknown> {
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
-}
-
 export interface ToolResultMetadata extends Record<string, unknown> {
   toolCallId: string;
 }
@@ -21,12 +14,7 @@ export interface ToolResultMetadata extends Record<string, unknown> {
 /**
  * Represents the role of a message in a conversation
  */
-export type MessageRole =
-  | 'system'
-  | 'user'
-  | 'assistant'
-  | 'tool_result'
-  | 'control';
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 
 /**
  * Discriminated union type for different message types
@@ -35,8 +23,7 @@ export type Message =
   | SystemMessage
   | UserMessage
   | AssistantMessage
-  | ToolResultMessage
-  | ControlMessage;
+  | ToolResultMessage;
 
 /**
  * Base interface for message properties
@@ -56,21 +43,18 @@ export interface UserMessage extends BaseMessage {
   type: 'user';
 }
 
-export interface AssistantMessage extends BaseMessage<AssistantMetadata> {
+export interface AssistantMessage extends BaseMessage {
   type: 'assistant';
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
 }
 
 export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   type: 'tool_result';
   result: unknown;
-}
-
-export interface ControlMessage extends BaseMessage {
-  type: 'control';
-  control: {
-    action: string;
-    parameters?: Record<string, unknown>;
-  };
 }
 
 /**
@@ -90,15 +74,7 @@ export const isToolResultMessage = (
   message: Message,
 ): message is ToolResultMessage => message.type === 'tool_result';
 
-export const isControlMessage = (message: Message): message is ControlMessage =>
-  message.type === 'control';
-
 // Temperature is now just a regular number
-
-// Import Tool type first
-import type { Tool, SchemaType, ToolResult } from './tool';
-export { createTool } from './tool';
-export type { Tool, SchemaType, ToolResult };
 
 /**
  * Model configuration interface
@@ -110,18 +86,97 @@ export interface ModelConfig {
   readonly topP?: number;
   readonly topK?: number;
   readonly repetitionPenalty?: number;
-  readonly tools?: readonly Tool<SchemaType>[];
+  readonly tools?: Record<string, unknown>;
+}
+
+// Define SchemaType interface since tool.ts is empty
+export interface SchemaType {
+  properties: Record<string, { type: string; description: string }>;
+  required?: string[];
 }
 
 /**
  * Session interface for maintaining conversation state
  */
 export interface Session<
-  T extends Record<string, unknown> = Record<string, unknown>,
+  T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
   readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
+  readonly print: boolean;
+  addMessage(message: Message): Session<T>;
+  updateMetadata<U extends Record<string, unknown>>(
+    metadata: U,
+  ): Session<T & U>;
+  getLastMessage(): Message | undefined;
+  getMessagesByType<U extends Message['type']>(
+    type: U,
+  ): Extract<Message, { type: U }>[];
+  validate(): void;
+  toJSON(): Record<string, unknown>;
 }
+
+/**
+ * Provider types
+ */
+export type OpenAIProviderConfig = {
+  type: 'openai';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+  organization?: string;
+  dangerouslyAllowBrowser?: boolean;
+};
+
+export type AnthropicProviderConfig = {
+  type: 'anthropic';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+};
+
+export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
+
+/**
+ * MCP Server configuration for generate
+ */
+export interface GenerateMCPServerConfig {
+  url: string;
+  name: string;
+  version: string;
+}
+
+/**
+ * MCP Transport interface for generate
+ */
+export interface GenerateMCPTransport {
+  send(message: unknown): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+/**
+ * Generate options interface
+ */
+export interface GenerateOptionsConfig {
+  provider: ProviderConfig;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+  tools?: Record<string, unknown>;
+  toolChoice?: 'auto' | 'required' | 'none';
+  mcpServers?: GenerateMCPServerConfig[];
+  sdkOptions?: Record<string, unknown>;
+}
+
+/**
+ * Template related types
+ */
+export type TemplateArgs =
+  | { content: string; generateOptions?: never }
+  | GenerateOptionsConfig
+  | string
+  | GenerateOptions;
 
 /**
  * Error types

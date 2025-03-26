@@ -4,10 +4,9 @@ import {
   UserTemplate,
   AssistantTemplate,
   createSession,
+  createGenerateOptions,
 } from '../packages/core/src/index';
 import { CLIInputSource } from '../packages/core/src/input_source';
-import { OpenAIModel } from '../packages/core/src/model/openai/model';
-import type { OpenAIConfig } from '../packages/core/src/model/openai/types';
 import type { Session } from '../packages/core/src/session';
 import type { Message } from '../packages/core/src/types';
 import type { Metadata } from '../packages/core/src/metadata';
@@ -81,16 +80,19 @@ async function main() {
   const inputSource = new CLIInputSource();
 
   try {
-    // Create OpenAI model instance
-    const model = new OpenAIModel({
-      modelName: 'gpt-4o-mini',
+    // Create generateOptions for OpenAI
+    const generateOptions = createGenerateOptions({
+      provider: {
+        type: 'openai',
+        apiKey: apiKey as string, // We've checked it's not undefined above
+        modelName: 'gpt-4o-mini',
+      },
       temperature: 0.7,
-      apiKey: apiKey as string, // We've checked it's not undefined above
-    } satisfies OpenAIConfig);
+    });
 
     // Create user template with validation
     const userTemplate = new UserTemplate({
-      description: 'Your message (type "exit" to end):',
+      description: 'Your message (type "exit" to end)',
       inputSource,
       validate: async (input: string) => {
         const trimmedInput = input.trim();
@@ -115,7 +117,7 @@ async function main() {
       )
       .addLoop(
         new LoopTemplate({
-          templates: [userTemplate, new AssistantTemplate({ model })],
+          templates: [userTemplate, new AssistantTemplate({ generateOptions })],
           exitCondition: (session) => {
             const lastUserMessage = session
               .getMessagesByType('user')

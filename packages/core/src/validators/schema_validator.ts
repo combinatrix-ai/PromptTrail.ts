@@ -1,6 +1,6 @@
 import { BaseValidator } from './base_validators';
 import type { ValidationResult } from '../templates/guardrail_template';
-import type { SchemaType } from '../tool';
+import type { SchemaType } from '../types';
 
 /**
  * Validator that checks if content matches a specified schema
@@ -37,7 +37,10 @@ export class SchemaValidator<T extends SchemaType> extends BaseValidator {
     }
   }
 
-  private validateSchema(schema: SchemaType, value: Record<string, unknown>): string[] {
+  private validateSchema(
+    schema: SchemaType,
+    value: Record<string, unknown>,
+  ): string[] {
     const errors: string[] = [];
 
     // Check required properties

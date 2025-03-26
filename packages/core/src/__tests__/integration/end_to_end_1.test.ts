@@ -1,52 +1,81 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import {
   GuardrailTemplate,
   OnFailAction,
 } from '../../templates/guardrail_template';
-import { createTool } from '../../tool';
+import { tool } from 'ai';
+import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/base_validators';
-import { Model } from '../../model/base';
 import { createMetadata } from '../../metadata';
-import type { Session, Message, Tool, SchemaType, ModelConfig } from '../../types';
+import { generateText } from '../../generate';
+import { createGenerateOptions } from '../../generate_options';
 
-// Create a mock model class that extends Model
-class MockOpenAIModel extends Model {
-  constructor(config: ModelConfig) {
-    super(config);
-  }
+// Mock the generateText function
+vi.mock('../../generate', () => {
+  return {
+    generateText: vi.fn(),
+    generateTextStream: vi.fn(),
+  };
+});
 
-  protected validateConfig(): void {
-    // No validation needed for mock
-  }
+describe('End-to-End Workflows', () => {
+  let calculatorTool: any;
+  let generateOptions: any;
 
-  protected formatTool(tool: Tool<SchemaType>): Record<string, unknown> {
-    return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: {
-          type: 'object',
-          properties: tool.schema.properties,
-          required: tool.schema.required || [],
-        },
+  beforeEach(() => {
+    // Create a calculator tool using ai-sdk's tool function
+    calculatorTool = tool({
+      description: 'A simple calculator that can perform basic operations',
+      parameters: z.object({
+        a: z.number().describe('First number'),
+        b: z.number().describe('Second number'),
+        operation: z
+          .enum(['add', 'subtract', 'multiply', 'divide'])
+          .describe('Operation to perform'),
+      }),
+      execute: async ({ a, b, operation }) => {
+        switch (operation) {
+          case 'add':
+            return a + b;
+          case 'subtract':
+            return a - b;
+          case 'multiply':
+            return a * b;
+          case 'divide':
+            if (b === 0) throw new Error('Cannot divide by zero');
+            return a / b;
+          default:
+            throw new Error(`Unknown operation: ${operation}`);
+        }
       },
-    };
-  }
+    });
 
-  async send(session: Session): Promise<Message> {
-    // Get the last user message
-    const messages = Array.from(session.messages);
-    const lastUserMessage = messages.filter((msg) => msg.type === 'user').pop();
+    // Create generateOptions with tools
+    generateOptions = createGenerateOptions({
+      provider: {
+        type: 'openai',
+        apiKey: 'test-api-key',
+        modelName: 'gpt-4o-mini',
+      },
+      temperature: 0.7,
+    }).addTool('calculator', calculatorTool);
 
-    // Generate different responses based on the user message
-    if (lastUserMessage && lastUserMessage.content.includes('weather')) {
-      return {
-        type: 'assistant',
-        content: `
+    // Setup mock responses for generateText based on the user's query
+    vi.mocked(generateText).mockImplementation(async (session) => {
+      // Get the last user message
+      const messages = Array.from(session.messages);
+      const lastUserMessage = messages
+        .filter((msg) => msg.type === 'user')
+        .pop();
+
+      // Generate different responses based on the user message
+      if (lastUserMessage && lastUserMessage.content.includes('weather')) {
+        return {
+          type: 'assistant',
+          content: `
 ## Weather Report
 The weather in San Francisco is currently 72°F and sunny.
 
@@ -67,89 +96,35 @@ The weather in San Francisco is currently 72°F and sunny.
   ]
 }
 \`\`\`
-        `,
-        metadata: createMetadata(),
-      };
-    } else if (
-      lastUserMessage &&
-      lastUserMessage.content.includes('calculate')
-    ) {
-      // Create metadata with toolCalls
-      const metadata = createMetadata();
-      metadata.set('toolCalls', [
-        {
-          name: 'calculator',
-          arguments: { a: 5, b: 3, operation: 'add' },
-          id: 'call-123',
-        },
-      ]);
-
-      return {
-        type: 'assistant',
-        content: 'I need to calculate something.',
-        metadata,
-      };
-    } else {
-      return {
-        type: 'assistant',
-        content: 'I can help you with that!',
-        metadata: createMetadata(),
-      };
-    }
-  }
-
-  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
-    yield {
-      type: 'assistant',
-      content: 'Streaming response',
-      metadata: createMetadata(),
-    };
-  }
-}
-
-describe('End-to-End Workflows', () => {
-  let model: MockOpenAIModel;
-  let calculatorTool: Tool<SchemaType>;
-
-  beforeEach(() => {
-    // Create a calculator tool
-    calculatorTool = createTool({
-      name: 'calculator',
-      description: 'A simple calculator that can perform basic operations',
-      schema: {
-        properties: {
-          a: { type: 'number', description: 'First number' },
-          b: { type: 'number', description: 'Second number' },
-          operation: {
-            type: 'string',
-            enum: ['add', 'subtract', 'multiply', 'divide'],
-            description: 'Operation to perform',
+          `,
+          metadata: createMetadata(),
+        };
+      } else if (
+        lastUserMessage &&
+        lastUserMessage.content.includes('calculate')
+      ) {
+        // Create metadata with toolCalls
+        const metadata = createMetadata();
+        metadata.set('toolCalls', [
+          {
+            name: 'calculator',
+            arguments: { a: 5, b: 3, operation: 'add' },
+            id: 'call-123',
           },
-        },
-        required: ['a', 'b', 'operation'],
-      },
-      execute: async (input) => {
-        switch (input.operation) {
-          case 'add':
-            return { result: input.a + input.b };
-          case 'subtract':
-            return { result: input.a - input.b };
-          case 'multiply':
-            return { result: input.a * input.b };
-          case 'divide':
-            if (input.b === 0) throw new Error('Cannot divide by zero');
-            return { result: input.a / input.b };
-          default:
-            throw new Error(`Unknown operation: ${input.operation}`);
-        }
-      },
-    });
+        ]);
 
-    // Create a mock model with tools
-    model = new MockOpenAIModel({
-      modelName: 'gpt-4o-mini',
-      temperature: 0.7,
-      tools: [calculatorTool],
+        return {
+          type: 'assistant',
+          content: 'I need to calculate something.',
+          metadata,
+        };
+      } else {
+        return {
+          type: 'assistant',
+          content: 'I can help you with that!',
+          metadata: createMetadata(),
+        };
+      }
     });
   });
 
@@ -158,7 +133,7 @@ describe('End-to-End Workflows', () => {
     const weatherTemplate = new LinearTemplate()
       .addSystem('You are a helpful weather assistant.')
       .addUser('What is the weather in San Francisco?')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       // Extract markdown headings and code blocks
       .addTransformer(
         extractMarkdown({
@@ -194,35 +169,8 @@ describe('End-to-End Workflows', () => {
     expect(weatherData.forecast).toHaveLength(3);
   });
 
-  it('should execute a complete tool usage workflow', async () => {
-    // Create a template that uses a tool
-    const calculatorTemplate = new LinearTemplate()
-      .addSystem('You are a helpful assistant that can perform calculations.')
-      .addUser('Can you calculate 5 + 3 for me?')
-      .addAssistant({ model });
-
-    // Execute the template
-    const session = await calculatorTemplate.execute(createSession());
-
-    // Verify the conversation flow
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect(messages[0].type).toBe('system');
-    expect(messages[1].type).toBe('user');
-    expect(messages[2].type).toBe('assistant');
-
-    // Verify the tool call
-    const metadata = messages[2].metadata?.toJSON() as { toolCalls?: Array<{ name: string; arguments: Record<string, unknown>; id: string }> };
-    expect(metadata?.toolCalls).toBeDefined();
-    if (metadata?.toolCalls) {
-      expect(metadata.toolCalls[0].name).toBe('calculator');
-      expect(metadata.toolCalls[0].arguments).toEqual({
-        a: 5,
-        b: 3,
-        operation: 'add',
-      });
-    }
-  });
+  // See human_created.test.ts for the tooling test
+  // TODO: Integrate these two test files
 
   it('should execute a complete conversation with guardrails', async () => {
     // Create a validator that checks for specific content
@@ -236,7 +184,7 @@ describe('End-to-End Workflows', () => {
       template: new LinearTemplate()
         .addSystem('You are a helpful assistant.')
         .addUser('Can you assist me?')
-        .addAssistant({ model }),
+        .addAssistant({ generateOptions }),
       validators: [contentValidator],
       onFail: OnFailAction.RETRY,
       maxAttempts: 3,
@@ -253,7 +201,11 @@ describe('End-to-End Workflows', () => {
     expect(messages[2].type).toBe('assistant');
 
     // Verify the guardrail metadata
-    const guardrailInfo = session.metadata.get('guardrail') as { passed: boolean; attempt: number; validationResults: Array<{ passed: boolean; feedback?: string }> };
+    const guardrailInfo = session.metadata.get('guardrail') as {
+      passed: boolean;
+      attempt: number;
+      validationResults: Array<{ passed: boolean; feedback?: string }>;
+    };
     expect(guardrailInfo).toBeDefined();
     if (guardrailInfo) {
       expect(guardrailInfo.passed).toBe(true);
@@ -270,7 +222,7 @@ describe('End-to-End Workflows', () => {
             'Tell me something interesting.',
             'Tell me something interesting.',
           )
-          .addAssistant({ model })
+          .addAssistant({ generateOptions })
           .addUser('Should we continue? (yes/no)', 'no')
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();

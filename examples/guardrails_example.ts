@@ -8,7 +8,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  OpenAIModel,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -16,11 +16,14 @@ import {
  * that LLM responses meet specific quality criteria.
  */
 async function main() {
-  // Create an OpenAI model instance
-  const model = new OpenAIModel({
-    modelName: 'gpt-4o-mini',
+  // Define generateOptions for OpenAI
+  const generateOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
+      modelName: 'gpt-4o-mini',
+    },
     temperature: 0.7,
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
   });
 
   // Create a template that asks for a pet name
@@ -54,7 +57,7 @@ async function main() {
 
   // Create a guardrail template
   const guardrailTemplate = new GuardrailTemplate({
-    template: new AssistantTemplate({ model }),
+    template: new AssistantTemplate({ generateOptions }),
     validators: [combinedValidator],
     onFail: OnFailAction.RETRY,
     maxAttempts: 3,

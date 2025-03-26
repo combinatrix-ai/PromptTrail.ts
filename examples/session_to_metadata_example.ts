@@ -8,7 +8,7 @@
 
 // Import types from the core library
 // In a real implementation, these would be properly imported
-import { LinearTemplate, OpenAIModel } from '@prompttrail/core';
+import { LinearTemplate, createGenerateOptions } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
 
 // Mock function to avoid TypeScript errors
@@ -48,15 +48,6 @@ export function createTransformer<
   return {
     transform: (session) => transformFn(session),
   };
-}
-
-// This method would be added to LinearTemplate
-declare module '@prompttrail/core' {
-  interface LinearTemplate {
-    addTransformer<U extends Record<string, unknown>>(
-      transformer: SessionTransformer<Record<string, unknown>, U>,
-    ): this;
-  }
 }
 
 /**
@@ -133,11 +124,14 @@ function extractMarkdown<T extends Record<string, unknown>>(
  * once implemented in the core library.
  */
 async function codeGenerationExample() {
-  // Initialize model with your API key
-  const model = new OpenAIModel({
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
-    modelName: 'gpt-4o-mini',
-    temperature: 0.7, // Required by OpenAIConfig
+  // Define generateOptions for OpenAI
+  const generateOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
+      modelName: 'gpt-4o-mini',
+    },
+    temperature: 0.7,
   });
 
   // Create a template that generates code and explanation
@@ -149,7 +143,7 @@ async function codeGenerationExample() {
     .addUser(
       'Write a function to calculate the factorial of a number with explanation.',
     )
-    .addAssistant({ model: model })
+    .addAssistant({ generateOptions })
     // This is how the API would look once implemented:
     .addTransformer(
       extractMarkdown({
@@ -187,11 +181,14 @@ async function codeGenerationExample() {
  * once implemented in the core library.
  */
 async function technicalAnalysisExample() {
-  // Initialize model with your API key
-  const model = new OpenAIModel({
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
-    modelName: 'gpt-4o-mini',
-    temperature: 0.7, // Required by OpenAIConfig
+  // Define generateOptions for OpenAI
+  const generateOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key',
+      modelName: 'gpt-4o-mini',
+    },
+    temperature: 0.7,
   });
 
   // Sample code to analyze
@@ -216,7 +213,7 @@ function quickSort(arr: number[]): number[] {
     .addUser(
       `Analyze this TypeScript code:\n\`\`\`typescript\n${codeToAnalyze}\n\`\`\``,
     )
-    .addAssistant({ model: model })
+    .addAssistant({ generateOptions })
     // This is how the API would look once implemented:
     .addTransformer(
       extractMarkdown({

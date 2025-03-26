@@ -7,12 +7,9 @@ import {
   type InferSchemaType,
   type Session,
   createSession,
-  OpenAIModel,
-  AnthropicModel,
-  type OpenAIConfig,
-  type AnthropicConfig,
-  type AssistantMetadata,
+  type GenerateOptions,
   createMetadata,
+  generateText,
 } from '@prompttrail/core';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -87,28 +84,32 @@ type ToolSchemas = {
 export class CodingAgent {
   private session: Session;
   private tools: Tool<SchemaType>[];
-  private model: OpenAIModel | AnthropicModel;
+  private generateOptions: GenerateOptions;
 
   constructor(config: { provider: 'openai' | 'anthropic'; apiKey: string }) {
     this.tools = [shellCommandTool, readFileTool, writeFileTool];
 
-    // Initialize model based on provider
+    // Initialize generateOptions based on provider
     if (config.provider === 'openai') {
-      const modelConfig: OpenAIConfig = {
-        modelName: 'gpt-4',
+      this.generateOptions = {
+        provider: {
+          type: 'openai',
+          apiKey: config.apiKey,
+          modelName: 'gpt-4',
+        },
         temperature: 0.7,
-        apiKey: config.apiKey,
         tools: this.tools,
       };
-      this.model = new OpenAIModel(modelConfig);
     } else {
-      const modelConfig: AnthropicConfig = {
-        modelName: 'claude-3-opus-20240229',
+      this.generateOptions = {
+        provider: {
+          type: 'anthropic',
+          apiKey: config.apiKey,
+          modelName: 'claude-3-opus-20240229',
+        },
         temperature: 0.7,
-        apiKey: config.apiKey,
         tools: this.tools,
       };
-      this.model = new AnthropicModel(modelConfig);
     }
 
     // Initialize session
@@ -133,16 +134,14 @@ export class CodingAgent {
 
     // Get AI response
     while (true) {
-      const response = await this.model.send(this.session);
+      const response = await generateText(this.session, this.generateOptions);
       this.session = this.session.addMessage(response);
 
       if (response.type === 'assistant') {
-        const metadata = response.metadata?.get(
-          'toolCalls',
-        ) as AssistantMetadata['toolCalls'];
-        if (metadata) {
+        const toolCalls = response.toolCalls;
+        if (toolCalls && toolCalls.length > 0) {
           // Handle tool calls
-          for (const toolCall of metadata) {
+          for (const toolCall of toolCalls) {
             const result = await this.executeTool(
               toolCall.name as keyof ToolSchemas,
               toolCall.arguments as InferSchemaType<

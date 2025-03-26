@@ -1,13 +1,38 @@
-- Port Python PromptTrail to TypeScript with TypeScript-first design:
-  - Use type inference, generics, and TS-specific features
-  - Follow TS best practices and idioms
-- Use `pnpm` for package management
-- Run tests with `cd packages/core && pnpm exec vitest --run --watch=false`
-- Use latest models:
-  - OpenAI: `gpt-4o-mini`
-  - Anthropic: `claude-3-5-haiku-latest`
+# Project Overview
+
+A type-safe, composable framework for building structured LLM conversations with various LLMs and tools.
+
+PromptTrail helps TypeScript developers build robust, maintainable LLM applications with strong typing, composable templates, and powerful validation tools. Built on Vercel's widely-adopted [ai-sdk](https://github.com/vercel/ai), PromptTrail leverages its ecosystem for LLM and tool interactions, enabling seamless integration with a broad range of language models and function calling capabilities.
+
 - Note: Library is in development
   - You're working with the library developer. So, don't hesitate to fix the core code.
   - Current implementation may have bugs
   - Investigate core code if results are unexpected
 - First, read README.md in the root directory. This covers the high-level architecture and design.
+- Usage of ai-sdk is written in ai-sdk.test.ts
+
+## Build & Test Commands
+
+- Build all packages: `pnpm -r build`
+- Run all tests: `pnpm test:cline`
+- Run single test: `cd packages/core && pnpm exec vitest --run --watch=false src/__tests__/filename.test.ts`
+- Run tests with pattern: `cd packages/core && pnpm exec vitest --run --watch=false "pattern"`
+- Check types: `pnpm -C packages/core typecheck`
+- Lint code: `pnpm lint` (fix issues) or `pnpm lint:check`
+- Format code: `pnpm format` (fix) or `pnpm format:check`
+
+## Coding Style Guidelines
+
+- Use TypeScript with strict typing; avoid `any` types
+- Use named exports for improved tree-shaking
+- Imports order: external modules, then internal modules
+- Use async/await for asynchronous code
+- Create abstract base classes for extensibility
+- Use generics for type-safe components
+- Prefix interfaces with 'I', type aliases with 'T'
+- Use JSDoc comments for public APIs
+- Error handling: use explicit error types and descriptive messages
+- Prefer functional programming patterns when appropriate
+- Use latest models:
+  - OpenAI: `gpt-4o-mini`
+  - Anthropic: `claude-3-5-haiku-latest`

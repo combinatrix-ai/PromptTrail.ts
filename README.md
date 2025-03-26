@@ -1,17 +1,8 @@
 # 🚀 PromptTrail
 
-A type-safe, composable framework for building structured LLM conversations with OpenAI and Anthropic models.
+A type-safe, composable framework for building structured LLM conversations with various LLMs and tools.
 
-## 📋 Overview
-
-- 📝 **Smart Templates**: Build conversations like Lego - piece by piece!
-- 🔄 **Interactive Loops**: Create dynamic, branching conversations
-- 🛠️ **Tool Power**: Let your LLMs use real functions
-- 🔌 **Multi-Provider**: Works with OpenAI, Anthropic, and more
-- 📝 **Type-Safe**: Full TypeScript support - catch errors before they happen
-- 🌊 **Streaming**: Get responses in real-time
-- 🧩 **Composable**: Mix and match templates for complex flows
-- 🌐 **Browser Ready**: Works seamlessly in both Node.js and browser environments
+PromptTrail helps TypeScript developers build robust, maintainable LLM applications with strong typing, composable templates, and powerful validation tools. Built on Vercel's widely-adopted [ai-sdk](https://github.com/vercel/ai), PromptTrail leverages its ecosystem for LLM and tool interactions, enabling seamless integration with a broad range of language models and function calling capabilities.
 
 ## ✨ Features
 
@@ -43,19 +34,27 @@ yarn add @prompttrail/core
 ## 🚀 Quick Start
 
 ```typescript
-import { LinearTemplate, OpenAIModel, createSession } from '@prompttrail/core';
+import {
+  LinearTemplate,
+  createSession,
+  type GenerateOptions,
+} from '@prompttrail/core';
 
-// Initialize model with your API key
-const model = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
-});
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
 
 // Create a simple conversation template
 const chat = new LinearTemplate()
   .addSystem("I'm a helpful assistant.")
   .addUser("What's TypeScript?")
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute the template with print mode enabled
 const session = await chat.execute(
@@ -65,6 +64,24 @@ const session = await chat.execute(
 );
 console.log(session.getLastMessage()?.content);
 ```
+
+<!-- TEST: creates a conversation and returns a session with messages
+  // Create a simple session with predefined messages
+  const testSession = createSession({
+    print: false,
+    messages: [
+      { type: 'system', content: "I'm a helpful assistant." },
+      { type: 'user', content: "What's TypeScript?" },
+      { type: 'assistant', content: 'TypeScript is a programming language.' }
+    ]
+  });
+
+  // Verify the session structure
+  expect(testSession.messages).toHaveLength(3);
+  expect(testSession.messages[0].type).toBe('system');
+  expect(testSession.messages[1].type).toBe('user');
+  expect(testSession.messages[2].type).toBe('assistant');
+-->
 
 ## 📘 Usage
 
@@ -106,6 +123,41 @@ const updatedSession = session.updateMetadata({
 // updatedSession.metadata.get('lastActive') is now available with correct type
 ```
 
+<!-- TEST: provides type-safe metadata access
+  // Create a session with metadata
+  const testSession = createSession({
+    metadata: {
+      name: 'Alice',
+      preferences: {
+        theme: 'dark',
+        language: 'TypeScript',
+      },
+    },
+  });
+
+  // Access metadata
+  const testUserName = testSession.metadata.get('name');
+  const preferences = testSession.metadata.get('preferences');
+  const testTheme = preferences ? preferences.theme : undefined;
+
+  // Update metadata
+  const testUpdatedSession = testSession.updateMetadata({
+    lastActive: new Date(),
+  });
+
+  // Test assertions
+  expect(testUserName).toBe('Alice');
+  expect(testTheme).toBe('dark');
+
+  // Test type safety and immutability
+  expect(testSession.metadata.get('name')).toBe('Alice');
+  expect(testUpdatedSession.metadata.get('name')).toBe('Alice');
+  expect(testUpdatedSession.metadata.get('lastActive')).toBeInstanceOf(Date);
+
+  // Original session should be unchanged
+  expect(testSession.metadata.get('lastActive')).toBeUndefined();
+-->
+
 PromptTrail's immutable architecture ensures predictable state management:
 
 - All session operations return new instances rather than modifying existing ones
@@ -131,7 +183,7 @@ const personalizedChat = new LinearTemplate()
   .addSystem("I'll adapt to your preferences.")
   .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?')
   .addUser({ inputSource: new CLIInputSource() })
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute with session metadata
 const session = await personalizedChat.execute(
@@ -146,6 +198,29 @@ const session = await personalizedChat.execute(
 );
 ```
 
+<!-- TEST: creates a template with metadata interpolation
+  // Create a template with metadata interpolation
+  const template = new LinearTemplate()
+    .addSystem("I'll adapt to your preferences.")
+    .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?');
+
+  // Create a session with metadata
+  const testSession = createSession({
+    metadata: {
+      name: 'Alice',
+      expertise: ['generics', 'type inference'],
+    },
+    messages: []
+  });
+
+  // Execute the template
+  const result = await template.execute(testSession);
+
+  // Verify the interpolation worked
+  expect(result.messages).toHaveLength(2);
+  expect(result.messages[1].content).toBe('Hello Alice! How can I help with generics?');
+-->
+
 ### 🔄 Interactive Loops
 
 Create dynamic, branching conversations with loop templates:
@@ -156,9 +231,9 @@ const quiz = new LinearTemplate()
   .addLoop(
     new LoopTemplate()
       .addUser('Ready for a question?')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       .addUser('My answer:', 'interfaces are awesome!')
-      .addAssistant({ model })
+      .addAssistant({ generateOptions })
       .addUser('Another question? (yes/no)', 'yes')
       .setExitCondition(
         (session) => session.getLastMessage()?.content.toLowerCase() === 'no',
@@ -168,28 +243,39 @@ const quiz = new LinearTemplate()
 
 ### 🤖 Model Configuration
 
+PromptTrail uses a unified approach to model configuration through `generateOptions`, which is passed to the `generateText` function. This approach is inspired by [Vercel's AI SDK](https://github.com/vercel/ai), a popular unified LLM framework.
+
 Configure models with provider-specific options:
 
 ```typescript
 // OpenAI configuration
-const gpt4 = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
+const openaiOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
   temperature: 0.7,
   maxTokens: 1000,
-});
+};
 
 // Anthropic configuration
-const claude = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+const anthropicOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.5,
-});
+};
 
 // Anthropic with MCP integration
-const claudeWithMCP = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+const anthropicMcpOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
   mcpServers: [
     {
@@ -198,7 +284,7 @@ const claudeWithMCP = new AnthropicModel({
       version: '1.0.0',
     },
   ],
-});
+};
 ```
 
 ### 💾 Session Management
@@ -243,13 +329,45 @@ const json = newSession.toJSON();
 const restored = Session.fromJSON(json);
 ```
 
+<!-- TEST: demonstrates session immutability
+  // Create a session
+  const originalSession = createSession({
+    metadata: {
+      userId: 'user-123',
+      tone: 'professional',
+    },
+    messages: []
+  });
+
+  // Add a message (should return a new session)
+  const updatedSession = originalSession.addMessage({
+    type: 'user',
+    content: 'Hello!',
+  });
+
+  // Verify immutability
+  expect(updatedSession).not.toBe(originalSession);
+  expect(originalSession.messages).toHaveLength(0);
+  expect(updatedSession.messages).toHaveLength(1);
+  expect(updatedSession.messages[0].content).toBe('Hello!');
+
+  // Test metadata updates
+  const newSession = updatedSession.updateMetadata({
+    tone: 'casual',
+  });
+
+  // Verify metadata was updated in new session
+  expect(newSession.metadata.get('tone')).toBe('casual');
+  expect(updatedSession.metadata.get('tone')).toBe('professional');
+-->
+
 ### 🌊 Streaming Responses
 
 Process model responses in real-time:
 
 ```typescript
 // Stream responses chunk by chunk
-for await (const chunk of model.sendAsync(session)) {
+for await (const chunk of generateTextStream(session, generateOptions)) {
   process.stdout.write(chunk.content);
 }
 ```
@@ -261,11 +379,21 @@ Extract structured data from LLM outputs:
 ````typescript
 import {
   LinearTemplate,
-  OpenAIModel,
   createSession,
   extractMarkdown,
   extractPattern,
+  type GenerateOptions,
 } from '@prompttrail/core';
+
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
 
 // Create a template that extracts structured data from responses
 const codeTemplate = new LinearTemplate()
@@ -275,7 +403,7 @@ const codeTemplate = new LinearTemplate()
   .addUser(
     'Write a function to calculate the factorial of a number with explanation.',
   )
-  .addAssistant({ model })
+  .addAssistant({ generateOptions })
   // Extract markdown headings and code blocks
   .addTransformer(
     extractMarkdown({
@@ -316,6 +444,32 @@ console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
 console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 ````
 
+<!-- TEST: extracts data using pattern matching
+  // Create a template with pattern extraction
+  const template = new LinearTemplate()
+    .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
+    .addTransformer(
+      extractPattern([
+        {
+          pattern: /IP ([\d\.]+)/,
+          key: 'ipAddress',
+        },
+        {
+          pattern: /Uptime ([\d\.]+)%/,
+          key: 'uptime',
+          transform: (value) => parseFloat(value) / 100,
+        },
+      ]),
+    );
+
+  // Execute the template
+  const session = await template.execute(createSession());
+
+  // Verify the extracted data
+  expect(session.metadata.get('ipAddress')).toBe('192.168.1.100');
+  expect(session.metadata.get('uptime')).toBe(0.9999);
+-->
+
 ### 🛡️ Guardrails
 
 Validate and ensure quality of LLM responses, inspired by the Python library [guardrails-ai](https://github.com/guardrails-ai/guardrails/tree/main):
@@ -330,7 +484,7 @@ import {
   LengthValidator,
   AllValidator,
   OnFailAction,
-  OpenAIModel,
+  type GenerateOptions,
 } from '@prompttrail/core';
 
 // Create validators to ensure responses meet criteria
@@ -359,9 +513,19 @@ const validators = [
 // Combine all validators with AND logic
 const combinedValidator = new AllValidator(validators);
 
+// Define generateOptions for OpenAI
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
+};
+
 // Create a guardrail template
 const guardrailTemplate = new GuardrailTemplate({
-  template: new AssistantTemplate({ model }),
+  template: new AssistantTemplate({ generateOptions }),
   validators: [combinedValidator],
   onFail: OnFailAction.RETRY,
   maxAttempts: 3,
@@ -388,13 +552,12 @@ Force LLMs to produce structured outputs using schemas:
 ```typescript
 import {
   LinearTemplate,
-  OpenAIModel,
-  AnthropicModel,
   createSession,
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
+  type GenerateOptions,
 } from '@prompttrail/core';
 import { z } from 'zod';
 
@@ -423,12 +586,15 @@ const userSchema = z.object({
     .describe('User settings'),
 });
 
-// Create a model (works with both OpenAI and Anthropic)
-const model = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-  modelName: 'claude-3-5-haiku-latest',
+// Define generateOptions for Anthropic
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
-});
+};
 
 // Create a template with schema validation
 const template = new LinearTemplate()
@@ -438,7 +604,7 @@ const template = new LinearTemplate()
   );
 
 // Add schema validation (works with both native schemas and Zod schemas)
-await template.addSchema(productSchema, { model, maxAttempts: 3 });
+await template.addSchema(productSchema, { generateOptions, maxAttempts: 3 });
 
 // Execute the template
 const session = await template.execute(createSession());
@@ -452,6 +618,39 @@ console.log(product);
 console.log(`Product: ${product.name} - $${product.price}`);
 console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
 ```
+
+<!-- TEST: validates structured output using schemas
+  // Define a simple product schema
+  const productSchema = defineSchema({
+    properties: {
+      name: createStringProperty('The name of the product'),
+      price: createNumberProperty('The price of the product in USD'),
+      inStock: createBooleanProperty('Whether the product is in stock'),
+    },
+    required: ['name', 'price', 'inStock'],
+  });
+
+  // Create a mock session with structured output
+  const testSession = createSession({
+    metadata: {
+      structured_output: {
+        name: 'iPhone 15 Pro',
+        price: 999,
+        inStock: true,
+        description: 'Smartphone with a titanium frame'
+      }
+    },
+    messages: []
+  });
+
+  // Verify the structured output
+  const product = testSession.metadata.get('structured_output');
+  expect(product).toBeDefined();
+  expect(product.name).toBe('iPhone 15 Pro');
+  expect(product.price).toBe(999);
+  expect(product.inStock).toBe(true);
+  expect(product.description).toBe('Smartphone with a titanium frame');
+-->
 
 This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
 
@@ -491,36 +690,45 @@ const calculator = new Tool({
   },
 });
 
-// Use tools with models
-const smartModel = new OpenAIModel({
-  apiKey: process.env.OPENAI_API_KEY,
-  modelName: 'gpt-4o-mini',
+// Define generateOptions with tools
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: 'gpt-4o-mini',
+  },
+  temperature: 0.7,
   tools: [calculator],
-});
+};
 
 const mathChat = new LinearTemplate()
   .addSystem('I can help with calculations.')
   .addUser("What's 123 * 456?")
-  .addAssistant({ model: smartModel });
+  .addAssistant({ generateOptions });
 ```
 
 ## 📚 API Explorer
 
 Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
+### MCP Support
+
 Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
 
 ```typescript
 import {
-  AnthropicModel,
   createSession,
   LinearTemplate,
+  type GenerateOptions,
 } from '@prompttrail/core';
 
-// Create an Anthropic model with MCP integration
-const model = new AnthropicModel({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  modelName: 'claude-3-5-haiku-latest',
+// Define generateOptions for Anthropic with MCP integration
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
   temperature: 0.7,
   mcpServers: [
     {
@@ -529,16 +737,16 @@ const model = new AnthropicModel({
       version: '1.0.0',
     },
   ],
-});
+};
 
-// Create a template that uses the model with MCP tools
+// Create a template that uses MCP tools
 const template = new LinearTemplate()
   .addSystem(
     `You are a helpful assistant with access to external tools.
              You can use these tools when needed to provide accurate information.`,
   )
   .addUser('Can you check the weather in San Francisco?', '')
-  .addAssistant({ model });
+  .addAssistant({ generateOptions });
 
 // Execute the template
 const session = await template.execute(createSession());
@@ -551,12 +759,16 @@ MCP allows Claude to access external tools and resources like GitHub repositorie
 PromptTrail works in browser environments with a simple configuration flag:
 
 ```typescript
-// Browser-compatible model initialization
-const model = new OpenAIModel({
-  apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
-  modelName: 'gpt-4o-mini',
-  dangerouslyAllowBrowser: true, // Required for browser usage
-});
+// Browser-compatible configuration
+const generateOptions: GenerateOptions = {
+  provider: {
+    type: 'openai',
+    apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
+    modelName: 'gpt-4o-mini',
+    dangerouslyAllowBrowser: true, // Required for browser usage
+  },
+  temperature: 0.7,
+};
 ```
 
 For a complete React implementation, check out our [React Chat Example](examples/react-chat).

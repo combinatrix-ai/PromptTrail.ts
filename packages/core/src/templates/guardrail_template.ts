@@ -1,4 +1,4 @@
-import type { Session } from '../session';
+import type { Message, Session } from '../types';
 import { Template } from '../templates';
 import { createMetadata } from '../metadata';
 import {
@@ -148,11 +148,29 @@ export class GuardrailTemplate<
     };
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TInput & { guardrail?: { attempt: number; passed: boolean; validationResults: ValidationResult[] } }>> {
+  async execute(session: Session<TInput>): Promise<
+    Session<
+      TInput & {
+        guardrail?: {
+          attempt: number;
+          passed: boolean;
+          validationResults: ValidationResult[];
+        };
+      }
+    >
+  > {
     const maxAttempts = this.options.maxAttempts || 3;
 
     let attempts = 0;
-    let resultSession: Session<TInput & { guardrail?: { attempt: number; passed: boolean; validationResults: ValidationResult[] } }>;
+    let resultSession: Session<
+      TInput & {
+        guardrail?: {
+          attempt: number;
+          passed: boolean;
+          validationResults: ValidationResult[];
+        };
+      }
+    >;
     let validationResults: ValidationResult[] = [];
     let allPassed = false;
 
@@ -161,8 +179,10 @@ export class GuardrailTemplate<
 
       // Execute the template
       // Use type assertion to handle template execution
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      resultSession = await this.options.template.execute(session as any) as any;
+
+      resultSession = (await this.options.template.execute(
+        session as any,
+      )) as any;
 
       // Get the last message content
       const lastMessage = resultSession.getLastMessage();
@@ -227,14 +247,14 @@ export class GuardrailTemplate<
             // Continue with the failed result but keep allPassed as false
             // This will exit the loop but preserve the failed status
             // Use type assertion to handle return type
-             
+
             return resultSession.updateMetadata({
               guardrail: {
                 attempt: attempts,
                 passed: false,
                 validationResults,
               },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
             }) as any;
 
           case OnFailAction.RETRY:
@@ -247,14 +267,14 @@ export class GuardrailTemplate<
 
     // Add validation metadata to the result
     // Use type assertion to handle return type
-     
+
     return resultSession.updateMetadata({
       guardrail: {
         attempt: attempts,
         passed: allPassed,
         validationResults,
       },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any;
   }
 }
@@ -295,7 +315,7 @@ export function createGuardrailTransformer<
     const messageTypes = options.messageTypes || ['assistant'];
 
     // Get messages to validate
-    const messages = session.messages.filter((msg) =>
+    const messages = session.messages.filter((msg: Message) =>
       messageTypes.includes(msg.type),
     );
 

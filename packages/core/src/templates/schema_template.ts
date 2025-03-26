@@ -1,16 +1,14 @@
-import type { Session } from '../session';
-import type { Model } from '../model/base';
-import type { SchemaType } from '../tool';
+import type { Session } from '../types';
 import { createMetadata } from '../metadata';
 import { SchemaValidator } from '../validators/schema_validator';
 import { GuardrailTemplate, OnFailAction } from './guardrail_template';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
-// Import Template class to extend it
+// Import Template class and AssistantTemplate from templates
 import { Template, AssistantTemplate } from '../templates';
-// Import OpenAI model type for type checking
-import { OpenAIModel } from '../model/openai/model';
+import type { SchemaType } from '../types';
+import { GenerateOptions } from '../generate_options';
 
 // Type to handle both SchemaType and Zod schemas
 type SchemaInput = SchemaType | z.ZodType;
@@ -49,12 +47,12 @@ export class SchemaTemplate<
   private isZodSchema: boolean;
 
   constructor(options: {
-    model: Model;
+    generateOptions: GenerateOptions;
     schema: SchemaInput;
     maxAttempts?: number;
     functionName?: string;
   }) {
-    super({ model: options.model });
+    super({ generateOptions: options.generateOptions });
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
 
@@ -70,8 +68,8 @@ export class SchemaTemplate<
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    if (!this.model) {
-      throw new Error('No model provided for SchemaTemplate');
+    if (!this.generateOptions) {
+      throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
     // Create a schema validator
@@ -80,15 +78,15 @@ export class SchemaTemplate<
       description: 'Response must match the specified schema',
     });
 
-    // Check if the model is OpenAI to use function calling
-    const isOpenAI = this.model instanceof OpenAIModel;
+    // Check if the provider is OpenAI to use function calling
+    const isOpenAI = this.generateOptions.provider.type === 'openai';
 
     // Create a system message to instruct the model about the expected format
     const schemaDescription = Object.entries(this.nativeSchema.properties)
-      .map(
-        ([key, prop]) =>
-          `${key}: ${prop.description} (${prop.type})${this.nativeSchema.required?.includes(key) ? ' (required)' : ''}`,
-      )
+      .map(([key, prop]) => {
+        const typedProp = prop as { type: string; description: string };
+        return `${key}: ${typedProp.description} (${typedProp.type})${this.nativeSchema.required?.includes(key) ? ' (required)' : ''}`;
+      })
       .join('\n');
 
     // Add a system message to instruct the model
@@ -100,7 +98,7 @@ export class SchemaTemplate<
 
     // Create an assistant template
     const assistantTemplate = new AssistantTemplate({
-      model: this.model,
+      generateOptions: this.generateOptions,
     });
 
     // If using OpenAI, add a system message with function calling instructions
@@ -140,7 +138,9 @@ Please call this function with the appropriate parameters to structure your resp
     });
 
     // Execute the guardrail template
-    const resultSession = await guardrailTemplate.execute(systemSession as unknown as Session<Record<string, unknown>>);
+    const resultSession = await guardrailTemplate.execute(
+      systemSession as unknown as Session<Record<string, unknown>>,
+    );
 
     // Get the last message
     const lastMessage = resultSession.getLastMessage();
@@ -150,15 +150,9 @@ Please call this function with the appropriate parameters to structure your resp
 
     let structuredOutput: Record<string, unknown>;
 
-    // Get metadata as a plain object to avoid type issues
-    const metadata = lastMessage.metadata?.toJSON() || {};
-    const toolCalls = metadata.toolCalls as
-      | Array<{
-          name: string;
-          arguments: Record<string, unknown>;
-          id: string;
-        }>
-      | undefined;
+    // Check if the message has tool calls directly
+    const toolCalls =
+      lastMessage.type === 'assistant' ? lastMessage.toolCalls : undefined;
 
     if (toolCalls && toolCalls.length > 0) {
       // If the model used function calling

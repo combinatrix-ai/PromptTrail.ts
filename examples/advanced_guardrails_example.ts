@@ -7,34 +7,44 @@ import {
   ToxicLanguageValidator,
   CompetitorCheckValidator,
   OnFailAction,
-  OpenAIModel,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
  * This example demonstrates how to use model-based validators with GuardrailTemplate
  * to ensure that LLM responses meet specific quality criteria.
+ *
+ * NOTE: This example is currently not working because the model validators still expect
+ * a Model instance, but we're passing a GenerateOptions object. The model validators
+ * need to be updated to use generateOptions instead of model.
  */
 async function main() {
-  // Create OpenAI models for generation and validation
+  // Define generateOptions for OpenAI
   const apiKey = process.env.OPENAI_API_KEY || 'your-api-key-here';
 
-  const generationModel = new OpenAIModel({
-    modelName: 'gpt-4o-mini',
+  const generationOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey,
+      modelName: 'gpt-4o-mini',
+    },
     temperature: 0.7,
-    apiKey,
   });
 
-  const validationModel = new OpenAIModel({
-    modelName: 'gpt-4o-mini',
+  const validationOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey,
+      modelName: 'gpt-4o-mini',
+    },
     temperature: 0.1, // Lower temperature for more consistent validation
-    apiKey,
   });
 
   // Create model-based validators
   const validators = [
     // General quality validator
     new ModelValidator({
-      model: validationModel,
+      model: validationOptions,
       prompt: `
         Evaluate the following product description for quality, accuracy, and professionalism.
         
@@ -61,21 +71,21 @@ async function main() {
 
     // Toxic language check
     new ToxicLanguageValidator({
-      model: validationModel,
+      model: validationOptions,
       threshold: 0.3,
       validationMethod: 'sentence',
     }),
 
     // Competitor check
     new CompetitorCheckValidator({
-      model: validationModel,
+      model: validationOptions,
       competitors: ['Apple', 'Microsoft', 'Google', 'Amazon', 'Meta'],
     }),
   ];
 
   // Create a guardrail template
   const guardrailTemplate = new GuardrailTemplate({
-    template: new AssistantTemplate({ model: generationModel }),
+    template: new AssistantTemplate({ generateOptions: generationOptions }),
     validators,
     onFail: OnFailAction.RETRY,
     maxAttempts: 3,

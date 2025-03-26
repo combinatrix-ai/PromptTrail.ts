@@ -4,7 +4,6 @@ import type {
   UserMessage,
   AssistantMessage,
   ToolResultMessage,
-  ControlMessage,
 } from '../types';
 
 /**
@@ -48,23 +47,6 @@ export const createToolResultMessage = (
 });
 
 /**
- * Create a control message for testing
- */
-export const createControlMessage = (
-  content: string,
-  action: string,
-  parameters?: Record<string, unknown>,
-): ControlMessage => ({
-  type: 'control',
-  content,
-  control: {
-    action,
-    parameters,
-  },
-  metadata: {},
-});
-
-/**
  * Create a message of any type for testing
  */
 export const createMessage = (
@@ -80,8 +62,6 @@ export const createMessage = (
       return createAssistantMessage(content);
     case 'tool_result':
       return createToolResultMessage(content, {});
-    case 'control':
-      return createControlMessage(content, 'test');
     default:
       throw new Error(`Unknown message type: ${type}`);
   }

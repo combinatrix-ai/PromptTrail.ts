@@ -1,13 +1,13 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
 import { DefaultInputSource, CallbackInputSource } from './input_source';
-import type { Model } from './model/base';
-import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
-import type { SchemaType } from './tool';
 import { z } from 'zod';
+import { generateText } from './generate';
+import { type GenerateOptions } from './generate_options';
+import type { Session, SchemaType } from './types';
 
 /**
  * Base class for all templates
@@ -16,10 +16,10 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
-  protected model?: Model;
+  protected generateOptions?: GenerateOptions;
 
-  constructor(options?: { model?: Model }) {
-    this.model = options?.model;
+  constructor(options?: { generateOptions?: GenerateOptions }) {
+    this.generateOptions = options?.generateOptions;
   }
 
   /**
@@ -130,19 +130,22 @@ export class UserTemplate extends Template {
 /**
  * Template for assistant messages
  */
-export class AssistantTemplate extends Template {
+export class AssistantTemplate<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> extends Template<TInput, TOutput> {
   constructor(
     private options?: {
       content?: string;
-      model?: Model;
+      generateOptions?: GenerateOptions;
     },
   ) {
-    super(options);
+    super();
   }
 
-  async execute(session: Session): Promise<Session> {
+  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
     if (this.options?.content) {
-      // For fixed content responses, don't add control messages
+      // For fixed content responses
       const interpolatedContent = this.interpolateContent(
         this.options.content,
         session,
@@ -151,15 +154,112 @@ export class AssistantTemplate extends Template {
         type: 'assistant',
         content: interpolatedContent,
         metadata: createMetadata(),
-      });
+      }) as unknown as Session<TOutput>;
     }
 
-    if (!this.model) {
-      throw new Error('No Model provided for AssistantTemplate');
+    if (!this.options?.generateOptions) {
+      throw new Error('generateOptions is required for AssistantTemplate');
     }
 
-    const response = await this.model.send(session);
-    return session.addMessage(response);
+    // Use the generateText function
+    // Cast session to any to avoid type issues with the generateText function
+    const response = await generateText(
+      session as any,
+      this.options.generateOptions,
+    );
+
+    // Add the assistant message to the session
+    let updatedSession = session.addMessage(
+      response,
+    ) as unknown as Session<TOutput>;
+
+    // Check if the response has tool calls directly in the message
+    const toolCalls =
+      response.type === 'assistant' ? response.toolCalls : undefined;
+
+    if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
+      // Execute each tool call and add the result as a tool_result message
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.name;
+        const toolArgs = toolCall.arguments;
+        const toolCallId = toolCall.id;
+
+        // Get the tool from the generateOptions
+        const tools = this.options.generateOptions.tools || {};
+        const tool = tools[toolName] as any; // Cast to any to avoid type issues
+
+        if (tool && typeof tool.execute === 'function') {
+          try {
+            // Execute the tool
+            const result = await tool.execute(toolArgs, { toolCallId });
+
+            // Add the tool result to the session
+            const resultStr =
+              typeof result === 'string'
+                ? result
+                : JSON.stringify(result, null, 2);
+
+            // Create a tool result template and execute it
+            const toolResultTemplate = new ToolResultTemplate({
+              toolCallId,
+              content: resultStr,
+            });
+
+            // Cast to any to avoid type issues
+            updatedSession = (await toolResultTemplate.execute(
+              updatedSession as any,
+            )) as any;
+          } catch (error) {
+            // If the tool execution fails, add an error message as the tool result
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : 'Unknown error occurred during tool execution';
+
+            const toolResultTemplate = new ToolResultTemplate({
+              toolCallId,
+              content: `Error: ${errorMessage}`,
+            });
+
+            // Cast to any to avoid type issues
+            updatedSession = (await toolResultTemplate.execute(
+              updatedSession as any,
+            )) as any;
+          }
+        }
+      }
+    }
+
+    return updatedSession;
+  }
+}
+
+/**
+ * Template for tool results
+ */
+export class ToolResultTemplate<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+> extends Template<TInput, TOutput> {
+  constructor(
+    private options: {
+      toolCallId: string;
+      content: string;
+    },
+  ) {
+    super();
+  }
+
+  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+    const metadata = createMetadata<{ toolCallId: string }>();
+    metadata.set('toolCallId', this.options.toolCallId);
+
+    return session.addMessage({
+      type: 'tool_result',
+      content: this.options.content,
+      metadata,
+      result: this.options.content, // Add the result property
+    }) as unknown as Session<TOutput>;
   }
 }
 
@@ -170,7 +270,10 @@ export class LinearTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
-  private templates: Template<Record<string, unknown>, Record<string, unknown>>[] = [];
+  private templates: Template<
+    Record<string, unknown>,
+    Record<string, unknown>
+  >[] = [];
 
   constructor(templates?: Template[]) {
     super();
@@ -198,28 +301,25 @@ export class LinearTemplate<
   }
 
   addAssistant(
-    options:
+    options?:
       | string
       | {
-          model?: Model;
           content?: string;
+          generateOptions?: GenerateOptions;
         },
   ): this {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
+    } else if (options?.generateOptions) {
+      // Generate options provided, use them for the assistant
+      this.templates.push(
+        new AssistantTemplate({ generateOptions: options.generateOptions }),
+      );
     } else {
-      // Set the model on the LinearTemplate if provided
-      if (options.model) {
-        this.model = options.model;
-      }
-
-      // Create AssistantTemplate with the model from options or from LinearTemplate
-      const assistantOptions = {
-        ...options,
-        model: options.model || this.model,
-      };
-
-      this.templates.push(new AssistantTemplate(assistantOptions));
+      // No options provided, use template-level generateOptions
+      this.templates.push(
+        new AssistantTemplate({ generateOptions: this.generateOptions }),
+      );
     }
     return this;
   }
@@ -270,7 +370,12 @@ export class LinearTemplate<
   addTransformer<TNewOutput extends Record<string, unknown>>(
     transformer: SessionTransformer<TOutput, TNewOutput>,
   ): LinearTemplate<TInput, TNewOutput> {
-    this.templates.push(createTransformerTemplate(transformer) as Template);
+    // Cast the transformer to the expected type to avoid TypeScript errors
+    const castTransformer = transformer as unknown as SessionTransformer<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >;
+    this.templates.push(createTransformerTemplate(castTransformer) as Template);
     return this as unknown as LinearTemplate<TInput, TNewOutput>;
   }
 
@@ -319,16 +424,16 @@ export class LinearTemplate<
   async addSchema<TSchema extends SchemaType | z.ZodType>(
     schema: TSchema,
     options?: {
-      model?: Model;
+      generateOptions?: GenerateOptions;
       maxAttempts?: number;
       functionName?: string;
     },
   ): Promise<this> {
-    const model = options?.model || this.model;
+    const generateOptions = options?.generateOptions || this.generateOptions;
 
-    if (!model) {
+    if (!generateOptions) {
       throw new Error(
-        'Model must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
+        'generateOptions must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
       );
     }
 
@@ -339,7 +444,7 @@ export class LinearTemplate<
 
     this.templates.push(
       new SchemaTemplate({
-        model,
+        generateOptions,
         schema,
         maxAttempts: options?.maxAttempts,
         functionName: options?.functionName,
@@ -350,11 +455,12 @@ export class LinearTemplate<
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    let currentSession: Session<Record<string, unknown>> = session as unknown as Session<Record<string, unknown>>;
+    let currentSession: Session<Record<string, unknown>> =
+      session as unknown as Session<Record<string, unknown>>;
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);
     }
-    return currentSession as Session<TOutput>;
+    return currentSession as unknown as Session<TOutput>;
   }
 }
 
@@ -393,22 +499,22 @@ export class LoopTemplate extends Template {
     options:
       | string
       | {
-          model?: Model;
+          generateOptions?: GenerateOptions;
           content?: string;
         },
   ): this {
     if (typeof options === 'string') {
       this.templates.push(new AssistantTemplate({ content: options }));
     } else {
-      // Set the model on the LoopTemplate if provided
-      if (options.model) {
-        this.model = options.model;
+      // Set the generateOptions on the LoopTemplate if provided
+      if (options.generateOptions) {
+        this.generateOptions = options.generateOptions;
       }
 
-      // Create AssistantTemplate with the model from options or from LoopTemplate
+      // Create AssistantTemplate with the generateOptions from options or from LoopTemplate
       const assistantOptions = {
         ...options,
-        model: options.model || this.model,
+        generateOptions: options.generateOptions || this.generateOptions,
       };
 
       this.templates.push(new AssistantTemplate(assistantOptions));

@@ -1,11 +1,11 @@
 import {
   createSession,
   LinearTemplate,
-  OpenAIModel,
   defineSchema,
   createStringProperty,
   createNumberProperty,
   createBooleanProperty,
+  createGenerateOptions,
 } from '../packages/core/src';
 
 /**
@@ -13,11 +13,14 @@ import {
  * from LLM responses, similar to LangChain's Pydantic integration but in a TypeScript-first way.
  */
 async function main() {
-  // Create an OpenAI model instance
-  const model = new OpenAIModel({
-    modelName: 'gpt-4o-mini',
+  // Define generateOptions for OpenAI
+  const generateOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
+      modelName: 'gpt-4o-mini',
+    },
     temperature: 0.7,
-    apiKey: process.env.OPENAI_API_KEY || 'your-api-key-here',
   });
 
   // Define a schema for product information
@@ -44,7 +47,7 @@ async function main() {
     );
 
   // Add schema validation (async operation)
-  await template.addSchema(productSchema, { model, maxAttempts: 3 });
+  await template.addSchema(productSchema, { generateOptions, maxAttempts: 3 });
 
   // Execute the template
   const session = await template.execute(createSession());
