@@ -13,12 +13,7 @@ export interface ToolResultMetadata extends Record<string, unknown> {
 /**
  * Represents the role of a message in a conversation
  */
-export type MessageRole =
-  | 'system'
-  | 'user'
-  | 'assistant'
-  | 'tool_result'
-  | 'control';
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 
 /**
  * Discriminated union type for different message types
@@ -27,8 +22,7 @@ export type Message =
   | SystemMessage
   | UserMessage
   | AssistantMessage
-  | ToolResultMessage
-  | ControlMessage;
+  | ToolResultMessage;
 
 /**
  * Base interface for message properties
@@ -62,14 +56,6 @@ export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   result: unknown;
 }
 
-export interface ControlMessage extends BaseMessage {
-  type: 'control';
-  control: {
-    action: string;
-    parameters?: Record<string, unknown>;
-  };
-}
-
 /**
  * Type guard functions for message types
  */
@@ -86,9 +72,6 @@ export const isAssistantMessage = (
 export const isToolResultMessage = (
   message: Message,
 ): message is ToolResultMessage => message.type === 'tool_result';
-
-export const isControlMessage = (message: Message): message is ControlMessage =>
-  message.type === 'control';
 
 // Temperature is now just a regular number
 
