@@ -10,14 +10,13 @@ import {
   SubroutineTemplate,
   IfTemplate,
 } from '../../../templates';
-import { CallbackInputSource } from '../../../input_source';
+import { CallbackInputSource, StaticInputSource } from '../../../input_source';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
 import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../../generate_options';
-import { CLIInputSource } from '../../../input_source';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {
@@ -308,16 +307,16 @@ describe('Templates', () => {
 
   describe('UserTemplate', () => {
     it('should support string constructor', async () => {
-      const template = new UserTemplate('test description');
+      const template = new UserTemplate('test message');
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);
-      expect(messages[0].content).toBe('');
+      expect(messages[0].content).toBe('test message');
     });
 
     it('should support InputSource', async () => {
       const template = new UserTemplate(
-        new CLIInputSource('test description', 'default value'),
+        new StaticInputSource('default value'),
       );
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');

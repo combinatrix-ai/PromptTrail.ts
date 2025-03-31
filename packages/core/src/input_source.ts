@@ -7,10 +7,12 @@ import type { Metadata } from './metadata';
 export interface InputSource {
   /**
    * Get input with optional context
-   * @param context Input context including description and optional default value
+   * @param context Input context including metadata
    * @returns Promise resolving to the input string
    */
-  getInput(context: { metadata?: Metadata }): Promise<string>;
+  getInput(context?: {
+    metadata?: Metadata;
+  }): Promise<string>;
 }
 
 /**
@@ -21,7 +23,9 @@ export class StaticInputSource implements InputSource {
     this.input = input;
   }
 
-  async getInput(): Promise<string> {
+  async getInput(_context?: {
+    metadata?: Metadata;
+  }): Promise<string> {
     return this.input;
   }
 }
@@ -34,18 +38,14 @@ export class StaticInputSource implements InputSource {
 export class CallbackInputSource implements InputSource {
   constructor(
     private callback: (context: {
-      description: string;
-      defaultValue?: string;
       metadata?: Metadata;
     }) => Promise<string>,
   ) {}
 
-  async getInput(context: {
-    description: string;
-    defaultValue?: string;
+  async getInput(context?: {
     metadata?: Metadata;
   }): Promise<string> {
-    return this.callback(context);
+    return this.callback(context || {});
   }
 }
 
@@ -66,9 +66,11 @@ export class CLIInputSource implements InputSource {
     this.defaultValue = defaultValue;
   }
 
-  async getInput(context?: { metadata?: Metadata }): Promise<string> {
+  async getInput(context?: {
+    metadata?: Metadata;
+  }): Promise<string> {
     // Prompt the user for input
-    let prompt = this.description
+    const prompt = this.description
       ? `${this.description} (default: ${this.defaultValue}): `
       : `Input: `;
     // Read input from the command line
