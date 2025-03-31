@@ -6,6 +6,7 @@ import {
 } from '../../input_source';
 import { UserTemplate } from '../../templates';
 import { createSession } from '../../session';
+import { createMetadata } from '../../metadata';
 
 // Mock readline module
 const mockQuestion = vi.fn();
@@ -46,15 +47,12 @@ describe('InputSource', () => {
     it('should call callback with context', async () => {
       const callback = vi.fn().mockResolvedValue('test input');
       const source = new CallbackInputSource(callback);
-      const context = {
-        description: 'test',
-        defaultValue: 'default',
-        metadata: { key: 'value' },
-      };
+      const metadata = createMetadata();
+      metadata.set('key', 'value');
 
-      const input = await source.getInput(context);
+      const input = await source.getInput({ metadata });
       expect(input).toBe('test input');
-      expect(callback).toHaveBeenCalledWith(context);
+      expect(callback).toHaveBeenCalledWith({ metadata });
     });
 
     it('should handle async callbacks correctly', async () => {
@@ -64,7 +62,8 @@ describe('InputSource', () => {
       });
       const source = new CallbackInputSource(callback);
 
-      const input = await source.getInput({ description: 'test' });
+      const metadata = createMetadata();
+      const input = await source.getInput({ metadata });
       expect(input).toBe('delayed input');
     });
 
@@ -73,7 +72,8 @@ describe('InputSource', () => {
       const callback = vi.fn().mockRejectedValue(error);
       const source = new CallbackInputSource(callback);
 
-      await expect(source.getInput({ description: 'test' })).rejects.toThrow(
+      const metadata = createMetadata();
+      await expect(source.getInput({ metadata })).rejects.toThrow(
         error,
       );
     });
@@ -83,7 +83,6 @@ describe('InputSource', () => {
         const callback = vi.fn().mockResolvedValue('user response');
         const source = new CallbackInputSource(callback);
         const template = new UserTemplate({
-          description: 'Enter value',
           inputSource: source,
         });
 
@@ -95,8 +94,6 @@ describe('InputSource', () => {
         expect(lastMessage.type).toBe('user');
         expect(lastMessage.content).toBe('user response');
         expect(callback).toHaveBeenCalledWith({
-          description: 'Enter value',
-          defaultValue: undefined,
           metadata: expect.any(Object),
         });
       });
@@ -113,7 +110,6 @@ describe('InputSource', () => {
           .mockResolvedValueOnce(true);
 
         const template = new UserTemplate({
-          description: 'Enter value',
           inputSource: source,
           validate,
         });
@@ -136,7 +132,6 @@ describe('InputSource', () => {
         const onInput = vi.fn();
 
         const template = new UserTemplate({
-          description: 'Enter value',
           inputSource: source,
           onInput,
         });
@@ -150,14 +145,12 @@ describe('InputSource', () => {
       it('should handle default values correctly', async () => {
         const callback = vi
           .fn()
-          .mockImplementation((context) =>
-            Promise.resolve(context.defaultValue + ' modified'),
-          );
+          .mockImplementation((context) => {
+            return Promise.resolve('default value modified');
+          });
         const source = new CallbackInputSource(callback);
 
         const template = new UserTemplate({
-          description: 'Enter value',
-          default: 'default value',
           inputSource: source,
         });
 
@@ -168,8 +161,6 @@ describe('InputSource', () => {
 
         expect(lastMessage.content).toBe('default value modified');
         expect(callback).toHaveBeenCalledWith({
-          description: 'Enter value',
-          defaultValue: 'default value',
           metadata: expect.any(Object),
         });
       });
@@ -268,4 +259,3 @@ describe('InputSource', () => {
       });
     });
   });
-});
