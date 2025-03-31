@@ -40,6 +40,7 @@ export class SchemaTemplate<
     structured_output: Record<string, unknown>;
   },
 > extends Template<TInput, TOutput> {
+  private generateOptions: GenerateOptions;
   private schema: SchemaInput;
   private nativeSchema: SchemaType;
   private maxAttempts: number;
@@ -52,7 +53,8 @@ export class SchemaTemplate<
     maxAttempts?: number;
     functionName?: string;
   }) {
-    super({ generateOptions: options.generateOptions });
+    super();
+    this.generateOptions = options.generateOptions;
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
 
@@ -97,9 +99,7 @@ export class SchemaTemplate<
     });
 
     // Create an assistant template
-    const assistantTemplate = new AssistantTemplate({
-      generateOptions: this.generateOptions,
-    });
+    const assistantTemplate = new AssistantTemplate(this.generateOptions);
 
     // If using OpenAI, add a system message with function calling instructions
     if (isOpenAI) {

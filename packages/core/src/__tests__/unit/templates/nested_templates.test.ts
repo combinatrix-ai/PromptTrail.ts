@@ -10,7 +10,10 @@ import {
 import { createSession } from '../../../session';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
-import type { GenerateOptions } from '../../../generate';
+import {
+  createGenerateOptions,
+  type GenerateOptions,
+} from '../../../generate_options';
 import type { Session } from '../../../types';
 
 // Mock the generateText function
@@ -38,14 +41,14 @@ describe('Nested Templates', () => {
     responseIndex = 0;
 
     // Create generateOptions
-    generateOptions = {
+    generateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Setup mock implementation for generateText
     vi.mocked(generateText).mockImplementation(async () => {
@@ -67,13 +70,13 @@ describe('Nested Templates', () => {
       condition: () => true, // Always true for this test
       thenTemplate: new LinearTemplate()
         .addUser('First question')
-        .addAssistant({ generateOptions }),
-      elseTemplate: new SystemTemplate({ content: 'Condition was false' }),
+        .addAssistant(generateOptions),
+      elseTemplate: new SystemTemplate('Condition was false'),
     });
 
     const loopTemplate = new LoopTemplate()
       .addUser('Second question')
-      .addAssistant({ generateOptions })
+      .addAssistant(generateOptions)
       .addUser('Follow-up question')
       .setExitCondition((session: Session) => {
         // Exit after one iteration
@@ -84,7 +87,7 @@ describe('Nested Templates', () => {
     const subroutineTemplate = new SubroutineTemplate({
       template: new LinearTemplate()
         .addUser('Final question')
-        .addAssistant({ generateOptions }),
+        .addAssistant(generateOptions),
       initWith: () => createSession(), // Don't need parent session in this test
       squashWith: (parentSession, childSession) => {
         // Create a new session with all messages from both sessions
@@ -98,12 +101,14 @@ describe('Nested Templates', () => {
     });
 
     // Combine templates using array-based construction
-    const template = new LinearTemplate([
-      new SystemTemplate({ content: 'You are a helpful assistant.' }),
-      ifTemplate,
-      loopTemplate,
-      subroutineTemplate,
-    ]);
+    const template = new LinearTemplate({
+      templates: [
+        new SystemTemplate('You are a helpful assistant.'),
+        ifTemplate,
+        loopTemplate,
+        subroutineTemplate,
+      ],
+    });
 
     // Execute the template
     const session = await template.execute(createSession());
@@ -149,7 +154,7 @@ describe('Nested Templates', () => {
     const subroutineTemplate = new SubroutineTemplate({
       template: new LinearTemplate()
         .addUser('Tell me about ${topic}.')
-        .addAssistant({ generateOptions }),
+        .addAssistant(generateOptions),
       initWith: (_parentSession: Session) => {
         // Copy metadata from parent to child
         const childSession = createSession();
@@ -174,10 +179,12 @@ describe('Nested Templates', () => {
       },
     });
 
-    const template = new LinearTemplate([
-      new SystemTemplate({ content: 'Hello, ${username}!' }),
-      subroutineTemplate,
-    ]);
+    const template = new LinearTemplate({
+      templates: [
+        new SystemTemplate('Hello, ${username}!'),
+        subroutineTemplate,
+      ],
+    });
 
     // Execute the template
     const result = await template.execute(session);
@@ -213,7 +220,7 @@ describe('Nested Templates', () => {
         condition: (session) => Boolean(session.metadata.get('condition')),
         thenTemplate: new LinearTemplate()
           .addUser('Question when condition is true')
-          .addAssistant({ generateOptions })
+          .addAssistant(generateOptions)
           // Nested condition
           .addIf({
             condition: (session) => {
@@ -221,18 +228,14 @@ describe('Nested Templates', () => {
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('Response A') ?? false;
             },
-            thenTemplate: new UserTemplate({
-              description: 'Follow-up question',
-              default: 'Follow-up when response contains "Response A"',
-            }),
-            elseTemplate: new UserTemplate({
-              description: 'Alternative follow-up',
-              default: 'This should not be added',
-            }),
+            thenTemplate: new UserTemplate(
+              'Follow-up when response contains "Response A"',
+            ),
+            elseTemplate: new UserTemplate('This should not be added'),
           }),
         elseTemplate: new LinearTemplate()
           .addUser('Question when condition is false')
-          .addAssistant({ generateOptions }),
+          .addAssistant(generateOptions),
       });
 
     // Execute the template

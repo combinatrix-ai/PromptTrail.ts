@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
+import { CLIInputSource } from '../../input_source';
 
 import { tool } from 'ai';
 import { z } from 'zod';
@@ -70,7 +71,7 @@ describe('e2e workflow test', () => {
     // Execute the template
     // TODO: addAssistant can just take the generateOptions
     const session = await partialCalculatorTemplate
-      .addAssistant({ generateOptions: openAIgenerateOptions })
+      .addAssistant(openAIgenerateOptions)
       .execute(createSession());
 
     // Verify the conversation flow
@@ -89,7 +90,7 @@ describe('e2e workflow test', () => {
   it('should execute a simple conversation with Anthropic', async () => {
     // Execute the template
     const session = await partialCalculatorTemplate
-      .addAssistant({ generateOptions: anthropicGenerateOptions })
+      .addAssistant(anthropicGenerateOptions)
       .execute(createSession());
 
     // Verify the conversation flow
@@ -118,7 +119,7 @@ describe('e2e workflow test', () => {
     );
     // TODO: addTool can be without name args, using wrapped tool name
     const session = await partialWeatherTemplate
-      .addAssistant({ generateOptions: openAIgenerateOptionsWithTool })
+      .addAssistant(openAIgenerateOptionsWithTool)
       .execute(createSession());
 
     // Verify the conversation flow
@@ -177,7 +178,7 @@ describe('e2e workflow test', () => {
 
     try {
       const session = await partialWeatherTemplate
-        .addAssistant({ generateOptions: anthropicGenerateOptionsWithTool })
+        .addAssistant(anthropicGenerateOptionsWithTool)
         .execute(createSession());
 
       // Verify the conversation flow
@@ -215,19 +216,16 @@ describe('e2e workflow test', () => {
       expect(true).toBe(true); // Always passes
     }
   });
-
+  
   it('should execute a complete conversation with a loop', async () => {
     // Create a loop template
     const loopTemplate = new LinearTemplate()
       .addSystem('You are a helpful assistant.')
       .addLoop(
         new LoopTemplate()
-          .addUser(
-            'Tell me something interesting.',
-            'Tell me something interesting.',
-          )
-          .addAssistant({ generateOptions: openAIgenerateOptions })
-          .addUser('Should we continue? (yes/no)', 'no')
+          .addUser('Tell me something interesting.')
+          .addAssistant(openAIgenerateOptions)
+          .addUser(new CLIInputSource('Should we continue? (yes/no)', 'no'))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (

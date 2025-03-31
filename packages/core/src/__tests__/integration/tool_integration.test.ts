@@ -79,7 +79,7 @@ describe('Tool Integration with ai-sdk', () => {
     const template = new LinearTemplate()
       .addSystem("I'm a helpful assistant with access to tools.")
       .addUser('What is 123 * 456?')
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template
     const session = await template.execute(createSession());

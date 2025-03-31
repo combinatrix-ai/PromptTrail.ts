@@ -57,38 +57,6 @@ export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   result: unknown;
 }
 
-/**
- * Type guard functions for message types
- */
-export const isSystemMessage = (message: Message): message is SystemMessage =>
-  message.type === 'system';
-
-export const isUserMessage = (message: Message): message is UserMessage =>
-  message.type === 'user';
-
-export const isAssistantMessage = (
-  message: Message,
-): message is AssistantMessage => message.type === 'assistant';
-
-export const isToolResultMessage = (
-  message: Message,
-): message is ToolResultMessage => message.type === 'tool_result';
-
-// Temperature is now just a regular number
-
-/**
- * Model configuration interface
- */
-export interface ModelConfig {
-  readonly modelName: string;
-  readonly temperature: number;
-  readonly maxTokens?: number;
-  readonly topP?: number;
-  readonly topK?: number;
-  readonly repetitionPenalty?: number;
-  readonly tools?: Record<string, unknown>;
-}
-
 // Define SchemaType interface since tool.ts is empty
 export interface SchemaType {
   properties: Record<string, { type: string; description: string }>;
@@ -155,30 +123,6 @@ export interface GenerateMCPTransport {
 }
 
 /**
- * Generate options interface
- */
-export interface GenerateOptionsConfig {
-  provider: ProviderConfig;
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  topK?: number;
-  tools?: Record<string, unknown>;
-  toolChoice?: 'auto' | 'required' | 'none';
-  mcpServers?: GenerateMCPServerConfig[];
-  sdkOptions?: Record<string, unknown>;
-}
-
-/**
- * Template related types
- */
-export type TemplateArgs =
-  | { content: string; generateOptions?: never }
-  | GenerateOptionsConfig
-  | string
-  | GenerateOptions;
-
-/**
  * Error types
  */
 export class PromptTrailError extends Error {
@@ -195,12 +139,5 @@ export class ValidationError extends PromptTrailError {
   constructor(message: string) {
     super(message, 'VALIDATION_ERROR');
     this.name = 'ValidationError';
-  }
-}
-
-export class ConfigurationError extends PromptTrailError {
-  constructor(message: string) {
-    super(message, 'CONFIGURATION_ERROR');
-    this.name = 'ConfigurationError';
   }
 }

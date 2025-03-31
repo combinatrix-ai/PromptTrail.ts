@@ -1,4 +1,5 @@
 import * as readline from 'node:readline/promises';
+import type { Metadata } from './metadata';
 
 /**
  * Interface for input sources that can provide user input
@@ -9,38 +10,40 @@ export interface InputSource {
    * @param context Input context including description and optional default value
    * @returns Promise resolving to the input string
    */
-  getInput(context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<string>;
+  getInput(context: { metadata?: Metadata }): Promise<string>;
 }
 
 /**
- * Default input source that returns the default value or empty string
+ * Static input source that returns the same input every time
  */
-export class DefaultInputSource implements InputSource {
-  async getInput(context: { defaultValue?: string }): Promise<string> {
-    return context.defaultValue ?? '';
+export class StaticInputSource implements InputSource {
+  constructor(private input: string) {
+    this.input = input;
+  }
+
+  async getInput(): Promise<string> {
+    return this.input;
   }
 }
 
 /**
  * Input source that allows programmatic input via a callback function
  */
+
+// TODO: Remove description, defaultValue from the callback?
 export class CallbackInputSource implements InputSource {
   constructor(
     private callback: (context: {
       description: string;
       defaultValue?: string;
-      metadata?: Record<string, unknown>;
+      metadata?: Metadata;
     }) => Promise<string>,
   ) {}
 
   async getInput(context: {
     description: string;
     defaultValue?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: Metadata;
   }): Promise<string> {
     return this.callback(context);
   }
@@ -51,31 +54,36 @@ export class CallbackInputSource implements InputSource {
  */
 export class CLIInputSource implements InputSource {
   private rl: readline.Interface;
+  private description: string;
+  private defaultValue?: string;
 
-  constructor() {
+  constructor(description: string, defaultValue?: string) {
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
+    this.description = description;
+    this.defaultValue = defaultValue;
   }
 
-  async getInput(context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<string> {
-    const defaultPrompt = context.defaultValue
-      ? ` (default: ${context.defaultValue})`
-      : '';
-    const prompt = `${context.description}${defaultPrompt}: `;
-
+  async getInput(context?: { metadata?: Metadata }): Promise<string> {
+    // Prompt the user for input
+    let prompt = this.description
+      ? `${this.description} (default: ${this.defaultValue}): `
+      : `Input: `;
+    // Read input from the command line
     const input = await this.rl.question(prompt);
 
     // If input is empty and default value exists, return default
-    if (!input && context.defaultValue !== undefined) {
-      return context.defaultValue;
+    if (input.trim() === '' && this.defaultValue) {
+      return this.defaultValue;
     }
-
+    // If input is empty and no default value, ask again
+    if (input.trim() === '' && !this.defaultValue) {
+      console.log('Input cannot be empty. Please try again.');
+      return this.getInput(context);
+    }
+    // Return the input
     return input;
   }
 

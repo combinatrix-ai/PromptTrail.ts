@@ -8,12 +8,16 @@ vi.mock('../../generate');
 
 // Import after mocking
 import { generateText } from '../../generate';
-import type { GenerateOptions } from '../../generate';
+import {
+  createGenerateOptions,
+  type GenerateOptions,
+} from '../../generate_options';
 import {
   GuardrailTemplate,
   OnFailAction,
 } from '../../templates/guardrail_template';
 import { AssistantTemplate } from '../../templates';
+import { create } from 'zustand';
 
 // Create a simple test validator
 class TestValidator extends BaseValidator {
@@ -47,14 +51,14 @@ describe('GuardrailTemplate', () => {
     vi.clearAllMocks();
 
     // Create generateOptions
-    generateOptions = {
+    generateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Setup mock response
     vi.mocked(generateText).mockResolvedValue({
@@ -67,7 +71,7 @@ describe('GuardrailTemplate', () => {
   it('should pass validation when all validators pass', async () => {
     // Create a guardrail template with a passing validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ generateOptions }),
+      template: new AssistantTemplate(generateOptions),
       validators: [new TestValidator(true)],
     });
 
@@ -100,7 +104,7 @@ describe('GuardrailTemplate', () => {
 
     // Create a guardrail template with the conditional validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ generateOptions }),
+      template: new AssistantTemplate(generateOptions),
       validators: [conditionalValidator],
       onFail: OnFailAction.RETRY,
       maxAttempts: 3,
@@ -121,7 +125,7 @@ describe('GuardrailTemplate', () => {
   it('should throw an exception when validation fails and onFail is EXCEPTION', async () => {
     // Create a guardrail template with a failing validator and EXCEPTION action
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ generateOptions }),
+      template: new AssistantTemplate(generateOptions),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.EXCEPTION,
     });
@@ -135,7 +139,7 @@ describe('GuardrailTemplate', () => {
   it('should continue when validation fails and onFail is CONTINUE', async () => {
     // Create a guardrail template with a failing validator and CONTINUE action
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ generateOptions }),
+      template: new AssistantTemplate(generateOptions),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.CONTINUE,
     });
@@ -159,7 +163,7 @@ describe('GuardrailTemplate', () => {
 
     // Create a guardrail template with a failing validator
     const guardrailTemplate = new GuardrailTemplate({
-      template: new AssistantTemplate({ generateOptions }),
+      template: new AssistantTemplate(generateOptions),
       validators: [new TestValidator(false, 'Validation failed')],
       onFail: OnFailAction.CONTINUE,
       onRejection,
