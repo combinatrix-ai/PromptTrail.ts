@@ -12,6 +12,7 @@ import { RegexMatchValidator } from '../../validators/base_validators';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
+import { CLIInputSource } from '../../input_source';
 
 // Mock the generateText function
 vi.mock('../../generate', () => {
@@ -133,7 +134,7 @@ The weather in San Francisco is currently 72°F and sunny.
     const weatherTemplate = new LinearTemplate()
       .addSystem('You are a helpful weather assistant.')
       .addUser('What is the weather in San Francisco?')
-      .addAssistant({ generateOptions })
+      .addAssistant(generateOptions)
       // Extract markdown headings and code blocks
       .addTransformer(
         extractMarkdown({
@@ -184,7 +185,7 @@ The weather in San Francisco is currently 72°F and sunny.
       template: new LinearTemplate()
         .addSystem('You are a helpful assistant.')
         .addUser('Can you assist me?')
-        .addAssistant({ generateOptions }),
+        .addAssistant(generateOptions),
       validators: [contentValidator],
       onFail: OnFailAction.RETRY,
       maxAttempts: 3,
@@ -218,12 +219,9 @@ The weather in San Francisco is currently 72°F and sunny.
       .addSystem('You are a helpful assistant.')
       .addLoop(
         new LoopTemplate()
-          .addUser(
-            'Tell me something interesting.',
-            'Tell me something interesting.',
-          )
-          .addAssistant({ generateOptions })
-          .addUser('Should we continue? (yes/no)', 'no')
+          .addUser('Tell me something interesting.')
+          .addAssistant(generateOptions)
+          .addUser(new CLIInputSource('Should we continue? (yes/no)', 'no'))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (
@@ -246,6 +244,6 @@ The weather in San Francisco is currently 72°F and sunny.
 
     // Verify the content
     expect(messages[1].content).toBe('Tell me something interesting.');
-    expect(messages[3].content).toBe('Should we continue? (yes/no)');
+    expect(messages[3].content).toBe('no');
   });
 });

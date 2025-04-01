@@ -1,4 +1,4 @@
-import type { Session } from '../session';
+import type { Session } from '../types';
 import type { MessageRole } from '../types';
 import {
   createTransformer,

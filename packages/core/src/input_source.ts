@@ -1,4 +1,5 @@
 import * as readline from 'node:readline/promises';
+import type { Metadata } from './metadata';
 
 /**
  * Static input source that returns the same input every time
@@ -21,43 +22,45 @@ export class StaticInputSource implements InputSource {
 export interface InputSource {
   /**
    * Get input with optional context
-   * @param context Input context including description and optional default value
+   * @param context Input context including metadata
    * @returns Promise resolving to the input string
    */
-  getInput(context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
+  getInput(context?: {
+    metadata?: Metadata;
   }): Promise<string>;
 }
 
 /**
- * Default input source that returns the default value or empty string
+ * Static input source that returns the same input every time
  */
-export class DefaultInputSource implements InputSource {
-  async getInput(context: { defaultValue?: string }): Promise<string> {
-    return context.defaultValue ?? '';
+export class StaticInputSource implements InputSource {
+  constructor(private input: string) {
+    this.input = input;
+  }
+
+  async getInput(_context?: {
+    metadata?: Metadata;
+  }): Promise<string> {
+    return this.input;
   }
 }
 
 /**
  * Input source that allows programmatic input via a callback function
  */
+
+// TODO: Remove description, defaultValue from the callback?
 export class CallbackInputSource implements InputSource {
   constructor(
     private callback: (context: {
-      description: string;
-      defaultValue?: string;
-      metadata?: Record<string, unknown>;
+      metadata?: Metadata;
     }) => Promise<string>,
   ) {}
 
-  async getInput(context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
+  async getInput(context?: {
+    metadata?: Metadata;
   }): Promise<string> {
-    return this.callback(context);
+    return this.callback(context || {});
   }
 }
 
@@ -65,7 +68,10 @@ export class CallbackInputSource implements InputSource {
  * Input source that reads from command line interface
  */
 export class CLIInputSource implements InputSource {
-  private rl: readline.Interface;
+  private rl!: readline.Interface;
+  private description: string;
+  private defaultValue?: string;
+  private isTestEnvironment: boolean;
 
   constructor(
     customReadline?: readline.Interface
@@ -76,23 +82,33 @@ export class CLIInputSource implements InputSource {
     });
   }
 
-  async getInput(context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
+  async getInput(context?: {
+    metadata?: Metadata;
   }): Promise<string> {
-    const defaultPrompt = context.defaultValue
-      ? ` (default: ${context.defaultValue})`
-      : '';
-    const prompt = `${context.description}${defaultPrompt}: `;
+    if (this.isTestEnvironment) {
+      if (this.defaultValue) {
+        return this.defaultValue;
+      }
+      throw new Error('No default value provided for CLIInputSource in test environment');
+    }
 
+    // Prompt the user for input
+    const prompt = this.description
+      ? `${this.description} (default: ${this.defaultValue}): `
+      : `Input: `;
+    // Read input from the command line
     const input = await this.rl.question(prompt);
 
     // If input is empty and default value exists, return default
-    if (!input && context.defaultValue !== undefined) {
-      return context.defaultValue;
+    if (input.trim() === '' && this.defaultValue) {
+      return this.defaultValue;
     }
-
+    // If input is empty and no default value, ask again
+    if (input.trim() === '' && !this.defaultValue) {
+      console.log('Input cannot be empty. Please try again.');
+      return this.getInput(context);
+    }
+    // Return the input
     return input;
   }
 
@@ -101,6 +117,8 @@ export class CLIInputSource implements InputSource {
    * Should be called when the CLI input source is no longer needed
    */
   close(): void {
-    this.rl.close();
+    if (!this.isTestEnvironment && this.rl) {
+      this.rl.close();
+    }
   }
 }

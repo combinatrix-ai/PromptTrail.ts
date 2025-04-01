@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LinearTemplate, createSession, type GenerateOptions } from '../..';
+import {
+  LinearTemplate,
+  createGenerateOptions,
+  createSession,
+  type GenerateOptions,
+} from '../..';
 
 // Mock generateText function
 vi.mock('../../../src/generate', () => {
@@ -16,20 +21,20 @@ vi.mock('../../../src/generate', () => {
 describe('Simple Example', () => {
   it('should create and execute a simple conversation template', async () => {
     // Define generateOptions
-    const generateOptions: GenerateOptions = {
+    const generateOptions: GenerateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Create a simple conversation template
     const chat = new LinearTemplate()
       .addSystem("I'm a helpful assistant.")
       .addUser("What's TypeScript?")
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template
     const session = await chat.execute(createSession());
@@ -52,15 +57,14 @@ describe('Simple Example', () => {
 
   it('should handle basic metadata in the session', async () => {
     // Define generateOptions
-    const generateOptions: GenerateOptions = {
+    const generateOptions: GenerateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
-
+    });
     // Create a session with simple metadata
     const session = createSession();
     session.metadata.set('username', 'Alice');
@@ -70,7 +74,7 @@ describe('Simple Example', () => {
     const chat = new LinearTemplate()
       .addSystem('Hello, ${username}!')
       .addUser('Tell me about ${topic}.')
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template
     const result = await chat.execute(session);
@@ -85,14 +89,14 @@ describe('Simple Example', () => {
 
   it('should handle print mode', async () => {
     // Define generateOptions
-    const generateOptions: GenerateOptions = {
+    const generateOptions: GenerateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'gpt-4o-mini',
       },
       temperature: 0.7,
-    };
+    });
 
     // Spy on console.log
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -101,7 +105,7 @@ describe('Simple Example', () => {
     const chat = new LinearTemplate()
       .addSystem("I'm a helpful assistant.")
       .addUser("What's TypeScript?")
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template with print mode enabled
     // We intentionally ignore the returned session (prefixed with underscore)

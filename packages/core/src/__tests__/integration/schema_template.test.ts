@@ -9,7 +9,7 @@ import {
 } from '../../utils/schema';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
-import { createGenerateOptions } from '../../generate_options';
+import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
 import { tool } from 'ai';
 
@@ -20,42 +20,8 @@ vi.mock('../../generate', () => {
   };
 });
 
-/**
- * Helper function to check if an object matches a pattern
- * This allows for more flexible testing with pattern matching instead of exact matching
- */
-function expectObjectToMatchPattern(actual: any, pattern: any) {
-  // First check that the actual value is defined
-  expect(actual).toBeDefined();
-
-  // Check each property in the pattern
-  for (const key in pattern) {
-    // Check that the property exists
-    expect(actual).toHaveProperty(key);
-
-    const expectedValue = pattern[key];
-    const actualValue = actual[key];
-
-    if (expectedValue === expect.any(String)) {
-      expect(typeof actualValue).toBe('string');
-    } else if (expectedValue === expect.any(Number)) {
-      expect(typeof actualValue).toBe('number');
-    } else if (expectedValue === expect.any(Boolean)) {
-      expect(typeof actualValue).toBe('boolean');
-    } else if (expectedValue instanceof RegExp) {
-      expect(String(actualValue)).toMatch(expectedValue);
-    } else if (typeof expectedValue === 'object' && expectedValue !== null) {
-      // Recursively check nested objects
-      expectObjectToMatchPattern(actualValue, expectedValue);
-    } else {
-      // Check exact values
-      expect(actualValue).toEqual(expectedValue);
-    }
-  }
-}
-
 describe('SchemaTemplate', () => {
-  let generateOptions: any;
+  let generateOptions: GenerateOptions;
 
   beforeEach(() => {
     // Reset mocks
@@ -94,7 +60,7 @@ describe('SchemaTemplate', () => {
 
     // Create a schema template
     const template = new SchemaTemplate({
-      generateOptions,
+      generateOptions: generateOptions,
       schema: productSchema,
     });
 

@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate } from '../../templates';
 import { createMetadata } from '../../metadata';
-import type { GenerateOptions } from '../../generate';
+import type { GenerateOptions } from '../../generate_options';
 
 // Mock modules
 vi.mock('../../generate');
 
 // Import mocked modules after mocking
 import { generateText } from '../../generate';
+import { createGenerateOptions } from '../../generate_options';
 
 describe('Browser Compatibility', () => {
   beforeEach(() => {
@@ -33,7 +34,7 @@ describe('Browser Compatibility', () => {
 
   it('should work with templates in browser context', async () => {
     // Define generateOptions with browser flag
-    const generateOptions: GenerateOptions = {
+    const generateOptions: GenerateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
@@ -41,13 +42,13 @@ describe('Browser Compatibility', () => {
         dangerouslyAllowBrowser: true,
       },
       temperature: 0.7,
-    };
+    });
 
     // Create a template
     const template = new LinearTemplate()
       .addSystem('You are a helpful assistant in a browser environment.')
       .addUser('Hello from the browser!')
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template
     const result = await template.execute(createSession());
@@ -65,7 +66,7 @@ describe('Browser Compatibility', () => {
 
   it('should throw an error when browser flag is not set', async () => {
     // Define generateOptions without browser flag
-    const generateOptions: GenerateOptions = {
+    const generateOptions: GenerateOptions = createGenerateOptions({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
@@ -73,13 +74,13 @@ describe('Browser Compatibility', () => {
         // dangerouslyAllowBrowser is not set
       },
       temperature: 0.7,
-    };
+    });
 
     // Create a template
     const template = new LinearTemplate()
       .addSystem('You are a helpful assistant in a browser environment.')
       .addUser('Hello from the browser!')
-      .addAssistant({ generateOptions });
+      .addAssistant(generateOptions);
 
     // Execute the template should throw
     await expect(template.execute(createSession())).rejects.toThrow();
