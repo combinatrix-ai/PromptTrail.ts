@@ -6,7 +6,7 @@ import * as readline from 'node:readline/promises';
 export class StaticInputSource implements InputSource {
   constructor(private input: string) {}
 
-  async getInput(context: {
+  async getInput(_context: {
     description: string;
     defaultValue?: string;
     metadata?: Record<string, unknown>;
