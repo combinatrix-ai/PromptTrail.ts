@@ -53,15 +53,19 @@ export class CallbackInputSource implements InputSource {
  * Input source that reads from command line interface
  */
 export class CLIInputSource implements InputSource {
-  private rl: readline.Interface;
+  private rl!: readline.Interface;
   private description: string;
   private defaultValue?: string;
+  private isTestEnvironment: boolean;
 
-  constructor(description: string, defaultValue?: string) {
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+  constructor(description: string, defaultValue?: string, isTestEnvironment = false) {
+    this.isTestEnvironment = isTestEnvironment;
+    if (!this.isTestEnvironment) {
+      this.rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+    }
     this.description = description;
     this.defaultValue = defaultValue;
   }
@@ -69,6 +73,13 @@ export class CLIInputSource implements InputSource {
   async getInput(context?: {
     metadata?: Metadata;
   }): Promise<string> {
+    if (this.isTestEnvironment) {
+      if (this.defaultValue) {
+        return this.defaultValue;
+      }
+      throw new Error('No default value provided for CLIInputSource in test environment');
+    }
+
     // Prompt the user for input
     const prompt = this.description
       ? `${this.description} (default: ${this.defaultValue}): `
@@ -94,6 +105,8 @@ export class CLIInputSource implements InputSource {
    * Should be called when the CLI input source is no longer needed
    */
   close(): void {
-    this.rl.close();
+    if (!this.isTestEnvironment && this.rl) {
+      this.rl.close();
+    }
   }
 }

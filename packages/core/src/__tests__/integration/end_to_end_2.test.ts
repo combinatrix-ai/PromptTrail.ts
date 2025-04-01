@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
-import { CLIInputSource } from '../../input_source';
+import { CLIInputSource, StaticInputSource } from '../../input_source';
 
 import { tool } from 'ai';
 import { z } from 'zod';
@@ -225,7 +225,7 @@ describe('e2e workflow test', () => {
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(openAIgenerateOptions)
-          .addUser(new CLIInputSource('Should we continue? (yes/no)', 'no'))
+          .addUser(new StaticInputSource('Should we continue? (yes/no): no'))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (
@@ -248,7 +248,7 @@ describe('e2e workflow test', () => {
 
     // Verify the content
     expect(messages[1].content).toBe('Tell me something interesting.');
-    expect(messages[3].content).toBe('Should we continue? (yes/no)');
+    expect(messages[3].content).toBe('Should we continue? (yes/no): no');
   });
 });
 
