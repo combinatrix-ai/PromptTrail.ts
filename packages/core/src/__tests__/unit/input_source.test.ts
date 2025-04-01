@@ -235,7 +235,7 @@ describe('InputSource', () => {
     
     it('should work with custom readline interface', async () => {
       const customReadline = {
-        question: async (prompt: string): Promise<string> => {
+        question: async (_prompt: string): Promise<string> => {
           return 'custom input';
         },
         close: vi.fn(),

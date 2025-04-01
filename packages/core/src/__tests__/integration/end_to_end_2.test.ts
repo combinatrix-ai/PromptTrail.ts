@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
-import { CLIInputSource } from '../../input_source';
-import { EventEmitter } from 'events';
 import readline from 'node:readline/promises';
 
 import { tool } from 'ai';
@@ -14,9 +12,9 @@ import { createGenerateOptions } from '../../generate_options';
 //   - No mock in this test
 //   - Do not change behavior of this test without asking the user
 
-function createMockReadlineInterface(answers: string[] = []) {
+function _createMockReadlineInterface(answers: string[] = []) {
   return {
-    question: async (prompt: string): Promise<string> => {
+    question: async (_prompt: string): Promise<string> => {
       const answer = answers.length > 0 ? answers.shift() : '';
       return answer as string;
     },
