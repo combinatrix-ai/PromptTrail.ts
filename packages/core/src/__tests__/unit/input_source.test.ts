@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import * as readline from 'node:readline/promises';
 import {
   CallbackInputSource,
   CLIInputSource,
@@ -210,8 +211,26 @@ describe('InputSource', () => {
     //     defaultValue: 'default',
     //   });
 
-    //   expect(input).toBe('user input');
-    // });
+      expect(input).toBe('user input');
+    });
+    
+    it('should work with custom readline interface', async () => {
+      const customReadline = {
+        question: async (_prompt: string): Promise<string> => {
+          return 'custom input';
+        },
+        close: vi.fn(),
+      } as unknown as readline.Interface;
+      
+      const customSource = new CLIInputSource(customReadline);
+      
+      const input = await customSource.getInput({
+        description: 'Enter value',
+      });
+      
+      expect(input).toBe('custom input');
+      customSource.close();
+    });
 
     // describe('integration with UserTemplate', () => {
     //   it('should work with UserTemplate', async () => {
