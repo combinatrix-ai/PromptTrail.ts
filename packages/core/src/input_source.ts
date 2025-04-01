@@ -1,6 +1,21 @@
 import * as readline from 'node:readline/promises';
 
 /**
+ * Static input source that returns the same input every time
+ */
+export class StaticInputSource implements InputSource {
+  constructor(private input: string) {}
+
+  async getInput(_context: {
+    description: string;
+    defaultValue?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<string> {
+    return this.input;
+  }
+}
+
+/**
  * Interface for input sources that can provide user input
  */
 export interface InputSource {
@@ -52,8 +67,10 @@ export class CallbackInputSource implements InputSource {
 export class CLIInputSource implements InputSource {
   private rl: readline.Interface;
 
-  constructor() {
-    this.rl = readline.createInterface({
+  constructor(
+    customReadline?: readline.Interface
+  ) {
+    this.rl = customReadline || readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
