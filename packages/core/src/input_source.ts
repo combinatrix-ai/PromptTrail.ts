@@ -39,9 +39,9 @@ export class StaticInputSource implements InputSource {
 
 /**
  * Input source that allows programmatic input via a callback function
+ * 
+ * TODO: Remove description, defaultValue from the callback?
  */
-
-// TODO: Remove description, defaultValue from the callback?
 export class CallbackInputSource implements InputSource {
   private validator?: IValidator;
   private maxAttempts: number;
