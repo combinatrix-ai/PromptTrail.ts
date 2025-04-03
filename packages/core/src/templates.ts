@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
 import type { Session, SchemaType } from './types';
+import { type IValidator } from './validator';
 
 /**
  * Base class for all templates
@@ -137,16 +138,22 @@ export class AssistantTemplate<
   private options: {
     content?: string;
     generateOptions?: GenerateOptions;
+    validator?: IValidator;
   };
-  constructor(contentOrGenerateOptions: string | GenerateOptions) {
+  constructor(
+    contentOrGenerateOptions: string | GenerateOptions,
+    validator?: IValidator
+  ) {
     super();
     if (typeof contentOrGenerateOptions === 'string') {
       this.options = {
         content: contentOrGenerateOptions,
+        validator,
       };
     } else {
       this.options = {
         generateOptions: contentOrGenerateOptions,
+        validator,
       };
     }
   }
@@ -158,6 +165,14 @@ export class AssistantTemplate<
         this.options.content,
         session.metadata,
       );
+      
+      if (this.options.validator) {
+        const result = await this.options.validator.validate(interpolatedContent, session.metadata as any);
+        if (!result.isValid) {
+          throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
+        }
+      }
+      
       return session.addMessage({
         type: 'assistant',
         content: interpolatedContent,
@@ -176,6 +191,13 @@ export class AssistantTemplate<
       this.options.generateOptions,
     );
 
+    if (this.options.validator && response.type === 'assistant' && response.content) {
+      const result = await this.options.validator.validate(response.content, session.metadata as any);
+      if (!result.isValid) {
+        throw new Error(`Assistant response validation failed: ${result.instruction || 'Invalid content'}`);
+      }
+    }
+    
     // Add the assistant message to the session
     let updatedSession = session.addMessage(
       response,

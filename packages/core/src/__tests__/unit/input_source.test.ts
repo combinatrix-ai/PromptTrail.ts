@@ -9,6 +9,7 @@ import {
 import { UserTemplate } from '../../templates';
 import { createSession } from '../../session';
 import { createMetadata } from '../../metadata';
+import { type IValidator } from '../../validator';
 
 // Mock the module completely within the factory function
 vi.mock('node:readline/promises', async (importOriginal) => {
@@ -76,6 +77,45 @@ describe('InputSource', () => {
       const input = await source.getInput();
       expect(input).toBe('static input');
     });
+
+    it('should validate static input with validator', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const source = new StaticInputSource('static input', mockValidator);
+      const input = await source.getInput();
+      
+      expect(input).toBe('static input');
+      expect(mockValidator.validate).toHaveBeenCalledWith('static input', expect.anything());
+    });
+
+    it('should throw error when static input fails validation', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid input' }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const source = new StaticInputSource('static input', mockValidator);
+      
+      await expect(source.getInput()).rejects.toThrow('Input validation failed');
+      expect(mockValidator.validate).toHaveBeenCalledWith('static input', expect.anything());
+    });
+
+    it('should return validator from getValidator method', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const source = new StaticInputSource('static input', mockValidator);
+      
+      expect(source.getValidator()).toBe(mockValidator);
+    });
   });
 
   describe('CallbackInputSource', () => {
@@ -89,6 +129,39 @@ describe('InputSource', () => {
       const input = await source.getInput({ metadata });
       expect(input).toBe('test input');
       expect(callback).toHaveBeenCalledWith({ metadata });
+    });
+    
+    it('should validate callback input with validator', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const callback = vi.fn().mockResolvedValue('valid input');
+        
+      const source = new CallbackInputSource(callback, mockValidator);
+      const input = await source.getInput();
+      
+      expect(input).toBe('valid input');
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(mockValidator.validate).toHaveBeenCalledWith('valid input', expect.anything());
+    });
+
+    it('should throw error when callback input fails validation', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid input' }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const callback = vi.fn().mockResolvedValue('invalid input');
+      
+      const source = new CallbackInputSource(callback, mockValidator);
+      
+      await expect(source.getInput()).rejects.toThrow('Input validation failed');
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(mockValidator.validate).toHaveBeenCalledWith('invalid input', expect.anything());
     });
 
     it('should handle async callbacks correctly', async () => {
@@ -180,6 +253,133 @@ describe('InputSource', () => {
 
   describe('CLIInputSource', () => {
     // No top-level source or afterEach
+    
+    it('should validate default value with validator', async () => {
+      const { createInterface: mockCreateInterface, _mockQuestion: mockQuestion } = await getReadlineMocks();
+      mockQuestion.mockReset();
+      mockCreateInterface.mockClear();
+      
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const source = new CLIInputSource(
+        undefined,
+        'Enter value',
+        'default value',
+        mockValidator
+      );
+      
+      try {
+        const input = await source.getInput();
+        expect(input).toBe('default value');
+        expect(mockValidator.validate).toHaveBeenCalledWith('default value', expect.anything());
+      } finally {
+        source.close();
+      }
+    });
+    
+    it('should throw error when default value fails validation', async () => {
+      const { createInterface: mockCreateInterface, _mockQuestion: mockQuestion } = await getReadlineMocks();
+      mockQuestion.mockReset();
+      mockCreateInterface.mockClear();
+      
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid input' }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const source = new CLIInputSource(
+        undefined,
+        'Enter value',
+        'invalid default',
+        mockValidator
+      );
+      
+      try {
+        await expect(source.getInput()).rejects.toThrow('Default input validation failed');
+        expect(mockValidator.validate).toHaveBeenCalledWith('invalid default', expect.anything());
+      } finally {
+        source.close();
+      }
+    });
+    
+    it('should validate user input with validator', async () => {
+      const { createInterface: mockCreateInterface, _mockQuestion: mockQuestion } = await getReadlineMocks();
+      mockQuestion.mockReset().mockResolvedValue('valid user input');
+      mockCreateInterface.mockClear();
+      
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const customReadline = {
+        question: mockQuestion,
+        close: vi.fn(),
+      } as unknown as readline.Interface;
+      
+      const source = new CLIInputSource(
+        customReadline,
+        'Enter value',
+        undefined,
+        mockValidator
+      );
+      
+      try {
+        const input = await source.getInput();
+        expect(input).toBe('valid user input');
+        expect(mockQuestion).toHaveBeenCalledTimes(1);
+        expect(mockValidator.validate).toHaveBeenCalledWith('valid user input', expect.anything());
+      } finally {
+        source.close();
+      }
+    });
+    
+    it('should retry when user input fails validation', async () => {
+      const { createInterface: mockCreateInterface, _mockQuestion: mockQuestion } = await getReadlineMocks();
+      mockQuestion.mockReset()
+        .mockResolvedValueOnce('invalid user input')
+        .mockResolvedValueOnce('valid user input');
+      mockCreateInterface.mockClear();
+      
+      const mockValidator: IValidator = {
+        validate: vi.fn()
+          .mockResolvedValueOnce({ isValid: false, instruction: 'Invalid input' })
+          .mockResolvedValueOnce({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      
+      const customReadline = {
+        question: mockQuestion,
+        close: vi.fn(),
+      } as unknown as readline.Interface;
+      
+      const source = new CLIInputSource(
+        customReadline,
+        'Enter value',
+        undefined,
+        mockValidator
+      );
+      
+      try {
+        const input = await source.getInput();
+        expect(input).toBe('valid user input');
+        expect(mockQuestion).toHaveBeenCalledTimes(2);
+        expect(mockValidator.validate).toHaveBeenCalledTimes(2);
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Input validation failed'));
+      } finally {
+        source.close();
+        consoleSpy.mockRestore();
+      }
+    });
 
     it('should return default value immediately if provided', async () => {
       const { createInterface: mockCreateInterface, _mockQuestion: mockQuestion } = await getReadlineMocks();
