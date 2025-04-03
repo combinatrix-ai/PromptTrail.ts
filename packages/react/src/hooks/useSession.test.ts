@@ -1,7 +1,29 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '../test-setup';
 import { useSession } from './useSession';
-import { createSession } from '../test-mocks/core-mock';
+import type { Session, Message, Template } from '../types';
+
+const createSession = (): Session<any> => {
+  const messages: Message[] = [];
+  const metadata = new Map<string, any>();
+  
+  const session: Session<any> = {
+    messages,
+    metadata,
+    addMessage: (message: Message) => {
+      messages.push(message);
+      return session;
+    },
+    getMessagesByType: <U extends Message['type']>(type: U) => {
+      return messages.filter(m => m.type === type) as Extract<Message, { type: U }>[];
+    },
+    updateMetadata: (metadata: Record<string, any>) => {
+      return session;
+    }
+  };
+  
+  return session;
+};
 
 describe('useSession', () => {
   it('初期セッションなしで正しく初期化される', () => {

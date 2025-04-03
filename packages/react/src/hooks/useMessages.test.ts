@@ -1,7 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '../test-setup';
 import { useMessages, useMessagesByType } from './useMessages';
-import { createSession } from '../test-mocks/core-mock';
+import type { Session, Message } from '../types';
+
+const createSession = (): Session<any> => {
+  const messages: Message[] = [];
+  
+  const session: Session<any> = {
+    messages,
+    metadata: new Map(),
+    addMessage: (message: Message) => {
+      messages.push(message);
+      return session;
+    },
+    getMessagesByType: <U extends Message['type']>(type: U) => {
+      return messages.filter(m => m.type === type) as Extract<Message, { type: U }>[];
+    },
+    updateMetadata: (metadata: Record<string, any>) => {
+      return session;
+    }
+  };
+  
+  return session;
+};
 
 describe('useMessages', () => {
   it('undefinedセッションの場合、空配列を返す', () => {

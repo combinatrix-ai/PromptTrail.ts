@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '../test-setup';
 import { useInputSource } from './useInputSource';
-import type { InputSource } from '../test-mocks/core-mock';
+import type { InputSource } from '../types';
 
 describe('useInputSource', () => {
   it('初期値で正しく初期化される', () => {
