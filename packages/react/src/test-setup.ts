@@ -19,3 +19,57 @@ vi.mock('react-dom/client', () => ({
     unmount: vi.fn(),
   })),
 }));
+
+/**
+ * Mock @prompttrail/core for testing
+ * 
+ * This mock provides the necessary functions and types from the core package
+ * to allow tests to run without requiring the actual TypeScript declaration files.
+ * This helps resolve module resolution issues in CI environments.
+ */
+vi.mock('@prompttrail/core', () => {
+  type MockMessage = {
+    type: string;
+    content: string;
+    [key: string]: any;
+  };
+  
+  type MockSession = {
+    messages: MockMessage[];
+    metadata: {
+      get: (key: string) => any;
+      set: (key: string, value: any) => void;
+    };
+    addMessage: (message: MockMessage) => MockSession;
+    getMessagesByType: (type: string) => MockMessage[];
+    updateMetadata?: (metadata: Record<string, any>) => MockSession;
+  };
+  
+  const createMockSession = (): MockSession => {
+    const mockSession: MockSession = {
+      messages: [],
+      metadata: {
+        get: vi.fn((key: string) => key === 'key' ? 'value' : undefined),
+        set: vi.fn(),
+      },
+      addMessage: vi.fn((message: MockMessage) => {
+        mockSession.messages.push(message);
+        return mockSession;
+      }),
+      getMessagesByType: vi.fn((type: string) => {
+        return type ? mockSession.messages.filter((m) => m.type === type) : [];
+      }),
+      updateMetadata: vi.fn((metadata: Record<string, any>) => {
+        Object.entries(metadata).forEach(([key, value]) => {
+          mockSession.metadata.set(key, value);
+        });
+        return mockSession;
+      }),
+    };
+    return mockSession;
+  };
+  
+  return {
+    createSession: vi.fn(() => createMockSession()),
+  };
+});

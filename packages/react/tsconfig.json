@@ -9,6 +9,6 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/hooks/useInputSource.ts", "src/hooks/useSession.ts", "src/hooks/useMessages.ts"],
+  "include": ["src"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"]
 }
