@@ -7,10 +7,10 @@ import {
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type {
-  Message,
-  Session,
-  ProviderConfig,
-  GenerateMCPServerConfig,
+  TMessage,
+  ISession,
+  TProviderConfig,
+  IMCPServerConfig,
 } from './types';
 import { createMetadata } from './metadata';
 import type { GenerateOptions } from './generate_options';
@@ -18,7 +18,7 @@ import type { GenerateOptions } from './generate_options';
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: Session): Array<{
+function convertSessionToAiSdkMessages(session: ISession): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -91,7 +91,7 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
 /**
  * Create a provider based on configuration
  */
-function createProvider(config: ProviderConfig): unknown {
+function createProvider(config: TProviderConfig): unknown {
   const options: Record<string, unknown> = {};
   if (config.type === 'openai') {
     if (config.baseURL) {
@@ -125,7 +125,7 @@ function createProvider(config: ProviderConfig): unknown {
  * Initialize MCP client
  */
 async function initializeMCPClient(
-  config: GenerateMCPServerConfig,
+  config: IMCPServerConfig,
 ): Promise<unknown> {
   try {
     const transport = {
@@ -151,9 +151,9 @@ async function initializeMCPClient(
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText(
-  session: Session,
+  session: ISession,
   options: GenerateOptions,
-): Promise<Message> {
+): Promise<TMessage> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -228,9 +228,9 @@ export async function generateText(
  * Generate text stream using AI SDK
  */
 export async function* generateTextStream(
-  session: Session,
+  session: ISession,
   options: any, // Using any temporarily to avoid circular dependency
-): AsyncGenerator<Message, void, unknown> {
+): AsyncGenerator<TMessage, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AssistantTemplate } from '../../templates';
 import { createSession } from '../../session';
-import { type IValidator, AllValidator, AnyValidator } from '../../validator';
+import { type IValidator, AllValidator, AnyValidator } from '../../validators';
 import * as generateModule from '../../generate';
-import type { AssistantMessage, ProviderConfig } from '../../types';
+import type { IAssistantMessage, TProviderConfig } from '../../types';
 import { GenerateOptions } from '../../generate_options';
 
 vi.mock('../../generate', () => ({
@@ -58,7 +58,7 @@ describe('AssistantTemplate', () => {
     });
     
     it('should generate content using the model', async () => {
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'generated content',
         metadata: undefined
@@ -67,7 +67,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -90,7 +90,7 @@ describe('AssistantTemplate', () => {
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'valid generated content',
         metadata: undefined
@@ -99,7 +99,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -122,7 +122,7 @@ describe('AssistantTemplate', () => {
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'invalid generated content',
         metadata: undefined
@@ -131,7 +131,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -154,13 +154,13 @@ describe('AssistantTemplate', () => {
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
       
-      const mockResponse1: AssistantMessage = {
+      const mockResponse1: IAssistantMessage = {
         type: 'assistant',
         content: 'invalid generated content',
         metadata: undefined
       };
       
-      const mockResponse2: AssistantMessage = {
+      const mockResponse2: IAssistantMessage = {
         type: 'assistant',
         content: 'valid generated content',
         metadata: undefined
@@ -171,7 +171,7 @@ describe('AssistantTemplate', () => {
         .mockResolvedValueOnce(mockResponse1)
         .mockResolvedValueOnce(mockResponse2);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -201,7 +201,7 @@ describe('AssistantTemplate', () => {
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'invalid generated content',
         metadata: undefined
@@ -210,7 +210,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -238,7 +238,7 @@ describe('AssistantTemplate', () => {
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'invalid generated content',
         metadata: undefined
@@ -247,7 +247,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -291,7 +291,7 @@ describe('AssistantTemplate', () => {
       
       const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'valid content for all validators',
         metadata: undefined
@@ -300,7 +300,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -332,7 +332,7 @@ describe('AssistantTemplate', () => {
       
       const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'content that fails validator 2',
         metadata: undefined
@@ -341,7 +341,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -371,7 +371,7 @@ describe('AssistantTemplate', () => {
       
       const anyValidator = new AnyValidator([mockValidator1, mockValidator2], { description: 'Any validator must pass' });
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'content that passes validator 2',
         metadata: undefined
@@ -380,7 +380,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -412,7 +412,7 @@ describe('AssistantTemplate', () => {
       
       const anyValidator = new AnyValidator([mockValidator1, mockValidator2], { description: 'Any validator must pass' });
       
-      const mockResponse: AssistantMessage = {
+      const mockResponse: IAssistantMessage = {
         type: 'assistant',
         content: 'content that fails all validators',
         metadata: undefined
@@ -421,7 +421,7 @@ describe('AssistantTemplate', () => {
       const generateTextMock = vi.mocked(generateModule.generateText);
       generateTextMock.mockResolvedValue(mockResponse);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'
@@ -455,13 +455,13 @@ describe('AssistantTemplate', () => {
       
       const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
       
-      const mockResponse1: AssistantMessage = {
+      const mockResponse1: IAssistantMessage = {
         type: 'assistant',
         content: 'invalid content',
         metadata: undefined
       };
       
-      const mockResponse2: AssistantMessage = {
+      const mockResponse2: IAssistantMessage = {
         type: 'assistant',
         content: 'valid content',
         metadata: undefined
@@ -472,7 +472,7 @@ describe('AssistantTemplate', () => {
         .mockResolvedValueOnce(mockResponse1)
         .mockResolvedValueOnce(mockResponse2);
       
-      const mockProvider: ProviderConfig = {
+      const mockProvider: TProviderConfig = {
         type: 'openai',
         apiKey: 'mock-api-key',
         modelName: 'mock-model'

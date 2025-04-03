@@ -8,7 +8,7 @@ import {
 import { UserTemplate } from '../../templates';
 import { createSession } from '../../session';
 import { createMetadata } from '../../metadata';
-import { type IValidator } from '../../validator';
+import { type IValidator } from '../../validators/base';
 
 // Mock the module completely within the factory function
 vi.mock('node:readline/promises', async (importOriginal) => {
