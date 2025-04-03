@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
-import { type IValidator, type ValidationResult } from '../../../validator';
+import { type IValidator, type TValidationResult } from '../../../validators/base';
 import { createMetadata } from '../../../metadata';
-import { type Session } from '../../../types';
+import { type ISession } from '../../../types';
 
 vi.mock('../../../generate');
 
@@ -25,8 +25,8 @@ class TestValidator implements IValidator {
 
   async validate(
     _content: string,
-    _context: Session,
-  ): Promise<ValidationResult> {
+    _context: ISession,
+  ): Promise<TValidationResult> {
     return this.shouldPass
       ? { isValid: true }
       : { isValid: false, instruction: this.feedback || 'Validation failed' };
@@ -90,7 +90,7 @@ describe('AssistantTemplate with Validator', () => {
     });
     
     const conditionalValidator: IValidator = {
-      validate: async (content, _context: Session): Promise<ValidationResult> => {
+      validate: async (content, _context: ISession): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }
           : { isValid: false, instruction: 'Need attempt 2' };

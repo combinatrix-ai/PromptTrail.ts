@@ -1,48 +1,55 @@
 /**
  * Core type definitions for PromptTrail
+ * 
+ * This file contains the fundamental types used throughout the framework
  */
 import type { Metadata } from './metadata';
 
 /**
- * Message metadata types
+ * Message Types
+ * --------------------------------------------------------------------
  */
-export interface ToolResultMetadata extends Record<string, unknown> {
+
+/**
+ * Metadata type for tool result messages
+ */
+export interface IToolResultMetadata extends Record<string, unknown> {
   toolCallId: string;
 }
 
 /**
  * Represents the role of a message in a conversation
  */
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
+export type TMessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 
 /**
- * Discriminated union type for different message types
+ * Base interface for all message types
  */
-export type Message =
-  | SystemMessage
-  | UserMessage
-  | AssistantMessage
-  | ToolResultMessage;
-
-/**
- * Base interface for message properties
- */
-interface BaseMessage<
+export interface IBaseMessage<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   content: string;
   metadata?: Metadata<T>;
 }
 
-export interface SystemMessage extends BaseMessage {
+/**
+ * System message interface
+ */
+export interface ISystemMessage extends IBaseMessage {
   type: 'system';
 }
 
-export interface UserMessage extends BaseMessage {
+/**
+ * User message interface
+ */
+export interface IUserMessage extends IBaseMessage {
   type: 'user';
 }
 
-export interface AssistantMessage extends BaseMessage {
+/**
+ * Assistant message interface
+ */
+export interface IAssistantMessage extends IBaseMessage {
   type: 'assistant';
   toolCalls?: Array<{
     name: string;
@@ -51,65 +58,103 @@ export interface AssistantMessage extends BaseMessage {
   }>;
 }
 
-export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
+/**
+ * Tool result message interface
+ */
+export interface IToolResultMessage extends IBaseMessage<IToolResultMetadata> {
   type: 'tool_result';
   result: unknown;
 }
 
 /**
+ * Discriminated union type for all message types
+ */
+export type TMessage =
+  | ISystemMessage
+  | IUserMessage
+  | IAssistantMessage
+  | IToolResultMessage;
+
+/**
+ * Schema and Validation Types
+ * --------------------------------------------------------------------
+ */
+
+/**
  * Schema type interface for defining JSON schema structures
  */
-export interface SchemaType {
+export interface ISchemaType {
   properties: Record<string, { type: string; description: string }>;
   required?: string[];
 }
 
 /**
+ * Session Types
+ * --------------------------------------------------------------------
+ */
+
+/**
  * Session interface for maintaining conversation state
  */
-export interface Session<
+export interface ISession<
   T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
-  readonly messages: readonly Message[];
+  readonly messages: readonly TMessage[];
   readonly metadata: Metadata<T>;
   readonly print: boolean;
-  addMessage(message: Message): Session<T>;
+  addMessage(message: TMessage): ISession<T>;
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
-  ): Session<T & U>;
-  getLastMessage(): Message | undefined;
-  getMessagesByType<U extends Message['type']>(
+  ): ISession<T & U>;
+  getLastMessage(): TMessage | undefined;
+  getMessagesByType<U extends TMessage['type']>(
     type: U,
-  ): Extract<Message, { type: U }>[];
+  ): Extract<TMessage, { type: U }>[];
   validate(): void;
   toJSON(): Record<string, unknown>;
 }
 
 /**
- * Provider types
+ * Provider Types
+ * --------------------------------------------------------------------
  */
-export type OpenAIProviderConfig = {
+
+/**
+ * OpenAI provider configuration
+ */
+export interface IOpenAIProviderConfig {
   type: 'openai';
   apiKey: string;
   modelName: string;
   baseURL?: string;
   organization?: string;
   dangerouslyAllowBrowser?: boolean;
-};
+}
 
-export type AnthropicProviderConfig = {
+/**
+ * Anthropic provider configuration
+ */
+export interface IAnthropicProviderConfig {
   type: 'anthropic';
   apiKey: string;
   modelName: string;
   baseURL?: string;
-};
+}
 
-export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
+/**
+ * Provider configuration union type
+ */
+export type TProviderConfig = IOpenAIProviderConfig | IAnthropicProviderConfig;
+
+/**
+ * MCP Server and Transport Types
+ * --------------------------------------------------------------------
+ */
 
 /**
  * MCP Server configuration for generate
  */
-export interface GenerateMCPServerConfig {
+export interface IMCPServerConfig {
   url: string;
   name: string;
   version: string;
@@ -118,15 +163,26 @@ export interface GenerateMCPServerConfig {
 /**
  * MCP Transport interface for generate
  */
-export interface GenerateMCPTransport {
+export interface IMCPTransport {
   send(message: unknown): Promise<unknown>;
   close(): Promise<void>;
 }
 
 /**
- * Error types
+ * Error Types
+ * --------------------------------------------------------------------
+ */
+
+/**
+ * Base error class for PromptTrail errors
  */
 export class PromptTrailError extends Error {
+  /**
+   * Creates a new PromptTrail error
+   * 
+   * @param message - Error message
+   * @param code - Error code
+   */
   constructor(
     message: string,
     public readonly code: string,
@@ -136,7 +192,15 @@ export class PromptTrailError extends Error {
   }
 }
 
+/**
+ * Error class for validation errors
+ */
 export class ValidationError extends PromptTrailError {
+  /**
+   * Creates a new validation error
+   * 
+   * @param message - Error message
+   */
   constructor(message: string) {
     super(message, 'VALIDATION_ERROR');
     this.name = 'ValidationError';

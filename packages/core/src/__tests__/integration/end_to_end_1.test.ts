@@ -4,7 +4,7 @@ import { LinearTemplate, LoopTemplate } from '../../templates';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
-import { RegexMatchValidator } from '../../validator';
+import { RegexMatchValidator } from '../../validators/text';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
@@ -67,8 +67,8 @@ describe('End-to-End Workflows', () => {
       // Get the last user message
       const messages = Array.from(session.messages);
       const lastUserMessage = messages
-        .filter((msg) => msg.type === 'user')
-        .pop();
+        .filter((msg) => (msg as any).type === 'user')
+        .pop() as any;
 
       // Generate different responses based on the user message
       if (lastUserMessage && lastUserMessage.content.includes('weather')) {
