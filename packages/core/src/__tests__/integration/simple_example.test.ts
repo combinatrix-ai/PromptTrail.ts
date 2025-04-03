@@ -1,13 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  LinearTemplate,
-  createGenerateOptions,
-  createSession,
-  type GenerateOptions,
-} from '../..';
+import { LinearTemplate } from '../../templates';
+import { createGenerateOptions } from '../../generate_options';
+import { createSession } from '../../session';
+import type { GenerateOptions } from '../../generate_options';
 
 // Mock generateText function
-vi.mock('../../../src/generate', () => {
+vi.mock('../../generate', () => {
   return {
     generateText: vi.fn().mockResolvedValue({
       type: 'assistant',

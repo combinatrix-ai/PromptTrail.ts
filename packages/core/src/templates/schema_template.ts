@@ -1,7 +1,6 @@
 import type { Session } from '../types';
 import { createMetadata } from '../metadata';
-import { SchemaValidator } from '../validators/schema_validator';
-import { GuardrailTemplate, OnFailAction } from './guardrail_template';
+import { SchemaValidator } from '../validator';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
@@ -98,9 +97,6 @@ export class SchemaTemplate<
       metadata: createMetadata(),
     });
 
-    // Create an assistant template
-    const assistantTemplate = new AssistantTemplate(this.generateOptions);
-
     // If using OpenAI, add a system message with function calling instructions
     if (isOpenAI) {
       // For OpenAI models, we need to convert our schema to a format that OpenAI understands
@@ -129,16 +125,16 @@ Please call this function with the appropriate parameters to structure your resp
       });
     }
 
-    // Create a guardrail template with schema validation
-    const guardrailTemplate = new GuardrailTemplate({
-      template: assistantTemplate,
-      validators: [schemaValidator],
-      onFail: OnFailAction.RETRY,
-      maxAttempts: this.maxAttempts,
-    });
+    const assistantTemplate = new AssistantTemplate(
+      this.generateOptions, 
+      {
+        validator: schemaValidator,
+        maxAttempts: this.maxAttempts,
+        raiseError: true
+      }
+    );
 
-    // Execute the guardrail template
-    const resultSession = await guardrailTemplate.execute(
+    const resultSession = await assistantTemplate.execute(
       systemSession as unknown as Session<Record<string, unknown>>,
     );
 
