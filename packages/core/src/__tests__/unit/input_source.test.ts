@@ -382,7 +382,7 @@ describe('InputSource', () => {
         customReadline,
         'Enter value',
         undefined,
-        mockValidator
+        { validator: mockValidator, maxAttempts: 2 }
       );
       
       try {

@@ -78,7 +78,7 @@ export class CallbackInputSource implements InputSource {
       attempts++;
       
       const input = await this.callback(context || {});
-      const result = await this.validator.validate(input, context?.metadata as any);
+      const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as any);
       
       if (result.isValid) {
         return input;
@@ -146,7 +146,7 @@ export class CLIInputSource implements InputSource {
       const defaultInput = this.defaultValue;
       
       if (this.validator) {
-        const result = await this.validator.validate(defaultInput, context?.metadata as any);
+        const result = await this.validator.validate(defaultInput, { metadata: context?.metadata || {} } as any);
         if (!result.isValid) {
           if (this.raiseError) {
             throw new Error(`Default input validation failed: ${result.instruction || 'Invalid input'}`);
@@ -181,7 +181,7 @@ export class CLIInputSource implements InputSource {
       }
       
       if (this.validator) {
-        const result = await this.validator.validate(input, context?.metadata as any);
+        const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as any);
         if (result.isValid) {
           return input;
         }
