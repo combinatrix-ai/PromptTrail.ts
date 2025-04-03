@@ -14,7 +14,7 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 - 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
 - 🧩 [**Composable Patterns**](#-interactive-loops) - Mix and match templates for complex flows
 - 📊 [**Structured Data Extraction**](#-session-to-metadata-conversion) - Extract and transform data from LLM outputs
-- 🛡️ [**Guardrails**](#-guardrails) - Validate and ensure quality of LLM responses
+- 🛡️ [**Validation**](#-validation) - Validate both user input and LLM responses
 - 🧩 [**Schema Validation**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
 - 🌐 [**Browser Compatible**](#-browser-support) - Works in both Node.js and browser environments
 
@@ -384,21 +384,21 @@ console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
 console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 ````
 
-### 🛡️ Guardrails
+### 🛡️ Validation
 
-Validate and ensure quality of LLM responses, inspired by the Python library [guardrails-ai](https://github.com/guardrails-ai/guardrails/tree/main):
+Validate and ensure quality of both user input and LLM responses with a unified validation interface:
 
 ```typescript
 import {
   LinearTemplate,
-  AssistantTemplate,
-  GuardrailTemplate,
+  createSession,
+  createGenerateOptions,
   RegexMatchValidator,
   KeywordValidator,
   LengthValidator,
   AllValidator,
-  OnFailAction,
-  type GenerateOptions,
+  AnyValidator,
+  JsonValidator,
 } from '@prompttrail/core';
 
 // Create validators to ensure responses meet criteria
@@ -428,35 +428,63 @@ const validators = [
 const combinedValidator = new AllValidator(validators);
 
 // Define generateOptions for OpenAI
-const generateOptions: GenerateOptions = {
+const generateOptions = createGenerateOptions({
   provider: {
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY,
     modelName: 'gpt-4o-mini',
   },
   temperature: 0.7,
-};
-
-// Create a guardrail template
-const guardrailTemplate = new GuardrailTemplate({
-  template: new AssistantTemplate({ generateOptions }),
-  validators: [combinedValidator],
-  onFail: OnFailAction.RETRY,
-  maxAttempts: 3,
 });
 
-// Create a template that asks for a pet name
+// Create a template that asks for a pet name with validation
 const petNameTemplate = new LinearTemplate()
   .addSystem('You are a helpful assistant that suggests pet names.')
-  .addUser('Suggest a name for a pet cat.');
+  .addUser('Suggest a name for a pet cat.')
+  // Add assistant with validator directly
+  .addAssistant({ 
+    generateOptions,
+    validator: combinedValidator,
+    maxAttempts: 3,
+  });
 
-// Execute the templates in sequence
-let session = createSession();
-session = await petNameTemplate.execute(session);
-session = await guardrailTemplate.execute(session);
+// Execute the template
+const session = await petNameTemplate.execute(createSession());
 
 // Get the final response
 console.log('Pet name:', session.getLastMessage()?.content);
+
+// You can also use other validator types:
+// JSON validation
+const jsonValidator = new JsonValidator({
+  description: 'Response must be valid JSON',
+});
+
+// Regex no-match validation
+const noNumbersValidator = new RegexNoMatchValidator({
+  regex: /\d+/,
+  description: 'Response must not contain numbers',
+});
+
+// OR logic with AnyValidator
+const anyValidator = new AnyValidator([
+  new RegexMatchValidator({ regex: /^[A-Z]/ }),
+  new RegexMatchValidator({ regex: /!$/ }),
+], {
+  description: 'Response must either start with a capital letter OR end with an exclamation mark',
+});
+
+// Use validators with InputSource for user input validation
+const userInputTemplate = new LinearTemplate()
+  .addSystem('You are a helpful assistant.')
+  .addUser({
+    inputSource: new CLIInputSource(),
+    validate: async (input) => {
+      // Custom validation logic for user input
+      return input.length > 0 && !input.includes('bad word');
+    },
+  })
+  .addAssistant({ generateOptions });
 ```
 
 ### 🧩 Schema Validation
