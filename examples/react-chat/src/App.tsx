@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import {
   LinearTemplate,
   createGenerateOptions,
-  createSession,
   type GenerateOptions,
-} from '../../../packages/core/src/index';
-import type { Message } from '../../../packages/core/src/types';
+} from '@prompttrail/core';
+import { useSession, useMessages, useInputSource } from '@prompttrail/react';
 
 const Container = styled.div`
   max-width: 800px;
@@ -127,18 +126,37 @@ interface ChatMessage {
 
 function App() {
   const [apiKey, setApiKey] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [session, setSession] = useState(() => createSession());
+  const { value: input, setValue: setInput } = useInputSource('');
+  const { session, executeTemplate, isLoading } = useSession();
+  const sessionMessages = useMessages(session);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    if (!session) return;
+    
+    const assistantMessages = session.getMessagesByType('assistant');
+    if (assistantMessages.length > 0) {
+      const latestAssistantMessage = assistantMessages[assistantMessages.length - 1];
+      
+      const messageExists = chatMessages.some(
+        (msg: ChatMessage) => !msg.isUser && msg.content === latestAssistantMessage.content
+      );
+      
+      if (!messageExists) {
+        setChatMessages((prev: ChatMessage[]) => [
+          ...prev,
+          { content: latestAssistantMessage.content, isUser: false }
+        ]);
+      }
+    }
+  }, [session, sessionMessages, chatMessages]);
 
   const sendMessage = async () => {
     if (!input.trim() || !apiKey.trim() || isLoading) return;
 
-    setIsLoading(true);
     // Add user message to UI
-    const newMessages = [...messages, { content: input, isUser: true }];
-    setMessages(newMessages);
+    const newMessages = [...chatMessages, { content: input, isUser: true }];
+    setChatMessages(newMessages);
 
     try {
       // Define generateOptions for OpenAI
@@ -156,29 +174,18 @@ function App() {
         .addSystem(
           'You are a helpful AI assistant. Be concise and friendly in your responses.',
         )
-        .addUser('User message:', input)
-        .addAssistant({ generateOptions: generateOptions });
+        .addUser(input)
+        .addAssistant({ generateOptions });
 
-      // Execute template
-      const newSession = await template.execute(session);
-      setSession(newSession);
-
-      // Get assistant's response
-      const response = newSession.getMessagesByType('assistant').slice(-1)[0];
-      if (response) {
-        setMessages([
-          ...newMessages,
-          { content: response.content, isUser: false },
-        ]);
-      }
+      await executeTemplate(template);
+      
+      setInput('');
     } catch (error) {
       console.error('Error:', error);
-      setMessages([
+      setChatMessages([
         ...newMessages,
         { content: 'Error: Failed to get response', isUser: false },
       ]);
-    } finally {
-      setIsLoading(false);
       setInput('');
     }
   };
@@ -202,7 +209,7 @@ function App() {
         }
       />
       <ChatContainer>
-        {messages.map((message, index) => (
+        {chatMessages.map((message: ChatMessage, index: number) => (
           <Message key={index} isUser={message.isUser}>
             {message.content}
           </Message>
