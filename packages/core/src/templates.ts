@@ -89,12 +89,7 @@ export class UserTemplate extends Template {
   async execute(session: Session): Promise<Session> {
     let input: string;
 
-    if (
-      this.options.inputSource.constructor.name === 'CLIInputSource' &&
-      process.env.NODE_ENV === 'test'
-    ) {
-      input = 'default value';
-    } else if (this.options.inputSource instanceof StaticInputSource) {
+    if (this.options.inputSource instanceof StaticInputSource) {
       // For static input sources
       input = interpolateTemplate(
         await this.options.inputSource.getInput(),
