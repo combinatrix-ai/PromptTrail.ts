@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { renderHook, act } from '@testing-library/react-hooks';
 import { useInputSource } from './useInputSource';
 
 describe('useInputSource', () => {

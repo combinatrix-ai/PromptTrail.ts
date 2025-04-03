@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react-hooks';
 import { useSession } from './useSession';
 import { createSession } from '@prompttrail/core';
 
