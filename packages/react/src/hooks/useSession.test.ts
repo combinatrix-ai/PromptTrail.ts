@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '../test-setup';
 import { useSession } from './useSession';
-import { createSession } from '@prompttrail/core';
+import { createSession } from '../test-mocks/core-mock';
 
 describe('useSession', () => {
   it('初期セッションなしで正しく初期化される', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '../test-setup';
 import { useMessages, useMessagesByType } from './useMessages';
-import { createSession } from '@prompttrail/core';
+import { createSession } from '../test-mocks/core-mock';
 
 describe('useMessages', () => {
   it('undefinedセッションの場合、空配列を返す', () => {
