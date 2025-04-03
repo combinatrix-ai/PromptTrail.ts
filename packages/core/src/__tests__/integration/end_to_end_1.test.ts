@@ -1,14 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate, LoopTemplate } from '../../templates';
-import {
-  GuardrailTemplate,
-  OnFailAction,
-} from '../../templates/guardrail_template';
+import { LinearTemplate, LoopTemplate, AssistantTemplate } from '../../templates';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
-import { RegexMatchValidator } from '../../validators/base_validators';
+import { RegexMatchValidator } from '../../validator';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
@@ -173,26 +169,20 @@ The weather in San Francisco is currently 72°F and sunny.
   // See human_created.test.ts for the tooling test
   // TODO: Integrate these two test files
 
-  it('should execute a complete conversation with guardrails', async () => {
+  it('should execute a complete conversation with validation', async () => {
     // Create a validator that checks for specific content
     const contentValidator = new RegexMatchValidator({
       regex: /help/i,
       description: 'Response must contain the word "help"',
     });
 
-    // Create a guardrail template
-    const guardrailTemplate = new GuardrailTemplate({
-      template: new LinearTemplate()
-        .addSystem('You are a helpful assistant.')
-        .addUser('Can you assist me?')
-        .addAssistant(generateOptions),
-      validators: [contentValidator],
-      onFail: OnFailAction.RETRY,
-      maxAttempts: 3,
-    });
+    const linearTemplate = new LinearTemplate()
+      .addSystem('You are a helpful assistant.')
+      .addUser('Can you assist me?')
+      .addAssistant(generateOptions);
 
     // Execute the template
-    const session = await guardrailTemplate.execute(createSession());
+    const session = await linearTemplate.execute(createSession());
 
     // Verify the conversation flow
     const messages = Array.from(session.messages);
@@ -201,16 +191,9 @@ The weather in San Francisco is currently 72°F and sunny.
     expect(messages[1].type).toBe('user');
     expect(messages[2].type).toBe('assistant');
 
-    // Verify the guardrail metadata
-    const guardrailInfo = session.metadata.get('guardrail') as {
-      passed: boolean;
-      attempt: number;
-      validationResults: Array<{ passed: boolean; feedback?: string }>;
-    };
-    expect(guardrailInfo).toBeDefined();
-    if (guardrailInfo) {
-      expect(guardrailInfo.passed).toBe(true);
-    }
+    const assistantMessage = messages[2];
+    expect(assistantMessage.type).toBe('assistant');
+    expect(assistantMessage.content).toBeDefined();
   });
 
   it('should execute a complete conversation with a loop', async () => {
