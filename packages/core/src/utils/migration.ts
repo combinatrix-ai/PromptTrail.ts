@@ -6,7 +6,9 @@
  * using generateOptions directly.
  */
 
-// Export a dummy function to make this a proper module
+/**
+ * Export a dummy function to make this a proper module
+ */
 export function createMigrationOptions(
   options: Record<string, unknown>,
 ): Record<string, unknown> {
