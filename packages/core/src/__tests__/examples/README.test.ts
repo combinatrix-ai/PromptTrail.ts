@@ -26,7 +26,7 @@ describe('README Examples', () => {
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
-          apiKey: 'test-api-key',
+          apiKey: process.env.OPENAI_API_KEY || 'sk-dummy-key',
           modelName: 'gpt-4o-mini',
         },
         temperature: 0.7,
@@ -140,7 +140,7 @@ describe('README Examples', () => {
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
-          apiKey: 'test-api-key',
+          apiKey: process.env.OPENAI_API_KEY || 'sk-dummy-key',
           modelName: 'gpt-4o-mini',
         },
         temperature: 0.7,
@@ -187,7 +187,7 @@ function factorial(n: number): number {
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
-          apiKey: 'test-api-key',
+          apiKey: process.env.OPENAI_API_KEY || 'sk-dummy-key',
           modelName: 'gpt-4o-mini',
         },
         temperature: 0.7,
@@ -237,7 +237,7 @@ function factorial(n: number): number {
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
-          apiKey: 'test-api-key',
+          apiKey: process.env.OPENAI_API_KEY || 'sk-dummy-key',
           modelName: 'gpt-4o-mini',
         },
       });
