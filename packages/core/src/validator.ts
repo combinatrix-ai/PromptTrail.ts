@@ -85,7 +85,7 @@ export abstract class BaseValidator {
 /**
  * 複数のバリデータを論理演算子で結合するための基底クラス
  */
-export abstract class CompositeValidator extends BaseValidator {
+export abstract class CompositeValidator extends BaseValidator implements IValidator {
   protected validators: IValidator[];
 
   constructor(
@@ -98,6 +98,16 @@ export abstract class CompositeValidator extends BaseValidator {
   ) {
     super(options);
     this.validators = validators;
+  }
+  
+  abstract validate(content: string, context: Session): Promise<ValidationResult>;
+  
+  getDescription(): string {
+    return this.description || 'Composite validation';
+  }
+  
+  getErrorMessage(): string {
+    return `Validation failed: ${this.getDescription()}`;
   }
 }
 

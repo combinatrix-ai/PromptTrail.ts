@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AssistantTemplate } from '../../templates';
 import { createSession } from '../../session';
-import { type IValidator } from '../../validator';
+import { type IValidator, AllValidator, AnyValidator } from '../../validator';
 import * as generateModule from '../../generate';
 import type { AssistantMessage, ProviderConfig } from '../../types';
 import { GenerateOptions } from '../../generate_options';
@@ -268,6 +268,232 @@ describe('AssistantTemplate', () => {
       expect(result.messages[0].content).toBe('invalid generated content');
       expect(mockValidator.validate).toHaveBeenCalledTimes(2);
       expect(generateTextMock).toHaveBeenCalledTimes(3); // Initial + maxAttempts + final
+    });
+  });
+  
+  describe('with composite validators', () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+    });
+    
+    it('should validate with AllValidator (all pass)', async () => {
+      const mockValidator1: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 1'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
+      };
+      
+      const mockValidator2: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 2'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
+      };
+      
+      const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'valid content for all validators',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, allValidator);
+      const session = createSession();
+      
+      const result = await template.execute(session);
+      
+      expect(result.messages[0].content).toBe('valid content for all validators');
+      expect(mockValidator1.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
+      expect(mockValidator2.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
+    });
+    
+    it('should fail validation with AllValidator when one validator fails', async () => {
+      const mockValidator1: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 1'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
+      };
+      
+      const mockValidator2: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Validator 2 failed' }),
+        getDescription: vi.fn().mockReturnValue('validator 2'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
+      };
+      
+      const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'content that fails validator 2',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, allValidator);
+      const session = createSession();
+      
+      await expect(template.execute(session)).rejects.toThrow('Assistant response validation failed');
+      expect(mockValidator1.validate).toHaveBeenCalledWith('content that fails validator 2', expect.anything());
+      expect(mockValidator2.validate).toHaveBeenCalledWith('content that fails validator 2', expect.anything());
+    });
+    
+    it('should validate with AnyValidator when at least one validator passes', async () => {
+      const mockValidator1: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Validator 1 failed' }),
+        getDescription: vi.fn().mockReturnValue('validator 1'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
+      };
+      
+      const mockValidator2: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 2'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
+      };
+      
+      const anyValidator = new AnyValidator([mockValidator1, mockValidator2], { description: 'Any validator must pass' });
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'content that passes validator 2',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, anyValidator);
+      const session = createSession();
+      
+      const result = await template.execute(session);
+      
+      expect(result.messages[0].content).toBe('content that passes validator 2');
+      expect(mockValidator1.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
+      expect(mockValidator2.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
+    });
+    
+    it('should fail validation with AnyValidator when all validators fail', async () => {
+      const mockValidator1: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Validator 1 failed' }),
+        getDescription: vi.fn().mockReturnValue('validator 1'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
+      };
+      
+      const mockValidator2: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Validator 2 failed' }),
+        getDescription: vi.fn().mockReturnValue('validator 2'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
+      };
+      
+      const anyValidator = new AnyValidator([mockValidator1, mockValidator2], { description: 'Any validator must pass' });
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'content that fails all validators',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, anyValidator);
+      const session = createSession();
+      
+      await expect(template.execute(session)).rejects.toThrow('Assistant response validation failed');
+      expect(mockValidator1.validate).toHaveBeenCalledWith('content that fails all validators', expect.anything());
+      expect(mockValidator2.validate).toHaveBeenCalledWith('content that fails all validators', expect.anything());
+    });
+    
+    it('should retry with composite validators until success', async () => {
+      const mockValidator1: IValidator = {
+        validate: vi.fn()
+          .mockResolvedValueOnce({ isValid: false, instruction: 'Validator 1 failed' })
+          .mockResolvedValueOnce({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 1'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
+      };
+      
+      const mockValidator2: IValidator = {
+        validate: vi.fn()
+          .mockResolvedValueOnce({ isValid: false, instruction: 'Validator 2 failed' })
+          .mockResolvedValueOnce({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('validator 2'),
+        getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
+      };
+      
+      const allValidator = new AllValidator([mockValidator1, mockValidator2], { description: 'All validators must pass' });
+      
+      const mockResponse1: AssistantMessage = {
+        type: 'assistant',
+        content: 'invalid content',
+        metadata: undefined
+      };
+      
+      const mockResponse2: AssistantMessage = {
+        type: 'assistant',
+        content: 'valid content',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock
+        .mockResolvedValueOnce(mockResponse1)
+        .mockResolvedValueOnce(mockResponse2);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const options = {
+        validator: allValidator,
+        maxAttempts: 2,
+        raiseError: true
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, options);
+      const session = createSession();
+      
+      const result = await template.execute(session);
+      
+      expect(result.messages[0].content).toBe('valid content');
+      expect(mockValidator1.validate).toHaveBeenCalledTimes(2);
+      expect(mockValidator2.validate).toHaveBeenCalledTimes(2);
+      expect(generateTextMock).toHaveBeenCalledTimes(2);
     });
   });
 });
