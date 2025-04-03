@@ -20,15 +20,31 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 
 ## 🔧 Installation
 
+> **Note:** PromptTrail is currently not available on npm. You need to install it directly from GitHub.
+
 ```bash
 # Using pnpm (recommended)
-pnpm add @prompttrail/core
+pnpm add github:combinatrix-ai/PromptTrail.ts#main
 
 # Using npm
-npm install @prompttrail/core
+npm install github:combinatrix-ai/PromptTrail.ts#main
 
 # Using yarn
-yarn add @prompttrail/core
+yarn add github:combinatrix-ai/PromptTrail.ts#main
+```
+
+For development or to use a specific branch:
+
+```bash
+# Clone the repository
+git clone https://github.com/combinatrix-ai/PromptTrail.ts.git
+cd PromptTrail.ts
+
+# Install dependencies
+pnpm install
+
+# Build the packages
+pnpm run build
 ```
 
 ## 🚀 Quick Start
