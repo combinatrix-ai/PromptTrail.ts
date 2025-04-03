@@ -4,20 +4,28 @@ import { SchemaValidator } from '../validator';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
-// Import Template class and AssistantTemplate from templates
+/**
+ * Import Template class and AssistantTemplate from templates
+ */
 import { Template, AssistantTemplate } from '../templates';
 import type { SchemaType } from '../types';
 import { GenerateOptions } from '../generate_options';
 
-// Type to handle both SchemaType and Zod schemas
+/**
+ * Type to handle both SchemaType and Zod schemas
+ */
 type SchemaInput = SchemaType | z.ZodType;
 
-// Helper to check if a schema is a Zod schema
+/**
+ * Helper to check if a schema is a Zod schema
+ */
 function isZodSchema(schema: SchemaInput): schema is z.ZodType {
   return typeof (schema as z.ZodType)._def !== 'undefined';
 }
 
-// Helper to convert a Zod schema to SchemaType
+/**
+ * Helper to convert a Zod schema to SchemaType
+ */
 function zodSchemaToSchemaType(schema: z.ZodType): SchemaType {
   const jsonSchema = zodToJsonSchema(schema);
   return {
@@ -57,7 +65,9 @@ export class SchemaTemplate<
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
 
-    // Convert Zod schema to native schema if needed
+    /**
+     * Convert Zod schema to native schema if needed
+     */
     if (this.isZodSchema) {
       this.nativeSchema = zodSchemaToSchemaType(options.schema as z.ZodType);
     } else {
@@ -73,16 +83,22 @@ export class SchemaTemplate<
       throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
-    // Create a schema validator
+    /**
+     * Create a schema validator
+     */
     const schemaValidator = new SchemaValidator({
       schema: this.nativeSchema,
       description: 'Response must match the specified schema',
     });
 
-    // Check if the provider is OpenAI to use function calling
+    /**
+     * Check if the provider is OpenAI to use function calling
+     */
     const isOpenAI = this.generateOptions.provider.type === 'openai';
 
-    // Create a system message to instruct the model about the expected format
+    /**
+     * Create a system message to instruct the model about the expected format
+     */
     const schemaDescription = Object.entries(this.nativeSchema.properties)
       .map(([key, prop]) => {
         const typedProp = prop as { type: string; description: string };
@@ -90,16 +106,22 @@ export class SchemaTemplate<
       })
       .join('\n');
 
-    // Add a system message to instruct the model
+    /**
+     * Add a system message to instruct the model
+     */
     const systemSession = await session.addMessage({
       type: 'system',
       content: `Please provide a response in the following JSON format:\n\n${schemaDescription}\n\nEnsure your response is valid JSON.`,
       metadata: createMetadata(),
     });
 
-    // If using OpenAI, add a system message with function calling instructions
+    /**
+     * If using OpenAI, add a system message with function calling instructions
+     */
     if (isOpenAI) {
-      // For OpenAI models, we need to convert our schema to a format that OpenAI understands
+      /**
+       * For OpenAI models, we need to convert our schema to a format that OpenAI understands
+       */
       const functionParameters = {
         type: 'object',
         properties: this.nativeSchema.properties,

@@ -1,7 +1,6 @@
 /**
  * Core type definitions for PromptTrail
  */
-import type { GenerateOptions } from './generate_options';
 import type { Metadata } from './metadata';
 
 /**
@@ -57,7 +56,9 @@ export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   result: unknown;
 }
 
-// Define SchemaType interface since tool.ts is empty
+/**
+ * Schema type interface for defining JSON schema structures
+ */
 export interface SchemaType {
   properties: Record<string, { type: string; description: string }>;
   required?: string[];

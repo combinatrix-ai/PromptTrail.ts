@@ -5,13 +5,14 @@ import {
   createNumberProperty,
   createBooleanProperty,
 } from '../../../utils/schema';
-import { SchemaValidator } from '../../../validator';
 import { z } from 'zod';
 
 describe('Schema validation', () => {
   describe('Native schema', () => {
     it('should define a schema with required fields', () => {
-      // Define a simple schema
+      /**
+       * Define a simple schema
+       */
       const personSchema = defineSchema({
         properties: {
           name: createStringProperty("The person's full name"),

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-// readline の import は型の為だけに残すか、不要なら削除も検討
 import type * as readline from 'node:readline/promises';
 import {
   CallbackInputSource,
