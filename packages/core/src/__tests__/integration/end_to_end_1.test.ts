@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate, LoopTemplate, AssistantTemplate } from '../../templates';
+import { LinearTemplate, LoopTemplate } from '../../templates';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
@@ -10,7 +10,9 @@ import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
 import { CLIInputSource } from '../../input_source';
 
-// Mock the generateText function
+/**
+ * Mock the generateText function
+ */
 vi.mock('../../generate', () => {
   return {
     generateText: vi.fn(),
@@ -166,8 +168,10 @@ The weather in San Francisco is currently 72°F and sunny.
     expect(weatherData.forecast).toHaveLength(3);
   });
 
-  // See human_created.test.ts for the tooling test
-  // TODO: Integrate these two test files
+  /**
+   * See human_created.test.ts for the tooling test
+   * TODO: Integrate these two test files
+   */
 
   it('should execute a complete conversation with validation', async () => {
     // Create a validator that checks for specific content
