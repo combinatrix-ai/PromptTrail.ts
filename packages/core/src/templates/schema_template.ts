@@ -125,10 +125,42 @@ Please call this function with the appropriate parameters to structure your resp
       });
     }
 
+    const jsonExtractorValidator = {
+      validate: async (content: string, context: any) => {
+        try {
+          // Try to extract JSON from the response if it's not already JSON
+          let jsonContent = content;
+          
+          const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          if (jsonBlockMatch && jsonBlockMatch[1]) {
+            jsonContent = jsonBlockMatch[1];
+          } else {
+            const jsonObjectMatch = content.match(/(\{[\s\S]*\})/);
+            if (jsonObjectMatch && jsonObjectMatch[1]) {
+              jsonContent = jsonObjectMatch[1];
+            }
+          }
+          
+          const cleanedContent = jsonContent.replace(/^`+|`+$/g, '').trim();
+          
+          const parsedJson = JSON.parse(cleanedContent);
+          
+          return await schemaValidator.validate(JSON.stringify(parsedJson), context);
+        } catch (error) {
+          return { 
+            isValid: false, 
+            instruction: `Invalid JSON: ${(error as Error).message}` 
+          };
+        }
+      },
+      getDescription: () => 'JSON extractor and schema validator',
+      getErrorMessage: () => 'Invalid JSON format or schema validation failed'
+    };
+    
     const assistantTemplate = new AssistantTemplate(
       this.generateOptions, 
       {
-        validator: schemaValidator,
+        validator: jsonExtractorValidator,
         maxAttempts: this.maxAttempts,
         raiseError: true
       }
