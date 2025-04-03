@@ -1,36 +1,38 @@
 import type {
-  Message,
-  SystemMessage,
-  UserMessage,
-  AssistantMessage,
-  ToolResultMessage,
+  TMessage,
+  ISystemMessage,
+  IUserMessage,
+  IAssistantMessage,
+  IToolResultMessage,
+  IToolResultMetadata,
 } from '../types';
+import { createMetadata } from '../metadata';
 
 /**
  * Create a system message for testing
  */
-export const createSystemMessage = (content: string): SystemMessage => ({
+export const createSystemMessage = (content: string): ISystemMessage => ({
   type: 'system',
   content,
-  metadata: {},
+  metadata: createMetadata(),
 });
 
 /**
  * Create a user message for testing
  */
-export const createUserMessage = (content: string): UserMessage => ({
+export const createUserMessage = (content: string): IUserMessage => ({
   type: 'user',
   content,
-  metadata: {},
+  metadata: createMetadata(),
 });
 
 /**
  * Create an assistant message for testing
  */
-export const createAssistantMessage = (content: string): AssistantMessage => ({
+export const createAssistantMessage = (content: string): IAssistantMessage => ({
   type: 'assistant',
   content,
-  metadata: {},
+  metadata: createMetadata(),
 });
 
 /**
@@ -39,20 +41,22 @@ export const createAssistantMessage = (content: string): AssistantMessage => ({
 export const createToolResultMessage = (
   content: string,
   result: unknown,
-): ToolResultMessage => ({
+): IToolResultMessage => ({
   type: 'tool_result',
   content,
   result,
-  metadata: {},
+  metadata: createMetadata<IToolResultMetadata>({
+    initial: { toolCallId: 'test-id' }
+  }),
 });
 
 /**
  * Create a message of any type for testing
  */
 export const createMessage = (
-  type: Message['type'],
+  type: TMessage['type'],
   content: string,
-): Message => {
+): TMessage => {
   switch (type) {
     case 'system':
       return createSystemMessage(content);
