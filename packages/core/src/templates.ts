@@ -7,8 +7,8 @@ import { createTransformerTemplate } from './templates/transformer_template';
 import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
-import type { Session, SchemaType } from './types';
-import { type IValidator } from './validator';
+import type { ISession, ISchemaType } from './types';
+import { type IValidator } from './validators/base';
 
 /**
  * Base class for all templates
@@ -17,7 +17,7 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
-  abstract execute(session: Session<TInput>): Promise<Session<TOutput>>;
+  abstract execute(session: ISession<TInput>): Promise<ISession<TOutput>>;
 }
 
 /**
@@ -28,7 +28,7 @@ export class SystemTemplate extends Template {
     super();
   }
 
-  async execute(session: Session): Promise<Session> {
+  async execute(session: ISession): Promise<ISession> {
     const interpolatedContent = interpolateTemplate(
       this.content,
       session.metadata,
@@ -87,7 +87,7 @@ export class UserTemplate extends Template {
     }
   }
 
-  async execute(session: Session): Promise<Session> {
+  async execute(session: ISession): Promise<ISession> {
     let input: string;
 
     if (this.options.inputSource instanceof StaticInputSource) {
@@ -193,7 +193,7 @@ export class AssistantTemplate<
     }
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
     if (this.options.content) {
       // For fixed content responses
       const interpolatedContent = interpolateTemplate(
@@ -214,7 +214,7 @@ export class AssistantTemplate<
         type: 'assistant',
         content: interpolatedContent,
         metadata: createMetadata(),
-      }) as unknown as Session<TOutput>;
+      }) as unknown as ISession<TOutput>;
     }
 
     if (!this.options.generateOptions) {
@@ -237,14 +237,14 @@ export class AssistantTemplate<
         // Add the assistant message to the session
         return session.addMessage(
           response,
-        ) as unknown as Session<TOutput>;
+        ) as unknown as ISession<TOutput>;
       }
       
       const result = await this.options.validator.validate(response.content, session.metadata as any);
       if (result.isValid) {
         return session.addMessage(
           response,
-        ) as unknown as Session<TOutput>;
+        ) as unknown as ISession<TOutput>;
       }
       
       lastValidationError = result.instruction || 'Invalid content';
@@ -262,7 +262,7 @@ export class AssistantTemplate<
     // Add the assistant message to the session
     let updatedSession = session.addMessage(
       finalResponse,
-    ) as unknown as Session<TOutput>;
+    ) as unknown as ISession<TOutput>;
 
     const toolCalls =
       finalResponse.type === 'assistant' ? finalResponse.toolCalls : undefined;
@@ -340,7 +340,7 @@ export class ToolResultTemplate<
     super();
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
     const metadata = createMetadata<{ toolCallId: string }>();
     metadata.set('toolCallId', this.options.toolCallId);
 
@@ -349,7 +349,7 @@ export class ToolResultTemplate<
       content: this.options.content,
       metadata,
       result: this.options.content, // Add the result property
-    }) as unknown as Session<TOutput>;
+    }) as unknown as ISession<TOutput>;
   }
 }
 
@@ -359,7 +359,7 @@ export class ToolResultTemplate<
 export class IfTemplate extends Template {
   constructor(
     private options: {
-      condition: (session: Session) => boolean;
+      condition: (session: ISession) => boolean;
       thenTemplate: Template;
       elseTemplate?: Template;
     },
@@ -367,7 +367,7 @@ export class IfTemplate extends Template {
     super();
   }
 
-  async execute(session: Session): Promise<Session> {
+  async execute(session: ISession): Promise<ISession> {
     if (this.options.condition(session)) {
       return this.options.thenTemplate.execute(session);
     } else if (this.options.elseTemplate) {
@@ -434,7 +434,7 @@ function WithIf<TBase extends Constructor<{ templates: Template[] }>>(
 ) {
   return class extends Base {
     addIf(options: {
-      condition: (session: Session) => boolean;
+      condition: (session: ISession) => boolean;
       thenTemplate: Template;
       elseTemplate?: Template;
     }): this {
@@ -470,7 +470,7 @@ function WithSchema<TBase extends Constructor<{ templates: Template[] }>>(
   Base: TBase,
 ) {
   return class extends Base {
-    async addSchema<TSchema extends SchemaType | z.ZodType>(
+    async addSchema<TSchema extends ISchemaType | z.ZodType>(
       schema: TSchema,
       options: {
         generateOptions: GenerateOptions;
@@ -503,8 +503,8 @@ function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
   return class extends Base {
     addSubroutine(options: {
       template: Template;
-      initWith: (parentSession: Session) => Session;
-      squashWith?: (parentSession: Session, childSession: Session) => Session;
+      initWith: (parentSession: ISession) => ISession;
+      squashWith?: (parentSession: ISession, childSession: ISession) => ISession;
     }): this {
       this.templates.push(new SubroutineTemplate(options));
       return this;
@@ -530,8 +530,8 @@ export class LinearTemplate extends WithSchema(
                     this.templates = options?.templates || [];
                   }
 
-                  async execute(session: Session<any>): Promise<Session<any>> {
-                    let currentSession: Session<any> = session;
+                  async execute(session: ISession<any>): Promise<ISession<any>> {
+                    let currentSession: ISession<any> = session;
                     for (const template of this.templates) {
                       currentSession = await template.execute(currentSession);
                     }
@@ -567,24 +567,24 @@ export class LoopTemplate extends WithSchema(
               WithAssistant(
                 class {
                   templates: Template[] = [];
-                  exitCondition?: (session: Session) => boolean;
+                  exitCondition?: (session: ISession) => boolean;
 
                   constructor(options?: {
                     templates?: Template[];
-                    exitCondition?: (session: Session) => boolean;
+                    exitCondition?: (session: ISession) => boolean;
                   }) {
                     this.templates = options?.templates || [];
                     this.exitCondition = options?.exitCondition;
                   }
 
                   setExitCondition(
-                    condition: (session: Session) => boolean,
+                    condition: (session: ISession) => boolean,
                   ): this {
                     this.exitCondition = condition;
                     return this;
                   }
 
-                  async execute(session: Session): Promise<Session> {
+                  async execute(session: ISession): Promise<ISession> {
                     if (!this.exitCondition) {
                       throw new Error(
                         'Exit condition not set for LoopTemplate',
@@ -625,26 +625,26 @@ export class SubroutineTemplate extends WithSchema(
                 class {
                   templates: Template[] = [];
                   template!: Template;
-                  initWith!: (parentSession: Session) => Session;
+                  initWith!: (parentSession: ISession) => ISession;
                   squashWith?: (
-                    parentSession: Session,
-                    childSession: Session,
-                  ) => Session;
+                    parentSession: ISession,
+                    childSession: ISession,
+                  ) => ISession;
 
                   constructor(options: {
                     template: Template;
-                    initWith: (parentSession: Session) => Session;
+                    initWith: (parentSession: ISession) => ISession;
                     squashWith?: (
-                      parentSession: Session,
-                      childSession: Session,
-                    ) => Session;
+                      parentSession: ISession,
+                      childSession: ISession,
+                    ) => ISession;
                   }) {
                     this.template = options.template;
                     this.initWith = options.initWith;
                     this.squashWith = options.squashWith;
                   }
 
-                  async execute(session: Session): Promise<Session> {
+                  async execute(session: ISession): Promise<ISession> {
                     // Create child session using initWith function
                     const childSession = this.initWith(session);
 

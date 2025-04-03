@@ -1,6 +1,6 @@
 import * as readline from 'node:readline/promises';
 import type { Metadata } from './metadata';
-import { type IValidator } from './validator';
+import { type IValidator } from './validators/base';
 
 /**
  * Interface for input sources that can provide user input

@@ -1,6 +1,6 @@
-import type { Session } from '../types';
+import type { ISession } from '../types';
 import { createMetadata } from '../metadata';
-import { SchemaValidator } from '../validator';
+import { SchemaValidator } from '../validators/schema';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
@@ -8,13 +8,13 @@ import { zodToJsonSchema } from '../utils/schema';
  * Import Template class and AssistantTemplate from templates
  */
 import { Template, AssistantTemplate } from '../templates';
-import type { SchemaType } from '../types';
+import type { ISchemaType } from '../types';
 import { GenerateOptions } from '../generate_options';
 
 /**
- * Type to handle both SchemaType and Zod schemas
+ * Type to handle both ISchemaType and Zod schemas
  */
-type SchemaInput = SchemaType | z.ZodType;
+type SchemaInput = ISchemaType | z.ZodType;
 
 /**
  * Helper to check if a schema is a Zod schema
@@ -24,9 +24,9 @@ function isZodSchema(schema: SchemaInput): schema is z.ZodType {
 }
 
 /**
- * Helper to convert a Zod schema to SchemaType
+ * Helper to convert a Zod schema to ISchemaType
  */
-function zodSchemaToSchemaType(schema: z.ZodType): SchemaType {
+function zodSchemaToSchemaType(schema: z.ZodType): ISchemaType {
   const jsonSchema = zodToJsonSchema(schema);
   return {
     properties: jsonSchema.properties || {},
@@ -49,7 +49,7 @@ export class SchemaTemplate<
 > extends Template<TInput, TOutput> {
   private generateOptions: GenerateOptions;
   private schema: SchemaInput;
-  private nativeSchema: SchemaType;
+  private nativeSchema: ISchemaType;
   private maxAttempts: number;
   private functionName: string;
   private isZodSchema: boolean;
@@ -71,14 +71,14 @@ export class SchemaTemplate<
     if (this.isZodSchema) {
       this.nativeSchema = zodSchemaToSchemaType(options.schema as z.ZodType);
     } else {
-      this.nativeSchema = options.schema as SchemaType;
+      this.nativeSchema = options.schema as ISchemaType;
     }
 
     this.maxAttempts = options.maxAttempts || 3;
     this.functionName = options.functionName || 'generate_structured_output';
   }
 
-  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
+  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
     if (!this.generateOptions) {
       throw new Error('No generateOptions provided for SchemaTemplate');
     }
@@ -189,7 +189,7 @@ Please call this function with the appropriate parameters to structure your resp
     );
 
     const resultSession = await assistantTemplate.execute(
-      systemSession as unknown as Session<Record<string, unknown>>,
+      systemSession as unknown as ISession<Record<string, unknown>>,
     );
 
     // Get the last message
@@ -235,6 +235,6 @@ Please call this function with the appropriate parameters to structure your resp
     // Add the structured output to the session metadata
     return resultSession.updateMetadata({
       structured_output: structuredOutput,
-    }) as unknown as Session<TOutput>;
+    }) as unknown as ISession<TOutput>;
   }
 }
