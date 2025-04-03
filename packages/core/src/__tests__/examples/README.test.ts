@@ -4,7 +4,6 @@ import { createGenerateOptions } from '../../generate_options';
 import * as generateModule from '../../generate';
 import { createMetadata } from '../../metadata';
 import { LinearTemplate } from '../../templates';
-import { createMessage } from '../utils';
 
 vi.mock('../../generate', () => ({
   generateText: vi.fn(),
@@ -151,7 +150,7 @@ describe('README Examples', () => {
         .addUser("What is 123 * 456?")
         .addAssistant(generateOptions);
       
-      const session = await chat.execute(createSession());
+      await chat.execute(createSession());
       
       expect(generateModule.generateText).toHaveBeenCalled();
       const callArgs = vi.mocked(generateModule.generateText).mock.calls[0][1];
@@ -182,7 +181,11 @@ function factorial(n: number): number {
         metadata: createMetadata(),
       };
       
-      vi.mocked(generateModule.generateText).mockResolvedValue(mockAssistantResponse as any);
+      vi.mocked(generateModule.generateText).mockResolvedValue({
+        type: 'assistant',
+        content: mockAssistantResponse.content,
+        metadata: mockAssistantResponse.metadata,
+      });
       
       const generateOptions = createGenerateOptions({
         provider: {
@@ -223,10 +226,9 @@ function factorial(n: number): number {
     it('should validate assistant responses', async () => {
       const { RegexMatchValidator } = await import('../../validator');
       
-      const jsonValidator = new RegexMatchValidator({
-        regex: /```json[\s\S]*```/,
-        description: 'Response must contain a JSON code block',
-      });
+      //   regex: /```json[\s\S]*```/,
+      //   description: 'Response must contain a JSON code block',
+      // });
       
       vi.mocked(generateModule.generateText).mockResolvedValue({
         type: 'assistant',
