@@ -221,7 +221,7 @@ The weather in San Francisco is currently 72°F and sunny.
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new CLIInputSource('Should we continue? (yes/no)', 'no'))
+          .addUser(new CLIInputSource(undefined, 'Should we continue? (yes/no)', 'no'))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (
