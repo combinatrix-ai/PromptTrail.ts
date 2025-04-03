@@ -83,6 +83,19 @@ export class GenerateOptions {
   }
 
   /**
+   * Add an MCP server to the generate options
+   * @param server The MCP server configuration
+   * @returns The updated GenerateOptions instance for chaining
+   */
+  addMCPServer(server: GenerateMCPServerConfig): this {
+    if (!this.mcpServers) {
+      this.mcpServers = [];
+    }
+    this.mcpServers.push(server);
+    return this;
+  }
+
+  /**
    * Create a new instance with the same options
    * @returns A new GenerateOptions instance with the same options
    */

@@ -111,16 +111,19 @@ export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
  */
 export interface GenerateMCPServerConfig {
   url: string;
-  name: string;
-  version: string;
+  name?: string;
+  version?: string;
+  headers?: Record<string, string>;
 }
 
 /**
  * MCP Transport interface for generate
  */
 export interface GenerateMCPTransport {
-  send(message: unknown): Promise<unknown>;
-  close(): Promise<void>;
+  url: string;
+  name: string;
+  version: string;
+  headers: Record<string, string>;
 }
 
 /**

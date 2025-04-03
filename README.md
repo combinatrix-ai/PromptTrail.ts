@@ -663,6 +663,45 @@ const session = await template.execute(createSession());
 
 MCP allows Claude to access external tools and resources like GitHub repositories, databases, or custom APIs through a standardized protocol. PromptTrail automatically discovers and loads tools from connected MCP servers, making them available to Claude during conversations.
 
+### 🚀 Enhanced MCP Support with ai-sdk
+
+PromptTrail now offers enhanced MCP support through direct integration with the Vercel AI SDK:
+
+```typescript
+import {
+  generateText,
+  createGenerateOptions,
+  createSession,
+} from '@prompttrail/core';
+
+// Create session with your conversation
+const session = createSession()
+  .addMessage({ type: 'system', content: 'You are a helpful assistant with MCP tool access.' })
+  .addMessage({ type: 'user', content: 'Can you search for the latest AI papers?' });
+
+// Create options with MCP server configuration
+const options = createGenerateOptions({
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    modelName: 'claude-3-5-haiku-latest',
+  },
+  temperature: 0.7,
+}).addMCPServer({
+  url: 'http://localhost:8080',
+  name: 'research-mcp-server',
+  version: '1.0.0',
+});
+
+// Generate response with MCP integration
+const response = await generateText(session, options);
+console.log(response.content);
+```
+
+This implementation leverages the Vercel AI SDK's experimental MCP client to provide seamless integration with MCP servers. The `addMCPServer` method allows you to easily add and configure multiple MCP servers for enhanced model capabilities.
+
+MCP tools are automatically discovered and made available to the model, enabling it to access external data sources and APIs without additional coding.
+
 ## 🌐 Browser Support
 
 PromptTrail works in browser environments with a simple configuration flag:

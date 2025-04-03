@@ -11,7 +11,6 @@ import type {
   Session,
   ProviderConfig,
   GenerateMCPServerConfig,
-  GenerateMCPTransport,
 } from './types';
 import { createMetadata } from './metadata';
 import type { GenerateOptions } from './generate_options';
@@ -129,14 +128,15 @@ async function initializeMCPClient(
   config: GenerateMCPServerConfig,
 ): Promise<unknown> {
   try {
-    // This is a simplified implementation
-    // In a real implementation, we would need to create the appropriate transport
-    const transport = {} as GenerateMCPTransport;
+    const transport = {
+      url: config.url,
+      name: config.name || 'prompttrail-mcp-client',
+      version: config.version || '1.0.0',
+      headers: config.headers || {},
+    };
 
-    // Initialize MCP client
-    // Use any to bypass type checking for MCP client
-    const mcpClient = await (experimental_createMCPClient as any)({
-      transport: transport as any,
+    const mcpClient = await experimental_createMCPClient({
+      transport,
     });
 
     return mcpClient;
@@ -161,12 +161,16 @@ export async function generateText(
   const provider = createProvider(options.provider);
 
   // Handle MCP tools if configured
+  const mcpClients = [];
   if (options.mcpServers && options.mcpServers.length > 0) {
-    // In a real implementation, we would initialize MCP clients and get tools
-    // For now, we'll just log a message
-    console.log(
-      `MCP servers configured: ${options.mcpServers.map((s: any) => s.name).join(', ')}`,
-    );
+    for (const server of options.mcpServers) {
+      try {
+        const mcpClient = await initializeMCPClient(server);
+        mcpClients.push(mcpClient);
+      } catch (error) {
+        console.error(`Failed to initialize MCP client for ${server.name}:`, error);
+      }
+    }
   }
 
   // Generate text using AI SDK
