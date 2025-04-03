@@ -14,7 +14,7 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 - 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
 - 🧩 [**Composable Patterns**](#-interactive-loops) - Mix and match templates for complex flows
 - 📊 [**Structured Data Extraction**](#-session-to-metadata-conversion) - Extract and transform data from LLM outputs
-- 🛡️ [**Guardrails**](#-guardrails) - Validate and ensure quality of LLM responses
+- 🛡️ [**Validation**](#-validation) - Validate both user input and LLM responses
 - 🧩 [**Schema Validation**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
 - 🌐 [**Browser Compatible**](#-browser-support) - Works in both Node.js and browser environments
 
@@ -386,7 +386,7 @@ console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 
 ### 🛡️ Validation
 
-Validate and ensure quality of LLM responses with a variety of validators:
+Validate and ensure quality of both user input and LLM responses with a unified validation interface:
 
 ```typescript
 import {
