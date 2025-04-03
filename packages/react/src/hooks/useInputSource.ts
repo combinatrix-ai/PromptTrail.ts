@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { InputSource } from '@prompttrail/core';
-import type { Metadata } from '@prompttrail/core';
+import type { InputSource, Metadata } from '../types';
 
 /**
  * React hook that provides an InputSource implementation backed by React state

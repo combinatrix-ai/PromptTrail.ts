@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Session, Message } from '@prompttrail/core';
+import type { Session, Message } from '../types';
 
 /**
  * React hook that extracts and memoizes messages from a session

@@ -1,5 +1,30 @@
 import { useState, useCallback } from 'react';
-import { Session, Message, Template, createSession } from '@prompttrail/core';
+import type { Session, Message, Template } from '../types';
+
+const createSession = <T extends Record<string, unknown>>(): Session<T> => {
+  const messages: Message[] = [];
+  const metadata = new Map<string, any>();
+  
+  const session: Session<T> = {
+    messages,
+    metadata,
+    addMessage: (message: Message) => {
+      messages.push(message);
+      return session;
+    },
+    getMessagesByType: <U extends Message['type']>(type: U) => {
+      return messages.filter(m => m.type === type) as Extract<Message, { type: U }>[];
+    },
+    updateMetadata: (newMetadata: Partial<T>) => {
+      Object.entries(newMetadata).forEach(([key, value]) => {
+        metadata.set(key, value);
+      });
+      return session;
+    }
+  };
+  
+  return session;
+};
 
 /**
  * React hook for managing a PromptTrail session
@@ -54,9 +79,9 @@ export function useSession<T extends Record<string, unknown>>(
 
   // Update session metadata
   const updateMetadata = useCallback(
-    <U extends Record<string, unknown>>(metadata: U) => {
+    (metadata: Partial<T>) => {
       if (!session) return;
-      setSession(session.updateMetadata(metadata) as Session<T & U> as Session<T>);
+      setSession(session.updateMetadata(metadata));
     },
     [session]
   );
