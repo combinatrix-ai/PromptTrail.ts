@@ -252,5 +252,6 @@ function factorial(n: number): number {
       expect(session.messages[2].type).toBe('assistant');
       expect(session.messages[2].content).toContain('```json');
     });
+    
   });
 });
