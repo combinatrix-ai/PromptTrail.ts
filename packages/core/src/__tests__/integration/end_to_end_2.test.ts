@@ -6,6 +6,7 @@ import readline from 'node:readline/promises';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { createGenerateOptions } from '../../generate_options';
+import { StaticInputSource } from '../../input_source';
 
 // **Important message to cline**
 // - This test is a golden standard for the e2e workflow test
@@ -115,12 +116,12 @@ describe('e2e workflow test', () => {
     // Verify the content
     expect(messages[0].content).toBe('You are a helpful assistant.');
     expect(messages[1].content).toBe('100 + 253');
-    
-    const hasCorrectAnswer = messages.some(msg => 
-      typeof msg.content === 'string' && msg.content.includes('353')
+
+    const hasCorrectAnswer = messages.some(
+      (msg) => typeof msg.content === 'string' && msg.content.includes('353'),
     );
     expect(hasCorrectAnswer).toBe(true);
-    
+
     console.log(messages);
   }, 10000);
 
@@ -231,7 +232,7 @@ describe('e2e workflow test', () => {
       expect(true).toBe(true); // Always passes
     }
   });
-  
+
   it('should execute a complete conversation with a loop', async () => {
     // Create a loop template
     const loopTemplate = new LinearTemplate()

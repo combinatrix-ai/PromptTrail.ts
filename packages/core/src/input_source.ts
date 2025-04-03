@@ -2,21 +2,6 @@ import * as readline from 'node:readline/promises';
 import type { Metadata } from './metadata';
 
 /**
- * Static input source that returns the same input every time
- */
-export class StaticInputSource implements InputSource {
-  constructor(private input: string) {}
-
-  async getInput(_context: {
-    description: string;
-    defaultValue?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<string> {
-    return this.input;
-  }
-}
-
-/**
  * Interface for input sources that can provide user input
  */
 export interface InputSource {
@@ -25,9 +10,7 @@ export interface InputSource {
    * @param context Input context including metadata
    * @returns Promise resolving to the input string
    */
-  getInput(context?: {
-    metadata?: Metadata;
-  }): Promise<string>;
+  getInput(context?: { metadata?: Metadata }): Promise<string>;
 }
 
 /**
@@ -38,9 +21,7 @@ export class StaticInputSource implements InputSource {
     this.input = input;
   }
 
-  async getInput(_context?: {
-    metadata?: Metadata;
-  }): Promise<string> {
+  async getInput(_context?: { metadata?: Metadata }): Promise<string> {
     return this.input;
   }
 }
@@ -52,14 +33,10 @@ export class StaticInputSource implements InputSource {
 // TODO: Remove description, defaultValue from the callback?
 export class CallbackInputSource implements InputSource {
   constructor(
-    private callback: (context: {
-      metadata?: Metadata;
-    }) => Promise<string>,
+    private callback: (context: { metadata?: Metadata }) => Promise<string>,
   ) {}
 
-  async getInput(context?: {
-    metadata?: Metadata;
-  }): Promise<string> {
+  async getInput(context?: { metadata?: Metadata }): Promise<string> {
     return this.callback(context || {});
   }
 }
@@ -71,41 +48,39 @@ export class CLIInputSource implements InputSource {
   private rl!: readline.Interface;
   private description: string;
   private defaultValue?: string;
-  private isTestEnvironment: boolean;
 
   constructor(
-    customReadline?: readline.Interface
+    customReadline?: readline.Interface,
+    description?: string,
+    defaultValue?: string,
   ) {
-    this.rl = customReadline || readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+    this.description = description || 'Input>';
+    this.defaultValue = defaultValue;
+    this.rl =
+      customReadline ||
+      readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
   }
 
-  async getInput(context?: {
-    metadata?: Metadata;
-  }): Promise<string> {
-    if (this.isTestEnvironment) {
-      if (this.defaultValue) {
-        return this.defaultValue;
-      }
-      throw new Error('No default value provided for CLIInputSource in test environment');
+  async getInput(context?: { metadata?: Metadata }): Promise<string> {
+    if (this.defaultValue) {
+      return this.defaultValue;
     }
 
-    // Prompt the user for input
     const prompt = this.description
       ? `${this.description} (default: ${this.defaultValue}): `
       : `Input: `;
-    // Read input from the command line
     const input = await this.rl.question(prompt);
 
-    // If input is empty and default value exists, return default
     if (input.trim() === '' && this.defaultValue) {
       return this.defaultValue;
     }
-    // If input is empty and no default value, ask again
     if (input.trim() === '' && !this.defaultValue) {
-      console.log('Input cannot be empty. Please try again.');
+      console.log(
+        'Input cannot be empty without a default value. Asking again...',
+      );
       return this.getInput(context);
     }
     // Return the input
@@ -117,8 +92,6 @@ export class CLIInputSource implements InputSource {
    * Should be called when the CLI input source is no longer needed
    */
   close(): void {
-    if (!this.isTestEnvironment && this.rl) {
-      this.rl.close();
-    }
+    this.rl.close();
   }
 }

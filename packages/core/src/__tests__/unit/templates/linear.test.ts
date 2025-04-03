@@ -315,9 +315,7 @@ describe('Templates', () => {
     });
 
     it('should support InputSource', async () => {
-      const template = new UserTemplate(
-        new StaticInputSource('default value'),
-      );
+      const template = new UserTemplate(new StaticInputSource('default value'));
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);

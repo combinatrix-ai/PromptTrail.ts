@@ -52,13 +52,18 @@ export class UserTemplate extends Template {
     default?: string;
   };
 
-  constructor(optionsOrDescription: string | InputSource | {
-    inputSource: InputSource;
-    description?: string;
-    validate?: (input: string) => Promise<boolean>;
-    onInput?: (input: string) => void;
-    default?: string;
-  }) {
+  constructor(
+    optionsOrDescription:
+      | string
+      | InputSource
+      | {
+          inputSource: InputSource;
+          description?: string;
+          validate?: (input: string) => Promise<boolean>;
+          onInput?: (input: string) => void;
+          default?: string;
+        },
+  ) {
     super();
 
     if (typeof optionsOrDescription === 'string') {
@@ -83,12 +88,13 @@ export class UserTemplate extends Template {
 
   async execute(session: Session): Promise<Session> {
     let input: string;
-    
-    if (this.options.inputSource.constructor.name === 'CLIInputSource' && 
-        process.env.NODE_ENV === 'test') {
+
+    if (
+      this.options.inputSource.constructor.name === 'CLIInputSource' &&
+      process.env.NODE_ENV === 'test'
+    ) {
       input = 'default value';
-    }
-    else if (this.options.inputSource instanceof StaticInputSource) {
+    } else if (this.options.inputSource instanceof StaticInputSource) {
       // For static input sources
       input = interpolateTemplate(
         await this.options.inputSource.getInput(),
@@ -117,7 +123,7 @@ export class UserTemplate extends Template {
         metadata: session.metadata,
       });
     }
-    
+
     return session.addMessage({
       type: 'user',
       content: input,
