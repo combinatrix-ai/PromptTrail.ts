@@ -1,4 +1,4 @@
-import type { Session } from '../session';
+import type { Session } from '../types';
 
 /**
  * Session transformer interface for transforming sessions

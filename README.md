@@ -35,53 +35,42 @@ yarn add @prompttrail/core
 
 ```typescript
 import {
-  LinearTemplate,
+  Agent,
   createSession,
+  createGenerateOptions,
   type GenerateOptions,
 } from '@prompttrail/core';
 
 // Define generateOptions for OpenAI
-const generateOptions: GenerateOptions = {
+const generateOptions = createGenerateOptions({
   provider: {
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY,
     modelName: 'gpt-4o-mini',
   },
   temperature: 0.7,
-};
+});
 
 // Create a simple conversation template
-const chat = new LinearTemplate()
+const chat = new Agent()
   .addSystem("I'm a helpful assistant.")
   .addUser("What's TypeScript?")
-  .addAssistant({ generateOptions });
+  .addAssistant({ generateOptions: generateOptions });
 
-// Execute the template with print mode enabled
+// Execute the template
 const session = await chat.execute(
   createSession({
     print: true, // Enable console logging of the conversation
   }),
 );
-console.log(session.getLastMessage()?.content);
+console.log('last message:', session.getLastMessage()?.content);
+// Console Output:
+//     System: I'm a helpful assistant.
+//     User: What's TypeScript?
+//     Assistant: TypeScript is a superset of JavaScript that ...
+//
+//     last message: TypeScript is a superset of JavaScript that ...
 ```
-
-<!-- TEST: creates a conversation and returns a session with messages
-  // Create a simple session with predefined messages
-  const testSession = createSession({
-    print: false,
-    messages: [
-      { type: 'system', content: "I'm a helpful assistant." },
-      { type: 'user', content: "What's TypeScript?" },
-      { type: 'assistant', content: 'TypeScript is a programming language.' }
-    ]
-  });
-
-  // Verify the session structure
-  expect(testSession.messages).toHaveLength(3);
-  expect(testSession.messages[0].type).toBe('system');
-  expect(testSession.messages[1].type).toBe('user');
-  expect(testSession.messages[2].type).toBe('assistant');
--->
 
 ## 📘 Usage
 
@@ -123,41 +112,6 @@ const updatedSession = session.updateMetadata({
 // updatedSession.metadata.get('lastActive') is now available with correct type
 ```
 
-<!-- TEST: provides type-safe metadata access
-  // Create a session with metadata
-  const testSession = createSession({
-    metadata: {
-      name: 'Alice',
-      preferences: {
-        theme: 'dark',
-        language: 'TypeScript',
-      },
-    },
-  });
-
-  // Access metadata
-  const testUserName = testSession.metadata.get('name');
-  const preferences = testSession.metadata.get('preferences');
-  const testTheme = preferences ? preferences.theme : undefined;
-
-  // Update metadata
-  const testUpdatedSession = testSession.updateMetadata({
-    lastActive: new Date(),
-  });
-
-  // Test assertions
-  expect(testUserName).toBe('Alice');
-  expect(testTheme).toBe('dark');
-
-  // Test type safety and immutability
-  expect(testSession.metadata.get('name')).toBe('Alice');
-  expect(testUpdatedSession.metadata.get('name')).toBe('Alice');
-  expect(testUpdatedSession.metadata.get('lastActive')).toBeInstanceOf(Date);
-
-  // Original session should be unchanged
-  expect(testSession.metadata.get('lastActive')).toBeUndefined();
--->
-
 PromptTrail's immutable architecture ensures predictable state management:
 
 - All session operations return new instances rather than modifying existing ones
@@ -173,72 +127,90 @@ Templates are the core building blocks for creating conversation flows:
 
 ```typescript
 // Create a personalized chat with metadata interpolation
-interface UserPreferences {
+interface UserInfo {
   name: string;
   language: string;
-  expertise: string[];
 }
 
-const personalizedChat = new LinearTemplate()
-  .addSystem("I'll adapt to your preferences.")
-  .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?')
+const techSupportFlow = new Agent()
+  // Build template with fluent API
+  .addSystem("You're a helpful programming assistant.")
+  // Interpolate from metadata
+  .addAssistant('Hi ${name}, ready to dive into ${language}?')
+  // Get input from user
   .addUser({ inputSource: new CLIInputSource() })
-  .addAssistant({ generateOptions });
+  // Generate response using your custom generation logic
+  .addAssistant({ generateOptions: generateOptions });
 
-// Execute with session metadata
-const session = await personalizedChat.execute(
-  createSession<UserPreferences>({
+const session = await techSupportFlow.execute(
+  // Pass metadata into the session
+  createSession<UserInfo>({
     metadata: {
       name: 'Alice',
       language: 'TypeScript',
-      expertise: ['generics', 'type inference'],
     },
-    print: true, // Enable console logging
+    print: true, // Enable console output
   }),
 );
+
+// Console Output:
+//     System: You're a helpful programming assistant.
+//     Assistant: Hi Alice, ready to dive into TypeScript?
+//     User: What's tricky about type inference?
+//     Assistant: Alice, one tricky part of type inference is when unions are involved—TypeScript can lose precision. Want me to walk you through an example?
 ```
 
-<!-- TEST: creates a template with metadata interpolation
-  // Create a template with metadata interpolation
-  const template = new LinearTemplate()
-    .addSystem("I'll adapt to your preferences.")
-    .addAssistant('Hello ${name}! How can I help with ${expertise[0]}?');
+#### 🔄 Complex control flow
 
-  // Create a session with metadata
-  const testSession = createSession({
-    metadata: {
-      name: 'Alice',
-      expertise: ['generics', 'type inference'],
-    },
-    messages: []
-  });
-
-  // Execute the template
-  const result = await template.execute(testSession);
-
-  // Verify the interpolation worked
-  expect(result.messages).toHaveLength(2);
-  expect(result.messages[1].content).toBe('Hello Alice! How can I help with generics?');
--->
-
-### 🔄 Interactive Loops
-
-Create dynamic, branching conversations with loop templates:
+You can build complex control flow easily with code.
 
 ```typescript
-const quiz = new LinearTemplate()
+const quiz = new Agent()
   .addSystem("I'm your TypeScript quiz master!")
+  // Start quiz loop
   .addLoop(
     new LoopTemplate()
       .addUser('Ready for a question?')
-      .addAssistant({ generateOptions })
-      .addUser('My answer:', 'interfaces are awesome!')
-      .addAssistant({ generateOptions })
-      .addUser('Another question? (yes/no)', 'yes')
+      .addAssistant({ generateOptions: generateOptions })
+      .addUser('What is generics in TypeScript?')
+      .addAssistant({ generateOptions: generateOptions })
+      .addUser('Another question? (yes/no)')
+      // If user answer `no`, quit the loop
       .setExitCondition(
-        (session) => session.getLastMessage()?.content.toLowerCase() === 'no',
+        (session) =>
+          session.getLastMessage()?.content.toLowerCase().includes('no') ??
+          false,
       ),
-  );
+  )
+  // If the user said `no` in the first round only
+  .addIf({
+    condition: (session) => {
+      const messages = session.getMessages();
+      const anotherQuestionCount = messages.filter((msg) =>
+        msg.content.toLowerCase().includes('another question?'),
+      ).length;
+      return anotherQuestionCount === 1;
+    },
+    // Create child subroutine like function call
+    thenTemplate: new SubroutineTemplate({
+      // Note: Agent is alias of LinearTemplate
+      template: new LinearTemplate()
+        .addSystem("Hmm, don't you like answering quizzes?")
+        .addUser('Then you give *me* a TypeScript quiz!')
+        .addAssistant({ generateOptions: generateOptions }),
+      // Decid which information to passed to child template and merge to parent
+      initWith: (parent) => parent.clone(),
+      squashWith: (parent, child) => parent.merge(child),
+    }),
+  })
+  .addAssistant('Thanks for playing the quiz! 🚀');
+
+const session = await quiz.execute(
+  createSession({
+    metadata: {},
+    print: true,
+  }),
+);
 ```
 
 ### 🤖 Model Configuration
@@ -304,7 +276,7 @@ const session = createSession({
 });
 
 // Templates use ${variable} syntax for direct interpolation
-const template = new LinearTemplate()
+const template = new Agent()
   .addSystem("I'll use ${tone} language to explain ${topics[0]}")
   .addAssistant('Let me explain ${topics[0]} in ${language}')
   .addUser('Can you also cover ${topics[1]}?');
@@ -328,38 +300,6 @@ const newSession = updatedSession.updateMetadata({
 const json = newSession.toJSON();
 const restored = Session.fromJSON(json);
 ```
-
-<!-- TEST: demonstrates session immutability
-  // Create a session
-  const originalSession = createSession({
-    metadata: {
-      userId: 'user-123',
-      tone: 'professional',
-    },
-    messages: []
-  });
-
-  // Add a message (should return a new session)
-  const updatedSession = originalSession.addMessage({
-    type: 'user',
-    content: 'Hello!',
-  });
-
-  // Verify immutability
-  expect(updatedSession).not.toBe(originalSession);
-  expect(originalSession.messages).toHaveLength(0);
-  expect(updatedSession.messages).toHaveLength(1);
-  expect(updatedSession.messages[0].content).toBe('Hello!');
-
-  // Test metadata updates
-  const newSession = updatedSession.updateMetadata({
-    tone: 'casual',
-  });
-
-  // Verify metadata was updated in new session
-  expect(newSession.metadata.get('tone')).toBe('casual');
-  expect(updatedSession.metadata.get('tone')).toBe('professional');
--->
 
 ### 🌊 Streaming Responses
 
@@ -443,32 +383,6 @@ const dataSession = await dataTemplate.execute(createSession());
 console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
 console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
 ````
-
-<!-- TEST: extracts data using pattern matching
-  // Create a template with pattern extraction
-  const template = new LinearTemplate()
-    .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
-    .addTransformer(
-      extractPattern([
-        {
-          pattern: /IP ([\d\.]+)/,
-          key: 'ipAddress',
-        },
-        {
-          pattern: /Uptime ([\d\.]+)%/,
-          key: 'uptime',
-          transform: (value) => parseFloat(value) / 100,
-        },
-      ]),
-    );
-
-  // Execute the template
-  const session = await template.execute(createSession());
-
-  // Verify the extracted data
-  expect(session.metadata.get('ipAddress')).toBe('192.168.1.100');
-  expect(session.metadata.get('uptime')).toBe(0.9999);
--->
 
 ### 🛡️ Guardrails
 
@@ -618,39 +532,6 @@ console.log(product);
 console.log(`Product: ${product.name} - $${product.price}`);
 console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
 ```
-
-<!-- TEST: validates structured output using schemas
-  // Define a simple product schema
-  const productSchema = defineSchema({
-    properties: {
-      name: createStringProperty('The name of the product'),
-      price: createNumberProperty('The price of the product in USD'),
-      inStock: createBooleanProperty('Whether the product is in stock'),
-    },
-    required: ['name', 'price', 'inStock'],
-  });
-
-  // Create a mock session with structured output
-  const testSession = createSession({
-    metadata: {
-      structured_output: {
-        name: 'iPhone 15 Pro',
-        price: 999,
-        inStock: true,
-        description: 'Smartphone with a titanium frame'
-      }
-    },
-    messages: []
-  });
-
-  // Verify the structured output
-  const product = testSession.metadata.get('structured_output');
-  expect(product).toBeDefined();
-  expect(product.name).toBe('iPhone 15 Pro');
-  expect(product.price).toBe(999);
-  expect(product.inStock).toBe(true);
-  expect(product.description).toBe('Smartphone with a titanium frame');
--->
 
 This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
 

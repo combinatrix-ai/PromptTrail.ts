@@ -1,0 +1,13 @@
+- UserTemplate
+  - default?: string should be InputSource attribute
+  - description: string should be CLIInputSource attribute
+  - onInput? and maybe onChange? should be InputSource attribute
+  - validate? should be CLIInputSource attribute
+    - bonus: validate? accept same thing as guradrail object
+- Hierarchial GenerateOptions
+  - If generateoptions of AssistantTemplate is nonexistent, use parent one
+- Object initialization
+  - Use type based one?
+  - Shoul accept GenerateOptions on LoopTemplate
+- SchemaTemplate
+  - Use aiSdk tool 

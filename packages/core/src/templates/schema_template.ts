@@ -1,7 +1,6 @@
 import type { Session } from '../types';
 import { createMetadata } from '../metadata';
-import { SchemaValidator } from '../validators/schema_validator';
-import { GuardrailTemplate, OnFailAction } from './guardrail_template';
+import { SchemaValidator } from '../validator';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
@@ -40,6 +39,7 @@ export class SchemaTemplate<
     structured_output: Record<string, unknown>;
   },
 > extends Template<TInput, TOutput> {
+  private generateOptions: GenerateOptions;
   private schema: SchemaInput;
   private nativeSchema: SchemaType;
   private maxAttempts: number;
@@ -52,7 +52,8 @@ export class SchemaTemplate<
     maxAttempts?: number;
     functionName?: string;
   }) {
-    super({ generateOptions: options.generateOptions });
+    super();
+    this.generateOptions = options.generateOptions;
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
 
@@ -96,11 +97,6 @@ export class SchemaTemplate<
       metadata: createMetadata(),
     });
 
-    // Create an assistant template
-    const assistantTemplate = new AssistantTemplate({
-      generateOptions: this.generateOptions,
-    });
-
     // If using OpenAI, add a system message with function calling instructions
     if (isOpenAI) {
       // For OpenAI models, we need to convert our schema to a format that OpenAI understands
@@ -129,16 +125,48 @@ Please call this function with the appropriate parameters to structure your resp
       });
     }
 
-    // Create a guardrail template with schema validation
-    const guardrailTemplate = new GuardrailTemplate({
-      template: assistantTemplate,
-      validators: [schemaValidator],
-      onFail: OnFailAction.RETRY,
-      maxAttempts: this.maxAttempts,
-    });
+    const jsonExtractorValidator = {
+      validate: async (content: string, context: any) => {
+        try {
+          // Try to extract JSON from the response if it's not already JSON
+          let jsonContent = content;
+          
+          const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          if (jsonBlockMatch && jsonBlockMatch[1]) {
+            jsonContent = jsonBlockMatch[1];
+          } else {
+            const jsonObjectMatch = content.match(/(\{[\s\S]*\})/);
+            if (jsonObjectMatch && jsonObjectMatch[1]) {
+              jsonContent = jsonObjectMatch[1];
+            }
+          }
+          
+          const cleanedContent = jsonContent.replace(/^`+|`+$/g, '').trim();
+          
+          const parsedJson = JSON.parse(cleanedContent);
+          
+          return await schemaValidator.validate(JSON.stringify(parsedJson), context);
+        } catch (error) {
+          return { 
+            isValid: false, 
+            instruction: `Invalid JSON: ${(error as Error).message}` 
+          };
+        }
+      },
+      getDescription: () => 'JSON extractor and schema validator',
+      getErrorMessage: () => 'Invalid JSON format or schema validation failed'
+    };
+    
+    const assistantTemplate = new AssistantTemplate(
+      this.generateOptions, 
+      {
+        validator: jsonExtractorValidator,
+        maxAttempts: this.maxAttempts,
+        raiseError: true
+      }
+    );
 
-    // Execute the guardrail template
-    const resultSession = await guardrailTemplate.execute(
+    const resultSession = await assistantTemplate.execute(
       systemSession as unknown as Session<Record<string, unknown>>,
     );
 

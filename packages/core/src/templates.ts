@@ -1,6 +1,6 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
-import { DefaultInputSource, CallbackInputSource } from './input_source';
+import { StaticInputSource, CallbackInputSource } from './input_source';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
 import type { Session, SchemaType } from './types';
+import { type IValidator } from './validator';
 
 /**
  * Base class for all templates
@@ -16,22 +17,6 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
-  protected generateOptions?: GenerateOptions;
-
-  constructor(options?: { generateOptions?: GenerateOptions }) {
-    this.generateOptions = options?.generateOptions;
-  }
-
-  /**
-   * Helper method to interpolate content with session metadata
-   */
-  protected interpolateContent(
-    content: string,
-    session: Session<TInput>,
-  ): string {
-    return interpolateTemplate(content, session.metadata);
-  }
-
   abstract execute(session: Session<TInput>): Promise<Session<TOutput>>;
 }
 
@@ -39,14 +24,14 @@ export abstract class Template<
  * Template for system messages
  */
 export class SystemTemplate extends Template {
-  constructor(private options: { content: string }) {
+  constructor(private content: string) {
     super();
   }
 
   async execute(session: Session): Promise<Session> {
-    const interpolatedContent = this.interpolateContent(
-      this.options.content,
-      session,
+    const interpolatedContent = interpolateTemplate(
+      this.content,
+      session.metadata,
     );
     return session.addMessage({
       type: 'system',
@@ -61,62 +46,78 @@ export class SystemTemplate extends Template {
  */
 export class UserTemplate extends Template {
   private options: {
-    description: string;
-    default?: string;
-    inputSource?: InputSource;
-    onInput?: (input: string) => Promise<void>;
+    inputSource: InputSource;
+    description?: string;
     validate?: (input: string) => Promise<boolean>;
+    onInput?: (input: string) => void;
+    default?: string;
   };
 
   constructor(
     optionsOrDescription:
       | string
+      | InputSource
       | {
-          description: string;
-          default?: string;
-          inputSource?: InputSource;
-          onInput?: (input: string) => Promise<void>;
+          inputSource: InputSource;
+          description?: string;
           validate?: (input: string) => Promise<boolean>;
+          onInput?: (input: string) => void;
+          default?: string;
         },
   ) {
     super();
 
     if (typeof optionsOrDescription === 'string') {
-      // Simple string constructor case
       this.options = {
-        description: optionsOrDescription,
-        inputSource: new DefaultInputSource(),
+        inputSource: new StaticInputSource(optionsOrDescription),
+      };
+    } else if ('getInput' in optionsOrDescription) {
+      this.options = {
+        inputSource: optionsOrDescription as InputSource,
       };
     } else {
-      // Full options object case
-      this.options = {
-        ...optionsOrDescription,
-        inputSource:
-          optionsOrDescription.inputSource ?? new DefaultInputSource(),
+      // Options object constructor case
+      this.options = optionsOrDescription as {
+        inputSource: InputSource;
+        description?: string;
+        validate?: (input: string) => Promise<boolean>;
+        onInput?: (input: string) => void;
+        default?: string;
       };
     }
   }
 
   async execute(session: Session): Promise<Session> {
     let input: string;
-    do {
-      const interpolatedDescription = this.interpolateContent(
-        this.options.description,
-        session,
+
+    if (this.options.inputSource instanceof StaticInputSource) {
+      // For static input sources
+      input = interpolateTemplate(
+        await this.options.inputSource.getInput(),
+        session.metadata,
       );
-      const interpolatedDefault = this.options.default
-        ? this.interpolateContent(this.options.default, session)
-        : undefined;
-
-      input = await this.options.inputSource!.getInput({
-        description: interpolatedDescription,
-        defaultValue: interpolatedDefault,
-        metadata: session.metadata.toJSON(),
+    } else if (this.options.inputSource instanceof CallbackInputSource) {
+      input = await this.options.inputSource.getInput({
+        metadata: session.metadata,
       });
-    } while (this.options.validate && !(await this.options.validate(input)));
 
-    if (this.options.onInput) {
-      await this.options.onInput(input);
+      if (this.options.validate) {
+        let isValid = await this.options.validate(input);
+        while (!isValid) {
+          input = await this.options.inputSource.getInput({
+            metadata: session.metadata,
+          });
+          isValid = await this.options.validate(input);
+        }
+      }
+
+      if (this.options.onInput) {
+        this.options.onInput(input);
+      }
+    } else {
+      input = await this.options.inputSource.getInput({
+        metadata: session.metadata,
+      });
     }
 
     return session.addMessage({
@@ -134,22 +135,81 @@ export class AssistantTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
+  private options: {
+    content?: string;
+    generateOptions?: GenerateOptions;
+    validator?: IValidator;
+    maxAttempts?: number;
+    raiseError?: boolean;
+  };
   constructor(
-    private options?: {
-      content?: string;
-      generateOptions?: GenerateOptions;
-    },
+    contentOrGenerateOptions: string | GenerateOptions,
+    validatorOrOptions?: IValidator | {
+      validator?: IValidator;
+      maxAttempts?: number;
+      raiseError?: boolean;
+    }
   ) {
     super();
+    if (typeof contentOrGenerateOptions === 'string') {
+      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+        this.options = {
+          content: contentOrGenerateOptions,
+          validator: validatorOrOptions.validator,
+          maxAttempts: validatorOrOptions.maxAttempts,
+          raiseError: validatorOrOptions.raiseError,
+        };
+      } else {
+        this.options = {
+          content: contentOrGenerateOptions,
+          validator: validatorOrOptions as IValidator | undefined,
+          maxAttempts: 1,
+          raiseError: true,
+        };
+      }
+    } else {
+      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+        this.options = {
+          generateOptions: contentOrGenerateOptions,
+          validator: validatorOrOptions.validator,
+          maxAttempts: validatorOrOptions.maxAttempts,
+          raiseError: validatorOrOptions.raiseError,
+        };
+      } else {
+        this.options = {
+          generateOptions: contentOrGenerateOptions,
+          validator: validatorOrOptions as IValidator | undefined,
+          maxAttempts: 1,
+          raiseError: true,
+        };
+      }
+    }
+    
+    if (this.options.maxAttempts === undefined) {
+      this.options.maxAttempts = 1;
+    }
+    if (this.options.raiseError === undefined) {
+      this.options.raiseError = true;
+    }
   }
 
   async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    if (this.options?.content) {
+    if (this.options.content) {
       // For fixed content responses
-      const interpolatedContent = this.interpolateContent(
+      const interpolatedContent = interpolateTemplate(
         this.options.content,
-        session,
+        session.metadata,
       );
+      
+      if (this.options.validator) {
+        const result = await this.options.validator.validate(interpolatedContent, session.metadata as any);
+        if (!result.isValid) {
+          if (this.options.raiseError) {
+            throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
+          }
+        }
+      }
+      
       return session.addMessage({
         type: 'assistant',
         content: interpolatedContent,
@@ -157,25 +217,55 @@ export class AssistantTemplate<
       }) as unknown as Session<TOutput>;
     }
 
-    if (!this.options?.generateOptions) {
+    if (!this.options.generateOptions) {
       throw new Error('generateOptions is required for AssistantTemplate');
     }
 
-    // Use the generateText function
-    // Cast session to any to avoid type issues with the generateText function
-    const response = await generateText(
+    let attempts = 0;
+    let lastValidationError: string | undefined;
+    
+    while (attempts < (this.options.maxAttempts || 1)) {
+      attempts++;
+      
+      // Cast session to any to avoid type issues with the generateText function
+      const response = await generateText(
+        session as any,
+        this.options.generateOptions,
+      );
+      
+      if (!this.options.validator || response.type !== 'assistant' || !response.content) {
+        // Add the assistant message to the session
+        return session.addMessage(
+          response,
+        ) as unknown as Session<TOutput>;
+      }
+      
+      const result = await this.options.validator.validate(response.content, session.metadata as any);
+      if (result.isValid) {
+        return session.addMessage(
+          response,
+        ) as unknown as Session<TOutput>;
+      }
+      
+      lastValidationError = result.instruction || 'Invalid content';
+      
+      if (attempts >= (this.options.maxAttempts || 1) && this.options.raiseError) {
+        throw new Error(`Assistant response validation failed after ${attempts} attempts: ${lastValidationError}`);
+      }
+    }
+    
+    const finalResponse = await generateText(
       session as any,
       this.options.generateOptions,
     );
-
+    
     // Add the assistant message to the session
     let updatedSession = session.addMessage(
-      response,
+      finalResponse,
     ) as unknown as Session<TOutput>;
 
-    // Check if the response has tool calls directly in the message
     const toolCalls =
-      response.type === 'assistant' ? response.toolCalls : undefined;
+      finalResponse.type === 'assistant' ? finalResponse.toolCalls : undefined;
 
     if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
       // Execute each tool call and add the result as a tool_result message
@@ -264,318 +354,6 @@ export class ToolResultTemplate<
 }
 
 /**
- * Template for linear sequence of templates
- */
-export class LinearTemplate<
-  TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput,
-> extends Template<TInput, TOutput> {
-  private templates: Template<
-    Record<string, unknown>,
-    Record<string, unknown>
-  >[] = [];
-
-  constructor(templates?: Template[]) {
-    super();
-    if (templates) {
-      this.templates = templates;
-    }
-  }
-
-  addSystem(content: string): this {
-    this.templates.push(new SystemTemplate({ content }));
-    return this;
-  }
-
-  addUser(content: string, defaultValue?: string): this {
-    this.templates.push(
-      new UserTemplate({
-        description: content,
-        default: defaultValue,
-        inputSource: new CallbackInputSource(
-          async ({ description }) => description,
-        ),
-      }),
-    );
-    return this;
-  }
-
-  addAssistant(
-    options?:
-      | string
-      | {
-          content?: string;
-          generateOptions?: GenerateOptions;
-        },
-  ): this {
-    if (typeof options === 'string') {
-      this.templates.push(new AssistantTemplate({ content: options }));
-    } else if (options?.generateOptions) {
-      // Generate options provided, use them for the assistant
-      this.templates.push(
-        new AssistantTemplate({ generateOptions: options.generateOptions }),
-      );
-    } else {
-      // No options provided, use template-level generateOptions
-      this.templates.push(
-        new AssistantTemplate({ generateOptions: this.generateOptions }),
-      );
-    }
-    return this;
-  }
-
-  addLoop(loop: LoopTemplate): this {
-    this.templates.push(loop);
-    return this;
-  }
-
-  /**
-   * Add a conditional template to the sequence
-   *
-   * @param options The if template options
-   * @returns The template instance for chaining
-   */
-  addIf(options: {
-    condition: (session: Session) => boolean;
-    thenTemplate: Template;
-    elseTemplate?: Template;
-  }): this {
-    this.templates.push(new IfTemplate(options));
-    return this;
-  }
-
-  /**
-   * Add a transformer to the template sequence
-   *
-   * Transformers can extract structured data from messages and store it in the session metadata.
-   *
-   * @example
-   * ```typescript
-   * // Extract markdown sections and code blocks
-   * template.addTransformer(extractMarkdown({
-   *   headingMap: { 'Summary': 'summary' },
-   *   codeBlockMap: { 'typescript': 'code' }
-   * }));
-   *
-   * // Extract data using regex patterns
-   * template.addTransformer(extractPattern({
-   *   pattern: /API Endpoint: (.+)/,
-   *   key: 'apiEndpoint'
-   * }));
-   * ```
-   *
-   * @param transformer The transformer to add
-   * @returns The template instance for chaining
-   */
-  addTransformer<TNewOutput extends Record<string, unknown>>(
-    transformer: SessionTransformer<TOutput, TNewOutput>,
-  ): LinearTemplate<TInput, TNewOutput> {
-    // Cast the transformer to the expected type to avoid TypeScript errors
-    const castTransformer = transformer as unknown as SessionTransformer<
-      Record<string, unknown>,
-      Record<string, unknown>
-    >;
-    this.templates.push(createTransformerTemplate(castTransformer) as Template);
-    return this as unknown as LinearTemplate<TInput, TNewOutput>;
-  }
-
-  /**
-   * Add a schema validation template to enforce structured output
-   *
-   * This method adds a template that enforces the LLM output to match a specified schema.
-   * The structured output will be available in the session metadata under the key 'structured_output'.
-   *
-   * @example
-   * ```typescript
-   * // Example 1: Using PromptTrail's native schema
-   * const productSchema = defineSchema({
-   *   properties: {
-   *     name: createStringProperty('The name of the product'),
-   *     price: createNumberProperty('The price of the product in USD'),
-   *     inStock: createBooleanProperty('Whether the product is in stock'),
-   *   },
-   *   required: ['name', 'price', 'inStock'],
-   * });
-   *
-   * // Example 2: Using Zod schema
-   * const userSchema = z.object({
-   *   name: z.string().describe('User name'),
-   *   age: z.number().describe('User age'),
-   *   email: z.string().email().describe('User email')
-   * });
-   *
-   * // Create a template with schema validation
-   * const template = new LinearTemplate()
-   *   .addSystem('Extract information from the text.')
-   *   .addUser('The new iPhone 15 Pro costs $999 and comes with a titanium frame.')
-   *   .addSchema(productSchema); // or userSchema
-   *
-   * // Execute the template
-   * const session = await template.execute(createSession());
-   *
-   * // Access the structured output
-   * const data = session.metadata.get('structured_output');
-   * ```
-   *
-   * @param schema The schema to validate against (either a SchemaType or a Zod schema)
-   * @param options Additional options for schema validation
-   * @returns The template instance for chaining
-   */
-  async addSchema<TSchema extends SchemaType | z.ZodType>(
-    schema: TSchema,
-    options?: {
-      generateOptions?: GenerateOptions;
-      maxAttempts?: number;
-      functionName?: string;
-    },
-  ): Promise<this> {
-    const generateOptions = options?.generateOptions || this.generateOptions;
-
-    if (!generateOptions) {
-      throw new Error(
-        'generateOptions must be provided to use addSchema. Either set it on the LinearTemplate or pass it to addSchema',
-      );
-    }
-
-    // Import SchemaTemplate dynamically to avoid circular dependency
-    // Use dynamic import for ESM compatibility
-    const SchemaTemplateModule = await import('./templates/schema_template');
-    const { SchemaTemplate } = SchemaTemplateModule;
-
-    this.templates.push(
-      new SchemaTemplate({
-        generateOptions,
-        schema,
-        maxAttempts: options?.maxAttempts,
-        functionName: options?.functionName,
-      }),
-    );
-
-    return this;
-  }
-
-  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
-    let currentSession: Session<Record<string, unknown>> =
-      session as unknown as Session<Record<string, unknown>>;
-    for (const template of this.templates) {
-      currentSession = await template.execute(currentSession);
-    }
-    return currentSession as unknown as Session<TOutput>;
-  }
-}
-
-/**
- * Template for looping sequence of templates
- */
-export class LoopTemplate extends Template {
-  private templates: Template[] = [];
-  private exitCondition?: (session: Session) => boolean;
-
-  constructor(options?: {
-    templates: Template[];
-    exitCondition: (session: Session) => boolean;
-  }) {
-    super();
-    if (options) {
-      this.templates = options.templates;
-      this.exitCondition = options.exitCondition;
-    }
-  }
-
-  addUser(content: string, defaultValue?: string): this {
-    this.templates.push(
-      new UserTemplate({
-        description: content,
-        default: defaultValue,
-        inputSource: new CallbackInputSource(
-          async ({ description }) => description,
-        ),
-      }),
-    );
-    return this;
-  }
-
-  addAssistant(
-    options:
-      | string
-      | {
-          generateOptions?: GenerateOptions;
-          content?: string;
-        },
-  ): this {
-    if (typeof options === 'string') {
-      this.templates.push(new AssistantTemplate({ content: options }));
-    } else {
-      // Set the generateOptions on the LoopTemplate if provided
-      if (options.generateOptions) {
-        this.generateOptions = options.generateOptions;
-      }
-
-      // Create AssistantTemplate with the generateOptions from options or from LoopTemplate
-      const assistantOptions = {
-        ...options,
-        generateOptions: options.generateOptions || this.generateOptions,
-      };
-
-      this.templates.push(new AssistantTemplate(assistantOptions));
-    }
-    return this;
-  }
-
-  setExitCondition(condition: (session: Session) => boolean): this {
-    this.exitCondition = condition;
-    return this;
-  }
-
-  async execute(session: Session): Promise<Session> {
-    if (!this.exitCondition) {
-      throw new Error('Exit condition not set for LoopTemplate');
-    }
-
-    let currentSession = session;
-
-    do {
-      for (const template of this.templates) {
-        currentSession = await template.execute(currentSession);
-      }
-    } while (!this.exitCondition(currentSession));
-
-    return currentSession;
-  }
-}
-
-/**
- * Template for nested conversations with separate session context
- */
-export class SubroutineTemplate extends Template {
-  constructor(
-    private options: {
-      template: Template;
-      initWith: (parentSession: Session) => Session;
-      squashWith?: (parentSession: Session, childSession: Session) => Session;
-    },
-  ) {
-    super();
-  }
-
-  async execute(session: Session): Promise<Session> {
-    // Create child session using initWith function
-    const childSession = this.options.initWith(session);
-
-    // Execute the template with child session
-    const resultSession = await this.options.template.execute(childSession);
-
-    // If squashWith is provided, merge results back to parent session
-    if (this.options.squashWith) {
-      return this.options.squashWith(session, resultSession);
-    }
-
-    // Otherwise just return parent session unchanged
-    return session;
-  }
-}
-
-/**
  * Template for conditional execution based on a condition
  */
 export class IfTemplate extends Template {
@@ -598,3 +376,296 @@ export class IfTemplate extends Template {
     return session; // If no else template and condition is false, return session unchanged
   }
 }
+
+/**
+ * Shared constructor type for mixins
+ */
+type Constructor<T = {}> = new (...args: any[]) => T;
+
+/**
+ * Mixin functions for adding functionality to Templates have child classes
+ */
+function WithAssistant<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addAssistant(contentOrGenerateOptions: string | GenerateOptions): this {
+      this.templates.push(new AssistantTemplate(contentOrGenerateOptions));
+      return this;
+    }
+  };
+}
+
+function WithUser<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addUser(contentOrInputSource: string | InputSource): this {
+      this.templates.push(new UserTemplate(contentOrInputSource));
+      return this;
+    }
+  };
+}
+
+function WithSystem<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addSystem(content: string): this {
+      this.templates.push(new SystemTemplate(content));
+      return this;
+    }
+  };
+}
+
+function WithLoop<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addLoop(loop: LoopTemplate): this {
+      this.templates.push(loop);
+      return this;
+    }
+  };
+}
+
+function WithIf<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addIf(options: {
+      condition: (session: Session) => boolean;
+      thenTemplate: Template;
+      elseTemplate?: Template;
+    }): this {
+      this.templates.push(new IfTemplate(options));
+      return this;
+    }
+  };
+}
+
+function WithTransformer<
+  TBase extends Constructor<{ templates: Template[] }>,
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = Record<string, unknown>,
+>(Base: TBase) {
+  return class extends Base {
+    addTransformer<TNewOutput extends Record<string, unknown>>(
+      transformer: SessionTransformer<TOutput, TNewOutput>,
+    ): LinearTemplate {
+      // Cast the transformer to the expected type to avoid TypeScript errors
+      const castTransformer = transformer as unknown as SessionTransformer<
+        Record<string, unknown>,
+        Record<string, unknown>
+      >;
+      this.templates.push(
+        createTransformerTemplate(castTransformer) as Template,
+      );
+      return this as unknown as LinearTemplate;
+    }
+  };
+}
+
+function WithSchema<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    async addSchema<TSchema extends SchemaType | z.ZodType>(
+      schema: TSchema,
+      options: {
+        generateOptions: GenerateOptions;
+        maxAttempts?: number;
+        functionName?: string;
+      },
+    ): Promise<this> {
+      // Import SchemaTemplate dynamically to avoid circular dependency
+      // Use dynamic import for ESM compatibility
+      const SchemaTemplateModule = await import('./templates/schema_template');
+      const { SchemaTemplate } = SchemaTemplateModule;
+
+      this.templates.push(
+        new SchemaTemplate({
+          generateOptions: options.generateOptions,
+          schema: schema,
+          maxAttempts: options?.maxAttempts,
+          functionName: options?.functionName,
+        }),
+      );
+
+      return this;
+    }
+  };
+}
+
+function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
+  Base: TBase,
+) {
+  return class extends Base {
+    addSubroutine(options: {
+      template: Template;
+      initWith: (parentSession: Session) => Session;
+      squashWith?: (parentSession: Session, childSession: Session) => Session;
+    }): this {
+      this.templates.push(new SubroutineTemplate(options));
+      return this;
+    }
+  };
+}
+
+/**
+ * Template for linear sequence of templates
+ */
+export class LinearTemplate extends WithSchema(
+  WithTransformer(
+    WithSubroutine(
+      WithIf(
+        WithLoop(
+          WithSystem(
+            WithUser(
+              WithAssistant(
+                class {
+                  templates: Template[] = [];
+
+                  constructor(options?: { templates?: Template[] }) {
+                    this.templates = options?.templates || [];
+                  }
+
+                  async execute(session: Session<any>): Promise<Session<any>> {
+                    let currentSession: Session<any> = session;
+                    for (const template of this.templates) {
+                      currentSession = await template.execute(currentSession);
+                    }
+                    return currentSession;
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+) {}
+
+// Agent class is alias for LinearTemplate
+export class Agent extends LinearTemplate {
+  constructor(options?: { templates?: Template[] }) {
+    super(options);
+  }
+}
+
+/**
+ * Template for looping sequence of templates
+ */
+export class LoopTemplate extends WithSchema(
+  WithTransformer(
+    WithSubroutine(
+      WithIf(
+        WithLoop(
+          WithSystem(
+            WithUser(
+              WithAssistant(
+                class {
+                  templates: Template[] = [];
+                  exitCondition?: (session: Session) => boolean;
+
+                  constructor(options?: {
+                    templates?: Template[];
+                    exitCondition?: (session: Session) => boolean;
+                  }) {
+                    this.templates = options?.templates || [];
+                    this.exitCondition = options?.exitCondition;
+                  }
+
+                  setExitCondition(
+                    condition: (session: Session) => boolean,
+                  ): this {
+                    this.exitCondition = condition;
+                    return this;
+                  }
+
+                  async execute(session: Session): Promise<Session> {
+                    if (!this.exitCondition) {
+                      throw new Error(
+                        'Exit condition not set for LoopTemplate',
+                      );
+                    }
+
+                    let currentSession = session;
+
+                    do {
+                      for (const template of this.templates) {
+                        currentSession = await template.execute(currentSession);
+                      }
+                    } while (!this.exitCondition(currentSession));
+
+                    return currentSession;
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+) {}
+
+/**
+ * Template for nested conversations with separate session context
+ */
+export class SubroutineTemplate extends WithSchema(
+  WithTransformer(
+    WithSubroutine(
+      WithIf(
+        WithLoop(
+          WithSystem(
+            WithUser(
+              WithAssistant(
+                class {
+                  templates: Template[] = [];
+                  template!: Template;
+                  initWith!: (parentSession: Session) => Session;
+                  squashWith?: (
+                    parentSession: Session,
+                    childSession: Session,
+                  ) => Session;
+
+                  constructor(options: {
+                    template: Template;
+                    initWith: (parentSession: Session) => Session;
+                    squashWith?: (
+                      parentSession: Session,
+                      childSession: Session,
+                    ) => Session;
+                  }) {
+                    this.template = options.template;
+                    this.initWith = options.initWith;
+                    this.squashWith = options.squashWith;
+                  }
+
+                  async execute(session: Session): Promise<Session> {
+                    // Create child session using initWith function
+                    const childSession = this.initWith(session);
+
+                    // Execute the template with child session
+                    const resultSession =
+                      await this.template.execute(childSession);
+
+                    // If squashWith is provided, merge results back to parent session
+                    if (this.squashWith) {
+                      return this.squashWith(session, resultSession);
+                    }
+
+                    // Otherwise just return parent session unchanged
+                    return session;
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+) {}
