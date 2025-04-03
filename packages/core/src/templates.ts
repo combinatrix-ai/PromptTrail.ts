@@ -139,22 +139,57 @@ export class AssistantTemplate<
     content?: string;
     generateOptions?: GenerateOptions;
     validator?: IValidator;
+    maxAttempts?: number;
+    raiseError?: boolean;
   };
   constructor(
     contentOrGenerateOptions: string | GenerateOptions,
-    validator?: IValidator
+    validatorOrOptions?: IValidator | {
+      validator?: IValidator;
+      maxAttempts?: number;
+      raiseError?: boolean;
+    }
   ) {
     super();
     if (typeof contentOrGenerateOptions === 'string') {
-      this.options = {
-        content: contentOrGenerateOptions,
-        validator,
-      };
+      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+        this.options = {
+          content: contentOrGenerateOptions,
+          validator: validatorOrOptions.validator,
+          maxAttempts: validatorOrOptions.maxAttempts,
+          raiseError: validatorOrOptions.raiseError,
+        };
+      } else {
+        this.options = {
+          content: contentOrGenerateOptions,
+          validator: validatorOrOptions as IValidator | undefined,
+          maxAttempts: 1,
+          raiseError: true,
+        };
+      }
     } else {
-      this.options = {
-        generateOptions: contentOrGenerateOptions,
-        validator,
-      };
+      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+        this.options = {
+          generateOptions: contentOrGenerateOptions,
+          validator: validatorOrOptions.validator,
+          maxAttempts: validatorOrOptions.maxAttempts,
+          raiseError: validatorOrOptions.raiseError,
+        };
+      } else {
+        this.options = {
+          generateOptions: contentOrGenerateOptions,
+          validator: validatorOrOptions as IValidator | undefined,
+          maxAttempts: 1,
+          raiseError: true,
+        };
+      }
+    }
+    
+    if (this.options.maxAttempts === undefined) {
+      this.options.maxAttempts = 1;
+    }
+    if (this.options.raiseError === undefined) {
+      this.options.raiseError = true;
     }
   }
 
@@ -169,7 +204,9 @@ export class AssistantTemplate<
       if (this.options.validator) {
         const result = await this.options.validator.validate(interpolatedContent, session.metadata as any);
         if (!result.isValid) {
-          throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
+          if (this.options.raiseError) {
+            throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
+          }
         }
       }
       
@@ -184,28 +221,51 @@ export class AssistantTemplate<
       throw new Error('generateOptions is required for AssistantTemplate');
     }
 
-    // Use the generateText function
-    // Cast session to any to avoid type issues with the generateText function
-    const response = await generateText(
-      session as any,
-      this.options.generateOptions,
-    );
-
-    if (this.options.validator && response.type === 'assistant' && response.content) {
+    let attempts = 0;
+    let lastValidationError: string | undefined;
+    
+    while (attempts < (this.options.maxAttempts || 1)) {
+      attempts++;
+      
+      // Cast session to any to avoid type issues with the generateText function
+      const response = await generateText(
+        session as any,
+        this.options.generateOptions,
+      );
+      
+      if (!this.options.validator || response.type !== 'assistant' || !response.content) {
+        // Add the assistant message to the session
+        return session.addMessage(
+          response,
+        ) as unknown as Session<TOutput>;
+      }
+      
       const result = await this.options.validator.validate(response.content, session.metadata as any);
-      if (!result.isValid) {
-        throw new Error(`Assistant response validation failed: ${result.instruction || 'Invalid content'}`);
+      if (result.isValid) {
+        return session.addMessage(
+          response,
+        ) as unknown as Session<TOutput>;
+      }
+      
+      lastValidationError = result.instruction || 'Invalid content';
+      
+      if (attempts >= (this.options.maxAttempts || 1) && this.options.raiseError) {
+        throw new Error(`Assistant response validation failed after ${attempts} attempts: ${lastValidationError}`);
       }
     }
     
+    const finalResponse = await generateText(
+      session as any,
+      this.options.generateOptions,
+    );
+    
     // Add the assistant message to the session
     let updatedSession = session.addMessage(
-      response,
+      finalResponse,
     ) as unknown as Session<TOutput>;
 
-    // Check if the response has tool calls directly in the message
     const toolCalls =
-      response.type === 'assistant' ? response.toolCalls : undefined;
+      finalResponse.type === 'assistant' ? finalResponse.toolCalls : undefined;
 
     if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
       // Execute each tool call and add the result as a tool_result message

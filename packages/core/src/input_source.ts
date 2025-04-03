@@ -24,25 +24,16 @@ export interface InputSource {
  * Static input source that returns the same input every time
  */
 export class StaticInputSource implements InputSource {
-  private validator?: IValidator;
-
-  constructor(private input: string, validator?: IValidator) {
+  constructor(private input: string) {
     this.input = input;
-    this.validator = validator;
   }
 
-  async getInput(context?: { metadata?: Metadata }): Promise<string> {
-    if (this.validator) {
-      const result = await this.validator.validate(this.input, context?.metadata as any);
-      if (!result.isValid) {
-        throw new Error(`Input validation failed: ${result.instruction || 'Invalid input'}`);
-      }
-    }
+  async getInput(_context?: { metadata?: Metadata }): Promise<string> {
     return this.input;
   }
 
   getValidator(): IValidator | undefined {
-    return this.validator;
+    return undefined;
   }
 }
 
@@ -53,25 +44,54 @@ export class StaticInputSource implements InputSource {
 // TODO: Remove description, defaultValue from the callback?
 export class CallbackInputSource implements InputSource {
   private validator?: IValidator;
+  private maxAttempts: number;
+  private raiseError: boolean;
 
   constructor(
     private callback: (context: { metadata?: Metadata }) => Promise<string>,
-    validator?: IValidator
+    validatorOrOptions?: IValidator | {
+      validator?: IValidator;
+      maxAttempts?: number;
+      raiseError?: boolean;
+    }
   ) {
-    this.validator = validator;
+    if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+      this.validator = validatorOrOptions.validator;
+      this.maxAttempts = validatorOrOptions.maxAttempts ?? 1;
+      this.raiseError = validatorOrOptions.raiseError ?? true;
+    } else {
+      this.validator = validatorOrOptions as IValidator | undefined;
+      this.maxAttempts = 1;
+      this.raiseError = true;
+    }
   }
 
   async getInput(context?: { metadata?: Metadata }): Promise<string> {
-    const input = await this.callback(context || {});
+    if (!this.validator) {
+      return this.callback(context || {});
+    }
     
-    if (this.validator) {
+    let attempts = 0;
+    let lastValidationError: string | undefined;
+    
+    while (attempts < this.maxAttempts) {
+      attempts++;
+      
+      const input = await this.callback(context || {});
       const result = await this.validator.validate(input, context?.metadata as any);
-      if (!result.isValid) {
-        throw new Error(`Input validation failed: ${result.instruction || 'Invalid input'}`);
+      
+      if (result.isValid) {
+        return input;
+      }
+      
+      lastValidationError = result.instruction || 'Invalid input';
+      
+      if (attempts >= this.maxAttempts && this.raiseError) {
+        throw new Error(`Input validation failed after ${attempts} attempts: ${lastValidationError}`);
       }
     }
     
-    return input;
+    return this.callback(context || {});
   }
 
   getValidator(): IValidator | undefined {
@@ -87,16 +107,32 @@ export class CLIInputSource implements InputSource {
   private description: string;
   private defaultValue?: string;
   private validator?: IValidator;
+  private maxAttempts: number;
+  private raiseError: boolean;
 
   constructor(
     customReadline?: readline.Interface,
     description?: string,
     defaultValue?: string,
-    validator?: IValidator,
+    validatorOrOptions?: IValidator | {
+      validator?: IValidator;
+      maxAttempts?: number;
+      raiseError?: boolean;
+    },
   ) {
     this.description = description || 'Input>';
     this.defaultValue = defaultValue;
-    this.validator = validator;
+    
+    if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+      this.validator = validatorOrOptions.validator;
+      this.maxAttempts = validatorOrOptions.maxAttempts ?? 1;
+      this.raiseError = validatorOrOptions.raiseError ?? true;
+    } else {
+      this.validator = validatorOrOptions as IValidator | undefined;
+      this.maxAttempts = 1;
+      this.raiseError = true;
+    }
+    
     this.rl =
       customReadline ||
       readline.createInterface({
@@ -112,40 +148,62 @@ export class CLIInputSource implements InputSource {
       if (this.validator) {
         const result = await this.validator.validate(defaultInput, context?.metadata as any);
         if (!result.isValid) {
-          throw new Error(`Default input validation failed: ${result.instruction || 'Invalid input'}`);
+          if (this.raiseError) {
+            throw new Error(`Default input validation failed: ${result.instruction || 'Invalid input'}`);
+          }
+        } else {
+          return defaultInput;
         }
+      } else {
+        return defaultInput;
       }
-      
-      return defaultInput;
     }
 
     const prompt = this.description
       ? `${this.description} (default: ${this.defaultValue}): `
       : `Input: `;
     
-    let input = await this.rl.question(prompt);
+    let attempts = 0;
+    let lastValidationError: string | undefined;
+    
+    while (attempts < this.maxAttempts) {
+      attempts++;
+      
+      let input = await this.rl.question(prompt);
 
-    if (input.trim() === '' && this.defaultValue) {
-      input = this.defaultValue;
-    }
-    
-    if (input.trim() === '' && !this.defaultValue) {
-      console.log(
-        'Input cannot be empty without a default value. Asking again...',
-      );
-      return this.getInput(context);
-    }
-    
-    if (this.validator) {
-      const result = await this.validator.validate(input, context?.metadata as any);
-      if (!result.isValid) {
-        console.log(`Input validation failed: ${result.instruction || 'Invalid input'}. Please try again.`);
-        return this.getInput(context);
+      if (input.trim() === '' && this.defaultValue) {
+        input = this.defaultValue;
+      }
+      
+      if (input.trim() === '' && !this.defaultValue) {
+        console.log('Input cannot be empty without a default value. Asking again...');
+        continue;
+      }
+      
+      if (this.validator) {
+        const result = await this.validator.validate(input, context?.metadata as any);
+        if (result.isValid) {
+          return input;
+        }
+        
+        lastValidationError = result.instruction || 'Invalid input';
+        console.log(`Input validation failed: ${lastValidationError}. Please try again.`);
+        
+        if (attempts >= this.maxAttempts && this.raiseError) {
+          throw new Error(`Input validation failed after ${attempts} attempts: ${lastValidationError}`);
+        }
+      } else {
+        return input;
       }
     }
     
-    // Return the input
-    return input;
+    let finalInput = await this.rl.question(prompt);
+    
+    if (finalInput.trim() === '' && this.defaultValue) {
+      finalInput = this.defaultValue;
+    }
+    
+    return finalInput;
   }
 
   getValidator(): IValidator | undefined {

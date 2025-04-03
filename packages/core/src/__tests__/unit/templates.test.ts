@@ -3,7 +3,7 @@ import { AssistantTemplate } from '../../templates';
 import { createSession } from '../../session';
 import { type IValidator } from '../../validator';
 import * as generateModule from '../../generate';
-import type { Message, AssistantMessage, ProviderConfig } from '../../types';
+import type { AssistantMessage, ProviderConfig } from '../../types';
 import { GenerateOptions } from '../../generate_options';
 
 vi.mock('../../generate', () => ({
@@ -115,7 +115,7 @@ describe('AssistantTemplate', () => {
       expect(mockValidator.validate).toHaveBeenCalledWith('valid generated content', expect.anything());
     });
     
-    it('should throw error when generated content fails validation', async () => {
+    it('should throw error when generated content fails validation with default options', async () => {
       const mockValidator: IValidator = {
         validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid content' }),
         getDescription: vi.fn().mockReturnValue('mock validator'),
@@ -143,6 +143,131 @@ describe('AssistantTemplate', () => {
       
       await expect(template.execute(session)).rejects.toThrow('Assistant response validation failed');
       expect(mockValidator.validate).toHaveBeenCalledWith('invalid generated content', expect.anything());
+    });
+    
+    it('should retry generation when validation fails', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn()
+          .mockResolvedValueOnce({ isValid: false, instruction: 'Invalid content' })
+          .mockResolvedValueOnce({ isValid: true }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const mockResponse1: AssistantMessage = {
+        type: 'assistant',
+        content: 'invalid generated content',
+        metadata: undefined
+      };
+      
+      const mockResponse2: AssistantMessage = {
+        type: 'assistant',
+        content: 'valid generated content',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock
+        .mockResolvedValueOnce(mockResponse1)
+        .mockResolvedValueOnce(mockResponse2);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const options = {
+        validator: mockValidator,
+        maxAttempts: 2,
+        raiseError: true
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, options);
+      const session = createSession();
+      
+      const result = await template.execute(session);
+      
+      expect(result.messages[0].content).toBe('valid generated content');
+      expect(mockValidator.validate).toHaveBeenCalledTimes(2);
+      expect(generateTextMock).toHaveBeenCalledTimes(2);
+    });
+    
+    it('should throw error when validation fails all attempts with raiseError=true', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid content' }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'invalid generated content',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const options = {
+        validator: mockValidator,
+        maxAttempts: 2,
+        raiseError: true
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, options);
+      const session = createSession();
+      
+      await expect(template.execute(session)).rejects.toThrow('Assistant response validation failed after 2 attempts');
+      expect(mockValidator.validate).toHaveBeenCalledTimes(2);
+      expect(generateTextMock).toHaveBeenCalledTimes(2);
+    });
+    
+    it('should not throw error when validation fails all attempts with raiseError=false', async () => {
+      const mockValidator: IValidator = {
+        validate: vi.fn().mockResolvedValue({ isValid: false, instruction: 'Invalid content' }),
+        getDescription: vi.fn().mockReturnValue('mock validator'),
+        getErrorMessage: vi.fn().mockReturnValue('validation failed'),
+      };
+      
+      const mockResponse: AssistantMessage = {
+        type: 'assistant',
+        content: 'invalid generated content',
+        metadata: undefined
+      };
+      
+      const generateTextMock = vi.mocked(generateModule.generateText);
+      generateTextMock.mockResolvedValue(mockResponse);
+      
+      const mockProvider: ProviderConfig = {
+        type: 'openai',
+        apiKey: 'mock-api-key',
+        modelName: 'mock-model'
+      };
+      
+      const options = {
+        validator: mockValidator,
+        maxAttempts: 2,
+        raiseError: false
+      };
+      
+      const generateOptions = new GenerateOptions({ provider: mockProvider });
+      const template = new AssistantTemplate(generateOptions, options);
+      const session = createSession();
+      
+      const result = await template.execute(session);
+      
+      expect(result.messages[0].content).toBe('invalid generated content');
+      expect(mockValidator.validate).toHaveBeenCalledTimes(2);
+      expect(generateTextMock).toHaveBeenCalledTimes(3); // Initial + maxAttempts + final
     });
   });
 });
