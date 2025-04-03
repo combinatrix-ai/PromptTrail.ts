@@ -13,8 +13,8 @@
     "@emotion/react": "^11.11.3",
     "@emotion/styled": "^11.11.0",
     "@prompttrail/core": "workspace:*",
+    "@prompttrail/react": "workspace:*",
     "react": "^18.2.0",
-    "react-chat": "link:",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {

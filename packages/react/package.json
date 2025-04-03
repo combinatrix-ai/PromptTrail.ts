@@ -1,7 +1,7 @@
 {
-  "name": "@prompttrail/core",
+  "name": "@prompttrail/react",
   "version": "0.0.1",
-  "description": "Core functionality for PromptTrail TypeScript",
+  "description": "React hooks for PromptTrail TypeScript",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -9,9 +9,7 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [
@@ -20,7 +18,6 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest --run --watch=false",
-    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",
@@ -30,24 +27,27 @@
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
+  "peerDependencies": {
+    "@prompttrail/core": "workspace:*",
+    "react": "^18.0.0"
+  },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/react-hooks": "^8.0.1",
     "@types/node": "^20.17.19",
+    "@types/react": "^18.3.18",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.57.1",
+    "jsdom": "^26.0.0",
     "prettier": "^3.5.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.0.0",
+    "react-test-renderer": "^18.0.0",
     "tsup": "^8.3.6",
     "typescript": "^5.7.3",
     "vitest": "^1.6.1"
-  },
-  "dependencies": {
-    "@ai-sdk/anthropic": "^1.1.18",
-    "@ai-sdk/openai": "^1.2.6",
-    "@anthropic-ai/sdk": "^0.36.3",
-    "@modelcontextprotocol/sdk": "^1.6.0",
-    "ai": "^4.1.63",
-    "openai": "^4.85.4",
-    "zod": "^3.24.2"
   }
 }

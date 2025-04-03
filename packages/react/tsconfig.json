@@ -5,7 +5,9 @@
     "rootDir": "src",
     "composite": true,
     "noEmit": false,
-    "declaration": true
+    "declaration": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"]
