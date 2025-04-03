@@ -83,7 +83,7 @@ export abstract class BaseValidator {
 }
 
 /**
- * 複数のバリデータを論理演算子で結合するための基底クラス
+ * Base class for combining multiple validators using logical operators
  */
 export abstract class CompositeValidator extends BaseValidator implements IValidator {
   protected validators: IValidator[];
@@ -112,7 +112,7 @@ export abstract class CompositeValidator extends BaseValidator implements IValid
 }
 
 /**
- * AND条件でバリデータを結合（すべてのバリデータがパスする必要がある）
+ * Combines validators with AND condition (all validators must pass)
  */
 export class AllValidator extends CompositeValidator {
   async validate(content: string, context: Session): Promise<ValidationResult> {
@@ -135,7 +135,7 @@ export class AllValidator extends CompositeValidator {
 }
 
 /**
- * OR条件でバリデータを結合（少なくとも1つのバリデータがパスする必要がある）
+ * Combines validators with OR condition (at least one validator must pass)
  */
 export class AnyValidator extends CompositeValidator {
   async validate(content: string, context: Session): Promise<ValidationResult> {
