@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createSession } from '../../session';
 import { SchemaTemplate } from '../../schema_template';
-import {
-  defineSchema,
-  createStringProperty,
-  createNumberProperty,
-  createBooleanProperty,
-} from '../../utils/schema';
 import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
 
@@ -37,11 +31,11 @@ describe('SchemaTemplate API Integration', () => {
     });
   });
 
-  const productSchema = defineSchema({
-    name: createStringProperty('The name of the product'),
-    price: createNumberProperty('The price of the product in USD'),
-    inStock: createBooleanProperty('Whether the product is in stock'),
-    description: createStringProperty('A short description of the product'),
+  const productSchema = z.object({
+    name: z.string().describe('The name of the product'),
+    price: z.number().describe('The price of the product in USD'),
+    inStock: z.boolean().describe('Whether the product is in stock'),
+    description: z.string().describe('A short description of the product'),
   });
 
   const zodProductSchema = z.object({

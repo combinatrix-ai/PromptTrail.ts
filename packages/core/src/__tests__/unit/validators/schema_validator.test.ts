@@ -1,19 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import {
-  defineSchema,
-  createStringProperty,
-  createNumberProperty,
-  createBooleanProperty,
-} from '../../../utils/schema';
 import { z } from 'zod';
 
 describe('Schema validation', () => {
   describe('Native schema', () => {
     it('should define a schema with required fields', () => {
-      const personSchema = defineSchema({
-        name: createStringProperty("The person's full name"),
-        age: createNumberProperty("The person's age in years"),
-        isStudent: createBooleanProperty('Whether the person is a student'),
+      const personSchema = z.object({
+        name: z.string().describe("The person's full name"),
+        age: z.number().describe("The person's age in years"),
+        isStudent: z.boolean().describe('Whether the person is a student'),
       });
 
       expect(personSchema).toBeDefined();
@@ -31,14 +25,14 @@ describe('Schema validation', () => {
     });
 
     it('should define a schema with nested properties', () => {
-      const companySchema = defineSchema({
-        name: createStringProperty('The company name'),
-        founded: createNumberProperty('Year the company was founded'),
+      const companySchema = z.object({
+        name: z.string().describe('The company name'),
+        founded: z.number().describe('Year the company was founded'),
         headquarters: z.object({
           city: z.string().describe('City of headquarters'),
           country: z.string().describe('Country of headquarters'),
         }),
-        isPublic: createBooleanProperty(
+        isPublic: z.boolean().describe(
           'Whether the company is publicly traded',
         ),
       });

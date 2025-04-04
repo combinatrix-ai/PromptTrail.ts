@@ -1,12 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { SchemaTemplate } from '../../schema_template';
-import {
-  defineSchema,
-  createStringProperty,
-  createNumberProperty,
-  createBooleanProperty,
-} from '../../utils/schema';
 import { createMetadata } from '../../metadata';
 import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
@@ -23,11 +17,14 @@ vi.mock('ai', () => {
   };
 });
 
-vi.mock('../../schema_template', async (importOriginal) => {
-  const originalModule = await importOriginal();
+vi.mock('../../schema_template', async () => {
+  const actual = await vi.importActual('../../schema_template');
   return {
-    ...originalModule,
-    SchemaTemplate: class MockSchemaTemplate extends originalModule.SchemaTemplate {
+    SchemaTemplate: class MockSchemaTemplate {
+      options: any;
+      constructor(options: any) {
+        this.options = options;
+      }
       async execute(session) {
         return session.updateMetadata({
           structured_output: {
@@ -77,15 +74,12 @@ describe('SchemaTemplate', () => {
   });
 
   it('should validate output against native schema', async () => {
-    // Define a schema using PromptTrail's native schema format
-    const productSchema = defineSchema({
-      properties: {
-        name: createStringProperty('The name of the product'),
-        price: createNumberProperty('The price of the product in USD'),
-        inStock: createBooleanProperty('Whether the product is in stock'),
-        description: createStringProperty('A short description of the product'),
-      },
-      required: ['name', 'price', 'inStock'],
+    // Define a schema using Zod
+    const productSchema = z.object({
+      name: z.string().describe('The name of the product'),
+      price: z.number().describe('The price of the product in USD'),
+      inStock: z.boolean().describe('Whether the product is in stock'),
+      description: z.string().describe('A short description of the product'),
     });
 
     // Create a schema template
@@ -111,15 +105,12 @@ describe('SchemaTemplate', () => {
   });
 
   it('should extract JSON from markdown code blocks', async () => {
-    // Define a schema using PromptTrail's native schema format
-    const productSchema = defineSchema({
-      properties: {
-        name: createStringProperty('The name of the product'),
-        price: createNumberProperty('The price of the product in USD'),
-        inStock: createBooleanProperty('Whether the product is in stock'),
-        description: createStringProperty('A short description of the product'),
-      },
-      required: ['name', 'price', 'inStock'],
+    // Define a schema using Zod
+    const productSchema = z.object({
+      name: z.string().describe('The name of the product'),
+      price: z.number().describe('The price of the product in USD'),
+      inStock: z.boolean().describe('Whether the product is in stock'),
+      description: z.string().describe('A short description of the product'),
     });
 
     // Create a schema template
@@ -162,15 +153,12 @@ describe('SchemaTemplate', () => {
   });
 
   it('should extract JSON from plain text', async () => {
-    // Define a schema using PromptTrail's native schema format
-    const productSchema = defineSchema({
-      properties: {
-        name: createStringProperty('The name of the product'),
-        price: createNumberProperty('The price of the product in USD'),
-        inStock: createBooleanProperty('Whether the product is in stock'),
-        description: createStringProperty('A short description of the product'),
-      },
-      required: ['name', 'price', 'inStock'],
+    // Define a schema using Zod
+    const productSchema = z.object({
+      name: z.string().describe('The name of the product'),
+      price: z.number().describe('The price of the product in USD'),
+      inStock: z.boolean().describe('Whether the product is in stock'),
+      description: z.string().describe('A short description of the product'),
     });
 
     // Create a schema template
@@ -213,15 +201,12 @@ describe('SchemaTemplate', () => {
   });
 
   it('should handle function calling for OpenAI models', async () => {
-    // Define a schema using PromptTrail's native schema format
-    const productSchema = defineSchema({
-      properties: {
-        name: createStringProperty('The name of the product'),
-        price: createNumberProperty('The price of the product in USD'),
-        inStock: createBooleanProperty('Whether the product is in stock'),
-        description: createStringProperty('A short description of the product'),
-      },
-      required: ['name', 'price', 'inStock'],
+    // Define a schema using Zod
+    const productSchema = z.object({
+      name: z.string().describe('The name of the product'),
+      price: z.number().describe('The price of the product in USD'),
+      inStock: z.boolean().describe('Whether the product is in stock'),
+      description: z.string().describe('A short description of the product'),
     });
 
     // Create a schema template
@@ -362,16 +347,11 @@ describe('SchemaTemplate', () => {
     // Create a schema template with the tool-enabled generateOptions
     const template = new SchemaTemplate({
       generateOptions: toolsGenerateOptions,
-      schema: defineSchema({
-        properties: {
-          name: createStringProperty('The name of the product'),
-          price: createNumberProperty('The price of the product in USD'),
-          inStock: createBooleanProperty('Whether the product is in stock'),
-          description: createStringProperty(
-            'A short description of the product',
-          ),
-        },
-        required: ['name', 'price', 'inStock'],
+      schema: z.object({
+        name: z.string().describe('The name of the product'),
+        price: z.number().describe('The price of the product in USD'),
+        inStock: z.boolean().describe('Whether the product is in stock'),
+        description: z.string().describe('A short description of the product'),
       }),
       functionName: 'getProduct',
     });
