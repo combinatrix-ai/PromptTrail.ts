@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import { extractMarkdown } from '../../utils/markdown_extractor';
-import { RegexMatchValidator } from '../../validators/text';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
