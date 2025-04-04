@@ -24,8 +24,8 @@ class TestValidator implements IValidator {
   }
 
   async validate(
-    _content: string,
-    _context: ISession,
+    content: string,
+    context: ISession,
   ): Promise<TValidationResult> {
     return this.shouldPass
       ? { isValid: true }
@@ -90,7 +90,7 @@ describe('AssistantTemplate with Validator', () => {
     });
     
     const conditionalValidator: IValidator = {
-      validate: async (content, _context: ISession): Promise<TValidationResult> => {
+      validate: async (content, context: ISession): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }
           : { isValid: false, instruction: 'Need attempt 2' };
