@@ -234,7 +234,7 @@ describe('Tool Integration with ai-sdk', () => {
 
     // Type inference works - TypeScript would error if we passed invalid parameters
     type CalculatorInput = Parameters<typeof calculatorTool.execute>[0];
-    const validInput: CalculatorInput = {
+    const _validInput: CalculatorInput = {
       a: 10,
       b: 20,
       operation: 'add',
