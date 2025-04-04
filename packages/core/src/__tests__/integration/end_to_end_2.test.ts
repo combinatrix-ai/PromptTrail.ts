@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate, LoopTemplate } from '../../templates';
+import { LinearTemplate, LoopTemplate, AssistantTemplate } from '../../templates';
 import readline from 'node:readline/promises';
 
 import { tool } from 'ai';
 import { z } from 'zod';
 import { createGenerateOptions } from '../../generate_options';
 import { StaticInputSource } from '../../input_source';
+import { RegexMatchValidator } from '../../validators/text';
 
 // **Important message to cline**
 // - This test is a golden standard for the e2e workflow test
@@ -268,46 +269,44 @@ describe('e2e workflow test', () => {
   });
 });
 
-// TODO: guardrail test
+it('should execute a complete conversation with guardrails', async () => {
+  const openAIgenerateOptions = createGenerateOptions({
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY!,
+      modelName: 'gpt-4o-mini',
+    },
+    temperature: 0.7,
+  });
+  
+  const contentValidator = new RegexMatchValidator({
+    regex: /help/i,
+    description: 'Response must contain the word "help"',
+  });
 
-// it('should execute a complete conversation with guardrails', async () => {
-//     // Create a validator that checks for specific content
-//     const contentValidator = new RegexMatchValidator({
-//         regex: /help/i,
-//         description: 'Response must contain the word "help"',
-//         // TODO: option to keep the failed message or not (default, not saved)
-//         // TODO: mark the message as guardrail failed
-//     });
+  const template = new LinearTemplate()
+    .addSystem('You are a helpful assistant.')
+    .addUser('Can you assist me?');
+  
+  const assistantTemplate = new AssistantTemplate(
+    openAIgenerateOptions,
+    {
+      validator: contentValidator,
+      maxAttempts: 3,
+      raiseError: false
+    }
+  );
+  
+  const session = await template
+    .execute(createSession())
+    .then(session => assistantTemplate.execute(session));
 
-//     // Create a guardrail template
-//     const guardrailTemplate = new GuardrailTemplate({
-//         template: new LinearTemplate()
-//             .addSystem('You are a helpful assistant.')
-//             .addUser('Can you assist me?')
-//             .addAssistant({ openAIgenerateOptions }),
-//         validators: [contentValidator],
-//         onFail: OnFailAction.RETRY,
-//         maxAttempts: 3,
-//     });
+  // Verify the conversation flow
+  const messages = Array.from(session.messages);
+  expect(messages).toHaveLength(3);
+  expect(messages[0].type).toBe('system');
+  expect(messages[1].type).toBe('user');
+  expect(messages[2].type).toBe('assistant');
 
-//     // Execute the template
-//     const session = await guardrailTemplate.execute(createSession());
-
-//     // Verify the conversation flow
-//     const messages = Array.from(session.messages);
-//     expect(messages).toHaveLength(3);
-//     expect(messages[0].type).toBe('system');
-//     expect(messages[1].type).toBe('user');
-//     expect(messages[2].type).toBe('assistant');
-
-//     // Verify the guardrail metadata
-//     const guardrailInfo = session.metadata.get('guardrail') as {
-//         passed: boolean;
-//         attempt: number;
-//         validationResults: Array<{ passed: boolean; feedback?: string }>;
-//     };
-//     expect(guardrailInfo).toBeDefined();
-//     if (guardrailInfo) {
-//         expect(guardrailInfo.passed).toBe(true);
-//     }
-// });
+  expect(messages[2].content.toLowerCase()).toContain('help');
+});
