@@ -20,10 +20,14 @@ export class CustomValidator extends BaseValidator {
     ) => Promise<TValidationResult> | TValidationResult,
     options?: {
       description?: string;
+      maxAttempts?: number;
+      raiseErrorAfterMaxAttempts?: boolean;
     }
   ) {
     super({
       description: options?.description || 'Custom validation',
+      maxAttempts: options?.maxAttempts,
+      raiseErrorAfterMaxAttempts: options?.raiseErrorAfterMaxAttempts
     });
     this.validateFn = validateFn;
   }

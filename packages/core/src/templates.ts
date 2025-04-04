@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
 import type { ISession, ISchemaType } from './types';
-import { type IValidator } from './validators/base';
+import { type IValidator, type TValidationResult } from './validators/base';
+import { CustomValidator } from './validators/custom';
 
 /**
  * Base class for all templates
@@ -50,6 +51,7 @@ export class UserTemplate extends Template {
     validate?: (input: string) => Promise<boolean>;
     onInput?: (input: string) => void;
     default?: string;
+    validator?: IValidator;
   };
 
   constructor(
@@ -62,6 +64,7 @@ export class UserTemplate extends Template {
           validate?: (input: string) => Promise<boolean>;
           onInput?: (input: string) => void;
           default?: string;
+          validator?: IValidator;
         },
   ) {
     super();
@@ -88,7 +91,8 @@ export class UserTemplate extends Template {
 
   async execute(session: ISession): Promise<ISession> {
     let input: string;
-
+    let updatedSession = session;
+    
     if (this.options.inputSource instanceof StaticInputSource) {
       // For static input sources
       input = interpolateTemplate(
@@ -99,31 +103,75 @@ export class UserTemplate extends Template {
       input = await this.options.inputSource.getInput({
         metadata: session.metadata,
       });
-
-      if (this.options.validate) {
-        let isValid = await this.options.validate(input);
-        while (!isValid) {
-          input = await this.options.inputSource.getInput({
-            metadata: session.metadata,
-          });
-          isValid = await this.options.validate(input);
-        }
-      }
-
-      if (this.options.onInput) {
-        this.options.onInput(input);
-      }
     } else {
       input = await this.options.inputSource.getInput({
         metadata: session.metadata,
       });
     }
-
-    return session.addMessage({
+    
+    if (this.options.onInput) {
+      this.options.onInput(input);
+    }
+    
+    if (this.options.validate && !this.options.validator) {
+      const validateFn = this.options.validate;
+      this.options.validator = new CustomValidator(
+        async (content: string) => {
+          const isValid = await validateFn(content);
+          return isValid 
+            ? { isValid: true } 
+            : { isValid: false, instruction: 'Validation failed' };
+        },
+        { description: 'Input validation' }
+      );
+    }
+    
+    updatedSession = updatedSession.addMessage({
       type: 'user',
       content: input,
       metadata: createMetadata(),
     });
+    
+    if (this.options.validator) {
+      let attempts = 0;
+      let result = await this.options.validator.validate(input, updatedSession);
+      
+      while (!result.isValid) {
+        attempts++;
+        
+        updatedSession = updatedSession.addMessage({
+          type: 'system',
+          content: `Validation failed: ${result.isValid ? '' : result.instruction}. Please try again.`,
+          metadata: createMetadata(),
+        });
+        
+        input = await this.options.inputSource.getInput({
+          metadata: updatedSession.metadata,
+        });
+        
+        if (this.options.onInput) {
+          this.options.onInput(input);
+        }
+        
+        updatedSession = updatedSession.addMessage({
+          type: 'user',
+          content: input,
+          metadata: createMetadata(),
+        });
+        
+        result = await this.options.validator.validate(input, updatedSession);
+        
+        const validator = this.options.validator as any;
+        if (validator.maxAttempts && attempts >= validator.maxAttempts) {
+          if (validator.raiseErrorAfterMaxAttempts) {
+            throw new Error(`Input validation failed after ${attempts} attempts: ${result.isValid ? '' : result.instruction}`);
+          }
+          break;
+        }
+      }
+    }
+    
+    return updatedSession;
   }
 }
 

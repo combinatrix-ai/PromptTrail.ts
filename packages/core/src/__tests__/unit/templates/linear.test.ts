@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Session } from '../../../types';
+import type { ISession } from '../../../types';
 import { createSession } from '../../../session';
 import {
   LinearTemplate,
@@ -17,6 +17,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../../generate_options';
+import { CustomValidator } from '../../../validators/custom';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {
@@ -87,7 +88,7 @@ describe('Templates', () => {
               ),
               new AssistantTemplate(generateOptions),
             ],
-            exitCondition: (session: Session) => {
+            exitCondition: (session: ISession) => {
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('END') ?? false;
             },
@@ -151,7 +152,7 @@ describe('Templates', () => {
             )
             .addAssistant(generateOptions)
             .setExitCondition(
-              (session: Session) =>
+              (session: ISession) =>
                 session.getLastMessage()?.content.includes('END') ?? false,
             ),
         );
@@ -214,7 +215,7 @@ describe('Templates', () => {
               ),
               new AssistantTemplate(generateOptions),
             ],
-            exitCondition: (session: Session) => {
+            exitCondition: (session: ISession) => {
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('END') ?? false;
             },
@@ -332,36 +333,128 @@ describe('Templates', () => {
     });
 
     it('should validate input', async () => {
-      // TODO: Implement a proper validation function.
-      // validate should be UserTemplate thing. Not InputSource (Because, we want to reuse InputSource, but use different validation)
-      // const inputSource = new CallbackInputSource(async () => 'valid input');
-      // const validate = vi
-      //   .fn()
-      //   .mockImplementation((input: string) =>
-      //     Promise.resolve(input === 'valid input'),
-      //   );
-      // const template = new UserTemplate({
-      //   description: 'test description',
-      //   inputSource,
-      //   validate,
-      // });
-      // const session = await template.execute(createSession());
-      // const messages = session.getMessagesByType('user');
-      // expect(messages).toHaveLength(1);
-      // expect(messages[0].content).toBe('valid input');
-      // expect(validate).toHaveBeenCalledWith('valid input');
+      const inputSource = new CallbackInputSource(async () => 'valid input');
+      const validate = vi
+        .fn()
+        .mockImplementation((input: string) =>
+          Promise.resolve(input === 'valid input'),
+        );
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+        validate,
+      });
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].content).toBe('valid input');
+      expect(validate).toHaveBeenCalledWith('valid input');
     });
 
     it('should call onInput callback', async () => {
-      // TODO: Implement a proper onInput function.
-      // const onInput = vi.fn();
-      // const template = new UserTemplate({
-      //   description: 'test description',
-      //   default: 'test input',
-      //   onInput,
-      // });
-      // await template.execute(createSession());
-      // expect(onInput).toHaveBeenCalledWith('test input');
+      const onInput = vi.fn();
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource: new CallbackInputSource(async () => 'test input'),
+        onInput,
+      });
+      await template.execute(createSession());
+      expect(onInput).toHaveBeenCalledWith('test input');
+    });
+
+    it('should retry when validation fails', async () => {
+      let attempts = 0;
+      const inputSource = new CallbackInputSource(async () => {
+        return attempts++ === 0 ? 'invalid input' : 'valid input';
+      });
+      
+      const validate = vi
+        .fn()
+        .mockImplementation((input: string) =>
+          Promise.resolve(input === 'valid input'),
+        );
+      
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+        validate,
+      });
+      
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      
+      expect(messages).toHaveLength(2);
+      expect(messages[0].content).toBe('invalid input');
+      expect(messages[1].content).toBe('valid input');
+      
+      const systemMessages = session.getMessagesByType('system');
+      expect(systemMessages).toHaveLength(1);
+      expect(systemMessages[0].content).toContain('Validation failed');
+      
+      expect(validate).toHaveBeenCalledTimes(2);
+    });
+    
+    it('should respect maxAttempts and raiseError options', async () => {
+      const inputSource = new CallbackInputSource(async () => 'invalid input');
+      
+      const validator = new CustomValidator(
+        async (content: string) => {
+          return content === 'valid input' 
+            ? { isValid: true } 
+            : { isValid: false, instruction: 'Input must be "valid input"' };
+        },
+        { 
+          description: 'Input validation',
+          maxAttempts: 2,
+          raiseErrorAfterMaxAttempts: true
+        }
+      );
+      
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+        validator
+      });
+      
+      await expect(template.execute(createSession())).rejects.toThrow(
+        'Input validation failed after'
+      );
+    });
+    
+    it('should not throw error when raiseError is false', async () => {
+      const inputSource = new CallbackInputSource(async () => 'invalid input');
+      
+      const validator = new CustomValidator(
+        async (content: string) => {
+          return content === 'valid input' 
+            ? { isValid: true } 
+            : { isValid: false, instruction: 'Input must be "valid input"' };
+        },
+        { 
+          description: 'Input validation',
+          maxAttempts: 2,
+          raiseErrorAfterMaxAttempts: false
+        }
+      );
+      
+      const template = new UserTemplate({
+        description: 'test description',
+        inputSource,
+        validator
+      });
+      
+      const session = await template.execute(createSession());
+      const messages = session.getMessagesByType('user');
+      
+      expect(messages.length).toBeGreaterThan(1);
+      expect(messages[0].content).toBe('invalid input');
+      expect(messages[messages.length - 1].content).toBe('invalid input');
+      
+      const systemMessages = session.getMessagesByType('system');
+      expect(systemMessages.length).toBeGreaterThan(0);
+      expect(systemMessages[0].content).toContain('Validation failed');
+      
+      expect(messages.length - 1).toBe(2); // Initial input + 2 retries
     });
   });
 
@@ -470,7 +563,7 @@ describe('Templates', () => {
       const template = new SubroutineTemplate({
         template: childTemplate,
         initWith: () => createSession(), // Parent session not needed
-        squashWith: (parentSession: Session) => {
+        squashWith: (parentSession: ISession) => {
           // Child session not needed in this test
           return parentSession.addMessage({
             type: 'system',
@@ -498,14 +591,14 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (_parentSession: Session) => {
+        initWith: (_parentSession: ISession) => {
           const childSession = createSession();
           // Copy relevant metadata from parent to child
           const context = _parentSession.metadata.get('context') as string;
           childSession.metadata.set('context', context);
           return childSession;
         },
-        squashWith: (_parentSession: Session, _childSession: Session) => {
+        squashWith: (_parentSession: ISession, _childSession: ISession) => {
           // Merge child messages into parent
           let updatedSession = _parentSession;
           for (const message of _childSession.messages) {
@@ -540,7 +633,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
         elseTemplate,
@@ -566,7 +659,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
         elseTemplate,
@@ -591,7 +684,7 @@ describe('Templates', () => {
 
       // Create the if template without an else branch
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
       });
@@ -619,7 +712,7 @@ describe('Templates', () => {
 
       // Create the if template with a condition that checks message content
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) => {
+        condition: (session: ISession) => {
           const lastMessage = session.getLastMessage();
           return (
             lastMessage?.type === 'user' && lastMessage.content === 'Hello'
@@ -650,7 +743,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('isAdmin')),
         thenTemplate,
         elseTemplate,
@@ -678,7 +771,7 @@ describe('Templates', () => {
 
       // Add an IfTemplate to the LinearTemplate
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('isLoggedIn')),
         thenTemplate: new SystemTemplate('User is logged in'),
         elseTemplate: new SystemTemplate('User is not logged in'),
@@ -710,7 +803,7 @@ describe('Templates', () => {
         .addUser('Status check')
         .addAssistant('Checking status...')
         .addIf({
-          condition: (session: Session) =>
+          condition: (session: ISession) =>
             Boolean(session.metadata.get('isLoggedIn')),
           thenTemplate: new SystemTemplate('User is logged in'),
           elseTemplate: new SystemTemplate('User is not logged in'),
