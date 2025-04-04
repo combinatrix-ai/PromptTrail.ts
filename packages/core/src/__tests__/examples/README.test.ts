@@ -3,8 +3,7 @@ import { createSession } from '../../session';
 import { createGenerateOptions } from '../../generate_options';
 import * as generateModule from '../../generate';
 import { createMetadata } from '../../metadata';
-import { LinearTemplate, LoopTemplate } from '../../templates';
-import { CLIInputSource } from '../../input_source';
+import { LinearTemplate } from '../../templates';
 
 vi.mock('../../generate', () => {
   return {
@@ -228,7 +227,7 @@ function factorial(n: number): number {
 
   describe('Validation', () => {
     it('should validate assistant responses', async () => {
-      const { RegexMatchValidator } = await import('../../validator');
+      const { RegexMatchValidator } = await import('../../validators');
       
       //   regex: /```json[\s\S]*```/,
       //   description: 'Response must contain a JSON code block',
