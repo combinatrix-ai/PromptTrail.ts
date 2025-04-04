@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
-import { tool } from 'ai';
-import { z } from 'zod';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { RegexMatchValidator } from '../../validators/text';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
-import { CLIInputSource } from '../../input_source';
+import { StaticInputSource } from '../../input_source';
+import { createCalculatorTool } from './utils/test_tools';
 
 /**
  * Mock the generateText function
@@ -21,36 +20,11 @@ vi.mock('../../generate', () => {
 });
 
 describe('End-to-End Workflows', () => {
-  let calculatorTool: any;
-  let generateOptions: any;
+  let calculatorTool: ReturnType<typeof createCalculatorTool>;
+  let generateOptions: ReturnType<typeof createGenerateOptions>;
 
   beforeEach(() => {
-    // Create a calculator tool using ai-sdk's tool function
-    calculatorTool = tool({
-      description: 'A simple calculator that can perform basic operations',
-      parameters: z.object({
-        a: z.number().describe('First number'),
-        b: z.number().describe('Second number'),
-        operation: z
-          .enum(['add', 'subtract', 'multiply', 'divide'])
-          .describe('Operation to perform'),
-      }),
-      execute: async ({ a, b, operation }) => {
-        switch (operation) {
-          case 'add':
-            return a + b;
-          case 'subtract':
-            return a - b;
-          case 'multiply':
-            return a * b;
-          case 'divide':
-            if (b === 0) throw new Error('Cannot divide by zero');
-            return a / b;
-          default:
-            throw new Error(`Unknown operation: ${operation}`);
-        }
-      },
-    });
+    calculatorTool = createCalculatorTool();
 
     // Create generateOptions with tools
     generateOptions = createGenerateOptions({
@@ -67,8 +41,8 @@ describe('End-to-End Workflows', () => {
       // Get the last user message
       const messages = Array.from(session.messages);
       const lastUserMessage = messages
-        .filter((msg) => (msg as any).type === 'user')
-        .pop() as any;
+        .filter((msg) => msg.type === 'user')
+        .pop();
 
       // Generate different responses based on the user message
       if (lastUserMessage && lastUserMessage.content.includes('weather')) {
@@ -169,13 +143,13 @@ The weather in San Francisco is currently 72°F and sunny.
   });
 
   /**
-   * See human_created.test.ts for the tooling test
-   * TODO: Integrate these two test files
+   * Tool integration tests have been moved to tool_integration.test.ts
+   * and the implementation of guardrail tests is in guardrail_template.test.ts
    */
 
   it('should execute a complete conversation with validation', async () => {
     // Create a validator that checks for specific content
-    const contentValidator = new RegexMatchValidator({
+    const _contentValidator = new RegexMatchValidator({
       regex: /help/i,
       description: 'Response must contain the word "help"',
     });
@@ -208,7 +182,7 @@ The weather in San Francisco is currently 72°F and sunny.
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new CLIInputSource(undefined, 'Should we continue? (yes/no)', 'no'))
+          .addUser(new StaticInputSource('Should we continue? (yes/no): no'))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (

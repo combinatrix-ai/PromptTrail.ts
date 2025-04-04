@@ -3,10 +3,9 @@ import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import readline from 'node:readline/promises';
 
-import { tool } from 'ai';
-import { z } from 'zod';
 import { createGenerateOptions } from '../../generate_options';
 import { StaticInputSource } from '../../input_source';
+import { createWeatherTool } from './utils/test_tools';
 
 // **Important message to cline**
 // - This test is a golden standard for the e2e workflow test
@@ -48,28 +47,7 @@ describe('e2e workflow test', () => {
     .addUser('100 + 253');
   // TODO: addAssistant without generateOptions will use the default generateOptions from execute
 
-  const weatherTool = tool({
-    description: 'Get weather information',
-    parameters: z.object({
-      location: z.string().describe('Location to get weather information for'),
-    }),
-    execute: async (input) => {
-      const location = input.location;
-      // Call weather API
-      const current = '72°F and Thunderstorms';
-      const forecast = [
-        'Today: Thunderstorms',
-        'Tomorrow: Cloudy',
-        'Monday: Rainy',
-      ];
-      return {
-        location,
-        temperature: 72,
-        condition: 'Thunderstorms',
-        forecast,
-      };
-    },
-  });
+  const weatherTool = createWeatherTool();
   // TODO: PromptTrail should provide a wrapper for tool providing typed result with zod schema
 
   const partialWeatherTemplate = new LinearTemplate()
@@ -267,47 +245,3 @@ describe('e2e workflow test', () => {
     expect(messages[3].content).toBe('Should we continue? (yes/no): no');
   });
 });
-
-// TODO: guardrail test
-
-// it('should execute a complete conversation with guardrails', async () => {
-//     // Create a validator that checks for specific content
-//     const contentValidator = new RegexMatchValidator({
-//         regex: /help/i,
-//         description: 'Response must contain the word "help"',
-//         // TODO: option to keep the failed message or not (default, not saved)
-//         // TODO: mark the message as guardrail failed
-//     });
-
-//     // Create a guardrail template
-//     const guardrailTemplate = new GuardrailTemplate({
-//         template: new LinearTemplate()
-//             .addSystem('You are a helpful assistant.')
-//             .addUser('Can you assist me?')
-//             .addAssistant({ openAIgenerateOptions }),
-//         validators: [contentValidator],
-//         onFail: OnFailAction.RETRY,
-//         maxAttempts: 3,
-//     });
-
-//     // Execute the template
-//     const session = await guardrailTemplate.execute(createSession());
-
-//     // Verify the conversation flow
-//     const messages = Array.from(session.messages);
-//     expect(messages).toHaveLength(3);
-//     expect(messages[0].type).toBe('system');
-//     expect(messages[1].type).toBe('user');
-//     expect(messages[2].type).toBe('assistant');
-
-//     // Verify the guardrail metadata
-//     const guardrailInfo = session.metadata.get('guardrail') as {
-//         passed: boolean;
-//         attempt: number;
-//         validationResults: Array<{ passed: boolean; feedback?: string }>;
-//     };
-//     expect(guardrailInfo).toBeDefined();
-//     if (guardrailInfo) {
-//         expect(guardrailInfo.passed).toBe(true);
-//     }
-// });
