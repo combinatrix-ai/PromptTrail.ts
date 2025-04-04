@@ -7,7 +7,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { createGenerateOptions } from '../../generate_options';
 import { StaticInputSource } from '../../input_source';
-import { RegexMatchValidator } from '../../validators/text';
+import { RegexMatchValidator, LengthValidator } from '../../validators/text';
 
 // **Important message to cline**
 // - This test is a golden standard for the e2e workflow test
@@ -279,21 +279,21 @@ it('should execute a complete conversation with guardrails', async () => {
     temperature: 0.7,
   });
   
-  const contentValidator = new RegexMatchValidator({
-    regex: /help/i,
-    description: 'Response must contain the word "help"',
+  const lengthValidator = new LengthValidator({
+    max: 10,
+    description: 'Response must be less than 10 characters',
   });
 
   const template = new LinearTemplate()
-    .addSystem('You are a helpful assistant. Always include the word "help" in your responses.')
-    .addUser('Can you assist me?');
+    .addSystem('You are a helpful assistant. Keep all responses under 10 characters total.')
+    .addUser('Say hi');
   
   const assistantTemplate = new AssistantTemplate(
     openAIgenerateOptions,
     {
-      validator: contentValidator,
+      validator: lengthValidator,
       maxAttempts: 3,
-      raiseError: true // Change to true to ensure validation passes
+      raiseError: true // Ensure validation passes
     }
   );
   
@@ -308,5 +308,5 @@ it('should execute a complete conversation with guardrails', async () => {
   expect(messages[1].type).toBe('user');
   expect(messages[2].type).toBe('assistant');
 
-  expect(messages[2].content.toLowerCase()).toContain('help');
+  expect(messages[2].content.length).toBeLessThan(10);
 });
