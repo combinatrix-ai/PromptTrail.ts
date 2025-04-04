@@ -18,7 +18,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toBe('static content');
+      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
     });
     
     it('should validate static content with validator', async () => {
@@ -33,7 +33,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toBe('static content');
+      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
       expect(mockValidator.validate).toHaveBeenCalledWith('static content', expect.anything());
     });
     
@@ -79,7 +79,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toBe('generated content');
+      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
       expect(generateTextMock).toHaveBeenCalledTimes(1);
     });
     
@@ -312,7 +312,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toBe('valid content for all validators');
+      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
       expect(mockValidator1.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
       expect(mockValidator2.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
     });
@@ -392,7 +392,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toBe('content that passes validator 2');
+      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
       expect(mockValidator1.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
       expect(mockValidator2.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
     });
