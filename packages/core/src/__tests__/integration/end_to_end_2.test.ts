@@ -285,7 +285,7 @@ it('should execute a complete conversation with guardrails', async () => {
   });
 
   const template = new LinearTemplate()
-    .addSystem('You are a helpful assistant.')
+    .addSystem('You are a helpful assistant. Always include the word "help" in your responses.')
     .addUser('Can you assist me?');
   
   const assistantTemplate = new AssistantTemplate(
@@ -293,7 +293,7 @@ it('should execute a complete conversation with guardrails', async () => {
     {
       validator: contentValidator,
       maxAttempts: 3,
-      raiseError: false
+      raiseError: true // Change to true to ensure validation passes
     }
   );
   
