@@ -14,7 +14,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../../generate_options';
-import type { Session } from '../../../types';
+import type { ISession } from '../../../types';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {
@@ -78,7 +78,7 @@ describe('Nested Templates', () => {
       .addUser('Second question')
       .addAssistant(generateOptions)
       .addUser('Follow-up question')
-      .setExitCondition((session: Session) => {
+      .setExitCondition((session: ISession) => {
         // Exit after one iteration
         const messages = Array.from(session.messages);
         return messages.length >= 5; // System + First Q&A + Second Q&A
@@ -155,7 +155,7 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Tell me about ${topic}.')
         .addAssistant(generateOptions),
-      initWith: (_parentSession: Session) => {
+      initWith: (_parentSession: ISession) => {
         // Copy metadata from parent to child
         const childSession = createSession();
         childSession.metadata.set(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Session } from '../../../types';
+import type { ISession } from '../../../types';
 import { createSession } from '../../../session';
 import {
   LinearTemplate,
@@ -42,7 +42,7 @@ vi.mock('../../../generate', () => {
 // Helper function to create mock generate options with predefined responses
 function createMockGenerateOptions(responses: string[]): GenerateOptions {
   // Set the mock responses for generateText
-  (generateText as any).mockImplementation(async () => {
+  vi.mocked(generateText).mockImplementation(async () => {
     const response = responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {
@@ -87,7 +87,7 @@ describe('Templates', () => {
               ),
               new AssistantTemplate(generateOptions),
             ],
-            exitCondition: (session: Session) => {
+            exitCondition: (session: ISession) => {
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('END') ?? false;
             },
@@ -151,7 +151,7 @@ describe('Templates', () => {
             )
             .addAssistant(generateOptions)
             .setExitCondition(
-              (session: Session) =>
+              (session: ISession) =>
                 session.getLastMessage()?.content.includes('END') ?? false,
             ),
         );
@@ -214,7 +214,7 @@ describe('Templates', () => {
               ),
               new AssistantTemplate(generateOptions),
             ],
-            exitCondition: (session: Session) => {
+            exitCondition: (session: ISession) => {
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('END') ?? false;
             },
@@ -470,7 +470,7 @@ describe('Templates', () => {
       const template = new SubroutineTemplate({
         template: childTemplate,
         initWith: () => createSession(), // Parent session not needed
-        squashWith: (parentSession: Session) => {
+        squashWith: (parentSession: ISession) => {
           // Child session not needed in this test
           return parentSession.addMessage({
             type: 'system',
@@ -498,14 +498,14 @@ describe('Templates', () => {
 
       const template = new SubroutineTemplate({
         template: childTemplate,
-        initWith: (_parentSession: Session) => {
+        initWith: (_parentSession: ISession) => {
           const childSession = createSession();
           // Copy relevant metadata from parent to child
           const context = _parentSession.metadata.get('context') as string;
           childSession.metadata.set('context', context);
           return childSession;
         },
-        squashWith: (_parentSession: Session, _childSession: Session) => {
+        squashWith: (_parentSession: ISession, _childSession: ISession) => {
           // Merge child messages into parent
           let updatedSession = _parentSession;
           for (const message of _childSession.messages) {
@@ -540,7 +540,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
         elseTemplate,
@@ -566,7 +566,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
         elseTemplate,
@@ -591,7 +591,7 @@ describe('Templates', () => {
 
       // Create the if template without an else branch
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('condition')),
         thenTemplate,
       });
@@ -619,7 +619,7 @@ describe('Templates', () => {
 
       // Create the if template with a condition that checks message content
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) => {
+        condition: (session: ISession) => {
           const lastMessage = session.getLastMessage();
           return (
             lastMessage?.type === 'user' && lastMessage.content === 'Hello'
@@ -650,7 +650,7 @@ describe('Templates', () => {
 
       // Create the if template
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('isAdmin')),
         thenTemplate,
         elseTemplate,
@@ -678,7 +678,7 @@ describe('Templates', () => {
 
       // Add an IfTemplate to the LinearTemplate
       const ifTemplate = new IfTemplate({
-        condition: (session: Session) =>
+        condition: (session: ISession) =>
           Boolean(session.metadata.get('isLoggedIn')),
         thenTemplate: new SystemTemplate('User is logged in'),
         elseTemplate: new SystemTemplate('User is not logged in'),
@@ -710,7 +710,7 @@ describe('Templates', () => {
         .addUser('Status check')
         .addAssistant('Checking status...')
         .addIf({
-          condition: (session: Session) =>
+          condition: (session: ISession) =>
             Boolean(session.metadata.get('isLoggedIn')),
           thenTemplate: new SystemTemplate('User is logged in'),
           elseTemplate: new SystemTemplate('User is not logged in'),
