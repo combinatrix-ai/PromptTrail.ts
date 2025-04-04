@@ -16,6 +16,12 @@ vi.mock('../../generate', () => {
 describe('README Examples', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    
+    vi.mocked(generateModule.generateText).mockResolvedValue({
+      type: 'assistant',
+      content: 'This is a mock response from the AI model.',
+      metadata: createMetadata(),
+    });
   });
 
   describe('Quick Start Example', () => {
