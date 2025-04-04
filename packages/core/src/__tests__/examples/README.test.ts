@@ -3,11 +3,15 @@ import { createSession } from '../../session';
 import { createGenerateOptions } from '../../generate_options';
 import * as generateModule from '../../generate';
 import { createMetadata } from '../../metadata';
-import { LinearTemplate } from '../../templates';
+import { LinearTemplate, LoopTemplate } from '../../templates';
+import { CLIInputSource } from '../../input_source';
 
-vi.mock('../../generate', () => ({
-  generateText: vi.fn(),
-}));
+vi.mock('../../generate', () => {
+  return {
+    generateText: vi.fn(),
+    generateTextStream: vi.fn(),
+  };
+});
 
 describe('README Examples', () => {
   beforeEach(() => {
@@ -254,6 +258,87 @@ function factorial(n: number): number {
       expect(session.messages[2].type).toBe('assistant');
       expect(session.messages[2].content).toContain('```json');
     });
-    
+  });
+
+  describe('MCP Support', () => {
+    it('should create a template with MCP integration', async () => {
+      const generateOptions = createGenerateOptions({
+        provider: {
+          type: 'anthropic',
+          apiKey: process.env.ANTHROPIC_API_KEY || 'test-api-key',
+          modelName: 'claude-3-5-haiku-latest',
+        },
+        temperature: 0.7,
+        mcpServers: [
+          {
+            url: 'http://localhost:8080', // Your MCP server URL
+            name: 'github-mcp-server',
+            version: '1.0.0',
+          },
+        ],
+      });
+
+      const template = new LinearTemplate()
+        .addSystem(
+          `You are a helpful assistant with access to external tools.
+             You can use these tools when needed to provide accurate information.`,
+        )
+        .addUser('Can you check the weather in San Francisco?')
+        .addAssistant(generateOptions);
+
+      const session = await template.execute(createSession());
+      
+      expect(session.messages).toHaveLength(3);
+      expect(session.messages[0].type).toBe('system');
+      expect(session.messages[1].type).toBe('user');
+      expect(session.messages[2].type).toBe('assistant');
+      
+      expect(generateModule.generateText).toHaveBeenCalled();
+      const callArgs = vi.mocked(generateModule.generateText).mock.calls[0][1];
+      expect(callArgs.mcpServers).toBeDefined();
+      expect(callArgs.mcpServers?.[0].name).toBe('github-mcp-server');
+    });
+  });
+
+  describe('Complex Control Flow', () => {
+    it('should create a template with complex control flow', async () => {
+      const generateOptions = createGenerateOptions({
+        provider: {
+          type: 'openai',
+          apiKey: process.env.OPENAI_API_KEY || 'test-api-key',
+          modelName: 'gpt-4o-mini',
+        },
+        temperature: 0.7,
+      });
+
+      vi.mocked(generateModule.generateText)
+        .mockResolvedValueOnce({
+          type: 'assistant',
+          content: 'Sure, here\'s your first question!',
+          metadata: createMetadata(),
+        })
+        .mockResolvedValueOnce({
+          type: 'assistant',
+          content: 'Generics in TypeScript allow you to create reusable components that work with a variety of types rather than a single one.',
+          metadata: createMetadata(),
+        });
+
+      const quiz = new LinearTemplate()
+        .addSystem("I'm your TypeScript quiz master!")
+        .addUser('Ready for a question?')
+        .addAssistant(generateOptions)
+        .addUser('What is generics in TypeScript?')
+        .addAssistant(generateOptions);
+
+      const session = await quiz.execute(createSession());
+      
+      expect(generateModule.generateText).toHaveBeenCalled();
+      expect(session.messages.length).toBeGreaterThan(0);
+      expect(session.messages[0].type).toBe('system');
+      expect(session.messages[1].type).toBe('user');
+      expect(session.messages[2].type).toBe('assistant');
+      expect(session.messages[3].type).toBe('user');
+      expect(session.messages[4].type).toBe('assistant');
+    });
   });
 });
