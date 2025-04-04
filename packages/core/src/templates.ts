@@ -248,6 +248,14 @@ export class AssistantTemplate<
       
       lastValidationError = result.instruction || 'Invalid content';
       
+      if (attempts < (this.options.maxAttempts || 1)) {
+        session = session.addMessage({
+          type: 'user',
+          content: `Your response didn't meet the validation criteria. ${lastValidationError}. Please try again.`,
+          metadata: createMetadata(),
+        }) as unknown as ISession<TInput>;
+      }
+      
       if (attempts >= (this.options.maxAttempts || 1) && this.options.raiseError) {
         throw new Error(`Assistant response validation failed after ${attempts} attempts: ${lastValidationError}`);
       }
