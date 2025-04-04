@@ -7,11 +7,10 @@ import {
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type {
-  Message,
-  Session,
-  ProviderConfig,
-  GenerateMCPServerConfig,
-  GenerateMCPTransport,
+  TMessage,
+  ISession,
+  TProviderConfig,
+  IMCPServerConfig,
 } from './types';
 import { createMetadata } from './metadata';
 import type { GenerateOptions } from './generate_options';
@@ -19,7 +18,7 @@ import type { GenerateOptions } from './generate_options';
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: Session): Array<{
+function convertSessionToAiSdkMessages(session: ISession): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -92,7 +91,7 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
 /**
  * Create a provider based on configuration
  */
-function createProvider(config: ProviderConfig): unknown {
+function createProvider(config: TProviderConfig): unknown {
   const options: Record<string, unknown> = {};
   if (config.type === 'openai') {
     if (config.baseURL) {
@@ -126,17 +125,18 @@ function createProvider(config: ProviderConfig): unknown {
  * Initialize MCP client
  */
 async function initializeMCPClient(
-  config: GenerateMCPServerConfig,
+  config: IMCPServerConfig,
 ): Promise<unknown> {
   try {
-    // This is a simplified implementation
-    // In a real implementation, we would need to create the appropriate transport
-    const transport = {} as GenerateMCPTransport;
+    const transport = {
+      url: config.url,
+      name: config.name || 'prompttrail-mcp-client',
+      version: config.version || '1.0.0',
+      headers: config.headers || {},
+    };
 
-    // Initialize MCP client
-    // Use any to bypass type checking for MCP client
-    const mcpClient = await (experimental_createMCPClient as any)({
-      transport: transport as any,
+    const mcpClient = await experimental_createMCPClient({
+      transport,
     });
 
     return mcpClient;
@@ -151,9 +151,9 @@ async function initializeMCPClient(
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText(
-  session: Session,
+  session: ISession,
   options: GenerateOptions,
-): Promise<Message> {
+): Promise<TMessage> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -161,12 +161,16 @@ export async function generateText(
   const provider = createProvider(options.provider);
 
   // Handle MCP tools if configured
+  const mcpClients = [];
   if (options.mcpServers && options.mcpServers.length > 0) {
-    // In a real implementation, we would initialize MCP clients and get tools
-    // For now, we'll just log a message
-    console.log(
-      `MCP servers configured: ${options.mcpServers.map((s: any) => s.name).join(', ')}`,
-    );
+    for (const server of options.mcpServers) {
+      try {
+        const mcpClient = await initializeMCPClient(server);
+        mcpClients.push(mcpClient);
+      } catch (error) {
+        console.error(`Failed to initialize MCP client for ${server.name}:`, error);
+      }
+    }
   }
 
   // Generate text using AI SDK
@@ -224,9 +228,9 @@ export async function generateText(
  * Generate text stream using AI SDK
  */
 export async function* generateTextStream(
-  session: Session,
+  session: ISession,
   options: any, // Using any temporarily to avoid circular dependency
-): AsyncGenerator<Message, void, unknown> {
+): AsyncGenerator<TMessage, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 

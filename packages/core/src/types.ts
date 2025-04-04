@@ -156,16 +156,19 @@ export type TProviderConfig = IOpenAIProviderConfig | IAnthropicProviderConfig;
  */
 export interface IMCPServerConfig {
   url: string;
-  name: string;
-  version: string;
+  name?: string;
+  version?: string;
+  headers?: Record<string, string>;
 }
 
 /**
  * MCP Transport interface for generate
  */
 export interface IMCPTransport {
-  send(message: unknown): Promise<unknown>;
-  close(): Promise<void>;
+  url: string;
+  name: string;
+  version: string;
+  headers: Record<string, string>;
 }
 
 /**

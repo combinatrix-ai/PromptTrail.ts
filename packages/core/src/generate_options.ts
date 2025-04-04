@@ -1,8 +1,8 @@
 /**
  * GenerateOptions with fluent API for adding tools
  */
-import type { GenerateMCPServerConfig } from './types';
-import type { ProviderConfig } from './types';
+import type { IMCPServerConfig } from './types';
+import type { TProviderConfig } from './types';
 
 /**
  * Define a type for tool definitions since it's not exported from ai-sdk
@@ -13,25 +13,25 @@ type ToolDefinition<T = any> = any;
  * Class-based implementation of GenerateOptions with fluent tool addition
  */
 export class GenerateOptions {
-  provider: ProviderConfig;
+  provider: TProviderConfig;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
   topK?: number;
   tools: Record<string, unknown> = {};
   toolChoice?: 'auto' | 'required' | 'none';
-  mcpServers?: GenerateMCPServerConfig[];
+  mcpServers?: IMCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 
   constructor(options: {
-    provider: ProviderConfig;
+    provider: TProviderConfig;
     temperature?: number;
     maxTokens?: number;
     topP?: number;
     topK?: number;
     tools?: Record<string, unknown>;
     toolChoice?: 'auto' | 'required' | 'none';
-    mcpServers?: GenerateMCPServerConfig[];
+    mcpServers?: IMCPServerConfig[];
     sdkOptions?: Record<string, unknown>;
   }) {
     this.provider = options.provider;
@@ -83,6 +83,19 @@ export class GenerateOptions {
   }
 
   /**
+   * Add an MCP server to the generate options
+   * @param server The MCP server configuration
+   * @returns The updated GenerateOptions instance for chaining
+   */
+  addMCPServer(server: IMCPServerConfig): this {
+    if (!this.mcpServers) {
+      this.mcpServers = [];
+    }
+    this.mcpServers.push(server);
+    return this;
+  }
+
+  /**
    * Create a new instance with the same options
    * @returns A new GenerateOptions instance with the same options
    */
@@ -122,14 +135,14 @@ export class GenerateOptions {
  * Create a new GenerateOptions instance
  */
 export function createGenerateOptions(options: {
-  provider: ProviderConfig;
+  provider: TProviderConfig;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
   topK?: number;
   tools?: Record<string, unknown>;
   toolChoice?: 'auto' | 'required' | 'none';
-  mcpServers?: GenerateMCPServerConfig[];
+  mcpServers?: IMCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 }): GenerateOptions {
   return new GenerateOptions(options);
