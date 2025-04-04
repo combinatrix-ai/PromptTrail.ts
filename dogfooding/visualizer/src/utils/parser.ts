@@ -283,19 +283,19 @@ export function parseTemplateCode(code: string): {
     });
 
     if (containerNode) {
-      (containerNode.data as Record<string, any>).childIds = [];
+      (containerNode.data as NodeData).childIds = [];
 
       // Link children to container
       childVars.forEach((childVar) => {
         const childInfo = templateMap.get(childVar);
         if (childInfo) {
-          (containerNode.data as Record<string, any>).childIds.push(childInfo.id);
+          (containerNode.data as NodeData).childIds.push(childInfo.id);
 
           // Find the child node and update its parentId
           const childNode = nodes.find((node) => node.id === childInfo.id);
           if (childNode) {
             childNode.data = {
-              ...(childNode.data as Record<string, any>),
+              ...(childNode.data as NodeData),
               parentId: containerNode.id,
             };
           }
