@@ -1,16 +1,14 @@
 import {
-  createTool,
-  type Tool,
-  type SchemaType,
-  type Message,
-  type ToolResultMetadata,
-  type InferSchemaType,
-  type Session,
+  type TMessage,
+  type IToolResultMetadata,
+  type ISession,
   createSession,
   type GenerateOptions,
+  createGenerateOptions,
   createMetadata,
   generateText,
 } from '@prompttrail/core';
+import { z } from 'zod';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
@@ -19,79 +17,68 @@ import { fileURLToPath } from 'url';
 // Convert exec to promise-based
 const execAsync = promisify(exec);
 
-// Define tool schemas
-const shellCommandSchema = {
-  properties: {
-    command: { type: 'string', description: 'Shell command to execute' },
-  },
-  required: ['command'],
-} as const satisfies SchemaType;
-
-const readFileSchema = {
-  properties: {
-    path: { type: 'string', description: 'Path to the file to read' },
-  },
-  required: ['path'],
-} as const satisfies SchemaType;
-
-const writeFileSchema = {
-  properties: {
-    path: { type: 'string', description: 'Path to write the file' },
-    content: { type: 'string', description: 'Content to write to the file' },
-  },
-  required: ['path', 'content'],
-} as const satisfies SchemaType;
-
-// Create tools
-const shellCommandTool = createTool({
-  name: 'shell_command',
+const shellCommandTool = {
   description: 'Execute a shell command',
-  schema: shellCommandSchema,
-  execute: async (input: InferSchemaType<typeof shellCommandSchema>) => {
-    const { stdout, stderr } = await execAsync(input.command);
+  parameters: z.object({
+    command: z.string().describe('Shell command to execute'),
+  }),
+  execute: async ({ command }: { command: string }) => {
+    const { stdout, stderr } = await execAsync(command);
     return { stdout, stderr };
   },
-});
+};
 
-const readFileTool = createTool({
-  name: 'read_file',
+const readFileTool = {
   description: 'Read content from a file',
-  schema: readFileSchema,
-  execute: async (input: InferSchemaType<typeof readFileSchema>) => {
-    const content = await readFile(input.path, 'utf-8');
+  parameters: z.object({
+    path: z.string().describe('Path to the file to read'),
+  }),
+  execute: async ({ path }: { path: string }) => {
+    const content = await readFile(path, 'utf-8');
     return { content };
   },
-});
+};
 
-const writeFileTool = createTool({
-  name: 'write_file',
+const writeFileTool = {
   description: 'Write content to a file',
-  schema: writeFileSchema,
-  execute: async (input: InferSchemaType<typeof writeFileSchema>) => {
-    await writeFile(input.path, input.content, 'utf-8');
+  parameters: z.object({
+    path: z.string().describe('Path to write the file'),
+    content: z.string().describe('Content to write to the file'),
+  }),
+  execute: async ({ path, content }: { path: string; content: string }) => {
+    await writeFile(path, content, 'utf-8');
     return { success: true };
   },
-});
+};
 
-// Define tool input types
-type ToolSchemas = {
-  shell_command: typeof shellCommandSchema;
-  read_file: typeof readFileSchema;
-  write_file: typeof writeFileSchema;
+type ToolParameters = {
+  shell_command: z.infer<typeof shellCommandTool.parameters>;
+  read_file: z.infer<typeof readFileTool.parameters>;
+  write_file: z.infer<typeof writeFileTool.parameters>;
 };
 
 // CodingAgent class to manage tools and session
 export class CodingAgent {
-  private session: Session;
-  private tools: Tool<SchemaType>[];
+  private session: ISession;
+  private tools: Record<string, unknown>;
   private generateOptions: GenerateOptions;
 
-  constructor(config: { provider: 'openai' | 'anthropic'; apiKey: string }) {
-    this.tools = [shellCommandTool, readFileTool, writeFileTool];
+  constructor(config: { 
+    provider: 'openai' | 'anthropic'; 
+    apiKey: string; 
+    mcpServerUrl?: string;
+    mcpServerName?: string;
+    mcpServerVersion?: string;
+  }) {
+    this.tools = {
+      shell_command: shellCommandTool,
+      read_file: readFileTool,
+      write_file: writeFileTool
+    };
 
     // Initialize generateOptions based on provider
     if (config.provider === 'openai') {
-      this.generateOptions = {
+      this.generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
           apiKey: config.apiKey,
@@ -99,9 +86,9 @@ export class CodingAgent {
         },
         temperature: 0.7,
         tools: this.tools,
-      };
+      });
     } else {
-      this.generateOptions = {
+      this.generateOptions = createGenerateOptions({
         provider: {
           type: 'anthropic',
           apiKey: config.apiKey,
@@ -109,7 +96,14 @@ export class CodingAgent {
         },
         temperature: 0.7,
         tools: this.tools,
-      };
+        mcpServers: [
+          {
+            url: config.mcpServerUrl || 'http://localhost:8080',
+            name: config.mcpServerName || 'github-mcp-server',
+            version: config.mcpServerVersion || '1.0.0',
+          },
+        ],
+      });
     }
 
     // Initialize session
@@ -143,10 +137,8 @@ export class CodingAgent {
           // Handle tool calls
           for (const toolCall of toolCalls) {
             const result = await this.executeTool(
-              toolCall.name as keyof ToolSchemas,
-              toolCall.arguments as InferSchemaType<
-                ToolSchemas[keyof ToolSchemas]
-              >,
+              toolCall.name as keyof ToolParameters,
+              toolCall.arguments as ToolParameters[keyof ToolParameters],
             );
             await this.addToolResult(result, toolCall.id);
           }
@@ -167,16 +159,16 @@ export class CodingAgent {
       type: 'tool_result',
       content: JSON.stringify(result),
       result,
-      metadata: createMetadata<ToolResultMetadata>({ initial: { toolCallId } }),
+      metadata: createMetadata<IToolResultMetadata>({ initial: { toolCallId } }),
     });
   }
 
   // Execute a tool and add the result to the session
-  private async executeTool<K extends keyof ToolSchemas>(
+  private async executeTool<K extends keyof ToolParameters>(
     toolName: K,
-    args: InferSchemaType<ToolSchemas[K]>,
+    args: ToolParameters[K],
   ): Promise<unknown> {
-    const tool = this.tools.find((t) => t.name === toolName);
+    const tool = this.tools[toolName as string] as { execute: (args: unknown) => Promise<unknown> };
     if (!tool) {
       throw new Error(`Tool not found: ${toolName}`);
     }
@@ -186,7 +178,7 @@ export class CodingAgent {
   }
 
   // Get all messages in the session
-  getMessages(): readonly Message[] {
+  getMessages(): readonly TMessage[] {
     return this.session.messages;
   }
 
@@ -227,6 +219,16 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1);
   }
 
-  const agent = new CodingAgent({ provider, apiKey });
+  const mcpServerUrl = process.env.MCP_SERVER_URL;
+  const mcpServerName = process.env.MCP_SERVER_NAME;
+  const mcpServerVersion = process.env.MCP_SERVER_VERSION;
+
+  const agent = new CodingAgent({ 
+    provider, 
+    apiKey, 
+    mcpServerUrl, 
+    mcpServerName, 
+    mcpServerVersion 
+  });
   agent.runExample().catch(console.error);
 }
