@@ -1,59 +1,59 @@
 import { describe, it, expect } from 'vitest';
-import {
-  defineSchema,
-  createStringProperty,
-  createNumberProperty,
-  createBooleanProperty,
-} from '../../../utils/schema';
 import { z } from 'zod';
 
 describe('Schema validation', () => {
   describe('Native schema', () => {
     it('should define a schema with required fields', () => {
-      // Define a simple schema
-      const personSchema = defineSchema({
-        properties: {
-          name: createStringProperty("The person's full name"),
-          age: createNumberProperty("The person's age in years"),
-          isStudent: createBooleanProperty('Whether the person is a student'),
-        },
-        required: ['name', 'age'],
+      const personSchema = z.object({
+        name: z.string().describe("The person's full name"),
+        age: z.number().describe("The person's age in years"),
+        isStudent: z.boolean().describe('Whether the person is a student'),
       });
 
-      // Verify the schema structure
-      expect(personSchema).toHaveProperty('properties');
-      expect(personSchema.properties).toHaveProperty('name');
-      expect(personSchema.properties).toHaveProperty('age');
-      expect(personSchema.properties).toHaveProperty('isStudent');
-      expect(personSchema.required).toContain('name');
-      expect(personSchema.required).toContain('age');
+      expect(personSchema).toBeDefined();
+      expect(personSchema._def.shape()).toHaveProperty('name');
+      expect(personSchema._def.shape()).toHaveProperty('age');
+      expect(personSchema._def.shape()).toHaveProperty('isStudent');
+      
+      const validPerson = {
+        name: 'John Doe',
+        age: 30,
+        isStudent: false,
+      };
+      const result = personSchema.safeParse(validPerson);
+      expect(result.success).toBe(true);
     });
 
-    it('should define a flattened nested schema', () => {
-      // Define a schema for company (using a flattened approach)
-      const companySchema = defineSchema({
-        properties: {
-          name: createStringProperty('The company name'),
-          founded: createNumberProperty('Year the company was founded'),
-          headquartersCity: createStringProperty('City of headquarters'),
-          headquartersCountry: createStringProperty('Country of headquarters'),
-          isPublic: createBooleanProperty(
-            'Whether the company is publicly traded',
-          ),
-        },
-        required: ['name', 'headquartersCity', 'headquartersCountry'],
+    it('should define a schema with nested properties', () => {
+      const companySchema = z.object({
+        name: z.string().describe('The company name'),
+        founded: z.number().describe('Year the company was founded'),
+        headquarters: z.object({
+          city: z.string().describe('City of headquarters'),
+          country: z.string().describe('Country of headquarters'),
+        }),
+        isPublic: z.boolean().describe(
+          'Whether the company is publicly traded',
+        ),
       });
 
-      // Verify the schema structure
-      expect(companySchema).toHaveProperty('properties');
-      expect(companySchema.properties).toHaveProperty('name');
-      expect(companySchema.properties).toHaveProperty('founded');
-      expect(companySchema.properties).toHaveProperty('headquartersCity');
-      expect(companySchema.properties).toHaveProperty('headquartersCountry');
-      expect(companySchema.properties).toHaveProperty('isPublic');
-      expect(companySchema.required).toContain('name');
-      expect(companySchema.required).toContain('headquartersCity');
-      expect(companySchema.required).toContain('headquartersCountry');
+      expect(companySchema).toBeDefined();
+      expect(companySchema._def.shape()).toHaveProperty('name');
+      expect(companySchema._def.shape()).toHaveProperty('founded');
+      expect(companySchema._def.shape()).toHaveProperty('headquarters');
+      expect(companySchema._def.shape()).toHaveProperty('isPublic');
+      
+      const validCompany = {
+        name: 'Acme Corp',
+        founded: 1999,
+        headquarters: {
+          city: 'San Francisco',
+          country: 'USA',
+        },
+        isPublic: true,
+      };
+      const result = companySchema.safeParse(validCompany);
+      expect(result.success).toBe(true);
     });
   });
 

@@ -1,45 +1,25 @@
-import type { ISession } from './types';
+import type { ISession, TMessage } from './types';
 import { createMetadata } from './metadata';
-import { SchemaValidator } from './validators/schema';
 import { z } from 'zod';
-import { zodToJsonSchema } from './utils/schema';
 
 /**
- * Import Template class and AssistantTemplate from templates
+ * Import Template class from templates
  */
-import { Template, AssistantTemplate } from './templates';
-import type { ISchemaType } from './types';
+import { Template } from './templates';
 import { GenerateOptions } from './generate_options';
 
 /**
- * Type to handle both ISchemaType and Zod schemas
+ * Import AI SDK components for structured data generation
  */
-type SchemaInput = ISchemaType | z.ZodType;
+import { generateText, Output } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
 
 /**
- * Helper to check if a schema is a Zod schema
- */
-function isZodSchema(schema: SchemaInput): schema is z.ZodType {
-  return typeof (schema as z.ZodType)._def !== 'undefined';
-}
-
-/**
- * Helper to convert a Zod schema to ISchemaType
- */
-function zodSchemaToSchemaType(schema: z.ZodType): ISchemaType {
-  const jsonSchema = zodToJsonSchema(schema);
-  return {
-    properties: jsonSchema.properties || {},
-    required: jsonSchema.required || [],
-  };
-}
-
-/**
- * Template that enforces structured output according to a schema
+ * Template that enforces structured output according to a Zod schema
  *
- * This template uses schema validation to ensure the LLM output matches
- * the expected structure. It can work with function calling or direct JSON output.
- * It supports both PromptTrail's native schema type and Zod schemas.
+ * This template uses AI SDK's schema functionality to ensure the LLM output matches
+ * the expected structure using Zod schemas.
  */
 export class SchemaTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
@@ -48,34 +28,27 @@ export class SchemaTemplate<
   },
 > extends Template<TInput, TOutput> {
   private generateOptions: GenerateOptions;
-  private schema: SchemaInput;
-  private nativeSchema: ISchemaType;
+  private schema: z.ZodType;
   private maxAttempts: number;
-  private functionName: string;
-  private isZodSchema: boolean;
+  private schemaName?: string;
+  private schemaDescription?: string;
+  private functionName?: string;
 
   constructor(options: {
     generateOptions: GenerateOptions;
-    schema: SchemaInput;
+    schema: z.ZodType;
+    schemaName?: string;
+    schemaDescription?: string;
     maxAttempts?: number;
     functionName?: string;
   }) {
     super();
     this.generateOptions = options.generateOptions;
     this.schema = options.schema;
-    this.isZodSchema = isZodSchema(options.schema);
-
-    /**
-     * Convert Zod schema to native schema if needed
-     */
-    if (this.isZodSchema) {
-      this.nativeSchema = zodSchemaToSchemaType(options.schema as z.ZodType);
-    } else {
-      this.nativeSchema = options.schema as ISchemaType;
-    }
-
-    this.maxAttempts = options.maxAttempts || 3;
-    this.functionName = options.functionName || 'generate_structured_output';
+    this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
+    this.schemaName = options.schemaName;
+    this.schemaDescription = options.schemaDescription;
+    this.functionName = options.functionName;
   }
 
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
@@ -83,158 +56,122 @@ export class SchemaTemplate<
       throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
-    /**
-     * Create a schema validator
-     */
-    const schemaValidator = new SchemaValidator({
-      schema: this.nativeSchema,
-      description: 'Response must match the specified schema',
-    });
+    const messages = session.messages;
+    
+    const aiMessages = messages.length > 0 
+      ? messages.map((msg: TMessage) => {
+          if (msg.type === 'system') {
+            return { role: 'system' as const, content: msg.content };
+          } else if (msg.type === 'user') {
+            return { role: 'user' as const, content: msg.content };
+          } else if (msg.type === 'assistant') {
+            return { role: 'assistant' as const, content: msg.content };
+          }
+          return { role: 'user' as const, content: msg.content };
+        })
+      : [{ role: 'user' as const, content: 'Generate structured data according to the schema.' }];
 
-    /**
-     * Check if the provider is OpenAI to use function calling
-     */
-    const isOpenAI = this.generateOptions.provider.type === 'openai';
+    let lastError: Error | null = null;
+    let currentAttempt = 0;
 
-    /**
-     * Create a system message to instruct the model about the expected format
-     */
-    const schemaDescription = Object.entries(this.nativeSchema.properties)
-      .map(([key, prop]) => {
-        const typedProp = prop as { type: string; description: string };
-        return `${key}: ${typedProp.description} (${typedProp.type})${this.nativeSchema.required?.includes(key) ? ' (required)' : ''}`;
-      })
-      .join('\n');
+    while (currentAttempt < this.maxAttempts) {
+      currentAttempt++;
+      try {
+        const model = this.generateOptions.provider.type === 'openai' 
+          ? openai(this.generateOptions.provider.modelName)
+          : anthropic(this.generateOptions.provider.modelName);
+        
+        if (this.generateOptions.provider.apiKey) {
+          if (this.generateOptions.provider.type === 'openai') {
+            process.env.OPENAI_API_KEY = this.generateOptions.provider.apiKey;
+          } else if (this.generateOptions.provider.type === 'anthropic') {
+            process.env.ANTHROPIC_API_KEY = this.generateOptions.provider.apiKey;
+          }
+        }
+        
+        const result = await generateText({
+          model,
+          messages: aiMessages,
+          temperature: this.generateOptions.temperature,
+          experimental_output: Output.object({
+            schema: this.schema,
+          }),
+        });
 
-    /**
-     * Add a system message to instruct the model
-     */
-    const systemSession = await session.addMessage({
-      type: 'system',
-      content: `Please provide a response in the following JSON format:\n\n${schemaDescription}\n\nEnsure your response is valid JSON.`,
-      metadata: createMetadata(),
-    });
+        const { experimental_output } = result;
+        
+        if (!experimental_output) {
+          throw new Error('No structured output generated');
+        }
 
-    /**
-     * If using OpenAI, add a system message with function calling instructions
-     */
-    if (isOpenAI) {
-      /**
-       * For OpenAI models, we need to convert our schema to a format that OpenAI understands
-       */
-      const functionParameters = {
-        type: 'object',
-        properties: this.nativeSchema.properties,
-        required: this.nativeSchema.required || [],
-      };
+        const resultSession = await session.addMessage({
+          type: 'assistant',
+          content: JSON.stringify(experimental_output, null, 2),
+          metadata: createMetadata(),
+        });
 
-      // Add a system message with function calling instructions
-      const functionCallingMessage = `
-To provide a structured response, use the following function:
-
-Function Name: ${this.functionName}
-Description: Generate structured output according to the schema
-Parameters: ${JSON.stringify(functionParameters, null, 2)}
-
-Please call this function with the appropriate parameters to structure your response.
-`;
-
-      // Add the function calling instructions to the session
-      await systemSession.addMessage({
-        type: 'system',
-        content: functionCallingMessage,
-        metadata: createMetadata(),
-      });
-    }
-
-    const jsonExtractorValidator = {
-      validate: async (content: string, context: any) => {
-        try {
-          // Try to extract JSON from the response if it's not already JSON
-          let jsonContent = content;
+        if (this.functionName && result.response) {
+          let toolCalls = session.metadata.get('toolCalls');
           
-          const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-          if (jsonBlockMatch && jsonBlockMatch[1]) {
-            jsonContent = jsonBlockMatch[1];
-          } else {
-            const jsonObjectMatch = content.match(/(\{[\s\S]*\})/);
-            if (jsonObjectMatch && jsonObjectMatch[1]) {
-              jsonContent = jsonObjectMatch[1];
+          if (!toolCalls && result.response.body) {
+            const responseBody = result.response.body as any;
+            if (responseBody.tool_calls) {
+              toolCalls = responseBody.tool_calls;
             }
           }
           
-          const cleanedContent = jsonContent.replace(/^`+|`+$/g, '').trim();
-          
-          const parsedJson = JSON.parse(cleanedContent);
-          
-          return await schemaValidator.validate(JSON.stringify(parsedJson), context);
-        } catch (error) {
-          return { 
-            isValid: false, 
-            instruction: `Invalid JSON: ${(error as Error).message}` 
-          };
+          if (toolCalls && Array.isArray(toolCalls)) {
+            const matchingToolCall = toolCalls.find((call: any) => {
+              if (call.name === this.functionName) {
+                return true;
+              }
+              if (call.function && call.function.name === this.functionName) {
+                return true;
+              }
+              return false;
+            });
+            
+            if (matchingToolCall) {
+              let args;
+              
+              if (matchingToolCall.arguments) {
+                args = matchingToolCall.arguments;
+              } else if (matchingToolCall.function && matchingToolCall.function.arguments) {
+                try {
+                  if (typeof matchingToolCall.function.arguments === 'string') {
+                    args = JSON.parse(matchingToolCall.function.arguments);
+                  } else {
+                    args = matchingToolCall.function.arguments;
+                  }
+                } catch (error) {
+                  console.error('Failed to parse function arguments:', error);
+                }
+              }
+              
+              if (args) {
+                return resultSession.updateMetadata({
+                  structured_output: args,
+                }) as unknown as ISession<TOutput>;
+              }
+            }
+          }
         }
-      },
-      getDescription: () => 'JSON extractor and schema validator',
-      getErrorMessage: () => 'Invalid JSON format or schema validation failed'
-    };
-    
-    const assistantTemplate = new AssistantTemplate(
-      this.generateOptions, 
-      {
-        validator: jsonExtractorValidator,
-        maxAttempts: this.maxAttempts,
-        raiseError: true
-      }
-    );
 
-    const resultSession = await assistantTemplate.execute(
-      systemSession as unknown as ISession<Record<string, unknown>>,
-    );
-
-    // Get the last message
-    const lastMessage = resultSession.getLastMessage();
-    if (!lastMessage) {
-      throw new Error('No message generated');
-    }
-
-    let structuredOutput: Record<string, unknown>;
-
-    // Check if the message has tool calls directly
-    const toolCalls =
-      lastMessage.type === 'assistant' ? lastMessage.toolCalls : undefined;
-
-    if (toolCalls && toolCalls.length > 0) {
-      // If the model used function calling
-      const call = toolCalls[0];
-      structuredOutput = call.arguments;
-    } else {
-      // Try to parse JSON from the response for non-function calling models
-      try {
-        // Try to extract JSON from the response if it's not already JSON
-        const jsonMatch =
-          lastMessage.content.match(/```json\s*([\s\S]*?)\s*```/) ||
-          lastMessage.content.match(/```\s*([\s\S]*?)\s*```/) ||
-          lastMessage.content.match(/\{[\s\S]*\}/);
-
-        const jsonContent = jsonMatch
-          ? jsonMatch[1] || jsonMatch[0]
-          : lastMessage.content;
-        structuredOutput = JSON.parse(jsonContent);
+        return resultSession.updateMetadata({
+          structured_output: experimental_output,
+        }) as unknown as ISession<TOutput>;
       } catch (error) {
-        console.error(
-          'Failed to parse JSON from response:',
-          lastMessage.content,
-        );
-        throw new Error(
-          `Failed to parse structured output: ${(error as Error).message}`,
-        );
+        lastError = error as Error;
+        console.error(`Attempt ${currentAttempt}/${this.maxAttempts} failed to generate structured output:`, error);
+        
+        if (currentAttempt >= this.maxAttempts) {
+          throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts: ${lastError.message}`);
+        }
+        
+        console.log(`Retrying... (${currentAttempt}/${this.maxAttempts})`);
       }
     }
 
-    // Add the structured output to the session metadata
-    return resultSession.updateMetadata({
-      structured_output: structuredOutput,
-    }) as unknown as ISession<TOutput>;
+    throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts`);
   }
 }
