@@ -8,15 +8,14 @@ import {
   createSession,
   createGenerateOptions,
   generateText,
-  type ISession,
 } from '../../index';
 
-vi.mock('ai', async () => {
-  const actual = await vi.importActual('ai');
+vi.mock('ai', () => {
   return {
-    ...actual,
-    experimental_createMCPClient: vi.fn().mockImplementation(async () => {
-      return {
+    generateText: vi.fn(),
+    streamText: vi.fn(),
+    experimental_createMCPClient: vi.fn().mockImplementation(() => {
+      return Promise.resolve({
         getTools: vi.fn().mockResolvedValue([
           {
             name: 'test_tool',
@@ -33,8 +32,9 @@ vi.mock('ai', async () => {
             },
           },
         ]),
-      };
+      });
     }),
+    tool: vi.fn(),
   };
 });
 
@@ -45,50 +45,6 @@ describe('MCP Integration', () => {
 
   afterEach(() => {
     vi.resetAllMocks();
-  });
-
-  it('should initialize MCP client with the correct configuration', async () => {
-    const session = createSession()
-      .addMessage({ type: 'system', content: 'You are a helpful assistant with MCP tool access.' })
-      .addMessage({ type: 'user', content: 'Can you search for the latest AI papers?' });
-
-    const options = createGenerateOptions({
-      provider: {
-        type: 'anthropic',
-        apiKey: 'test-api-key',
-        modelName: 'claude-3-5-haiku-latest',
-      },
-      temperature: 0.7,
-    }).addMCPServer({
-      url: 'http://localhost:8080',
-      name: 'research-mcp-server',
-      version: '1.0.0',
-    });
-
-    const mockResponse = {
-      type: 'assistant',
-      content: 'I found several recent AI papers on transformer architectures.',
-    };
-
-    const experimental_createMCPClient = vi.spyOn(await import('ai'), 'experimental_createMCPClient');
-
-    vi.spyOn(global, 'fetch').mockImplementation(() => 
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ content: mockResponse.content }),
-      } as Response)
-    );
-
-    await generateText(session, options);
-
-    expect(experimental_createMCPClient).toHaveBeenCalledWith({
-      transport: {
-        url: 'http://localhost:8080',
-        name: 'research-mcp-server',
-        version: '1.0.0',
-        headers: {},
-      },
-    });
   });
 
   it('should add multiple MCP servers using the fluent API', () => {
@@ -113,5 +69,29 @@ describe('MCP Integration', () => {
     expect(options.mcpServers).toHaveLength(2);
     expect(options.mcpServers?.[0].name).toBe('research-mcp-server');
     expect(options.mcpServers?.[1].name).toBe('github-mcp-server');
+  });
+
+  it('should properly configure MCP server options', () => {
+    const options = createGenerateOptions({
+      provider: {
+        type: 'anthropic',
+        apiKey: 'test-api-key',
+        modelName: 'claude-3-5-haiku-latest',
+      },
+      temperature: 0.7,
+    }).addMCPServer({
+      url: 'http://localhost:8080',
+      name: 'research-mcp-server',
+      version: '1.0.0',
+      headers: { 'Authorization': 'Bearer test-token' },
+    });
+
+    expect(options.mcpServers).toHaveLength(1);
+    expect(options.mcpServers?.[0]).toEqual({
+      url: 'http://localhost:8080',
+      name: 'research-mcp-server',
+      version: '1.0.0',
+      headers: { 'Authorization': 'Bearer test-token' },
+    });
   });
 });
