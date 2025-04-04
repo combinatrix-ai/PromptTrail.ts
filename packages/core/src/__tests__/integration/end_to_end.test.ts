@@ -136,10 +136,10 @@ The weather in San Francisco is currently 72°F and sunny.
    */
 
   it('should execute a complete conversation with validation', async () => {
-    const _contentValidator = new RegexMatchValidator({
-      regex: /help/i,
-      description: 'Response must contain the word "help"',
-    });
+    // const _contentValidator = new RegexMatchValidator({
+    //   regex: /help/i,
+    //   description: 'Response must contain the word "help"',
+    // });
 
     const linearTemplate = new LinearTemplate()
       .addSystem('You are a helpful assistant.')
