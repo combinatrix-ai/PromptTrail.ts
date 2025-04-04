@@ -205,6 +205,6 @@ The weather in San Francisco is currently 72°F and sunny.
 
     // Verify the content
     expect(messages[1].content).toBe('Tell me something interesting.');
-    expect(messages[3].content).toBe('no');
+    expect(messages[3].content).toBe('Should we continue? (yes/no): no');
   });
 });
