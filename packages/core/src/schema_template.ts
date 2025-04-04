@@ -1,15 +1,20 @@
-import type { ISession } from './types';
+import type { ISession, TMessage } from './types';
 import { createMetadata } from './metadata';
-import { SchemaValidator } from './validators/schema';
 import { z } from 'zod';
-import { zodToJsonSchema } from './utils/schema';
 
 /**
- * Import Template class and AssistantTemplate from templates
+ * Import Template class from templates
  */
-import { Template, AssistantTemplate } from './templates';
+import { Template } from './templates';
 import type { ISchemaType } from './types';
 import { GenerateOptions } from './generate_options';
+
+/**
+ * Import AI SDK components for structured data generation
+ */
+import { generateText, Output } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
 
 /**
  * Type to handle both ISchemaType and Zod schemas
@@ -23,23 +28,56 @@ function isZodSchema(schema: SchemaInput): schema is z.ZodType {
   return typeof (schema as z.ZodType)._def !== 'undefined';
 }
 
+
 /**
- * Helper to convert a Zod schema to ISchemaType
+ * Helper to convert ISchemaType to Zod schema
  */
-function zodSchemaToSchemaType(schema: z.ZodType): ISchemaType {
-  const jsonSchema = zodToJsonSchema(schema);
-  return {
-    properties: jsonSchema.properties || {},
-    required: jsonSchema.required || [],
-  };
+function schemaTypeToZodSchema(schema: ISchemaType): z.ZodTypeAny {
+  const schemaShape: Record<string, z.ZodTypeAny> = {};
+  
+  for (const [key, prop] of Object.entries(schema.properties)) {
+    const typedProp = prop as { type: string; description: string };
+    let zodType: z.ZodTypeAny;
+    
+    switch (typedProp.type) {
+      case 'string':
+        zodType = z.string();
+        break;
+      case 'number':
+        zodType = z.number();
+        break;
+      case 'boolean':
+        zodType = z.boolean();
+        break;
+      case 'array':
+        zodType = z.array(z.any());
+        break;
+      case 'object':
+        zodType = z.record(z.string(), z.any());
+        break;
+      default:
+        zodType = z.any();
+    }
+    
+    if (typedProp.description) {
+      zodType = zodType.describe(typedProp.description);
+    }
+    
+    if (!schema.required?.includes(key)) {
+      zodType = zodType.optional();
+    }
+    
+    schemaShape[key] = zodType;
+  }
+  
+  return z.object(schemaShape);
 }
 
 /**
  * Template that enforces structured output according to a schema
  *
- * This template uses schema validation to ensure the LLM output matches
- * the expected structure. It can work with function calling or direct JSON output.
- * It supports both PromptTrail's native schema type and Zod schemas.
+ * This template uses AI SDK's schema functionality to ensure the LLM output matches
+ * the expected structure. It supports both PromptTrail's native schema type and Zod schemas.
  */
 export class SchemaTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
@@ -49,16 +87,14 @@ export class SchemaTemplate<
 > extends Template<TInput, TOutput> {
   private generateOptions: GenerateOptions;
   private schema: SchemaInput;
-  private nativeSchema: ISchemaType;
-  private maxAttempts: number;
-  private functionName: string;
+  private zodSchema: z.ZodTypeAny;
   private isZodSchema: boolean;
 
   constructor(options: {
     generateOptions: GenerateOptions;
     schema: SchemaInput;
-    maxAttempts?: number;
-    functionName?: string;
+    schemaName?: string;
+    schemaDescription?: string;
   }) {
     super();
     this.generateOptions = options.generateOptions;
@@ -66,16 +102,13 @@ export class SchemaTemplate<
     this.isZodSchema = isZodSchema(options.schema);
 
     /**
-     * Convert Zod schema to native schema if needed
+     * Convert to Zod schema if needed for AI SDK
      */
     if (this.isZodSchema) {
-      this.nativeSchema = zodSchemaToSchemaType(options.schema as z.ZodType);
+      this.zodSchema = options.schema as z.ZodType;
     } else {
-      this.nativeSchema = options.schema as ISchemaType;
+      this.zodSchema = schemaTypeToZodSchema(options.schema as ISchemaType);
     }
-
-    this.maxAttempts = options.maxAttempts || 3;
-    this.functionName = options.functionName || 'generate_structured_output';
   }
 
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
@@ -83,158 +116,47 @@ export class SchemaTemplate<
       throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
-    /**
-     * Create a schema validator
-     */
-    const schemaValidator = new SchemaValidator({
-      schema: this.nativeSchema,
-      description: 'Response must match the specified schema',
+    const messages = session.messages;
+    
+    const aiMessages = messages.map((msg: TMessage) => {
+      if (msg.type === 'system') {
+        return { role: 'system' as const, content: msg.content };
+      } else if (msg.type === 'user') {
+        return { role: 'user' as const, content: msg.content };
+      } else if (msg.type === 'assistant') {
+        return { role: 'assistant' as const, content: msg.content };
+      }
+      return { role: 'user' as const, content: msg.content };
     });
 
-    /**
-     * Check if the provider is OpenAI to use function calling
-     */
-    const isOpenAI = this.generateOptions.provider.type === 'openai';
+    try {
+      const { experimental_output } = await generateText({
+        model: this.generateOptions.provider.type === 'openai' 
+          ? openai(this.generateOptions.provider.modelName)
+          : anthropic(this.generateOptions.provider.modelName),
+        messages: aiMessages,
+        experimental_output: Output.object({
+          schema: this.zodSchema,
+        }),
+      });
 
-    /**
-     * Create a system message to instruct the model about the expected format
-     */
-    const schemaDescription = Object.entries(this.nativeSchema.properties)
-      .map(([key, prop]) => {
-        const typedProp = prop as { type: string; description: string };
-        return `${key}: ${typedProp.description} (${typedProp.type})${this.nativeSchema.required?.includes(key) ? ' (required)' : ''}`;
-      })
-      .join('\n');
+      if (!experimental_output) {
+        throw new Error('No structured output generated');
+      }
 
-    /**
-     * Add a system message to instruct the model
-     */
-    const systemSession = await session.addMessage({
-      type: 'system',
-      content: `Please provide a response in the following JSON format:\n\n${schemaDescription}\n\nEnsure your response is valid JSON.`,
-      metadata: createMetadata(),
-    });
-
-    /**
-     * If using OpenAI, add a system message with function calling instructions
-     */
-    if (isOpenAI) {
-      /**
-       * For OpenAI models, we need to convert our schema to a format that OpenAI understands
-       */
-      const functionParameters = {
-        type: 'object',
-        properties: this.nativeSchema.properties,
-        required: this.nativeSchema.required || [],
-      };
-
-      // Add a system message with function calling instructions
-      const functionCallingMessage = `
-To provide a structured response, use the following function:
-
-Function Name: ${this.functionName}
-Description: Generate structured output according to the schema
-Parameters: ${JSON.stringify(functionParameters, null, 2)}
-
-Please call this function with the appropriate parameters to structure your response.
-`;
-
-      // Add the function calling instructions to the session
-      await systemSession.addMessage({
-        type: 'system',
-        content: functionCallingMessage,
+      const resultSession = await session.addMessage({
+        type: 'assistant',
+        content: JSON.stringify(experimental_output, null, 2),
         metadata: createMetadata(),
       });
+
+      // Add the structured output to the session metadata
+      return resultSession.updateMetadata({
+        structured_output: experimental_output,
+      }) as unknown as ISession<TOutput>;
+    } catch (error) {
+      console.error('Failed to generate structured output:', error);
+      throw new Error(`Failed to generate structured output: ${(error as Error).message}`);
     }
-
-    const jsonExtractorValidator = {
-      validate: async (content: string, context: any) => {
-        try {
-          // Try to extract JSON from the response if it's not already JSON
-          let jsonContent = content;
-          
-          const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-          if (jsonBlockMatch && jsonBlockMatch[1]) {
-            jsonContent = jsonBlockMatch[1];
-          } else {
-            const jsonObjectMatch = content.match(/(\{[\s\S]*\})/);
-            if (jsonObjectMatch && jsonObjectMatch[1]) {
-              jsonContent = jsonObjectMatch[1];
-            }
-          }
-          
-          const cleanedContent = jsonContent.replace(/^`+|`+$/g, '').trim();
-          
-          const parsedJson = JSON.parse(cleanedContent);
-          
-          return await schemaValidator.validate(JSON.stringify(parsedJson), context);
-        } catch (error) {
-          return { 
-            isValid: false, 
-            instruction: `Invalid JSON: ${(error as Error).message}` 
-          };
-        }
-      },
-      getDescription: () => 'JSON extractor and schema validator',
-      getErrorMessage: () => 'Invalid JSON format or schema validation failed'
-    };
-    
-    const assistantTemplate = new AssistantTemplate(
-      this.generateOptions, 
-      {
-        validator: jsonExtractorValidator,
-        maxAttempts: this.maxAttempts,
-        raiseError: true
-      }
-    );
-
-    const resultSession = await assistantTemplate.execute(
-      systemSession as unknown as ISession<Record<string, unknown>>,
-    );
-
-    // Get the last message
-    const lastMessage = resultSession.getLastMessage();
-    if (!lastMessage) {
-      throw new Error('No message generated');
-    }
-
-    let structuredOutput: Record<string, unknown>;
-
-    // Check if the message has tool calls directly
-    const toolCalls =
-      lastMessage.type === 'assistant' ? lastMessage.toolCalls : undefined;
-
-    if (toolCalls && toolCalls.length > 0) {
-      // If the model used function calling
-      const call = toolCalls[0];
-      structuredOutput = call.arguments;
-    } else {
-      // Try to parse JSON from the response for non-function calling models
-      try {
-        // Try to extract JSON from the response if it's not already JSON
-        const jsonMatch =
-          lastMessage.content.match(/```json\s*([\s\S]*?)\s*```/) ||
-          lastMessage.content.match(/```\s*([\s\S]*?)\s*```/) ||
-          lastMessage.content.match(/\{[\s\S]*\}/);
-
-        const jsonContent = jsonMatch
-          ? jsonMatch[1] || jsonMatch[0]
-          : lastMessage.content;
-        structuredOutput = JSON.parse(jsonContent);
-      } catch (error) {
-        console.error(
-          'Failed to parse JSON from response:',
-          lastMessage.content,
-        );
-        throw new Error(
-          `Failed to parse structured output: ${(error as Error).message}`,
-        );
-      }
-    }
-
-    // Add the structured output to the session metadata
-    return resultSession.updateMetadata({
-      structured_output: structuredOutput,
-    }) as unknown as ISession<TOutput>;
   }
 }
