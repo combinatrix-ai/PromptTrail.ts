@@ -17,7 +17,7 @@ export { createGenerateOptions, GenerateOptions } from './generate_options';
  */
 export * from './utils/extractors';
 export * from './utils/schema';
-export * from './templates/schema_template';
+export * from './schema_template';
 
 /**
  * Validators and guardrails
