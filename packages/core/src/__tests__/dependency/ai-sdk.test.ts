@@ -92,7 +92,7 @@ describe('Tool Integration', () => {
       execute: async (input) => {
         const location = input.location;
         // Call weather API
-        const _current = '72°F and Thunderstorms';
+        // const _current = '72°F and Thunderstorms';
         const forecast = [
           'Today: Thunderstorms',
           'Tomorrow: Cloudy',
