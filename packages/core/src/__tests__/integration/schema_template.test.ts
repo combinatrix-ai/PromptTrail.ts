@@ -25,8 +25,8 @@ vi.mock('../../schema_template', async () => {
       constructor(options: any) {
         this.options = options;
       }
-      async execute(session) {
-        return session.updateMetadata({
+      async execute(_session) {
+        return _session.updateMetadata({
           structured_output: {
             name: "Test Product",
             price: 99.99,

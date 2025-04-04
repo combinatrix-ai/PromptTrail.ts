@@ -1,6 +1,21 @@
 import { Node, Edge } from 'reactflow';
 import { nanoid } from 'nanoid';
 
+interface NodeData {
+  childIds?: string[];
+  parentId?: string;
+  description?: string;
+  default?: string;
+  model?: string;
+  content?: string;
+  templateId?: string;
+  initWith?: string;
+  squashWith?: string;
+  exitCondition?: string;
+  name?: string;
+  [key: string]: unknown; // Allow other properties but with unknown type
+}
+
 // Simple regex-based parser - a more robust solution would use a proper TS parser like ts-morph
 /**
  * Parse template code to a structured graph representation
@@ -85,8 +100,8 @@ export function parseTemplateCode(code: string): {
       // Update parent's childIds
       const parentNode = nodes.find((n) => n.id === parentInfo.id);
       if (parentNode) {
-        parentNode.data.childIds = [
-          ...(parentNode.data.childIds || []),
+        (parentNode.data as NodeData).childIds = [
+          ...((parentNode.data as NodeData).childIds || []),
           childId,
         ];
       }
@@ -144,8 +159,8 @@ export function parseTemplateCode(code: string): {
       // Update parent's childIds
       const parentNode = nodes.find((n) => n.id === parentInfo.id);
       if (parentNode) {
-        parentNode.data.childIds = [
-          ...(parentNode.data.childIds || []),
+        (parentNode.data as NodeData).childIds = [
+          ...((parentNode.data as NodeData).childIds || []),
           loopId,
         ];
       }
@@ -225,8 +240,8 @@ export function parseTemplateCode(code: string): {
           // Update loop's childIds
           const loopNode = nodes.find((n) => n.id === loopId);
           if (loopNode) {
-            loopNode.data.childIds = [
-              ...(loopNode.data.childIds || []),
+            (loopNode.data as NodeData).childIds = [
+              ...((loopNode.data as NodeData).childIds || []),
               childId,
             ];
           }
@@ -263,24 +278,24 @@ export function parseTemplateCode(code: string): {
       return (
         node.type === containerType &&
         node.position.y <= (templateMatch?.index || 0) &&
-        !node.data.childIds?.length
+        !((node.data as NodeData).childIds?.length)
       );
     });
 
     if (containerNode) {
-      containerNode.data.childIds = [];
+      (containerNode.data as Record<string, any>).childIds = [];
 
       // Link children to container
       childVars.forEach((childVar) => {
         const childInfo = templateMap.get(childVar);
         if (childInfo) {
-          containerNode.data.childIds.push(childInfo.id);
+          (containerNode.data as Record<string, any>).childIds.push(childInfo.id);
 
           // Find the child node and update its parentId
           const childNode = nodes.find((node) => node.id === childInfo.id);
           if (childNode) {
             childNode.data = {
-              ...childNode.data,
+              ...(childNode.data as Record<string, any>),
               parentId: containerNode.id,
             };
           }
@@ -303,9 +318,9 @@ export function parseTemplateCode(code: string): {
   nodes.forEach((node) => {
     if (
       (node.type === 'Linear' || node.type === 'Loop') &&
-      !node.data.childIds
+      !(node.data as NodeData).childIds
     ) {
-      node.data.childIds = [];
+      (node.data as NodeData).childIds = [];
     }
   });
 
@@ -558,7 +573,7 @@ export function generateTemplateCode(graph: {
 
   // Track parent-child relationships
   nodes.forEach((node) => {
-    if (node.data.parentId) {
+    if ((node.data as NodeData).parentId) {
       allChildIds.add(node.id);
     }
   });
@@ -599,8 +614,8 @@ export function generateTemplateCode(graph: {
   const getChildNodes = (nodeId: string): Node[] => {
     // First check if the node has childIds
     const node = nodes.find((n) => n.id === nodeId);
-    if (node && node.data && node.data.childIds) {
-      const childIds = node.data.childIds as string[];
+    if (node && node.data && (node.data as NodeData).childIds) {
+      const childIds = (node.data as NodeData).childIds as string[];
       // Sort children by their y-position to maintain a logical order
       return nodes
         .filter((n) => childIds.includes(n.id))
@@ -640,25 +655,25 @@ export function generateTemplateCode(graph: {
         switch (child.type) {
           case 'User': {
             code += `    new UserTemplate({\n`;
-            code += `      description: '${child.data.description || ''}',\n`;
-            if (child.data.default)
-              code += `      default: '${child.data.default}',\n`;
+            code += `      description: '${(child.data as NodeData).description || ''}',\n`;
+            if ((child.data as NodeData).default)
+              code += `      default: '${(child.data as NodeData).default}',\n`;
             code += `    })${isLast ? '' : ','}\n`;
             break;
           }
 
           case 'Assistant': {
             code += `    new AssistantTemplate({\n`;
-            if (child.data.model)
-              code += `      model: '${child.data.model}',\n`;
-            if (child.data.content)
-              code += `      content: '${child.data.content}',\n`;
+            if ((child.data as NodeData).model)
+              code += `      model: '${(child.data as NodeData).model}',\n`;
+            if ((child.data as NodeData).content)
+              code += `      content: '${(child.data as NodeData).content}',\n`;
             code += `    })${isLast ? '' : ','}\n`;
             break;
           }
 
           case 'System': {
-            code += `    new SystemTemplate('${child.data.content || ''}')${isLast ? '' : ','}\n`;
+            code += `    new SystemTemplate('${(child.data as NodeData).content || ''}')${isLast ? '' : ','}\n`;
             break;
           }
         }
@@ -671,14 +686,14 @@ export function generateTemplateCode(graph: {
     }
 
     // Add exit condition
-    code += `  exitCondition: ${node.data.exitCondition || '(session) => false'},\n`;
+    code += `  exitCondition: ${(node.data as NodeData).exitCondition || '(session) => false'},\n`;
     code += `});\n\n`;
   });
 
   // Generate code for independent templates
   const independentTemplates = nodes.filter(
     (node) =>
-      node.type !== 'Linear' && node.type !== 'Loop' && !node.data.parentId,
+      node.type !== 'Linear' && node.type !== 'Loop' && !(node.data as NodeData).parentId,
   );
 
   independentTemplates.forEach((node) => {
@@ -686,32 +701,32 @@ export function generateTemplateCode(graph: {
 
     switch (node.type) {
       case 'System': {
-        code += `const ${varName} = new SystemTemplate('${node.data.content || ''}');\n\n`;
+        code += `const ${varName} = new SystemTemplate('${(node.data as NodeData).content || ''}');\n\n`;
         break;
       }
 
       case 'User': {
         code += `const ${varName} = new UserTemplate({\n`;
-        code += `  description: '${node.data.description || ''}',\n`;
-        if (node.data.default) code += `  default: '${node.data.default}',\n`;
+        code += `  description: '${(node.data as NodeData).description || ''}',\n`;
+        if ((node.data as NodeData).default) code += `  default: '${(node.data as NodeData).default}',\n`;
         code += `});\n\n`;
         break;
       }
 
       case 'Assistant': {
         code += `const ${varName} = new AssistantTemplate({\n`;
-        if (node.data.model) code += `  model: '${node.data.model}',\n`;
-        if (node.data.content) code += `  content: '${node.data.content}',\n`;
+        if ((node.data as NodeData).model) code += `  model: '${(node.data as NodeData).model}',\n`;
+        if ((node.data as NodeData).content) code += `  content: '${(node.data as NodeData).content}',\n`;
         code += `});\n\n`;
         break;
       }
 
       case 'Subroutine': {
         code += `const ${varName} = new SubroutineTemplate({\n`;
-        code += `  templateId: '${node.data.templateId || ''}',\n`;
-        code += `  initWith: ${node.data.initWith || '(session) => ({})'},\n`;
-        if (node.data.squashWith)
-          code += `  squashWith: ${node.data.squashWith},\n`;
+        code += `  templateId: '${(node.data as NodeData).templateId || ''}',\n`;
+        code += `  initWith: ${(node.data as NodeData).initWith || '(session) => ({})'},\n`;
+        if ((node.data as NodeData).squashWith)
+          code += `  squashWith: ${(node.data as NodeData).squashWith},\n`;
         code += `});\n\n`;
         break;
       }
@@ -732,18 +747,18 @@ export function generateTemplateCode(graph: {
       // Add children using the chained API
       children.forEach((child) => {
         if (child.type === 'System') {
-          code += `\n  .addSystem('${child.data.content || ''}')`;
+          code += `\n  .addSystem('${(child.data as NodeData).content || ''}')`;
         } else if (child.type === 'User') {
           code += `\n  .addUser({\n`;
-          code += `    description: '${child.data.description || ''}',\n`;
-          if (child.data.default)
-            code += `    default: '${child.data.default}',\n`;
+          code += `    description: '${(child.data as NodeData).description || ''}',\n`;
+          if ((child.data as NodeData).default)
+            code += `    default: '${(child.data as NodeData).default}',\n`;
           code += `  })`;
         } else if (child.type === 'Assistant') {
           code += `\n  .addAssistant({`;
-          if (child.data.model) code += `\n    model: '${child.data.model}',`;
-          if (child.data.content)
-            code += `\n    content: '${child.data.content}',`;
+          if ((child.data as NodeData).model) code += `\n    model: '${(child.data as NodeData).model}',`;
+          if ((child.data as NodeData).content)
+            code += `\n    content: '${(child.data as NodeData).content}',`;
           code += `\n  })`;
         } else if (child.type === 'Loop') {
           const loopVarName = nodeVarNames.get(child.id) || 'loopTemplate';
