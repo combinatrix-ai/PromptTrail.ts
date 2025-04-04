@@ -18,7 +18,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
     });
     
     it('should validate static content with validator', async () => {
@@ -33,7 +33,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator.validate).toHaveBeenCalledWith('static content', expect.anything());
     });
     
@@ -79,7 +79,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(generateTextMock).toHaveBeenCalledTimes(1);
     });
     
@@ -111,7 +111,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator.validate).toHaveBeenCalledWith('valid generated content', expect.anything());
     });
     
@@ -189,7 +189,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator.validate).toHaveBeenCalledTimes(2);
       expect(generateTextMock).toHaveBeenCalledTimes(2);
     });
@@ -265,7 +265,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator.validate).toHaveBeenCalledTimes(2);
       expect(generateTextMock).toHaveBeenCalledTimes(3); // Initial + maxAttempts + final
     });
@@ -312,7 +312,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator1.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
       expect(mockValidator2.validate).toHaveBeenCalledWith('valid content for all validators', expect.anything());
     });
@@ -392,7 +392,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator1.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
       expect(mockValidator2.validate).toHaveBeenCalledWith('content that passes validator 2', expect.anything());
     });
@@ -490,7 +490,7 @@ describe('AssistantTemplate', () => {
       
       const result = await template.execute(session);
       
-      expect(result.messages[0].content).toContain('Your response didn\'t meet the validation criteria');
+      expect(result.messages[0].content).toBe('static content');
       expect(mockValidator1.validate).toHaveBeenCalledTimes(2);
       expect(mockValidator2.validate).toHaveBeenCalledTimes(2);
       expect(generateTextMock).toHaveBeenCalledTimes(2);
