@@ -6,7 +6,6 @@ import { z } from 'zod';
  * Import Template class from templates
  */
 import { Template } from './templates';
-import type { ISchemaType } from './types';
 import { GenerateOptions } from './generate_options';
 
 /**
@@ -17,67 +16,10 @@ import { openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 
 /**
- * Type to handle both ISchemaType and Zod schemas
- */
-type SchemaInput = ISchemaType | z.ZodType;
-
-/**
- * Helper to check if a schema is a Zod schema
- */
-function isZodSchema(schema: SchemaInput): schema is z.ZodType {
-  return typeof (schema as z.ZodType)._def !== 'undefined';
-}
-
-
-/**
- * Helper to convert ISchemaType to Zod schema
- */
-function schemaTypeToZodSchema(schema: ISchemaType): z.ZodTypeAny {
-  const schemaShape: Record<string, z.ZodTypeAny> = {};
-  
-  for (const [key, prop] of Object.entries(schema.properties)) {
-    const typedProp = prop as { type: string; description: string };
-    let zodType: z.ZodTypeAny;
-    
-    switch (typedProp.type) {
-      case 'string':
-        zodType = z.string();
-        break;
-      case 'number':
-        zodType = z.number();
-        break;
-      case 'boolean':
-        zodType = z.boolean();
-        break;
-      case 'array':
-        zodType = z.array(z.any());
-        break;
-      case 'object':
-        zodType = z.record(z.string(), z.any());
-        break;
-      default:
-        zodType = z.any();
-    }
-    
-    if (typedProp.description) {
-      zodType = zodType.describe(typedProp.description);
-    }
-    
-    if (!schema.required?.includes(key)) {
-      zodType = zodType.optional();
-    }
-    
-    schemaShape[key] = zodType;
-  }
-  
-  return z.object(schemaShape);
-}
-
-/**
- * Template that enforces structured output according to a schema
+ * Template that enforces structured output according to a Zod schema
  *
  * This template uses AI SDK's schema functionality to ensure the LLM output matches
- * the expected structure. It supports both PromptTrail's native schema type and Zod schemas.
+ * the expected structure using Zod schemas.
  */
 export class SchemaTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
@@ -86,15 +28,15 @@ export class SchemaTemplate<
   },
 > extends Template<TInput, TOutput> {
   private generateOptions: GenerateOptions;
-  private schema: SchemaInput;
-  private zodSchema: z.ZodTypeAny;
-  private isZodSchema: boolean;
+  private schema: z.ZodType;
   private maxAttempts: number;
+  private schemaName?: string;
+  private schemaDescription?: string;
   private functionName?: string;
 
   constructor(options: {
     generateOptions: GenerateOptions;
-    schema: SchemaInput;
+    schema: z.ZodType;
     schemaName?: string;
     schemaDescription?: string;
     maxAttempts?: number;
@@ -103,18 +45,10 @@ export class SchemaTemplate<
     super();
     this.generateOptions = options.generateOptions;
     this.schema = options.schema;
-    this.isZodSchema = isZodSchema(options.schema);
     this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
+    this.schemaName = options.schemaName;
+    this.schemaDescription = options.schemaDescription;
     this.functionName = options.functionName;
-
-    /**
-     * Convert to Zod schema if needed for AI SDK
-     */
-    if (this.isZodSchema) {
-      this.zodSchema = options.schema as z.ZodType;
-    } else {
-      this.zodSchema = schemaTypeToZodSchema(options.schema as ISchemaType);
-    }
   }
 
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
@@ -143,16 +77,18 @@ export class SchemaTemplate<
     while (currentAttempt < this.maxAttempts) {
       currentAttempt++;
       try {
-        const { experimental_output } = await generateText({
+        const result = await generateText({
           model: this.generateOptions.provider.type === 'openai' 
             ? openai(this.generateOptions.provider.modelName)
             : anthropic(this.generateOptions.provider.modelName),
           messages: aiMessages,
           experimental_output: Output.object({
-            schema: this.zodSchema,
+            schema: this.schema,
           }),
         });
 
+        const { experimental_output } = result;
+        
         if (!experimental_output) {
           throw new Error('No structured output generated');
         }
@@ -163,7 +99,22 @@ export class SchemaTemplate<
           metadata: createMetadata(),
         });
 
-        // Add the structured output to the session metadata
+        if (this.functionName && result.response) {
+          const toolCalls = session.metadata.get('toolCalls');
+          
+          if (toolCalls && Array.isArray(toolCalls)) {
+            const matchingToolCall = toolCalls.find(
+              (call: any) => call.name === this.functionName
+            );
+            
+            if (matchingToolCall && matchingToolCall.arguments) {
+              return resultSession.updateMetadata({
+                structured_output: matchingToolCall.arguments,
+              }) as unknown as ISession<TOutput>;
+            }
+          }
+        }
+
         return resultSession.updateMetadata({
           structured_output: experimental_output,
         }) as unknown as ISession<TOutput>;

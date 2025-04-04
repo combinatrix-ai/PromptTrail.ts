@@ -1,10 +1,10 @@
-import type { SchemaType } from '../types';
+import type { ISchemaType } from '../types';
 import { z } from 'zod';
 
 /**
  * Create a schema definition with TypeScript type inference
  */
-export function createSchema<T extends SchemaType>(schema: T): T {
+export function createSchema<T extends ISchemaType>(schema: T): T {
   return schema;
 }
 
@@ -37,7 +37,7 @@ export function defineSchema<
     string,
     { type: 'string' | 'number' | 'boolean'; description: string }
   >,
->(options: { properties: T; required?: Array<keyof T> }): SchemaType {
+>(options: { properties: T; required?: Array<keyof T> }): ISchemaType {
   return {
     properties: options.properties,
     required: options.required as string[] | undefined,
