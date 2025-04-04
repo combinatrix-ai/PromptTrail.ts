@@ -147,6 +147,7 @@ export class AssistantTemplate<
       validator?: IValidator;
       maxAttempts?: number;
       raiseError?: boolean;
+      addFeedbackMessages?: boolean;
     }
   ) {
     super();

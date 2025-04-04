@@ -293,7 +293,8 @@ it('should execute a complete conversation with guardrails', async () => {
     {
       validator: lengthValidator,
       maxAttempts: 3,
-      raiseError: true // Ensure validation passes
+      raiseError: true, // Ensure validation passes
+      addFeedbackMessages: true // Add feedback messages to guide the LLM
     }
   );
   
