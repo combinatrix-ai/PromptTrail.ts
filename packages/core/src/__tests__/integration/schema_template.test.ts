@@ -18,11 +18,11 @@ vi.mock('ai', () => {
 });
 
 vi.mock('../../schema_template', async () => {
-  const actual = await vi.importActual('../../schema_template');
+  const _actual = await vi.importActual('../../schema_template');
   return {
     SchemaTemplate: class MockSchemaTemplate {
-      options: any;
-      constructor(options: any) {
+      options: unknown;
+      constructor(options: unknown) {
         this.options = options;
       }
       async execute(_session) {
