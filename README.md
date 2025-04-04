@@ -620,9 +620,13 @@ const mathChat = new LinearTemplate()
 
 Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
-### MCP Support
+### 🔌 MCP Support
 
-Connect to Anthropic's Model Context Protocol (MCP) servers to extend Claude's capabilities:
+PromptTrail provides comprehensive support for Anthropic's Model Context Protocol (MCP), allowing Claude models to access external tools and resources like GitHub repositories, databases, or custom APIs through a standardized protocol.
+
+#### Traditional MCP Integration
+
+The traditional approach uses the `mcpServers` configuration in `GenerateOptions`:
 
 ```typescript
 import {
@@ -652,20 +656,18 @@ const generateOptions: GenerateOptions = {
 const template = new LinearTemplate()
   .addSystem(
     `You are a helpful assistant with access to external tools.
-             You can use these tools when needed to provide accurate information.`,
+     You can use these tools when needed to provide accurate information.`,
   )
-  .addUser('Can you check the weather in San Francisco?', '')
+  .addUser('Can you check the weather in San Francisco?')
   .addAssistant({ generateOptions });
 
 // Execute the template
 const session = await template.execute(createSession());
 ```
 
-MCP allows Claude to access external tools and resources like GitHub repositories, databases, or custom APIs through a standardized protocol. PromptTrail automatically discovers and loads tools from connected MCP servers, making them available to Claude during conversations.
+#### 🚀 Enhanced MCP Support with ai-sdk
 
-### 🚀 Enhanced MCP Support with ai-sdk
-
-PromptTrail now offers enhanced MCP support through direct integration with the Vercel AI SDK:
+PromptTrail now offers enhanced MCP support through direct integration with the Vercel AI SDK, providing a more flexible and powerful approach:
 
 ```typescript
 import {
@@ -679,7 +681,7 @@ const session = createSession()
   .addMessage({ type: 'system', content: 'You are a helpful assistant with MCP tool access.' })
   .addMessage({ type: 'user', content: 'Can you search for the latest AI papers?' });
 
-// Create options with MCP server configuration
+// Create options with MCP server configuration using the fluent API
 const options = createGenerateOptions({
   provider: {
     type: 'anthropic',
