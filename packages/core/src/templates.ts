@@ -5,8 +5,8 @@ import type { Model } from './model/base';
 import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
-import { createTransformerTemplate } from './templates/transformer_template';
-import type { SchemaType, InferSchemaType } from './tool';
+
+import type { SchemaType } from './tool';
 import { z } from 'zod';
 
 /**
@@ -265,7 +265,7 @@ export class LinearTemplate extends Template {
    * @returns The template instance for chaining
    */
   addTransformer(transformer: SessionTransformer<any, any>): this {
-    this.templates.push(createTransformerTemplate(transformer) as Template);
+    this.templates.push(new TransformerTemplate(transformer));
     return this;
   }
 
@@ -485,5 +485,18 @@ export class IfTemplate extends Template {
       return this.options.elseTemplate.execute(session);
     }
     return session; // If no else template and condition is false, return session unchanged
+  }
+}
+
+/**
+ * Template that applies a transformer to a session
+ */
+export class TransformerTemplate extends Template {
+  constructor(private transformer: SessionTransformer<any, any>) {
+    super();
+  }
+
+  async execute(session: Session): Promise<Session> {
+    return this.transformer.transform(session);
   }
 }
