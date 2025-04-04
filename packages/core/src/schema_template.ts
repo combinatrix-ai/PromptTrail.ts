@@ -89,17 +89,23 @@ export class SchemaTemplate<
   private schema: SchemaInput;
   private zodSchema: z.ZodTypeAny;
   private isZodSchema: boolean;
+  private maxAttempts: number;
+  private functionName?: string;
 
   constructor(options: {
     generateOptions: GenerateOptions;
     schema: SchemaInput;
     schemaName?: string;
     schemaDescription?: string;
+    maxAttempts?: number;
+    functionName?: string;
   }) {
     super();
     this.generateOptions = options.generateOptions;
     this.schema = options.schema;
     this.isZodSchema = isZodSchema(options.schema);
+    this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
+    this.functionName = options.functionName;
 
     /**
      * Convert to Zod schema if needed for AI SDK
@@ -118,45 +124,61 @@ export class SchemaTemplate<
 
     const messages = session.messages;
     
-    const aiMessages = messages.map((msg: TMessage) => {
-      if (msg.type === 'system') {
-        return { role: 'system' as const, content: msg.content };
-      } else if (msg.type === 'user') {
-        return { role: 'user' as const, content: msg.content };
-      } else if (msg.type === 'assistant') {
-        return { role: 'assistant' as const, content: msg.content };
+    const aiMessages = messages.length > 0 
+      ? messages.map((msg: TMessage) => {
+          if (msg.type === 'system') {
+            return { role: 'system' as const, content: msg.content };
+          } else if (msg.type === 'user') {
+            return { role: 'user' as const, content: msg.content };
+          } else if (msg.type === 'assistant') {
+            return { role: 'assistant' as const, content: msg.content };
+          }
+          return { role: 'user' as const, content: msg.content };
+        })
+      : [{ role: 'user' as const, content: 'Generate structured data according to the schema.' }];
+
+    let lastError: Error | null = null;
+    let currentAttempt = 0;
+
+    while (currentAttempt < this.maxAttempts) {
+      currentAttempt++;
+      try {
+        const { experimental_output } = await generateText({
+          model: this.generateOptions.provider.type === 'openai' 
+            ? openai(this.generateOptions.provider.modelName)
+            : anthropic(this.generateOptions.provider.modelName),
+          messages: aiMessages,
+          experimental_output: Output.object({
+            schema: this.zodSchema,
+          }),
+        });
+
+        if (!experimental_output) {
+          throw new Error('No structured output generated');
+        }
+
+        const resultSession = await session.addMessage({
+          type: 'assistant',
+          content: JSON.stringify(experimental_output, null, 2),
+          metadata: createMetadata(),
+        });
+
+        // Add the structured output to the session metadata
+        return resultSession.updateMetadata({
+          structured_output: experimental_output,
+        }) as unknown as ISession<TOutput>;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Attempt ${currentAttempt}/${this.maxAttempts} failed to generate structured output:`, error);
+        
+        if (currentAttempt >= this.maxAttempts) {
+          throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts: ${lastError.message}`);
+        }
+        
+        console.log(`Retrying... (${currentAttempt}/${this.maxAttempts})`);
       }
-      return { role: 'user' as const, content: msg.content };
-    });
-
-    try {
-      const { experimental_output } = await generateText({
-        model: this.generateOptions.provider.type === 'openai' 
-          ? openai(this.generateOptions.provider.modelName)
-          : anthropic(this.generateOptions.provider.modelName),
-        messages: aiMessages,
-        experimental_output: Output.object({
-          schema: this.zodSchema,
-        }),
-      });
-
-      if (!experimental_output) {
-        throw new Error('No structured output generated');
-      }
-
-      const resultSession = await session.addMessage({
-        type: 'assistant',
-        content: JSON.stringify(experimental_output, null, 2),
-        metadata: createMetadata(),
-      });
-
-      // Add the structured output to the session metadata
-      return resultSession.updateMetadata({
-        structured_output: experimental_output,
-      }) as unknown as ISession<TOutput>;
-    } catch (error) {
-      console.error('Failed to generate structured output:', error);
-      throw new Error(`Failed to generate structured output: ${(error as Error).message}`);
     }
+
+    throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts`);
   }
 }
