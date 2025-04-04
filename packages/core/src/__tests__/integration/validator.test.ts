@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
-import { type IValidator, type TValidationResult } from '../../../validators/base';
-import { createMetadata } from '../../../metadata';
-import { type ISession } from '../../../types';
+import { createSession } from '../../session';
+import { type IValidator, type TValidationResult } from '../../validators/base';
+import { createMetadata } from '../../metadata';
+import { type ISession } from '../../types';
 
-vi.mock('../../../generate');
+vi.mock('../../generate');
 
-import { generateText } from '../../../generate';
+import { generateText } from '../../generate';
 import {
   createGenerateOptions,
   type GenerateOptions,
-} from '../../../generate_options';
-import { AssistantTemplate } from '../../../templates';
+} from '../../generate_options';
+import { AssistantTemplate } from '../../templates';
 
 class TestValidator implements IValidator {
   private description: string;

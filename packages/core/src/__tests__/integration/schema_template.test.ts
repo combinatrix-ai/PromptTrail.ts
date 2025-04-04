@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
-import { SchemaTemplate } from '../../templates/schema_template';
+import { SchemaTemplate } from '../../schema_template';
 import {
   defineSchema,
   createStringProperty,

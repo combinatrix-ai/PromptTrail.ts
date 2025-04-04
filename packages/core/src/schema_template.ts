@@ -1,15 +1,15 @@
-import type { ISession } from '../types';
-import { createMetadata } from '../metadata';
-import { SchemaValidator } from '../validators/schema';
+import type { ISession } from './types';
+import { createMetadata } from './metadata';
+import { SchemaValidator } from './validators/schema';
 import { z } from 'zod';
-import { zodToJsonSchema } from '../utils/schema';
+import { zodToJsonSchema } from './utils/schema';
 
 /**
  * Import Template class and AssistantTemplate from templates
  */
-import { Template, AssistantTemplate } from '../templates';
-import type { ISchemaType } from '../types';
-import { GenerateOptions } from '../generate_options';
+import { Template, AssistantTemplate } from './templates';
+import type { ISchemaType } from './types';
+import { GenerateOptions } from './generate_options';
 
 /**
  * Type to handle both ISchemaType and Zod schemas
