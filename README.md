@@ -624,51 +624,6 @@ Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
 PromptTrail provides comprehensive support for Anthropic's Model Context Protocol (MCP), allowing Claude models to access external tools and resources like GitHub repositories, databases, or custom APIs through a standardized protocol.
 
-#### Traditional MCP Integration
-
-The traditional approach uses the `mcpServers` configuration in `GenerateOptions`:
-
-```typescript
-import {
-  createSession,
-  LinearTemplate,
-  type GenerateOptions,
-} from '@prompttrail/core';
-
-// Define generateOptions for Anthropic with MCP integration
-const generateOptions: GenerateOptions = {
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    modelName: 'claude-3-5-haiku-latest',
-  },
-  temperature: 0.7,
-  mcpServers: [
-    {
-      url: 'http://localhost:8080', // Your MCP server URL
-      name: 'github-mcp-server',
-      version: '1.0.0',
-    },
-  ],
-};
-
-// Create a template that uses MCP tools
-const template = new LinearTemplate()
-  .addSystem(
-    `You are a helpful assistant with access to external tools.
-     You can use these tools when needed to provide accurate information.`,
-  )
-  .addUser('Can you check the weather in San Francisco?')
-  .addAssistant({ generateOptions });
-
-// Execute the template
-const session = await template.execute(createSession());
-```
-
-#### 🚀 Enhanced MCP Support with ai-sdk
-
-PromptTrail now offers enhanced MCP support through direct integration with the Vercel AI SDK, providing a more flexible and powerful approach:
-
 ```typescript
 import {
   generateText,
