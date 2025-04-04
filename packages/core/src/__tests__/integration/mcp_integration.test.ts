@@ -5,9 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  createSession,
   createGenerateOptions,
-  generateText,
 } from '../../index';
 
 vi.mock('ai', () => {
