@@ -3,7 +3,6 @@ import type { InputSource } from './input_source';
 import { StaticInputSource, CallbackInputSource } from './input_source';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
-import { createTransformerTemplate } from './templates/transformer_template';
 import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
@@ -459,7 +458,7 @@ function WithTransformer<
         Record<string, unknown>
       >;
       this.templates.push(
-        createTransformerTemplate(castTransformer) as Template,
+        new TransformerTemplate(castTransformer),
       );
       return this as unknown as LinearTemplate;
     }
@@ -669,3 +668,19 @@ export class SubroutineTemplate extends WithSchema(
     ),
   ),
 ) {}
+
+/**
+ * Template that applies a transformer to a session
+ */
+export class TransformerTemplate extends Template {
+  constructor(private transformer: SessionTransformer<
+    Record<string, unknown>,
+    Record<string, unknown>
+  >) {
+    super();
+  }
+
+  async execute(session: ISession): Promise<ISession> {
+    return this.transformer.transform(session);
+  }
+}
