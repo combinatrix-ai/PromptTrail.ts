@@ -3,21 +3,19 @@ import { createSession } from '../../session';
 import { createGenerateOptions } from '../../generate_options';
 import * as generateModule from '../../generate';
 import { createMetadata } from '../../metadata';
-import { LinearTemplate } from '../../templates';
+import { LinearTemplate, LoopTemplate } from '../../templates';
+import { CLIInputSource } from '../../input_source';
 
-vi.mock('../../generate', () => ({
-  generateText: vi.fn(),
-}));
+vi.mock('../../generate', () => {
+  return {
+    generateText: vi.fn(),
+    generateTextStream: vi.fn(),
+  };
+});
 
 describe('README Examples', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    
-    vi.mocked(generateModule.generateText).mockResolvedValue({
-      type: 'assistant',
-      content: 'This is a mock response from the AI model.',
-      metadata: createMetadata(),
-    });
   });
 
   describe('Quick Start Example', () => {
