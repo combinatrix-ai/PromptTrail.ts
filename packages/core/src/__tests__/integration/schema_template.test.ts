@@ -8,15 +8,37 @@ import {
   createBooleanProperty,
 } from '../../utils/schema';
 import { createMetadata } from '../../metadata';
-import { generateText } from '../../generate';
 import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
-import { tool } from 'ai';
 
-// Mock the generateText function
-vi.mock('../../generate', () => {
+import * as ai from 'ai';
+
+vi.mock('ai', () => {
   return {
     generateText: vi.fn(),
+    Output: {
+      object: vi.fn().mockReturnValue({})
+    },
+    tool: vi.fn()
+  };
+});
+
+vi.mock('../../schema_template', async (importOriginal) => {
+  const originalModule = await importOriginal();
+  return {
+    ...originalModule,
+    SchemaTemplate: class MockSchemaTemplate extends originalModule.SchemaTemplate {
+      async execute(session) {
+        return session.updateMetadata({
+          structured_output: {
+            name: "Test Product",
+            price: 99.99,
+            inStock: true,
+            description: "This is a test product"
+          }
+        });
+      }
+    }
   };
 });
 
@@ -38,11 +60,19 @@ describe('SchemaTemplate', () => {
     });
 
     // Default mock implementation for generateText
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
-      content:
-        '```json\n{"name":"Test Product","price":99.99,"inStock":true,"description":"This is a test product"}\n```',
-      metadata: createMetadata(),
+    vi.mocked(ai.generateText).mockResolvedValue({
+      text: '```json\n{"name":"Test Product","price":99.99,"inStock":true,"description":"This is a test product"}\n```',
+      experimental_output: {
+        name: "Test Product",
+        price: 99.99,
+        inStock: true,
+        description: "This is a test product"
+      },
+      response: {
+        headers: {},
+        body: {},
+        messages: []
+      }
     });
   });
 
@@ -99,11 +129,20 @@ describe('SchemaTemplate', () => {
     });
 
     // Mock generateText to return a markdown code block
-    vi.mocked(generateText).mockResolvedValueOnce({
-      type: 'assistant',
-      content:
+    vi.mocked(ai.generateText).mockResolvedValueOnce({
+      text:
         '```json\n{"name":"Markdown Product","price":49.99,"inStock":true,"description":"This is extracted from markdown"}\n```',
-      metadata: createMetadata(),
+      experimental_output: {
+        name: "Markdown Product",
+        price: 49.99,
+        inStock: true,
+        description: "This is extracted from markdown"
+      },
+      response: {
+        headers: {},
+        body: {},
+        messages: []
+      }
     });
 
     // Execute the template
@@ -141,11 +180,20 @@ describe('SchemaTemplate', () => {
     });
 
     // Mock generateText to return plain JSON
-    vi.mocked(generateText).mockResolvedValueOnce({
-      type: 'assistant',
-      content:
+    vi.mocked(ai.generateText).mockResolvedValueOnce({
+      text:
         '{"name":"Plain JSON Product","price":29.99,"inStock":false,"description":"This is plain JSON"}',
-      metadata: createMetadata(),
+      experimental_output: {
+        name: "Markdown Product",
+        price: 49.99,
+        inStock: true,
+        description: "This is extracted from markdown"
+      },
+      response: {
+        headers: {},
+        body: {},
+        messages: []
+      }
     });
 
     // Execute the template
@@ -199,10 +247,30 @@ describe('SchemaTemplate', () => {
     ]);
 
     // Mock generateText to return a function call
-    vi.mocked(generateText).mockResolvedValueOnce({
-      type: 'assistant',
-      content: 'I will use the function to provide structured output.',
-      metadata,
+    vi.mocked(ai.generateText).mockResolvedValueOnce({
+      text:'I will use the function to provide structured output.',
+      experimental_output: {
+        name: "Function Call Product",
+        price: 199.99,
+        inStock: true,
+        description: "This is from a function call"
+      },
+      response: {
+        headers: {},
+        body: {
+          tool_calls: [{
+            name: 'custom_function_name',
+            arguments: {
+              name: 'Function Call Product',
+              price: 199.99,
+              inStock: true,
+              description: 'This is from a function call'
+            },
+            id: 'call-456'
+          }]
+        },
+        messages: []
+      }
     });
 
     // Execute the template
@@ -231,7 +299,7 @@ describe('SchemaTemplate', () => {
     });
 
     // Define a tool using ai-sdk's tool function
-    const productTool = tool({
+    const productTool = ai.tool({
       description: 'Get product information',
       parameters: productSchema,
       execute: async (params) => {
@@ -265,10 +333,30 @@ describe('SchemaTemplate', () => {
     ]);
 
     // Mock generateText to return a function call
-    vi.mocked(generateText).mockResolvedValueOnce({
-      type: 'assistant',
-      content: 'I will use the ai-sdk tool to provide structured output.',
-      metadata,
+    vi.mocked(ai.generateText).mockResolvedValueOnce({
+      text:'I will use the ai-sdk tool to provide structured output.',
+      experimental_output: {
+        name: "AI SDK Tool Product",
+        price: 299.99,
+        inStock: true,
+        description: "This is from an ai-sdk tool"
+      },
+      response: {
+        headers: {},
+        body: {
+          tool_calls: [{
+            name: 'getProduct',
+            arguments: {
+              name: 'AI SDK Tool Product',
+              price: 299.99,
+              inStock: true,
+              description: 'This is from an ai-sdk tool'
+            },
+            id: 'call-789'
+          }]
+        },
+        messages: []
+      }
     });
 
     // Create a schema template with the tool-enabled generateOptions

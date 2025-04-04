@@ -77,11 +77,22 @@ export class SchemaTemplate<
     while (currentAttempt < this.maxAttempts) {
       currentAttempt++;
       try {
+        const model = this.generateOptions.provider.type === 'openai' 
+          ? openai(this.generateOptions.provider.modelName)
+          : anthropic(this.generateOptions.provider.modelName);
+        
+        if (this.generateOptions.provider.apiKey) {
+          if (this.generateOptions.provider.type === 'openai') {
+            process.env.OPENAI_API_KEY = this.generateOptions.provider.apiKey;
+          } else if (this.generateOptions.provider.type === 'anthropic') {
+            process.env.ANTHROPIC_API_KEY = this.generateOptions.provider.apiKey;
+          }
+        }
+        
         const result = await generateText({
-          model: this.generateOptions.provider.type === 'openai' 
-            ? openai(this.generateOptions.provider.modelName)
-            : anthropic(this.generateOptions.provider.modelName),
+          model,
           messages: aiMessages,
+          temperature: this.generateOptions.temperature,
           experimental_output: Output.object({
             schema: this.schema,
           }),
@@ -100,17 +111,48 @@ export class SchemaTemplate<
         });
 
         if (this.functionName && result.response) {
-          const toolCalls = session.metadata.get('toolCalls');
+          let toolCalls = session.metadata.get('toolCalls');
+          
+          if (!toolCalls && result.response.body) {
+            const responseBody = result.response.body as any;
+            if (responseBody.tool_calls) {
+              toolCalls = responseBody.tool_calls;
+            }
+          }
           
           if (toolCalls && Array.isArray(toolCalls)) {
-            const matchingToolCall = toolCalls.find(
-              (call: any) => call.name === this.functionName
-            );
+            const matchingToolCall = toolCalls.find((call: any) => {
+              if (call.name === this.functionName) {
+                return true;
+              }
+              if (call.function && call.function.name === this.functionName) {
+                return true;
+              }
+              return false;
+            });
             
-            if (matchingToolCall && matchingToolCall.arguments) {
-              return resultSession.updateMetadata({
-                structured_output: matchingToolCall.arguments,
-              }) as unknown as ISession<TOutput>;
+            if (matchingToolCall) {
+              let args;
+              
+              if (matchingToolCall.arguments) {
+                args = matchingToolCall.arguments;
+              } else if (matchingToolCall.function && matchingToolCall.function.arguments) {
+                try {
+                  if (typeof matchingToolCall.function.arguments === 'string') {
+                    args = JSON.parse(matchingToolCall.function.arguments);
+                  } else {
+                    args = matchingToolCall.function.arguments;
+                  }
+                } catch (error) {
+                  console.error('Failed to parse function arguments:', error);
+                }
+              }
+              
+              if (args) {
+                return resultSession.updateMetadata({
+                  structured_output: args,
+                }) as unknown as ISession<TOutput>;
+              }
             }
           }
         }

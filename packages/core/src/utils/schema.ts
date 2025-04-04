@@ -1,47 +1,34 @@
-import type { ISchemaType } from '../types';
 import { z } from 'zod';
 
 /**
- * Create a schema definition with TypeScript type inference
+ * Type-safe helper to create a string property for Zod schema
  */
-export function createSchema<T extends ISchemaType>(schema: T): T {
-  return schema;
+export function createStringProperty(description: string): z.ZodString {
+  return z.string().describe(description);
 }
 
 /**
- * Create a string property schema with proper typing
+ * Type-safe helper to create a number property for Zod schema
  */
-export function createStringProperty(description: string) {
-  return { type: 'string' as const, description };
+export function createNumberProperty(description: string): z.ZodNumber {
+  return z.number().describe(description);
 }
 
 /**
- * Create a number property schema with proper typing
+ * Type-safe helper to create a boolean property for Zod schema
  */
-export function createNumberProperty(description: string) {
-  return { type: 'number' as const, description };
-}
-
-/**
- * Create a boolean property schema with proper typing
- */
-export function createBooleanProperty(description: string) {
-  return { type: 'boolean' as const, description };
+export function createBooleanProperty(description: string): z.ZodBoolean {
+  return z.boolean().describe(description);
 }
 
 /**
  * Type-safe helper to create a schema with properties and required fields
+ * Returns a Zod schema
  */
 export function defineSchema<
-  T extends Record<
-    string,
-    { type: 'string' | 'number' | 'boolean'; description: string }
-  >,
->(options: { properties: T; required?: Array<keyof T> }): ISchemaType {
-  return {
-    properties: options.properties,
-    required: options.required as string[] | undefined,
-  };
+  T extends Record<string, z.ZodTypeAny>,
+>(properties: T): z.ZodObject<T> {
+  return z.object(properties);
 }
 
 /**

@@ -38,13 +38,10 @@ describe('SchemaTemplate API Integration', () => {
   });
 
   const productSchema = defineSchema({
-    properties: {
-      name: createStringProperty('The name of the product'),
-      price: createNumberProperty('The price of the product in USD'),
-      inStock: createBooleanProperty('Whether the product is in stock'),
-      description: createStringProperty('A short description of the product'),
-    },
-    required: ['name', 'price', 'inStock'],
+    name: createStringProperty('The name of the product'),
+    price: createNumberProperty('The price of the product in USD'),
+    inStock: createBooleanProperty('Whether the product is in stock'),
+    description: createStringProperty('A short description of the product'),
   });
 
   const zodProductSchema = z.object({
@@ -159,14 +156,11 @@ describe('SchemaTemplate API Integration', () => {
   }, 30000);
 
   it.skip('should retry on failure and eventually fail with max attempts', async () => {
-    const invalidSchema = defineSchema({
-      properties: {
-        name: createStringProperty('The name of the product'),
-        price: createNumberProperty('The price of the product in USD'),
-        inStock: createBooleanProperty('Whether the product is in stock'),
-        nonExistentProperty: createStringProperty('This property does not exist and will cause validation errors'),
-      },
-      required: ['name', 'price', 'inStock', 'nonExistentProperty'],
+    const invalidSchema = z.object({
+      name: z.string().describe('The name of the product'),
+      price: z.number().describe('The price of the product in USD'),
+      inStock: z.boolean().describe('Whether the product is in stock'),
+      nonExistentProperty: z.string().describe('This property does not exist and will cause validation errors'),
     });
 
     const template = new SchemaTemplate({
