@@ -73,12 +73,12 @@ export enum OnFailAction {
  */
 export interface GuardrailTemplateOptions<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  TOutput extends Record<string, unknown> = TInput,
+  _TOutput extends Record<string, unknown> = TInput,
 > {
   /**
    * The template to execute and validate
    */
-  template: Template<TInput, any>;
+  template: Template<TInput, Record<string, unknown>>;
 
   /**
    * Validators to apply to the response
@@ -162,7 +162,7 @@ export class GuardrailTemplate<
       attempts++;
 
       // Execute the template
-      resultSession = await this.options.template.execute(session as any);
+      resultSession = await this.options.template.execute(session as Session<TInput>);
 
       // Get the last message content
       const lastMessage = resultSession.getLastMessage();
@@ -194,15 +194,16 @@ export class GuardrailTemplate<
 
         // Handle based on onFail action
         switch (this.options.onFail) {
-          case OnFailAction.EXCEPTION:
+          case OnFailAction.EXCEPTION: {
             const failedFeedback = validationResults
               .filter((result) => !result.passed)
               .map((result) => result.feedback)
               .filter(Boolean)
               .join('; ');
             throw new Error(`Validation failed: ${failedFeedback}`);
+          }
 
-          case OnFailAction.FIX:
+          case OnFailAction.FIX: {
             // If any validator provides a fix, apply it and return
             const fixResult = validationResults.find(
               (result) => !result.passed && result.fix,
@@ -220,8 +221,9 @@ export class GuardrailTemplate<
             }
             // If no fix available, continue to retry
             break;
+          }
 
-          case OnFailAction.CONTINUE:
+          case OnFailAction.CONTINUE: {
             // Continue with the failed result but keep allPassed as false
             // This will exit the loop but preserve the failed status
             return resultSession.updateMetadata({
@@ -231,6 +233,7 @@ export class GuardrailTemplate<
                 validationResults,
               },
             }) as unknown as Session<TOutput>;
+          }
 
           case OnFailAction.RETRY:
           default:

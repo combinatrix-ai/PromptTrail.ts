@@ -1,10 +1,9 @@
 import type { Session } from '../session';
 import type { Model } from '../model/base';
-import type { SchemaType, InferSchemaType } from '../tool';
+import type { SchemaType } from '../tool';
 import { createMetadata } from '../metadata';
 import { SchemaValidator } from '../validators/schema_validator';
 import { GuardrailTemplate, OnFailAction } from './guardrail_template';
-import type { ModelConfig } from '../types';
 import { z } from 'zod';
 import { zodToJsonSchema } from '../utils/schema';
 
@@ -18,7 +17,7 @@ type SchemaInput = SchemaType | z.ZodType;
 
 // Helper to check if a schema is a Zod schema
 function isZodSchema(schema: SchemaInput): schema is z.ZodType {
-  return typeof (schema as any)._def !== 'undefined';
+  return typeof (schema as z.ZodType)._def !== 'undefined';
 }
 
 // Helper to convert a Zod schema to SchemaType
@@ -40,7 +39,7 @@ function zodSchemaToSchemaType(schema: z.ZodType): SchemaType {
 export class SchemaTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput & {
-    structured_output: any;
+    structured_output: Record<string, unknown>;
   },
 > extends Template<TInput, TOutput> {
   private schema: SchemaInput;
@@ -141,7 +140,7 @@ Please call this function with the appropriate parameters to structure your resp
     });
 
     // Execute the guardrail template
-    const resultSession = await guardrailTemplate.execute(systemSession as any);
+    const resultSession = await guardrailTemplate.execute(systemSession as unknown as Session<Record<string, unknown>>);
 
     // Get the last message
     const lastMessage = resultSession.getLastMessage();
@@ -149,7 +148,7 @@ Please call this function with the appropriate parameters to structure your resp
       throw new Error('No message generated');
     }
 
-    let structuredOutput: any;
+    let structuredOutput: Record<string, unknown>;
 
     // Get metadata as a plain object to avoid type issues
     const metadata = lastMessage.metadata?.toJSON() || {};

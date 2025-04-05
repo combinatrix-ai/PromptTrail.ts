@@ -10,7 +10,7 @@ vi.mock('../../model/anthropic/mcp', async () => {
   const actual = await vi.importActual('../../model/anthropic/mcp');
 
   // Create a mock MCPClientWrapper that doesn't actually use the SDK
-  const mockMCPClientWrapper = vi.fn().mockImplementation((config) => ({
+  const mockMCPClientWrapper = vi.fn().mockImplementation((/* unused */) => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
     loadTools: vi.fn().mockResolvedValue([
@@ -108,8 +108,7 @@ describe('MCP Integration', () => {
       execute: async () => 'result',
     });
 
-    // Access private method using any type
-    const formattedTool = (model as any).formatTool(tool);
+    const formattedTool = (model as { formatTool: (tool: unknown) => unknown }).formatTool(tool);
 
     expect(formattedTool).toEqual({
       name: 'test-tool',
@@ -139,7 +138,7 @@ describe('MCP Integration', () => {
     expect(response.content).toBe('I can help with that!');
 
     // Check if tool calls are in metadata
-    const metadata = response.metadata?.toJSON() as any;
+    const metadata = response.metadata?.toJSON() as { toolCalls?: Array<{ name: string; arguments: Record<string, string> }> };
     expect(metadata?.toolCalls).toBeDefined();
     if (metadata?.toolCalls) {
       expect(metadata.toolCalls[0].name).toBe('weather');

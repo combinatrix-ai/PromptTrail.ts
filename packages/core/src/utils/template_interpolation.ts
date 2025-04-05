@@ -3,12 +3,12 @@ import type { Metadata } from '../metadata';
 /**
  * Type guard for Metadata interface
  */
-function isMetadata(value: unknown): value is Metadata<any> {
+function isMetadata(value: unknown): value is Metadata<Record<string, unknown>> {
   return (
     value !== null &&
     typeof value === 'object' &&
     'get' in value &&
-    typeof (value as Metadata<any>).get === 'function'
+    typeof (value as Metadata<Record<string, unknown>>).get === 'function'
   );
 }
 
@@ -25,9 +25,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param metadata The metadata containing values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<T extends Record<string, unknown>>(
+export function interpolateTemplate(
   template: string,
-  metadata: Metadata<T>,
+  metadata: Metadata<Record<string, unknown>>,
 ): string {
   return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
     const keys = path.split('.');

@@ -21,7 +21,7 @@ export abstract class Model<TConfig extends ModelConfig = ModelConfig> {
   /**
    * Format a tool for the specific model implementation
    */
-  protected abstract formatTool(tool: Tool<SchemaType>): Record<string, any>;
+  protected abstract formatTool(tool: Tool<SchemaType>): Record<string, unknown>;
 
   /**
    * Validate the model configuration

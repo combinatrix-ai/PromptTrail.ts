@@ -114,7 +114,7 @@ export class MockAnthropicModel {
 
       try {
         // Execute the tool
-        const result = await tool.execute(args as any);
+        const result = await tool.execute(args as unknown as Parameters<typeof tool.execute>[0]);
 
         // Log the result
         console.log(`Tool ${name} executed with result:`, result);

@@ -9,11 +9,11 @@ import type { SessionTransformer } from '../utils/session_transformer';
  * @param transformer The transformer to apply
  * @returns A template-like object that can execute the transformer
  */
-export function createTransformerTemplate(
-  transformer: SessionTransformer<any, any>,
+export function createTransformerTemplate<TInput extends Record<string, unknown>, TOutput extends Record<string, unknown>>(
+  transformer: SessionTransformer<TInput, TOutput>,
 ) {
   return {
-    execute: async (session: Session): Promise<Session> => {
+    execute: async (session: Session<TInput>): Promise<Session<TOutput>> => {
       return transformer.transform(session);
     },
   };

@@ -101,7 +101,7 @@ export function extractPattern<T extends Record<string, unknown>>(
             ? option.transform(extractedContent)
             : extractedContent;
 
-          extractedData[option.key] = transformedValue as any;
+          extractedData[option.key] = transformedValue as T[keyof T];
           matched = true;
           break; // Stop after first match unless we want to collect all matches
         }
@@ -109,7 +109,7 @@ export function extractPattern<T extends Record<string, unknown>>(
 
       // Apply default value if no match found and default is provided
       if (!matched && option.defaultValue !== undefined) {
-        extractedData[option.key] = option.defaultValue as any;
+        extractedData[option.key] = option.defaultValue as T[keyof T];
       }
     }
 

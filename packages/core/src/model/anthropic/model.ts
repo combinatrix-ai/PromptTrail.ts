@@ -9,14 +9,13 @@ import type {
 import { MCPClientWrapper } from './mcp';
 import type { MCPServerConfig } from './mcp';
 
-interface AnthropicToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-}
+//   id: string;
+//   type: 'function';
+//   function: {
+//     name: string;
+//     arguments: Record<string, unknown>;
+//   };
+// }
 
 interface TextBlock {
   type: 'text';
@@ -103,7 +102,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
     }
   }
 
-  protected formatTool(tool: Tool<SchemaType>): AnthropicTool {
+  protected formatTool(tool: Tool<SchemaType>): Record<string, unknown> {
     return {
       name: tool.name,
       description: tool.description,
@@ -146,14 +145,14 @@ export class AnthropicModel extends Model<AnthropicConfig> {
 
     // Get all tools, including MCP tools
     const allTools = this.getAllTools();
-    const formattedTools = allTools.map((tool) => this.formatTool(tool));
+    const formattedTools = allTools.map((tool) => this.formatTool(tool) as unknown as AnthropicTool);
     const response = (await this.client.messages.create({
       model: this.config.modelName,
       messages,
       system,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens || 1024,
-      tools: formattedTools as any,
+      tools: formattedTools,
     })) as unknown as AnthropicResponse;
 
     const metadata = createMetadata<AssistantMetadata>();
@@ -179,7 +178,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
     // If there are tool calls, execute them
     const toolCalls = metadata.get('toolCalls');
     if (toolCalls && toolCalls.length > 0) {
-      await this.handleToolCalls(toolCalls, session);
+      await this.handleToolCalls(toolCalls);
     }
 
     return {
@@ -198,10 +197,10 @@ export class AnthropicModel extends Model<AnthropicConfig> {
       arguments: Record<string, unknown>;
       id: string;
     }>,
-    session: Session,
+    /* unused */
   ): Promise<void> {
     for (const toolCall of toolCalls) {
-      const { name, arguments: args, id } = toolCall;
+      const { name, arguments: args } = toolCall; // id is unused
 
       // Find the tool
       const tool = this.getAllTools().find((t) => t.name === name);
@@ -213,7 +212,7 @@ export class AnthropicModel extends Model<AnthropicConfig> {
 
       try {
         // Execute the tool
-        const result = await tool.execute(args as any);
+        const result = await tool.execute(args as unknown as Parameters<typeof tool.execute>[0]);
 
         // Add the result to the session
         // Note: This would require modifying the Session interface to allow adding messages

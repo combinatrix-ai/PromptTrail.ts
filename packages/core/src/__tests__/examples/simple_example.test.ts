@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LinearTemplate, OpenAIModel, createSession } from '../../../src';
-import { createMessage } from '../utils';
 
 // Mock OpenAI model
 vi.mock('../../../src/model/openai/model', () => {
@@ -104,7 +103,7 @@ describe('Simple Example', () => {
       .addAssistant({ model });
 
     // Execute the template with print mode enabled
-    const session = await chat.execute(createSession({ print: true }));
+    await chat.execute(createSession({ print: true }));
 
     // Verify console.log was called for each message
     expect(consoleSpy).toHaveBeenCalledTimes(3);

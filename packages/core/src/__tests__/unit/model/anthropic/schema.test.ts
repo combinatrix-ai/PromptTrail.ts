@@ -22,7 +22,7 @@ describe('SchemaTemplate with Anthropic', () => {
 
     // Create a mock Anthropic model
     model = {
-      send: vi.fn().mockImplementation(async (session) => {
+      send: vi.fn().mockImplementation(async (/* unused */) => {
         // Default implementation for Anthropic response
         return {
           type: 'assistant',

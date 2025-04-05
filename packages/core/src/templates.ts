@@ -1,4 +1,5 @@
 import { createMetadata } from './metadata';
+import type { Metadata } from './metadata';
 import type { InputSource } from './input_source';
 import { DefaultInputSource, CallbackInputSource } from './input_source';
 import type { Model } from './model/base';
@@ -6,7 +7,7 @@ import type { Session } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { createTransformerTemplate } from './templates/transformer_template';
-import type { SchemaType, InferSchemaType } from './tool';
+import type { SchemaType } from './tool';
 import { z } from 'zod';
 
 /**
@@ -29,7 +30,7 @@ export abstract class Template<
     content: string,
     session: Session<TInput>,
   ): string {
-    return interpolateTemplate(content, session.metadata);
+    return interpolateTemplate(content, session.metadata as unknown as Metadata<Record<string, unknown>>);
   }
 
   abstract execute(session: Session<TInput>): Promise<Session<TOutput>>;
@@ -264,8 +265,10 @@ export class LinearTemplate extends Template {
    * @param transformer The transformer to add
    * @returns The template instance for chaining
    */
-  addTransformer(transformer: SessionTransformer<any, any>): this {
-    this.templates.push(createTransformerTemplate(transformer) as Template);
+  addTransformer<TTransIn extends Record<string, unknown>, TTransOut extends Record<string, unknown>>(
+    transformer: SessionTransformer<TTransIn, TTransOut>
+  ): this {
+    this.templates.push(createTransformerTemplate<TTransIn, TTransOut>(transformer) as Template);
     return this;
   }
 

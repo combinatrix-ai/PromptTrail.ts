@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { z } from 'zod';
 import { createSession } from '../../session';
 import { SchemaTemplate } from '../../templates/schema_template';
 import { OpenAIModel } from '../../model/openai/model';
+import { Model } from '../../model/base';
+import { ModelConfig } from '../../types';
 import {
   defineSchema,
   createStringProperty,
@@ -15,7 +16,7 @@ import { createMetadata } from '../../metadata';
 vi.mock('../../model/openai/model');
 
 describe('SchemaTemplate', () => {
-  let model: OpenAIModel;
+  let model: OpenAIModel & Model<ModelConfig>;
 
   beforeEach(() => {
     // Reset mocks
@@ -23,7 +24,7 @@ describe('SchemaTemplate', () => {
 
     // Create a mock OpenAI model
     model = {
-      send: vi.fn().mockImplementation(async (session) => {
+      send: vi.fn().mockImplementation(async (/* unused */) => {
         // Default implementation for the first test
         return {
           type: 'assistant',
@@ -36,11 +37,11 @@ describe('SchemaTemplate', () => {
       formatTool: vi.fn(),
       validateConfig: vi.fn(),
       config: {},
-    } as unknown as OpenAIModel;
+    } as unknown as OpenAIModel & Model<ModelConfig>;
 
     // Mock the instanceof check
     Object.defineProperty(model, Symbol.hasInstance, {
-      value: (obj: any) => true,
+      value: (/* unused */) => true,
     });
   });
 
@@ -203,7 +204,7 @@ describe('SchemaTemplate', () => {
             ],
           },
         }),
-      } as any;
+      } as unknown as { type: 'assistant'; content: string; metadata: ReturnType<typeof createMetadata> };
     });
 
     // Execute the template

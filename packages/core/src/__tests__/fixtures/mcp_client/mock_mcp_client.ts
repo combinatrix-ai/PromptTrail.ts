@@ -9,6 +9,11 @@ import { createTool } from '../../../tool';
 import type { MCPServerConfig } from '../../../model/anthropic/mcp';
 import * as http from 'http';
 
+type PropertySchema =
+  | { type: 'string'; description: string }
+  | { type: 'number'; description: string }
+  | { type: 'boolean'; description: string };
+
 /**
  * Mock MCP client wrapper for testing
  */
@@ -62,7 +67,7 @@ export class MockMCPClientWrapper {
           name: def.name,
           description: def.description || `MCP Tool: ${def.name}`,
           schema: {
-            properties: def.inputSchema.properties as Record<string, any>,
+            properties: def.inputSchema.properties as Record<string, PropertySchema>,
             required: def.inputSchema.required || [],
           },
           execute: async (args) => {
@@ -75,7 +80,7 @@ export class MockMCPClientWrapper {
               if (result.isError) {
                 const errorMsg =
                   result.content
-                    ?.map((c: any) => c.text)
+                    ?.map((c: { text?: string }) => c.text)
                     .filter(Boolean)
                     .join('\n') || 'Unknown error';
 
@@ -84,7 +89,7 @@ export class MockMCPClientWrapper {
 
               // Concatenate text outputs
               const outputText = result.content
-                ?.map((c: any) => {
+                ?.map((c: { type?: string; text?: string; resource?: { text?: string } }) => {
                   if (c.type === 'text') return c.text;
                   if (c.type === 'resource' && c.resource?.text)
                     return c.resource.text;
@@ -145,7 +150,7 @@ export class MockMCPClientWrapper {
       }
 
       return result.contents
-        .map((content: any) => content.text || '')
+        .map((content: { text?: string }) => content.text || '')
         .filter(Boolean)
         .join('\n');
     } catch (error) {
@@ -168,7 +173,7 @@ export class MockMCPClientWrapper {
     try {
       const result = await this.makeRequest('listResources', {});
 
-      return (result.resources || []).map((resource: any) => ({
+      return (result.resources || []).map((resource: { uri: string; name: string; description?: string }) => ({
         uri: resource.uri,
         name: resource.name,
         description: resource.description,
@@ -183,7 +188,25 @@ export class MockMCPClientWrapper {
   /**
    * Make a request to the MCP server
    */
-  private makeRequest(method: string, params: any): Promise<any> {
+  private makeRequest(method: string, params: Record<string, unknown>): Promise<{
+    tools?: Array<{ 
+      name: string; 
+      description?: string; 
+      inputSchema: { 
+        properties: Record<string, unknown>; 
+        required?: string[] 
+      } 
+    }>;
+    content?: Array<{ 
+      type?: string; 
+      text?: string; 
+      resource?: { text?: string } 
+    }>;
+    isError?: boolean;
+    contents?: Array<{ text?: string }>;
+    resources?: Array<{ uri: string; name: string; description?: string }>;
+    [key: string]: unknown;
+  }> {
     return new Promise((resolve, reject) => {
       const data = JSON.stringify({
         jsonrpc: '2.0',

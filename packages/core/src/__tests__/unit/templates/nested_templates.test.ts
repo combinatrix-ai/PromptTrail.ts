@@ -1,17 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   LinearTemplate,
   LoopTemplate,
   SystemTemplate,
   UserTemplate,
-  AssistantTemplate,
   SubroutineTemplate,
   IfTemplate,
 } from '../../../templates';
-import { createSession } from '../../../session';
+import { createSession, type Session } from '../../../session';
 import { createMetadata } from '../../../metadata';
 import { Model } from '../../../model/base';
-import type { Session, ModelConfig } from '../../../types';
+import type { ModelConfig, Message } from '../../../types';
 
 // Create a mock model for testing
 class MockModel extends Model<ModelConfig> {
@@ -22,7 +21,7 @@ class MockModel extends Model<ModelConfig> {
     });
   }
 
-  async send(session: Session): Promise<any> {
+  async send(/* unused */): Promise<Message> {
     const response = this.responses.shift() || 'Default mock response';
     return {
       type: 'assistant',
@@ -31,11 +30,11 @@ class MockModel extends Model<ModelConfig> {
     };
   }
 
-  async *sendAsync(): AsyncGenerator<any, void, unknown> {
-    throw new Error('Not implemented');
+  async *sendAsync(): AsyncGenerator<Message, void, unknown> {
+    yield { type: 'assistant', content: 'Mock streaming response', metadata: createMetadata() };
   }
 
-  protected formatTool(): Record<string, any> {
+  protected formatTool(): Record<string, unknown> {
     throw new Error('Not implemented');
   }
 
@@ -66,7 +65,7 @@ describe('Nested Templates', () => {
       .addUser('Second question')
       .addAssistant({ model: mockModel })
       .addUser('Follow-up question')
-      .setExitCondition((session: Session) => {
+      .setExitCondition((session: Session<Record<string, unknown>>) => {
         // Exit after one iteration
         const messages = Array.from(session.messages);
         return messages.length >= 5; // System + First Q&A + Second Q&A
@@ -76,8 +75,8 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Final question')
         .addAssistant({ model: mockModel }),
-      initWith: (parentSession: Session) => createSession(),
-      squashWith: (parentSession, childSession) => {
+      initWith: (/* unused */) => createSession<Record<string, unknown>>(),
+      squashWith: (parentSession: Session<Record<string, unknown>>, childSession: Session<Record<string, unknown>>) => {
         // Create a new session with all messages from both sessions
         let result = parentSession;
         const childMessages = Array.from(childSession.messages);
@@ -141,17 +140,17 @@ describe('Nested Templates', () => {
       template: new LinearTemplate()
         .addUser('Tell me about ${topic}.')
         .addAssistant({ model: mockModel }),
-      initWith: (parentSession: Session) => {
+      initWith: (_parentSession: Session<Record<string, unknown>>) => {
         // Copy metadata from parent to child
-        const childSession = createSession();
+        const childSession = createSession<Record<string, unknown>>();
         childSession.metadata.set(
           'username',
-          parentSession.metadata.get('username'),
+          _parentSession.metadata.get('username'),
         );
-        childSession.metadata.set('topic', parentSession.metadata.get('topic'));
+        childSession.metadata.set('topic', _parentSession.metadata.get('topic'));
         return childSession;
       },
-      squashWith: (parentSession, childSession) => {
+      squashWith: (parentSession: Session<Record<string, unknown>>, childSession: Session<Record<string, unknown>>) => {
         // Create a new session with all messages from both sessions
         let result = parentSession;
         const childMessages = Array.from(childSession.messages);
@@ -198,13 +197,13 @@ describe('Nested Templates', () => {
       .addSystem('Conditional template test')
       // First level condition
       .addIf({
-        condition: (session) => Boolean(session.metadata.get('condition')),
+        condition: (session: Session<Record<string, unknown>>) => Boolean(session.metadata.get('condition')),
         thenTemplate: new LinearTemplate()
           .addUser('Question when condition is true')
           .addAssistant({ model: mockModel })
           // Nested condition
           .addIf({
-            condition: (session) => {
+            condition: (session: Session<Record<string, unknown>>) => {
               // Check if the last message contains a specific text
               const lastMessage = session.getLastMessage();
               return lastMessage?.content.includes('Response A') ?? false;

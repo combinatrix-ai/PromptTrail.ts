@@ -74,7 +74,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
 
             if (options.headingMap[trimmedHeading]) {
               const key = options.headingMap[trimmedHeading] as keyof T;
-              extractedData[key] = content.trim() as any;
+              extractedData[key] = content.trim() as T[keyof T];
             }
           }
         }
@@ -88,7 +88,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
 
             if (options.codeBlockMap[language]) {
               const key = options.codeBlockMap[language] as keyof T;
-              extractedData[key] = code.trim() as any;
+              extractedData[key] = code.trim() as T[keyof T];
             }
           }
         }
