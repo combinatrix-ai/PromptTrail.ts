@@ -57,19 +57,25 @@ export class SchemaTemplate<
     }
 
     const messages = session.messages;
-    
-    const aiMessages = messages.length > 0 
-      ? messages.map((msg: TMessage) => {
-          if (msg.type === 'system') {
-            return { role: 'system' as const, content: msg.content };
-          } else if (msg.type === 'user') {
+
+    const aiMessages =
+      messages.length > 0
+        ? messages.map((msg: TMessage) => {
+            if (msg.type === 'system') {
+              return { role: 'system' as const, content: msg.content };
+            } else if (msg.type === 'user') {
+              return { role: 'user' as const, content: msg.content };
+            } else if (msg.type === 'assistant') {
+              return { role: 'assistant' as const, content: msg.content };
+            }
             return { role: 'user' as const, content: msg.content };
-          } else if (msg.type === 'assistant') {
-            return { role: 'assistant' as const, content: msg.content };
-          }
-          return { role: 'user' as const, content: msg.content };
-        })
-      : [{ role: 'user' as const, content: 'Generate structured data according to the schema.' }];
+          })
+        : [
+            {
+              role: 'user' as const,
+              content: 'Generate structured data according to the schema.',
+            },
+          ];
 
     let lastError: Error | null = null;
     let currentAttempt = 0;
@@ -77,18 +83,20 @@ export class SchemaTemplate<
     while (currentAttempt < this.maxAttempts) {
       currentAttempt++;
       try {
-        const model = this.generateOptions.provider.type === 'openai' 
-          ? openai(this.generateOptions.provider.modelName)
-          : anthropic(this.generateOptions.provider.modelName);
-        
+        const model =
+          this.generateOptions.provider.type === 'openai'
+            ? openai(this.generateOptions.provider.modelName)
+            : anthropic(this.generateOptions.provider.modelName);
+
         if (this.generateOptions.provider.apiKey) {
           if (this.generateOptions.provider.type === 'openai') {
             process.env.OPENAI_API_KEY = this.generateOptions.provider.apiKey;
           } else if (this.generateOptions.provider.type === 'anthropic') {
-            process.env.ANTHROPIC_API_KEY = this.generateOptions.provider.apiKey;
+            process.env.ANTHROPIC_API_KEY =
+              this.generateOptions.provider.apiKey;
           }
         }
-        
+
         const result = await generateText({
           model,
           messages: aiMessages,
@@ -99,7 +107,7 @@ export class SchemaTemplate<
         });
 
         const { experimental_output } = result;
-        
+
         if (!experimental_output) {
           throw new Error('No structured output generated');
         }
@@ -112,33 +120,53 @@ export class SchemaTemplate<
 
         if (this.functionName && result.response) {
           let toolCalls = session.metadata.get('toolCalls');
-          
+
           if (!toolCalls && result.response.body) {
-            const responseBody = result.response.body as Record<string, unknown>;
-            if ('tool_calls' in responseBody && Array.isArray(responseBody.tool_calls)) {
-              toolCalls = responseBody.tool_calls as unknown as TInput["toolCalls"];
+            const responseBody = result.response.body as Record<
+              string,
+              unknown
+            >;
+            if (
+              'tool_calls' in responseBody &&
+              Array.isArray(responseBody.tool_calls)
+            ) {
+              toolCalls =
+                responseBody.tool_calls as unknown as TInput['toolCalls'];
             }
           }
-          
+
           if (toolCalls && Array.isArray(toolCalls)) {
-            const matchingToolCall = toolCalls.find((call: Record<string, unknown>) => {
-              if (typeof call.name === 'string' && call.name === this.functionName) {
-                return true;
-              }
-              if (call.function && typeof call.function === 'object' && call.function !== null && 
-                  'name' in call.function && typeof call.function.name === 'string' && 
-                  call.function.name === this.functionName) {
-                return true;
-              }
-              return false;
-            });
-            
+            const matchingToolCall = toolCalls.find(
+              (call: Record<string, unknown>) => {
+                if (
+                  typeof call.name === 'string' &&
+                  call.name === this.functionName
+                ) {
+                  return true;
+                }
+                if (
+                  call.function &&
+                  typeof call.function === 'object' &&
+                  call.function !== null &&
+                  'name' in call.function &&
+                  typeof call.function.name === 'string' &&
+                  call.function.name === this.functionName
+                ) {
+                  return true;
+                }
+                return false;
+              },
+            );
+
             if (matchingToolCall) {
               let args;
-              
+
               if (matchingToolCall.arguments) {
                 args = matchingToolCall.arguments;
-              } else if (matchingToolCall.function && matchingToolCall.function.arguments) {
+              } else if (
+                matchingToolCall.function &&
+                matchingToolCall.function.arguments
+              ) {
                 try {
                   if (typeof matchingToolCall.function.arguments === 'string') {
                     args = JSON.parse(matchingToolCall.function.arguments);
@@ -149,7 +177,7 @@ export class SchemaTemplate<
                   console.error('Failed to parse function arguments:', error);
                 }
               }
-              
+
               if (args) {
                 return resultSession.updateMetadata({
                   structured_output: args,
@@ -164,16 +192,23 @@ export class SchemaTemplate<
         }) as unknown as ISession<TOutput>;
       } catch (error) {
         lastError = error as Error;
-        console.error(`Attempt ${currentAttempt}/${this.maxAttempts} failed to generate structured output:`, error);
-        
+        console.error(
+          `Attempt ${currentAttempt}/${this.maxAttempts} failed to generate structured output:`,
+          error,
+        );
+
         if (currentAttempt >= this.maxAttempts) {
-          throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts: ${lastError.message}`);
+          throw new Error(
+            `Failed to generate structured output after ${this.maxAttempts} attempts: ${lastError.message}`,
+          );
         }
-        
+
         console.log(`Retrying... (${currentAttempt}/${this.maxAttempts})`);
       }
     }
 
-    throw new Error(`Failed to generate structured output after ${this.maxAttempts} attempts`);
+    throw new Error(
+      `Failed to generate structured output after ${this.maxAttempts} attempts`,
+    );
   }
 }

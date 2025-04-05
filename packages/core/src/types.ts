@@ -1,4 +1,3 @@
-
 import type { Metadata } from './metadata';
 
 /**
@@ -178,7 +177,7 @@ export interface IMCPTransport {
 export class PromptTrailError extends Error {
   /**
    * Creates a new PromptTrail error
-   * 
+   *
    * @param message - Error message
    * @param code - Error code
    */
@@ -197,7 +196,7 @@ export class PromptTrailError extends Error {
 export class ValidationError extends PromptTrailError {
   /**
    * Creates a new validation error
-   * 
+   *
    * @param message - Error message
    */
   constructor(message: string) {

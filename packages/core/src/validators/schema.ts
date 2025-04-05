@@ -20,7 +20,7 @@ export class JsonValidator extends BaseValidator {
     this.schema = options?.schema;
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     try {
       const json = JSON.parse(content);
 
@@ -32,7 +32,7 @@ export class JsonValidator extends BaseValidator {
           ) {
             return {
               isValid: false,
-              instruction: `Required field "${key}" is missing`
+              instruction: `Required field "${key}" is missing`,
             };
           }
         }
@@ -42,7 +42,7 @@ export class JsonValidator extends BaseValidator {
     } catch (error) {
       return {
         isValid: false,
-        instruction: `Invalid JSON: ${(error as Error).message}`
+        instruction: `Invalid JSON: ${(error as Error).message}`,
       };
     }
   }
@@ -64,12 +64,13 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
 
   constructor(options: { schema: T; description?: string }) {
     super({
-      description: options.description || 'Content must match the specified schema',
+      description:
+        options.description || 'Content must match the specified schema',
     });
     this.schema = options.schema;
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     try {
       const json = JSON.parse(content);
 
@@ -78,7 +79,7 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
       if (validationErrors.length > 0) {
         return {
           isValid: false,
-          instruction: `Schema validation failed: ${validationErrors.join(', ')}`
+          instruction: `Schema validation failed: ${validationErrors.join(', ')}`,
         };
       }
 
@@ -86,7 +87,7 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
     } catch (error) {
       return {
         isValid: false,
-        instruction: `Invalid JSON: ${(error as Error).message}`
+        instruction: `Invalid JSON: ${(error as Error).message}`,
       };
     }
   }
@@ -109,7 +110,10 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
       const propValue = value[key];
       if (propValue !== undefined) {
         const typedPropSchema = propSchema as { type: string };
-        if (typedPropSchema.type === 'string' && typeof propValue !== 'string') {
+        if (
+          typedPropSchema.type === 'string' &&
+          typeof propValue !== 'string'
+        ) {
           errors.push(`Property ${key} must be a string`);
         } else if (
           typedPropSchema.type === 'number' &&

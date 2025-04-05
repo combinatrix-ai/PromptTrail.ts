@@ -10,29 +10,32 @@ import { BaseValidator, type TValidationResult } from './base';
 export class CustomValidator extends BaseValidator {
   private validateFn: (
     content: string,
-    context?: ISession
+    context?: ISession,
   ) => Promise<TValidationResult> | TValidationResult;
 
   constructor(
     validateFn: (
       content: string,
-      context?: ISession
+      context?: ISession,
     ) => Promise<TValidationResult> | TValidationResult,
     options?: {
       description?: string;
       maxAttempts?: number;
       raiseErrorAfterMaxAttempts?: boolean;
-    }
+    },
   ) {
     super({
       description: options?.description || 'Custom validation',
       maxAttempts: options?.maxAttempts,
-      raiseErrorAfterMaxAttempts: options?.raiseErrorAfterMaxAttempts
+      raiseErrorAfterMaxAttempts: options?.raiseErrorAfterMaxAttempts,
     });
     this.validateFn = validateFn;
   }
 
-  async validate(content: string, context: ISession): Promise<TValidationResult> {
+  async validate(
+    content: string,
+    context: ISession,
+  ): Promise<TValidationResult> {
     return this.validateFn(content, context);
   }
 

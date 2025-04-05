@@ -14,7 +14,7 @@ describe('Schema validation', () => {
       expect(personSchema._def.shape()).toHaveProperty('name');
       expect(personSchema._def.shape()).toHaveProperty('age');
       expect(personSchema._def.shape()).toHaveProperty('isStudent');
-      
+
       const validPerson = {
         name: 'John Doe',
         age: 30,
@@ -32,9 +32,9 @@ describe('Schema validation', () => {
           city: z.string().describe('City of headquarters'),
           country: z.string().describe('Country of headquarters'),
         }),
-        isPublic: z.boolean().describe(
-          'Whether the company is publicly traded',
-        ),
+        isPublic: z
+          .boolean()
+          .describe('Whether the company is publicly traded'),
       });
 
       expect(companySchema).toBeDefined();
@@ -42,7 +42,7 @@ describe('Schema validation', () => {
       expect(companySchema._def.shape()).toHaveProperty('founded');
       expect(companySchema._def.shape()).toHaveProperty('headquarters');
       expect(companySchema._def.shape()).toHaveProperty('isPublic');
-      
+
       const validCompany = {
         name: 'Acme Corp',
         founded: 1999,
