@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
 import { LinearTemplate, LoopTemplate } from '../../templates';
 import { extractMarkdown } from '../../utils/markdown_extractor';
-import { RegexMatchValidator } from '../../validators/text';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
@@ -136,10 +135,10 @@ The weather in San Francisco is currently 72°F and sunny.
    */
 
   it('should execute a complete conversation with validation', async () => {
-    const _contentValidator = new RegexMatchValidator({
-      regex: /help/i,
-      description: 'Response must contain the word "help"',
-    });
+    // const _contentValidator = new RegexMatchValidator({
+    //   regex: /help/i,
+    //   description: 'Response must contain the word "help"',
+    // });
 
     const linearTemplate = new LinearTemplate()
       .addSystem('You are a helpful assistant.')

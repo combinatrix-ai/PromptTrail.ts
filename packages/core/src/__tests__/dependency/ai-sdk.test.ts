@@ -92,7 +92,7 @@ describe('Tool Integration', () => {
       execute: async (input) => {
         const location = input.location;
         // Call weather API
-        const current = '72°F and Thunderstorms';
+        // const _current = '72°F and Thunderstorms';
         const forecast = [
           'Today: Thunderstorms',
           'Tomorrow: Cloudy',
@@ -188,7 +188,7 @@ describe('Tool Integration', () => {
         expect(result.object.destination).toContain('Tokyo');
         expect(result.object.activities.length).toBeGreaterThan(0);
         expect(result.object.accommodations.length).toBeGreaterThan(0);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If the test fails due to API issues, log the error but don't fail the test
         console.error('Structured output generation failed:', error.message);
         // Skip the test instead of failing
@@ -221,7 +221,7 @@ describe('Tool Integration', () => {
         });
         // Should not reach here
         expect(true).toBe(false);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Verify error handling with flexible assertions
         expect(error).toBeDefined();
         // The exact error type might vary, but it should have some properties

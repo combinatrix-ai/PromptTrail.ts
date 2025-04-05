@@ -181,11 +181,11 @@ const TemplateNodeComponent: React.FC<TemplateNodeProps> = ({
         const exitCondition = node.data.exitCondition
           ? String(node.data.exitCondition)
           : '';
-        const name = node.data.name ? String(node.data.name) : undefined;
+        const _name = node.data.name ? String(node.data.name) : undefined;
         return (
           <LoopTemplateContent
             exitCondition={exitCondition}
-            name={name}
+            name={_name}
             nodeId={node.id}
           />
         );
@@ -199,21 +199,21 @@ const TemplateNodeComponent: React.FC<TemplateNodeProps> = ({
         const squashWith = node.data.squashWith
           ? String(node.data.squashWith)
           : undefined;
-        const name = node.data.name ? String(node.data.name) : undefined;
+        const _name = node.data.name ? String(node.data.name) : undefined;
         return (
           <SubroutineTemplateContent
             templateId={templateId}
             initWith={initWith}
             squashWith={squashWith}
-            name={name}
+            name={_name}
             nodeId={node.id}
           />
         );
       }
 
       case 'Linear': {
-        const name = node.data.name ? String(node.data.name) : undefined;
-        return <LinearTemplateContent name={name} nodeId={node.id} />;
+        const _name = node.data.name ? String(node.data.name) : undefined;
+        return <LinearTemplateContent name={_name} nodeId={node.id} />;
       }
 
       default:

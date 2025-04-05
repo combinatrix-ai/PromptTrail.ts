@@ -43,7 +43,7 @@ vi.mock('../../../generate', () => {
 // Helper function to create mock generate options with predefined responses
 function createMockGenerateOptions(responses: string[]): GenerateOptions {
   // Set the mock responses for generateText
-  (generateText as any).mockImplementation(async () => {
+  vi.mocked(generateText).mockImplementation(async () => {
     const response = responses.shift();
     if (!response) throw new Error('No more mock responses');
     return {

@@ -227,7 +227,7 @@ function factorial(n: number): number {
 
   describe('Validation', () => {
     it('should validate assistant responses', async () => {
-      const { RegexMatchValidator } = await import('../../validators');
+      await import('../../validators');
       
       //   regex: /```json[\s\S]*```/,
       //   description: 'Response must contain a JSON code block',

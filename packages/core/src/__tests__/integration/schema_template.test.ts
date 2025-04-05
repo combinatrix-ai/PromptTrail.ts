@@ -18,15 +18,15 @@ vi.mock('ai', () => {
 });
 
 vi.mock('../../schema_template', async () => {
-  const actual = await vi.importActual('../../schema_template');
+  // const _actual = await vi.importActual('../../schema_template');
   return {
     SchemaTemplate: class MockSchemaTemplate {
-      options: any;
-      constructor(options: any) {
+      options: unknown;
+      constructor(options: unknown) {
         this.options = options;
       }
-      async execute(session) {
-        return session.updateMetadata({
+      async execute(_session) {
+        return _session.updateMetadata({
           structured_output: {
             name: "Test Product",
             price: 99.99,

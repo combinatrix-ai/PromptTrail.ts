@@ -43,7 +43,7 @@ export function createWeatherTool() {
     }),
     execute: async (input: { location: string }) => {
       const location = input.location;
-      const _weatherCondition = '72°F and Thunderstorms';
+      // const _weatherCondition = '72°F and Thunderstorms';
       const forecast = [
         'Today: Thunderstorms',
         'Tomorrow: Cloudy',
