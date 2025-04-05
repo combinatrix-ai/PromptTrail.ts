@@ -1,7 +1,7 @@
 /**
  * Schema validators for structured data validation
  */
-import { type ISession, type ISchemaType } from '../types';
+import { type ISchemaType } from '../types';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**
@@ -20,7 +20,7 @@ export class JsonValidator extends BaseValidator {
     this.schema = options?.schema;
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     try {
       const json = JSON.parse(content);
 
@@ -69,7 +69,7 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
     this.schema = options.schema;
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     try {
       const json = JSON.parse(content);
 

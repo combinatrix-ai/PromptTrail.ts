@@ -1,6 +1,7 @@
 import * as readline from 'node:readline/promises';
 import type { Metadata } from './metadata';
 import { type IValidator } from './validators/base';
+import type { ISession } from './types';
 
 /**
  * Interface for input sources that can provide user input
@@ -28,6 +29,7 @@ export class StaticInputSource implements InputSource {
     this.input = input;
   }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getInput(_context?: { metadata?: Metadata }): Promise<string> {
     return this.input;
   }
@@ -78,7 +80,7 @@ export class CallbackInputSource implements InputSource {
       attempts++;
       
       const input = await this.callback(context || {});
-      const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as any);
+      const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as ISession);
       
       if (result.isValid) {
         return input;
@@ -146,7 +148,7 @@ export class CLIInputSource implements InputSource {
       const defaultInput = this.defaultValue;
       
       if (this.validator) {
-        const result = await this.validator.validate(defaultInput, { metadata: context?.metadata || {} } as any);
+        const result = await this.validator.validate(defaultInput, { metadata: context?.metadata || {} } as ISession);
         if (!result.isValid) {
           if (this.raiseError) {
             throw new Error(`Default input validation failed: ${result.instruction || 'Invalid input'}`);
@@ -181,7 +183,7 @@ export class CLIInputSource implements InputSource {
       }
       
       if (this.validator) {
-        const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as any);
+        const result = await this.validator.validate(input, { metadata: context?.metadata || {} } as ISession);
         if (result.isValid) {
           return input;
         }

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { generateText } from './generate';
 import { type GenerateOptions } from './generate_options';
 import type { ISession, ISchemaType } from './types';
-import { type IValidator, type TValidationResult } from './validators/base';
+import { type IValidator } from './validators/base';
 import { CustomValidator } from './validators/custom';
 
 /**
@@ -161,7 +161,7 @@ export class UserTemplate extends Template {
         
         result = await this.options.validator.validate(input, updatedSession);
         
-        const validator = this.options.validator as any;
+        const validator = this.options.validator as { maxAttempts?: number; raiseErrorAfterMaxAttempts?: boolean };
         if (validator.maxAttempts && attempts >= validator.maxAttempts) {
           if (validator.raiseErrorAfterMaxAttempts) {
             throw new Error(`Input validation failed after ${attempts} attempts: ${result.isValid ? '' : result.instruction}`);
@@ -249,7 +249,7 @@ export class AssistantTemplate<
       );
       
       if (this.options.validator) {
-        const result = await this.options.validator.validate(interpolatedContent, session.metadata as any);
+        const result = await this.options.validator.validate(interpolatedContent, session as ISession);
         if (!result.isValid) {
           if (this.options.raiseError) {
             throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
@@ -276,7 +276,7 @@ export class AssistantTemplate<
       
       // Cast session to any to avoid type issues with the generateText function
       const response = await generateText(
-        session as any,
+        session as ISession,
         this.options.generateOptions,
       );
       
@@ -287,7 +287,7 @@ export class AssistantTemplate<
         ) as unknown as ISession<TOutput>;
       }
       
-      const result = await this.options.validator.validate(response.content, session.metadata as any);
+      const result = await this.options.validator.validate(response.content, session as ISession);
       if (result.isValid) {
         return session.addMessage(
           response,
@@ -302,7 +302,7 @@ export class AssistantTemplate<
     }
     
     const finalResponse = await generateText(
-      session as any,
+      session as ISession,
       this.options.generateOptions,
     );
     
@@ -323,7 +323,7 @@ export class AssistantTemplate<
 
         // Get the tool from the generateOptions
         const tools = this.options.generateOptions.tools || {};
-        const tool = tools[toolName] as any; // Cast to any to avoid type issues
+        const tool = tools[toolName] as { execute: (args: Record<string, unknown>, context: { toolCallId: string }) => Promise<unknown> }; // Cast to specific type
 
         if (tool && typeof tool.execute === 'function') {
           try {
@@ -344,8 +344,8 @@ export class AssistantTemplate<
 
             // Cast to any to avoid type issues
             updatedSession = (await toolResultTemplate.execute(
-              updatedSession as any,
-            )) as any;
+              updatedSession as ISession<Record<string, unknown>>,
+            )) as ISession<TOutput>;
           } catch (error) {
             // If the tool execution fails, add an error message as the tool result
             const errorMessage =
@@ -360,8 +360,8 @@ export class AssistantTemplate<
 
             // Cast to any to avoid type issues
             updatedSession = (await toolResultTemplate.execute(
-              updatedSession as any,
-            )) as any;
+              updatedSession as ISession<Record<string, unknown>>,
+            )) as ISession<TOutput>;
           }
         }
       }
@@ -427,7 +427,8 @@ export class IfTemplate extends Template {
 /**
  * Shared constructor type for mixins
  */
-type Constructor<T = {}> = new (...args: any[]) => T;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Constructor<T = Record<string, unknown>> = new (...args: any[]) => T;
 
 /**
  * Mixin functions for adding functionality to Templates have child classes
@@ -493,7 +494,8 @@ function WithIf<TBase extends Constructor<{ templates: Template[] }>>(
 
 function WithTransformer<
   TBase extends Constructor<{ templates: Template[] }>,
-  TInput extends Record<string, unknown> = Record<string, unknown>,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = Record<string, unknown>,
 >(Base: TBase) {
   return class extends Base {
@@ -527,13 +529,13 @@ function WithSchema<TBase extends Constructor<{ templates: Template[] }>>(
     ): Promise<this> {
       // Import SchemaTemplate dynamically to avoid circular dependency
       // Use dynamic import for ESM compatibility
-      const SchemaTemplateModule = await import('./templates/schema_template');
+      const SchemaTemplateModule = await import('./schema_template');
       const { SchemaTemplate } = SchemaTemplateModule;
 
       this.templates.push(
         new SchemaTemplate({
           generateOptions: options.generateOptions,
-          schema: schema,
+          schema: schema as z.ZodType,
           maxAttempts: options?.maxAttempts,
           functionName: options?.functionName,
         }),
@@ -577,8 +579,8 @@ export class LinearTemplate extends WithSchema(
                     this.templates = options?.templates || [];
                   }
 
-                  async execute(session: ISession<any>): Promise<ISession<any>> {
-                    let currentSession: ISession<any> = session;
+                  async execute(session: ISession<Record<string, unknown>>): Promise<ISession<Record<string, unknown>>> {
+                    let currentSession: ISession<Record<string, unknown>> = session;
                     for (const template of this.templates) {
                       currentSession = await template.execute(currentSession);
                     }
