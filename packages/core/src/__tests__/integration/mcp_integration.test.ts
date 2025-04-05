@@ -1,8 +1,4 @@
-/**
- * MCP Integration Tests
- * 
- * Tests for the Model Context Protocol (MCP) integration with ai-sdk
- */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   createGenerateOptions,

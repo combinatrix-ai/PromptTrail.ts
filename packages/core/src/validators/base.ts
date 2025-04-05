@@ -1,6 +1,4 @@
-/**
- * Base validator types and interfaces
- */
+
 import { type ISession } from '../types';
 
 /**

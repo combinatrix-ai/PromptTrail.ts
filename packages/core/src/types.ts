@@ -1,8 +1,4 @@
-/**
- * Core type definitions for PromptTrail
- * 
- * This file contains the fundamental types used throughout the framework
- */
+
 import type { Metadata } from './metadata';
 
 /**
