@@ -5,7 +5,6 @@ import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
 
 const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
-const _hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
 
 describe('SchemaTemplate API Integration', () => {
   let openaiOptions: GenerateOptions;
