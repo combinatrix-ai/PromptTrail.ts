@@ -20,7 +20,7 @@ export class RegexMatchValidator extends BaseValidator {
         : new RegExp(options.regex);
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     const passed = this.regex.test(content);
     return passed 
       ? { isValid: true } 
@@ -55,7 +55,7 @@ export class RegexNoMatchValidator extends BaseValidator {
         : new RegExp(options.regex);
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     const passed = !this.regex.test(content);
     return passed 
       ? { isValid: true } 
@@ -103,7 +103,7 @@ export class KeywordValidator extends BaseValidator {
     this.caseSensitive = options.caseSensitive || false;
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     const normalizedContent = !this.caseSensitive
       ? content.toLowerCase()
       : content;
@@ -157,7 +157,7 @@ export class LengthValidator extends BaseValidator {
     this.max = options.max;
   }
 
-  async validate(content: string, _context: ISession): Promise<TValidationResult> {
+  async validate(content: string, /* unused */): Promise<TValidationResult> {
     const length = content.length;
 
     let passed = true;
