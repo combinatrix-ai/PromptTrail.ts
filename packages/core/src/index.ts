@@ -27,8 +27,3 @@ export * from './validators';
  * Direct generateText implementation
  */
 export * from './generate';
-
-/**
- * Migration utilities
- */
-export * from './utils/migration';
