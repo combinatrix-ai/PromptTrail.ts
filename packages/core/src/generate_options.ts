@@ -7,7 +7,7 @@ import type { TProviderConfig } from './types';
 /**
  * Define a type for tool definitions since it's not exported from ai-sdk
  */
-type ToolDefinition<T = any> = any;
+type ToolDefinition<_T = unknown> = unknown;
 
 /**
  * Class-based implementation of GenerateOptions with fluent tool addition
@@ -51,7 +51,7 @@ export class GenerateOptions {
    * @param tool The tool definition
    * @returns The updated GenerateOptions instance for chaining
    */
-  addTool<T extends ToolDefinition<any>>(name: string, tool: T): this {
+  addTool<T extends ToolDefinition<unknown>>(name: string, tool: T): this {
     this.tools = {
       ...this.tools,
       [name]: tool,
