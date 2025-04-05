@@ -7,7 +7,6 @@ import type { TProviderConfig } from './types';
 /**
  * Define a type for tool definitions since it's not exported from ai-sdk
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type ToolDefinition<_T = unknown> = unknown;
 
 /**

@@ -527,7 +527,6 @@ function WithIf<TBase extends Constructor<{ templates: Template[] }>>(
 
 function WithTransformer<
   TBase extends Constructor<{ templates: Template[] }>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = Record<string, unknown>,
 >(Base: TBase) {
