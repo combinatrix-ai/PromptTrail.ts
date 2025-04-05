@@ -3,7 +3,7 @@
  *
  * This is a simplified mock implementation that uses our mock MCP client.
  */
-import type { Message, Session, AssistantMetadata } from '../../../types';
+import type { Message, AssistantMetadata } from '../../../types';
 import { createMetadata } from '../../../metadata';
 import type { MCPServerConfig } from '../../../model/anthropic/mcp';
 import { MockMCPClientWrapper } from '../mcp_client/mock_mcp_client';

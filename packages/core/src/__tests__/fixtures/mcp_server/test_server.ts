@@ -95,6 +95,7 @@ export class MCPTestServer {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: `Unknown method: ${method}` }));
         }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars, unused-imports/no-unused-vars
       } catch (_error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid request' }));
