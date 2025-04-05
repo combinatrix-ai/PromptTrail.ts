@@ -42,12 +42,10 @@ describe('AssistantTemplate', () => {
 
     it('should throw error when static content fails validation', async () => {
       const mockValidator: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Invalid content',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Invalid content',
+        }),
         getDescription: vi.fn().mockReturnValue('mock validator'),
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
@@ -133,12 +131,10 @@ describe('AssistantTemplate', () => {
 
     it('should throw error when generated content fails validation with default options', async () => {
       const mockValidator: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Invalid content',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Invalid content',
+        }),
         getDescription: vi.fn().mockReturnValue('mock validator'),
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
@@ -226,12 +222,10 @@ describe('AssistantTemplate', () => {
 
     it('should throw error when validation fails all attempts with raiseError=true', async () => {
       const mockValidator: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Invalid content',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Invalid content',
+        }),
         getDescription: vi.fn().mockReturnValue('mock validator'),
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
@@ -270,12 +264,10 @@ describe('AssistantTemplate', () => {
 
     it('should not throw error when validation fails all attempts with raiseError=false', async () => {
       const mockValidator: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Invalid content',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Invalid content',
+        }),
         getDescription: vi.fn().mockReturnValue('mock validator'),
         getErrorMessage: vi.fn().mockReturnValue('validation failed'),
       };
@@ -377,12 +369,10 @@ describe('AssistantTemplate', () => {
       };
 
       const mockValidator2: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Validator 2 failed',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Validator 2 failed',
+        }),
         getDescription: vi.fn().mockReturnValue('validator 2'),
         getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
       };
@@ -425,12 +415,10 @@ describe('AssistantTemplate', () => {
 
     it('should validate with AnyValidator when at least one validator passes', async () => {
       const mockValidator1: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Validator 1 failed',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Validator 1 failed',
+        }),
         getDescription: vi.fn().mockReturnValue('validator 1'),
         getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
       };
@@ -481,23 +469,19 @@ describe('AssistantTemplate', () => {
 
     it('should fail validation with AnyValidator when all validators fail', async () => {
       const mockValidator1: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Validator 1 failed',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Validator 1 failed',
+        }),
         getDescription: vi.fn().mockReturnValue('validator 1'),
         getErrorMessage: vi.fn().mockReturnValue('validation 1 failed'),
       };
 
       const mockValidator2: IValidator = {
-        validate: vi
-          .fn()
-          .mockResolvedValue({
-            isValid: false,
-            instruction: 'Validator 2 failed',
-          }),
+        validate: vi.fn().mockResolvedValue({
+          isValid: false,
+          instruction: 'Validator 2 failed',
+        }),
         getDescription: vi.fn().mockReturnValue('validator 2'),
         getErrorMessage: vi.fn().mockReturnValue('validation 2 failed'),
       };
