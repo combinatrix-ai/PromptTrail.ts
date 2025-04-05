@@ -92,7 +92,7 @@ export class UserTemplate extends Template {
   async execute(session: ISession): Promise<ISession> {
     let input: string;
     let updatedSession = session;
-    
+
     if (this.options.inputSource instanceof StaticInputSource) {
       // For static input sources
       input = interpolateTemplate(
@@ -108,69 +108,74 @@ export class UserTemplate extends Template {
         metadata: session.metadata,
       });
     }
-    
+
     if (this.options.onInput) {
       this.options.onInput(input);
     }
-    
+
     if (this.options.validate && !this.options.validator) {
       const validateFn = this.options.validate;
       this.options.validator = new CustomValidator(
         async (content: string) => {
           const isValid = await validateFn(content);
-          return isValid 
-            ? { isValid: true } 
+          return isValid
+            ? { isValid: true }
             : { isValid: false, instruction: 'Validation failed' };
         },
-        { description: 'Input validation' }
+        { description: 'Input validation' },
       );
     }
-    
+
     updatedSession = updatedSession.addMessage({
       type: 'user',
       content: input,
       metadata: createMetadata(),
     });
-    
+
     if (this.options.validator) {
       let attempts = 0;
       let result = await this.options.validator.validate(input, updatedSession);
-      
+
       while (!result.isValid) {
         attempts++;
-        
+
         updatedSession = updatedSession.addMessage({
           type: 'system',
           content: `Validation failed: ${result.isValid ? '' : result.instruction}. Please try again.`,
           metadata: createMetadata(),
         });
-        
+
         input = await this.options.inputSource.getInput({
           metadata: updatedSession.metadata,
         });
-        
+
         if (this.options.onInput) {
           this.options.onInput(input);
         }
-        
+
         updatedSession = updatedSession.addMessage({
           type: 'user',
           content: input,
           metadata: createMetadata(),
         });
-        
+
         result = await this.options.validator.validate(input, updatedSession);
-        
-        const validator = this.options.validator as { maxAttempts?: number; raiseErrorAfterMaxAttempts?: boolean };
+
+        const validator = this.options.validator as {
+          maxAttempts?: number;
+          raiseErrorAfterMaxAttempts?: boolean;
+        };
         if (validator.maxAttempts && attempts >= validator.maxAttempts) {
           if (validator.raiseErrorAfterMaxAttempts) {
-            throw new Error(`Input validation failed after ${attempts} attempts: ${result.isValid ? '' : result.instruction}`);
+            throw new Error(
+              `Input validation failed after ${attempts} attempts: ${result.isValid ? '' : result.instruction}`,
+            );
           }
           break;
         }
       }
     }
-    
+
     return updatedSession;
   }
 }
@@ -191,15 +196,21 @@ export class AssistantTemplate<
   };
   constructor(
     contentOrGenerateOptions: string | GenerateOptions,
-    validatorOrOptions?: IValidator | {
-      validator?: IValidator;
-      maxAttempts?: number;
-      raiseError?: boolean;
-    }
+    validatorOrOptions?:
+      | IValidator
+      | {
+          validator?: IValidator;
+          maxAttempts?: number;
+          raiseError?: boolean;
+        },
   ) {
     super();
     if (typeof contentOrGenerateOptions === 'string') {
-      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+      if (
+        validatorOrOptions &&
+        typeof validatorOrOptions === 'object' &&
+        !('validate' in validatorOrOptions)
+      ) {
         this.options = {
           content: contentOrGenerateOptions,
           validator: validatorOrOptions.validator,
@@ -215,7 +226,11 @@ export class AssistantTemplate<
         };
       }
     } else {
-      if (validatorOrOptions && typeof validatorOrOptions === 'object' && !('validate' in validatorOrOptions)) {
+      if (
+        validatorOrOptions &&
+        typeof validatorOrOptions === 'object' &&
+        !('validate' in validatorOrOptions)
+      ) {
         this.options = {
           generateOptions: contentOrGenerateOptions,
           validator: validatorOrOptions.validator,
@@ -231,7 +246,7 @@ export class AssistantTemplate<
         };
       }
     }
-    
+
     if (this.options.maxAttempts === undefined) {
       this.options.maxAttempts = 1;
     }
@@ -247,16 +262,21 @@ export class AssistantTemplate<
         this.options.content,
         session.metadata,
       );
-      
+
       if (this.options.validator) {
-        const result = await this.options.validator.validate(interpolatedContent, session as ISession);
+        const result = await this.options.validator.validate(
+          interpolatedContent,
+          session as ISession,
+        );
         if (!result.isValid) {
           if (this.options.raiseError) {
-            throw new Error(`Assistant content validation failed: ${result.instruction || 'Invalid content'}`);
+            throw new Error(
+              `Assistant content validation failed: ${result.instruction || 'Invalid content'}`,
+            );
           }
         }
       }
-      
+
       return session.addMessage({
         type: 'assistant',
         content: interpolatedContent,
@@ -270,42 +290,50 @@ export class AssistantTemplate<
 
     let attempts = 0;
     let lastValidationError: string | undefined;
-    
+
     while (attempts < (this.options.maxAttempts || 1)) {
       attempts++;
-      
+
       // Cast session to any to avoid type issues with the generateText function
       const response = await generateText(
         session as ISession,
         this.options.generateOptions,
       );
-      
-      if (!this.options.validator || response.type !== 'assistant' || !response.content) {
+
+      if (
+        !this.options.validator ||
+        response.type !== 'assistant' ||
+        !response.content
+      ) {
         // Add the assistant message to the session
-        return session.addMessage(
-          response,
-        ) as unknown as ISession<TOutput>;
+        return session.addMessage(response) as unknown as ISession<TOutput>;
       }
-      
-      const result = await this.options.validator.validate(response.content, session as ISession);
+
+      const result = await this.options.validator.validate(
+        response.content,
+        session as ISession,
+      );
       if (result.isValid) {
-        return session.addMessage(
-          response,
-        ) as unknown as ISession<TOutput>;
+        return session.addMessage(response) as unknown as ISession<TOutput>;
       }
-      
+
       lastValidationError = result.instruction || 'Invalid content';
-      
-      if (attempts >= (this.options.maxAttempts || 1) && this.options.raiseError) {
-        throw new Error(`Assistant response validation failed after ${attempts} attempts: ${lastValidationError}`);
+
+      if (
+        attempts >= (this.options.maxAttempts || 1) &&
+        this.options.raiseError
+      ) {
+        throw new Error(
+          `Assistant response validation failed after ${attempts} attempts: ${lastValidationError}`,
+        );
       }
     }
-    
+
     const finalResponse = await generateText(
       session as ISession,
       this.options.generateOptions,
     );
-    
+
     // Add the assistant message to the session
     let updatedSession = session.addMessage(
       finalResponse,
@@ -323,7 +351,12 @@ export class AssistantTemplate<
 
         // Get the tool from the generateOptions
         const tools = this.options.generateOptions.tools || {};
-        const tool = tools[toolName] as { execute: (args: Record<string, unknown>, context: { toolCallId: string }) => Promise<unknown> }; // Cast to specific type
+        const tool = tools[toolName] as {
+          execute: (
+            args: Record<string, unknown>,
+            context: { toolCallId: string },
+          ) => Promise<unknown>;
+        }; // Cast to specific type
 
         if (tool && typeof tool.execute === 'function') {
           try {
@@ -494,7 +527,7 @@ function WithIf<TBase extends Constructor<{ templates: Template[] }>>(
 
 function WithTransformer<
   TBase extends Constructor<{ templates: Template[] }>,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = Record<string, unknown>,
 >(Base: TBase) {
@@ -507,9 +540,7 @@ function WithTransformer<
         Record<string, unknown>,
         Record<string, unknown>
       >;
-      this.templates.push(
-        new TransformerTemplate(castTransformer),
-      );
+      this.templates.push(new TransformerTemplate(castTransformer));
       return this as unknown as LinearTemplate;
     }
   };
@@ -553,7 +584,10 @@ function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
     addSubroutine(options: {
       template: Template;
       initWith: (parentSession: ISession) => ISession;
-      squashWith?: (parentSession: ISession, childSession: ISession) => ISession;
+      squashWith?: (
+        parentSession: ISession,
+        childSession: ISession,
+      ) => ISession;
     }): this {
       this.templates.push(new SubroutineTemplate(options));
       return this;
@@ -579,8 +613,11 @@ export class LinearTemplate extends WithSchema(
                     this.templates = options?.templates || [];
                   }
 
-                  async execute(session: ISession<Record<string, unknown>>): Promise<ISession<Record<string, unknown>>> {
-                    let currentSession: ISession<Record<string, unknown>> = session;
+                  async execute(
+                    session: ISession<Record<string, unknown>>,
+                  ): Promise<ISession<Record<string, unknown>>> {
+                    let currentSession: ISession<Record<string, unknown>> =
+                      session;
                     for (const template of this.templates) {
                       currentSession = await template.execute(currentSession);
                     }
@@ -723,10 +760,12 @@ export class SubroutineTemplate extends WithSchema(
  * Template that applies a transformer to a session
  */
 export class TransformerTemplate extends Template {
-  constructor(private transformer: SessionTransformer<
-    Record<string, unknown>,
-    Record<string, unknown>
-  >) {
+  constructor(
+    private transformer: SessionTransformer<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >,
+  ) {
     super();
   }
 

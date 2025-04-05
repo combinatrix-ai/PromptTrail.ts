@@ -46,57 +46,65 @@ describe('SchemaTemplate API Integration', () => {
     description: z.string().describe('A short description of the product'),
   });
 
-  (hasOpenAIKey ? it : it.skip)('should generate structured data with OpenAI and native schema', async () => {
-    const template = new SchemaTemplate({
-      generateOptions: openaiOptions,
-      schema: productSchema,
-      maxAttempts: 2, // Test the retry logic with a smaller number of attempts
-    });
+  (hasOpenAIKey ? it : it.skip)(
+    'should generate structured data with OpenAI and native schema',
+    async () => {
+      const template = new SchemaTemplate({
+        generateOptions: openaiOptions,
+        schema: productSchema,
+        maxAttempts: 2, // Test the retry logic with a smaller number of attempts
+      });
 
-    const session = createSession();
-    await session.addMessage({
-      type: 'user',
-      content: 'Generate information about a smartphone product.',
-    });
+      const session = createSession();
+      await session.addMessage({
+        type: 'user',
+        content: 'Generate information about a smartphone product.',
+      });
 
-    const resultSession = await template.execute(session);
+      const resultSession = await template.execute(session);
 
-    const output = resultSession.metadata.get('structured_output');
+      const output = resultSession.metadata.get('structured_output');
 
-    expect(output).toBeDefined();
-    if (output) {
-      expect(typeof output.name).toBe('string');
-      expect(typeof output.price).toBe('number');
-      expect(typeof output.inStock).toBe('boolean');
-      expect(typeof output.description).toBe('string');
-    }
-  }, 30000); // Increase timeout for API call
+      expect(output).toBeDefined();
+      if (output) {
+        expect(typeof output.name).toBe('string');
+        expect(typeof output.price).toBe('number');
+        expect(typeof output.inStock).toBe('boolean');
+        expect(typeof output.description).toBe('string');
+      }
+    },
+    30000,
+  ); // Increase timeout for API call
 
-  (hasOpenAIKey ? it : it.skip)('should generate structured data with OpenAI and Zod schema', async () => {
-    const template = new SchemaTemplate({
-      generateOptions: openaiOptions,
-      schema: zodProductSchema,
-      maxAttempts: 2,
-    });
+  (hasOpenAIKey ? it : it.skip)(
+    'should generate structured data with OpenAI and Zod schema',
+    async () => {
+      const template = new SchemaTemplate({
+        generateOptions: openaiOptions,
+        schema: zodProductSchema,
+        maxAttempts: 2,
+      });
 
-    const session = createSession();
-    await session.addMessage({
-      type: 'user',
-      content: 'Generate information about a laptop product.',
-    });
+      const session = createSession();
+      await session.addMessage({
+        type: 'user',
+        content: 'Generate information about a laptop product.',
+      });
 
-    const resultSession = await template.execute(session);
+      const resultSession = await template.execute(session);
 
-    const output = resultSession.metadata.get('structured_output');
+      const output = resultSession.metadata.get('structured_output');
 
-    expect(output).toBeDefined();
-    if (output) {
-      expect(typeof output.name).toBe('string');
-      expect(typeof output.price).toBe('number');
-      expect(typeof output.inStock).toBe('boolean');
-      expect(typeof output.description).toBe('string');
-    }
-  }, 30000);
+      expect(output).toBeDefined();
+      if (output) {
+        expect(typeof output.name).toBe('string');
+        expect(typeof output.price).toBe('number');
+        expect(typeof output.inStock).toBe('boolean');
+        expect(typeof output.description).toBe('string');
+      }
+    },
+    30000,
+  );
 
   it.skip('should generate structured data with Anthropic and native schema', async () => {
     const template = new SchemaTemplate({
@@ -155,7 +163,11 @@ describe('SchemaTemplate API Integration', () => {
       name: z.string().describe('The name of the product'),
       price: z.number().describe('The price of the product in USD'),
       inStock: z.boolean().describe('Whether the product is in stock'),
-      nonExistentProperty: z.string().describe('This property does not exist and will cause validation errors'),
+      nonExistentProperty: z
+        .string()
+        .describe(
+          'This property does not exist and will cause validation errors',
+        ),
     });
 
     const template = new SchemaTemplate({
@@ -167,7 +179,8 @@ describe('SchemaTemplate API Integration', () => {
     const session = createSession();
     await session.addMessage({
       type: 'user',
-      content: 'Generate information about a product without including any additional properties.',
+      content:
+        'Generate information about a product without including any additional properties.',
     });
 
     await expect(template.execute(session)).rejects.toThrow();

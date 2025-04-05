@@ -46,7 +46,7 @@ export const createToolResultMessage = (
   content,
   result,
   metadata: createMetadata<IToolResultMetadata>({
-    initial: { toolCallId: 'test-id' }
+    initial: { toolCallId: 'test-id' },
   }),
 });
 

@@ -191,7 +191,7 @@ The weather in San Francisco is currently 72°F and sunny.
 
 /**
  * End-to-End tests with real API calls
- * 
+ *
  * **Important message**
  * - This test is a golden standard for the e2e workflow test
  * - This test should not be mocked

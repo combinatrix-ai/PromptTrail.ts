@@ -367,93 +367,93 @@ describe('Templates', () => {
       const inputSource = new CallbackInputSource(async () => {
         return attempts++ === 0 ? 'invalid input' : 'valid input';
       });
-      
+
       const validate = vi
         .fn()
         .mockImplementation((input: string) =>
           Promise.resolve(input === 'valid input'),
         );
-      
+
       const template = new UserTemplate({
         description: 'test description',
         inputSource,
         validate,
       });
-      
+
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
-      
+
       expect(messages).toHaveLength(2);
       expect(messages[0].content).toBe('invalid input');
       expect(messages[1].content).toBe('valid input');
-      
+
       const systemMessages = session.getMessagesByType('system');
       expect(systemMessages).toHaveLength(1);
       expect(systemMessages[0].content).toContain('Validation failed');
-      
+
       expect(validate).toHaveBeenCalledTimes(2);
     });
-    
+
     it('should respect maxAttempts and raiseError options', async () => {
       const inputSource = new CallbackInputSource(async () => 'invalid input');
-      
+
       const validator = new CustomValidator(
         async (content: string) => {
-          return content === 'valid input' 
-            ? { isValid: true } 
+          return content === 'valid input'
+            ? { isValid: true }
             : { isValid: false, instruction: 'Input must be "valid input"' };
         },
-        { 
+        {
           description: 'Input validation',
           maxAttempts: 2,
-          raiseErrorAfterMaxAttempts: true
-        }
+          raiseErrorAfterMaxAttempts: true,
+        },
       );
-      
+
       const template = new UserTemplate({
         description: 'test description',
         inputSource,
-        validator
+        validator,
       });
-      
+
       await expect(template.execute(createSession())).rejects.toThrow(
-        'Input validation failed after'
+        'Input validation failed after',
       );
     });
-    
+
     it('should not throw error when raiseError is false', async () => {
       const inputSource = new CallbackInputSource(async () => 'invalid input');
-      
+
       const validator = new CustomValidator(
         async (content: string) => {
-          return content === 'valid input' 
-            ? { isValid: true } 
+          return content === 'valid input'
+            ? { isValid: true }
             : { isValid: false, instruction: 'Input must be "valid input"' };
         },
-        { 
+        {
           description: 'Input validation',
           maxAttempts: 2,
-          raiseErrorAfterMaxAttempts: false
-        }
+          raiseErrorAfterMaxAttempts: false,
+        },
       );
-      
+
       const template = new UserTemplate({
         description: 'test description',
         inputSource,
-        validator
+        validator,
       });
-      
+
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
-      
+
       expect(messages.length).toBeGreaterThan(1);
       expect(messages[0].content).toBe('invalid input');
       expect(messages[messages.length - 1].content).toBe('invalid input');
-      
+
       const systemMessages = session.getMessagesByType('system');
       expect(systemMessages.length).toBeGreaterThan(0);
       expect(systemMessages[0].content).toContain('Validation failed');
-      
+
       expect(messages.length - 1).toBe(2); // Initial input + 2 retries
     });
   });

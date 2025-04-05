@@ -20,25 +20,26 @@ class TestValidator implements IValidator {
     private shouldPass: boolean,
     private feedback?: string,
   ) {
-    this.description = feedback || (shouldPass ? 'Valid content' : 'Invalid content');
+    this.description =
+      feedback || (shouldPass ? 'Valid content' : 'Invalid content');
   }
 
   async validate(
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _content: string,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _context: ISession,
   ): Promise<TValidationResult> {
     return this.shouldPass
       ? { isValid: true }
       : { isValid: false, instruction: this.feedback || 'Validation failed' };
   }
-  
+
   getDescription(): string {
     return this.description || 'Test validator';
   }
-  
+
   getErrorMessage(): string {
     return this.feedback || 'Validation failed';
   }
@@ -67,20 +68,17 @@ describe('AssistantTemplate with Validator', () => {
   });
 
   it('should pass validation when validator passes', async () => {
-    const assistantTemplate = new AssistantTemplate(
-      generateOptions,
-      {
-        validator: new TestValidator(true),
-        maxAttempts: 1,
-        raiseError: true
-      }
-    );
+    const assistantTemplate = new AssistantTemplate(generateOptions, {
+      validator: new TestValidator(true),
+      maxAttempts: 1,
+      raiseError: true,
+    });
 
     const session = await assistantTemplate.execute(createSession());
-    
+
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });
-  
+
   it('should retry when validation fails and maxAttempts > 1', async () => {
     let attempts = 0;
     vi.mocked(generateText).mockImplementation(async () => {
@@ -91,62 +89,56 @@ describe('AssistantTemplate with Validator', () => {
         metadata: createMetadata(),
       };
     });
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-    
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const conditionalValidator: IValidator = {
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-      validate: async (content, _context: ISession): Promise<TValidationResult> => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      validate: async (
+        content,
+        _context: ISession,
+      ): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }
           : { isValid: false, instruction: 'Need attempt 2' };
       },
       getDescription: () => 'Conditional validator',
-      getErrorMessage: () => 'Validation failed'
+      getErrorMessage: () => 'Validation failed',
     };
-    
-    const assistantTemplate = new AssistantTemplate(
-      generateOptions,
-      {
-        validator: conditionalValidator,
-        maxAttempts: 2,
-        raiseError: true
-      }
-    );
-    
+
+    const assistantTemplate = new AssistantTemplate(generateOptions, {
+      validator: conditionalValidator,
+      maxAttempts: 2,
+      raiseError: true,
+    });
+
     const session = await assistantTemplate.execute(createSession());
-    
+
     expect(attempts).toBe(2);
     expect(session.getLastMessage()?.content).toBe('Response attempt 2');
   });
-  
+
   it('should throw an exception when validation fails and raiseError is true', async () => {
-    const assistantTemplate = new AssistantTemplate(
-      generateOptions,
-      {
-        validator: new TestValidator(false, 'Validation failed'),
-        maxAttempts: 1,
-        raiseError: true
-      }
-    );
-    
+    const assistantTemplate = new AssistantTemplate(generateOptions, {
+      validator: new TestValidator(false, 'Validation failed'),
+      maxAttempts: 1,
+      raiseError: true,
+    });
+
     await expect(assistantTemplate.execute(createSession())).rejects.toThrow(
-      'Validation failed'
+      'Validation failed',
     );
   });
-  
+
   it('should not throw when validation fails and raiseError is false', async () => {
-    const assistantTemplate = new AssistantTemplate(
-      generateOptions,
-      {
-        validator: new TestValidator(false, 'Validation failed'),
-        maxAttempts: 1,
-        raiseError: false
-      }
-    );
-    
+    const assistantTemplate = new AssistantTemplate(generateOptions, {
+      validator: new TestValidator(false, 'Validation failed'),
+      maxAttempts: 1,
+      raiseError: false,
+    });
+
     const session = await assistantTemplate.execute(createSession());
-    
+
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });
 });

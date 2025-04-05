@@ -15,7 +15,7 @@ vi.mock('../../generate', () => {
 describe('README Examples', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    
+
     vi.mocked(generateModule.generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is a mock response from the AI model.',
@@ -51,7 +51,7 @@ describe('README Examples', () => {
       expect(session.messages[1].type).toBe('user');
       expect(session.messages[1].content).toBe("What's TypeScript?");
       expect(session.messages[2].type).toBe('assistant');
-      
+
       expect(generateModule.generateText).toHaveBeenCalled();
     });
   });
@@ -60,7 +60,7 @@ describe('README Examples', () => {
     it('should create and manage a session', () => {
       const session = createSession();
       expect(session.messages).toHaveLength(0);
-      
+
       const updatedSession = session
         .addMessage({
           type: 'system',
@@ -72,14 +72,14 @@ describe('README Examples', () => {
           content: 'Hello!',
           metadata: undefined,
         });
-      
+
       expect(session.messages).toHaveLength(0);
-      
+
       expect(updatedSession.messages).toHaveLength(2);
       expect(updatedSession.messages[0].type).toBe('system');
       expect(updatedSession.messages[1].type).toBe('user');
     });
-    
+
     it('should manage metadata in a session', () => {
       const session = createSession({
         metadata: {
@@ -87,17 +87,17 @@ describe('README Examples', () => {
           conversationId: 'abc-123',
         },
       });
-      
+
       expect(session.metadata.get('userId')).toBe('12345');
       expect(session.metadata.get('conversationId')).toBe('abc-123');
-      
+
       const updatedSession = session.updateMetadata({
         userId: 'updated-user-id',
       });
-      
+
       expect(session.metadata.has('userId')).toBe(true);
       expect(session.metadata.get('userId')).toBe('12345');
-      
+
       expect(updatedSession.metadata.has('userId')).toBe(true);
       expect(updatedSession.metadata.get('userId')).toBe('updated-user-id'); // Original metadata is updated
     });
@@ -121,7 +121,7 @@ describe('README Examples', () => {
           },
         ],
       });
-      
+
       const calculator = {
         description: 'Perform arithmetic operations',
         parameters: {
@@ -129,16 +129,16 @@ describe('README Examples', () => {
           properties: {
             a: { type: 'number', description: 'First number' },
             b: { type: 'number', description: 'Second number' },
-            operation: { 
-              type: 'string', 
+            operation: {
+              type: 'string',
               enum: ['add', 'subtract', 'multiply', 'divide'],
-              description: 'Operation to perform'
+              description: 'Operation to perform',
             },
           },
           required: ['a', 'b', 'operation'],
-        }
+        },
       };
-      
+
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
@@ -147,14 +147,14 @@ describe('README Examples', () => {
         },
         temperature: 0.7,
       }).addTool('calculator', calculator);
-      
+
       const chat = new LinearTemplate()
         .addSystem("I'm a helpful assistant with calculator abilities.")
-        .addUser("What is 123 * 456?")
+        .addUser('What is 123 * 456?')
         .addAssistant(generateOptions);
-      
+
       await chat.execute(createSession());
-      
+
       expect(generateModule.generateText).toHaveBeenCalled();
       const callArgs = vi.mocked(generateModule.generateText).mock.calls[0][1];
       expect(callArgs.tools).toHaveProperty('calculator');
@@ -163,8 +163,10 @@ describe('README Examples', () => {
 
   describe('Session-to-Metadata Conversion', () => {
     it('should extract data using extractMarkdown', async () => {
-      const { extractMarkdown } = await import('../../utils/markdown_extractor');
-      
+      const { extractMarkdown } = await import(
+        '../../utils/markdown_extractor'
+      );
+
       const mockAssistantResponse = {
         type: 'assistant',
         content: `
@@ -183,13 +185,13 @@ function factorial(n: number): number {
         `,
         metadata: createMetadata(),
       };
-      
+
       vi.mocked(generateModule.generateText).mockResolvedValue({
         type: 'assistant',
         content: mockAssistantResponse.content,
         metadata: mockAssistantResponse.metadata,
       });
-      
+
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
@@ -198,7 +200,7 @@ function factorial(n: number): number {
         },
         temperature: 0.7,
       });
-      
+
       const codeTemplate = new LinearTemplate()
         .addSystem(
           "You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.",
@@ -219,26 +221,33 @@ function factorial(n: number): number {
 
       const session = await codeTemplate.execute(createSession());
 
-      expect(session.metadata.get('explanation')).toContain("Here's how factorial works");
-      expect(session.metadata.get('usageExample')).toContain("Here's how to use the factorial function");
-      expect(session.metadata.get('code')).toContain("function factorial(n: number)");
+      expect(session.metadata.get('explanation')).toContain(
+        "Here's how factorial works",
+      );
+      expect(session.metadata.get('usageExample')).toContain(
+        "Here's how to use the factorial function",
+      );
+      expect(session.metadata.get('code')).toContain(
+        'function factorial(n: number)',
+      );
     });
   });
 
   describe('Validation', () => {
     it('should validate assistant responses', async () => {
       await import('../../validators');
-      
+
       //   regex: /```json[\s\S]*```/,
       //   description: 'Response must contain a JSON code block',
       // });
-      
+
       vi.mocked(generateModule.generateText).mockResolvedValue({
         type: 'assistant',
-        content: 'Here is your data:\n```json\n{"name": "John", "age": 30}\n```',
+        content:
+          'Here is your data:\n```json\n{"name": "John", "age": 30}\n```',
         metadata: createMetadata(),
       });
-      
+
       const generateOptions = createGenerateOptions({
         provider: {
           type: 'openai',
@@ -246,14 +255,14 @@ function factorial(n: number): number {
           modelName: 'gpt-4o-mini',
         },
       });
-      
+
       const chat = new LinearTemplate()
-        .addSystem("You must respond with JSON.")
-        .addUser("Give me some user data")
+        .addSystem('You must respond with JSON.')
+        .addUser('Give me some user data')
         .addAssistant(generateOptions);
-      
+
       const session = await chat.execute(createSession());
-      
+
       expect(session.messages[2].type).toBe('assistant');
       expect(session.messages[2].content).toContain('```json');
     });
@@ -286,12 +295,12 @@ function factorial(n: number): number {
         .addAssistant(generateOptions);
 
       const session = await template.execute(createSession());
-      
+
       expect(session.messages).toHaveLength(3);
       expect(session.messages[0].type).toBe('system');
       expect(session.messages[1].type).toBe('user');
       expect(session.messages[2].type).toBe('assistant');
-      
+
       expect(generateModule.generateText).toHaveBeenCalled();
       const callArgs = vi.mocked(generateModule.generateText).mock.calls[0][1];
       expect(callArgs.mcpServers).toBeDefined();
@@ -313,12 +322,13 @@ function factorial(n: number): number {
       vi.mocked(generateModule.generateText)
         .mockResolvedValueOnce({
           type: 'assistant',
-          content: 'Sure, here\'s your first question!',
+          content: "Sure, here's your first question!",
           metadata: createMetadata(),
         })
         .mockResolvedValueOnce({
           type: 'assistant',
-          content: 'Generics in TypeScript allow you to create reusable components that work with a variety of types rather than a single one.',
+          content:
+            'Generics in TypeScript allow you to create reusable components that work with a variety of types rather than a single one.',
           metadata: createMetadata(),
         });
 
@@ -330,7 +340,7 @@ function factorial(n: number): number {
         .addAssistant(generateOptions);
 
       const session = await quiz.execute(createSession());
-      
+
       expect(generateModule.generateText).toHaveBeenCalled();
       expect(session.messages.length).toBeGreaterThan(0);
       expect(session.messages[0].type).toBe('system');

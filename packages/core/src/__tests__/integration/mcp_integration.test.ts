@@ -1,12 +1,5 @@
-/**
- * MCP Integration Tests
- * 
- * Tests for the Model Context Protocol (MCP) integration with ai-sdk
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  createGenerateOptions,
-} from '../../index';
+import { createGenerateOptions } from '../../index';
 
 vi.mock('ai', () => {
   return {
@@ -81,7 +74,7 @@ describe('MCP Integration', () => {
       url: 'http://localhost:8080',
       name: 'research-mcp-server',
       version: '1.0.0',
-      headers: { 'Authorization': 'Bearer test-token' },
+      headers: { Authorization: 'Bearer test-token' },
     });
 
     expect(options.mcpServers).toHaveLength(1);
@@ -89,7 +82,7 @@ describe('MCP Integration', () => {
       url: 'http://localhost:8080',
       name: 'research-mcp-server',
       version: '1.0.0',
-      headers: { 'Authorization': 'Bearer test-token' },
+      headers: { Authorization: 'Bearer test-token' },
     });
   });
 });

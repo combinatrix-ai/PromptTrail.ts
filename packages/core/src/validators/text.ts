@@ -19,13 +19,13 @@ export class RegexMatchValidator extends BaseValidator {
         : new RegExp(options.regex);
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     const passed = this.regex.test(content);
-    return passed 
-      ? { isValid: true } 
-      : { 
-          isValid: false, 
-          instruction: this.getDescription()
+    return passed
+      ? { isValid: true }
+      : {
+          isValid: false,
+          instruction: this.getDescription(),
         };
   }
 
@@ -46,7 +46,8 @@ export class RegexNoMatchValidator extends BaseValidator {
 
   constructor(options: { regex: RegExp | string; description?: string }) {
     super({
-      description: options.description || `Result must not match ${options.regex}`,
+      description:
+        options.description || `Result must not match ${options.regex}`,
     });
     this.regex =
       options.regex instanceof RegExp
@@ -54,13 +55,13 @@ export class RegexNoMatchValidator extends BaseValidator {
         : new RegExp(options.regex);
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     const passed = !this.regex.test(content);
-    return passed 
-      ? { isValid: true } 
-      : { 
-          isValid: false, 
-          instruction: this.getDescription()
+    return passed
+      ? { isValid: true }
+      : {
+          isValid: false,
+          instruction: this.getDescription(),
         };
   }
 
@@ -89,12 +90,13 @@ export class KeywordValidator extends BaseValidator {
   }) {
     const action =
       options.mode === 'include' ? 'must include' : 'must not include';
-    
+
     super({
-      description: options.description ||
+      description:
+        options.description ||
         `Result ${action} one of these keywords: ${options.keywords.join(', ')}`,
     });
-    
+
     this.keywords = options.caseSensitive
       ? options.keywords
       : options.keywords.map((k) => k.toLowerCase());
@@ -102,7 +104,7 @@ export class KeywordValidator extends BaseValidator {
     this.caseSensitive = options.caseSensitive || false;
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     const normalizedContent = !this.caseSensitive
       ? content.toLowerCase()
       : content;
@@ -113,17 +115,21 @@ export class KeywordValidator extends BaseValidator {
 
     const passed = this.mode === 'include' ? hasKeyword : !hasKeyword;
 
-    return passed 
-      ? { isValid: true } 
-      : { 
-          isValid: false, 
-          instruction: this.getDescription()
+    return passed
+      ? { isValid: true }
+      : {
+          isValid: false,
+          instruction: this.getDescription(),
         };
   }
 
   getDescription(): string {
-    const action = this.mode === 'include' ? 'must include' : 'must not include';
-    return this.description || `Result ${action} one of these keywords: ${this.keywords.join(', ')}`;
+    const action =
+      this.mode === 'include' ? 'must include' : 'must not include';
+    return (
+      this.description ||
+      `Result ${action} one of these keywords: ${this.keywords.join(', ')}`
+    );
   }
 
   getErrorMessage(): string {
@@ -149,14 +155,16 @@ export class LengthValidator extends BaseValidator {
     }
 
     super({
-      description: options.description || `Content length must be ${constraint} characters`,
+      description:
+        options.description ||
+        `Content length must be ${constraint} characters`,
     });
-    
+
     this.min = options.min;
     this.max = options.max;
   }
 
-  async validate(content: string, /* unused */): Promise<TValidationResult> {
+  async validate(content: string /* unused */): Promise<TValidationResult> {
     const length = content.length;
 
     let passed = true;
@@ -167,11 +175,11 @@ export class LengthValidator extends BaseValidator {
       passed = false;
     }
 
-    return passed 
-      ? { isValid: true } 
-      : { 
-          isValid: false, 
-          instruction: `${this.getDescription()} (current: ${length})`
+    return passed
+      ? { isValid: true }
+      : {
+          isValid: false,
+          instruction: `${this.getDescription()} (current: ${length})`,
         };
   }
 
@@ -184,7 +192,9 @@ export class LengthValidator extends BaseValidator {
     } else if (this.max !== undefined) {
       constraint = `at most ${this.max}`;
     }
-    return this.description || `Content length must be ${constraint} characters`;
+    return (
+      this.description || `Content length must be ${constraint} characters`
+    );
   }
 
   getErrorMessage(): string {

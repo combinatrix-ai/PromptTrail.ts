@@ -117,15 +117,15 @@ function createProvider(config: TProviderConfig): unknown {
     return anthropic(config.modelName, options);
   }
 
-  throw new Error(`Unsupported provider type: ${(config as { type: string }).type}`);
+  throw new Error(
+    `Unsupported provider type: ${(config as { type: string }).type}`,
+  );
 }
 
 /**
  * Initialize MCP client
  */
-async function initializeMCPClient(
-  config: IMCPServerConfig,
-): Promise<unknown> {
+async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
   try {
     const transport = {
       url: config.url,
@@ -167,7 +167,10 @@ export async function generateText(
         const mcpClient = await initializeMCPClient(server);
         mcpClients.push(mcpClient);
       } catch (error) {
-        console.error(`Failed to initialize MCP client for ${server.name}:`, error);
+        console.error(
+          `Failed to initialize MCP client for ${server.name}:`,
+          error,
+        );
       }
     }
   }
