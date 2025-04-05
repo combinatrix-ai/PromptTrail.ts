@@ -114,18 +114,20 @@ export class SchemaTemplate<
           let toolCalls = session.metadata.get('toolCalls');
           
           if (!toolCalls && result.response.body) {
-            const responseBody = result.response.body as any;
-            if (responseBody.tool_calls) {
-              toolCalls = responseBody.tool_calls;
+            const responseBody = result.response.body as Record<string, unknown>;
+            if ('tool_calls' in responseBody && Array.isArray(responseBody.tool_calls)) {
+              toolCalls = responseBody.tool_calls as unknown as TInput["toolCalls"];
             }
           }
           
           if (toolCalls && Array.isArray(toolCalls)) {
-            const matchingToolCall = toolCalls.find((call: any) => {
-              if (call.name === this.functionName) {
+            const matchingToolCall = toolCalls.find((call: Record<string, unknown>) => {
+              if (typeof call.name === 'string' && call.name === this.functionName) {
                 return true;
               }
-              if (call.function && call.function.name === this.functionName) {
+              if (call.function && typeof call.function === 'object' && call.function !== null && 
+                  'name' in call.function && typeof call.function.name === 'string' && 
+                  call.function.name === this.functionName) {
                 return true;
               }
               return false;
