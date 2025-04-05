@@ -25,10 +25,7 @@ class TestValidator implements IValidator {
   }
 
   async validate(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _content: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _context: ISession,
   ): Promise<TValidationResult> {
     return this.shouldPass
@@ -89,11 +86,8 @@ describe('AssistantTemplate with Validator', () => {
         metadata: createMetadata(),
       };
     });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const conditionalValidator: IValidator = {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       validate: async (
         content,
         _context: ISession,
