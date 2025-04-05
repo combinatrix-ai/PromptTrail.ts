@@ -1,7 +1,7 @@
 /**
  * Schema validators for structured data validation
  */
-import { type ISession, type ISchemaType } from '../types';
+import { type ISchemaType } from '../types';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**

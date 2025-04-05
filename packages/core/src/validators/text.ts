@@ -1,7 +1,6 @@
 /**
  * Text-based validators for content validation
  */
-import { type ISession } from '../types';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**
