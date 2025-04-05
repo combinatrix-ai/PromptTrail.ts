@@ -138,6 +138,7 @@ export interface GuardrailTemplateOptions<
  */
 export class GuardrailTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
   private options: GuardrailTemplateOptions<TInput, TOutput>;
