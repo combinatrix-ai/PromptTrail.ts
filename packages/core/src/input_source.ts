@@ -29,8 +29,7 @@ export class StaticInputSource implements InputSource {
     this.input = input;
   }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async getInput(_context?: { metadata?: Metadata }): Promise<string> {
+  async getInput(): Promise<string> {
     return this.input;
   }
 

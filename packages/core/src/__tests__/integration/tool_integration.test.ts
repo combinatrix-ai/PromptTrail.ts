@@ -234,7 +234,6 @@ describe('Tool Integration with ai-sdk', () => {
 
     // Type inference works - TypeScript would error if we passed invalid parameters
     type CalculatorInput = Parameters<typeof calculatorTool.execute>[0];
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _validInput: CalculatorInput = {
       a: 10,
       b: 20,

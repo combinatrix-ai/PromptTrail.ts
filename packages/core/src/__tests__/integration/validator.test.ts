@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
 import { createMetadata } from '../../metadata';
-import { type ISession } from '../../types';
 
 vi.mock('../../generate');
 
@@ -23,13 +22,7 @@ class TestValidator implements IValidator {
     this.description = feedback || (shouldPass ? 'Valid content' : 'Invalid content');
   }
 
-  async validate(
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _content: string,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _context: ISession,
-  ): Promise<TValidationResult> {
+  async validate(): Promise<TValidationResult> {
     return this.shouldPass
       ? { isValid: true }
       : { isValid: false, instruction: this.feedback || 'Validation failed' };
@@ -91,12 +84,11 @@ describe('AssistantTemplate with Validator', () => {
         metadata: createMetadata(),
       };
     });
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
     
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
     const conditionalValidator: IValidator = {
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-      validate: async (content, _context: ISession): Promise<TValidationResult> => {
+      validate: async (content): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }
           : { isValid: false, instruction: 'Need attempt 2' };

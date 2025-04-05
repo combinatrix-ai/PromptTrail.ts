@@ -108,8 +108,7 @@ describe('Simple Example', () => {
     // Execute the template with print mode enabled
     // We intentionally ignore the returned session (prefixed with underscore)
     // We only care about the side effect of console.log being called
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _session = await chat.execute(createSession({ print: true }));
+    await chat.execute(createSession({ print: true }));
 
     // Verify console.log was called for each message
     expect(consoleSpy).toHaveBeenCalledTimes(3);
