@@ -2,7 +2,6 @@ import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
   experimental_createMCPClient,
-  type ToolSet,
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -22,13 +21,13 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
-  tool_calls?: Array<any>;
+  tool_calls?: Array<unknown>;
 }> {
   const messages: Array<{
     role: string;
     content: string;
     tool_call_id?: string;
-    tool_calls?: Array<any>;
+    tool_calls?: Array<unknown>;
   }> = [];
 
   // TODO: Check this implementation is sane?
@@ -45,7 +44,7 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
       const assistantMsg: {
         role: string;
         content: string;
-        tool_calls?: Array<any>;
+        tool_calls?: Array<unknown>;
       } = {
         role: 'assistant',
         content: msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
@@ -118,7 +117,7 @@ function createProvider(config: TProviderConfig): unknown {
     return anthropic(config.modelName, options);
   }
 
-  throw new Error(`Unsupported provider type: ${(config as any).type}`);
+  throw new Error(`Unsupported provider type: ${(config as { type: string }).type}`);
 }
 
 /**
@@ -175,13 +174,13 @@ export async function generateText(
 
   // Generate text using AI SDK
   const result = await aiSdkGenerateText({
-    model: provider as any,
+    model: provider as unknown,
     messages: messages as [], // Type assertion for AI SDK compatibility
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as ToolSet, // TODO: Fix this assertion
+    tools: options.tools as unknown, // TODO: Fix this assertion
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -229,7 +228,7 @@ export async function generateText(
  */
 export async function* generateTextStream(
   session: ISession,
-  options: any, // Using any temporarily to avoid circular dependency
+  options: GenerateOptions, // Fixed type to match generateText
 ): AsyncGenerator<TMessage, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
@@ -239,7 +238,7 @@ export async function* generateTextStream(
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({
-    model: provider as any,
+    model: provider as unknown,
     messages: messages as [], // Type assertion for AI SDK compatibility
     temperature: options.temperature,
     maxTokens: options.maxTokens,
