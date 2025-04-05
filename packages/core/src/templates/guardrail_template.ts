@@ -73,7 +73,8 @@ export enum OnFailAction {
  */
 export interface GuardrailTemplateOptions<
   TInput extends Record<string, unknown> = Record<string, unknown>,
-  _TOutput extends Record<string, unknown> = TInput,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+  TOutput extends Record<string, unknown> = TInput,
 > {
   /**
    * The template to execute and validate

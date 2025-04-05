@@ -54,7 +54,7 @@ export class MockAnthropicModel {
   /**
    * Send a message to the model
    */
-  async send(session: Session): Promise<Message> {
+  async send(/* unused */): Promise<Message> {
     // Mock response with tool call
     const metadata = createMetadata<AssistantMetadata>();
 
