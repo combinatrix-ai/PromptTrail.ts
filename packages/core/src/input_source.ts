@@ -29,7 +29,7 @@ export class StaticInputSource implements InputSource {
     this.input = input;
   }
 
-  async getInput(): Promise<string> {
+  async getInput(_context?: { metadata?: Metadata }): Promise<string> {
     return this.input;
   }
 
