@@ -27,7 +27,6 @@ export class SchemaTemplate<
     structured_output: Record<string, unknown>;
   },
 > extends Template<TInput, TOutput> {
-  private generateOptions: GenerateOptions;
   private schema: z.ZodType;
   private maxAttempts: number;
   private schemaName?: string;
@@ -43,7 +42,7 @@ export class SchemaTemplate<
     functionName?: string;
   }) {
     super();
-    this.generateOptions = options.generateOptions;
+    this.generateOptionsOrContent = options.generateOptions;
     this.schema = options.schema;
     this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
     this.schemaName = options.schemaName;
@@ -51,8 +50,15 @@ export class SchemaTemplate<
     this.functionName = options.functionName;
   }
 
+  hasOwnInputSource(): boolean {
+    return !!this.inputSource;
+  }
+  hasOwnGenerateOptionsOrContent(): boolean {
+    return !!this.generateOptionsOrContent;
+  }
+
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
-    if (!this.generateOptions) {
+    if (!this.generateOptionsOrContent) {
       throw new Error('No generateOptions provided for SchemaTemplate');
     }
 
@@ -84,23 +90,26 @@ export class SchemaTemplate<
       currentAttempt++;
       try {
         const model =
-          this.generateOptions.provider.type === 'openai'
-            ? openai(this.generateOptions.provider.modelName)
-            : anthropic(this.generateOptions.provider.modelName);
+          this.generateOptionsOrContent.provider.type === 'openai'
+            ? openai(this.generateOptionsOrContent.provider.modelName)
+            : anthropic(this.generateOptionsOrContent.provider.modelName);
 
-        if (this.generateOptions.provider.apiKey) {
-          if (this.generateOptions.provider.type === 'openai') {
-            process.env.OPENAI_API_KEY = this.generateOptions.provider.apiKey;
-          } else if (this.generateOptions.provider.type === 'anthropic') {
+        if (this.generateOptionsOrContent.provider.apiKey) {
+          if (this.generateOptionsOrContent.provider.type === 'openai') {
+            process.env.OPENAI_API_KEY =
+              this.generateOptionsOrContent.provider.apiKey;
+          } else if (
+            this.generateOptionsOrContent.provider.type === 'anthropic'
+          ) {
             process.env.ANTHROPIC_API_KEY =
-              this.generateOptions.provider.apiKey;
+              this.generateOptionsOrContent.provider.apiKey;
           }
         }
 
         const result = await generateText({
           model,
           messages: aiMessages,
-          temperature: this.generateOptions.temperature,
+          temperature: this.generateOptionsOrContent.temperature,
           experimental_output: Output.object({
             schema: this.schema,
           }),

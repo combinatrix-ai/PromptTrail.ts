@@ -1,6 +1,6 @@
 import { createMetadata } from './metadata';
 import type { InputSource } from './input_source';
-import { StaticInputSource, CallbackInputSource } from './input_source';
+import { StaticInputSource } from './input_source';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type { SessionTransformer } from './utils/session_transformer';
 import { z } from 'zod';
@@ -18,6 +18,8 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
+  public inputSource?: InputSource;
+  public generateOptionsOrContent?: GenerateOptions | string;
   abstract execute(
     session?: ISession<TInput>,
     options?: {
@@ -31,15 +33,15 @@ export abstract class Template<
    * Container templates use this to decide whether to propagate their InputSource.
    */
   hasOwnInputSource(): boolean {
-    return false;
+    return !!this.inputSource;
   }
 
   /**
    * Indicates whether the template instance was constructed with its own GenerateOptions.
    * Container templates use this to decide whether to propagate their GenerateOptions.
    */
-  hasOwnGenerateOptions(): boolean {
-    return false;
+  hasOwnGenerateOptionsOrContent(): boolean {
+    return !!this.generateOptionsOrContent;
   }
 }
 
@@ -51,9 +53,56 @@ function ensureSession<TInput extends Record<string, unknown>>(
   session: ISession<TInput> | undefined,
 ): ISession<TInput> {
   if (!session) {
+    console.warn(
+      'Session is undefined. Creating a new session. Please provide a session if you want to use an existing one.',
+    );
     return createSession<TInput>();
   }
   return session;
+}
+
+/**
+ * Helper function to make sure inputSource is not undefined
+ */
+function ensureInputSource(
+  template: Template,
+  execute_options?: {
+    inputSource?: InputSource;
+    generateOptions?: GenerateOptions;
+  },
+): InputSource {
+  // InputSource is prioritized as follows:
+  // 1. execute_options.inputSource (passed in the execute method)
+  // 2. template.inputSource (passed in the constructor)
+  // 3. raise an error if none is provided
+  const inputSource =
+    execute_options?.inputSource ?? template.inputSource ?? undefined;
+  if (!inputSource) {
+    throw new Error('InputSource is required for this template');
+  }
+  return inputSource;
+}
+
+/**
+ * Helper function to make sure generateOptions is not undefined
+ */
+function ensureGenerateOptionsOrContent<T extends Template<any, any>>(
+  template: T,
+  options?: {
+    inputSource?: InputSource;
+    generateOptions?: GenerateOptions | string;
+  },
+): GenerateOptions | string {
+  // GenerateOptions is prioritized as follows:
+  // 1. options.generateOptions (passed in the execute method)
+  // 2. template.options.generateOptions (passed in the constructor)
+  // 3. raise an error if none is provided
+  const generateOptions =
+    options?.generateOptions ?? template.generateOptionsOrContent ?? undefined;
+  if (!generateOptions) {
+    throw new Error('GenerateOptions is required for this template');
+  }
+  return generateOptions;
 }
 
 /**
@@ -89,17 +138,15 @@ export class SystemTemplate extends Template {
  * Template for user messages
  */
 export class UserTemplate extends Template {
-  private options: {
-    inputSource?: InputSource; // Optionalに変更
+  private options?: {
     description?: string;
     validate?: (input: string) => Promise<boolean>;
     onInput?: (input: string) => void;
     default?: string;
     validator?: IValidator;
   };
-
   constructor(
-    optionsOrDescription:
+    inputOrConfig:
       | string
       | InputSource
       | {
@@ -112,30 +159,29 @@ export class UserTemplate extends Template {
         } = {},
   ) {
     super();
-
-    if (typeof optionsOrDescription === 'string') {
+    // If string is just passed, convert it to StaticInputSource
+    if (typeof inputOrConfig === 'string') {
+      this.inputSource = new StaticInputSource(inputOrConfig);
+    }
+    // If InputSource is passed, use it directly - この部分を修正
+    else if (
+      inputOrConfig !== undefined &&
+      typeof inputOrConfig === 'object' &&
+      'getInput' in inputOrConfig
+    ) {
+      this.inputSource = inputOrConfig as InputSource;
+    }
+    // Set other properties if provided
+    else if (typeof inputOrConfig === 'object') {
+      this.inputSource = inputOrConfig.inputSource;
       this.options = {
-        inputSource: new StaticInputSource(optionsOrDescription),
-      };
-    } else if ('getInput' in optionsOrDescription) {
-      this.options = {
-        inputSource: optionsOrDescription as InputSource,
-      };
-    } else {
-      // Options object constructor case
-      this.options = optionsOrDescription as {
-        inputSource?: InputSource;
-        description?: string;
-        validate?: (input: string) => Promise<boolean>;
-        onInput?: (input: string) => void;
-        default?: string;
-        validator?: IValidator;
+        description: inputOrConfig.description,
+        validate: inputOrConfig.validate,
+        onInput: inputOrConfig.onInput,
+        default: inputOrConfig.default,
+        validator: inputOrConfig.validator,
       };
     }
-  }
-
-  hasOwnInputSource(): boolean {
-    return !!this.options.inputSource;
   }
 
   async execute(
@@ -146,29 +192,22 @@ export class UserTemplate extends Template {
     },
   ): Promise<ISession> {
     session = ensureSession(session);
-    let inputSource = options?.inputSource ?? this.options.inputSource;
-    if (!inputSource) {
-      throw new Error('InputSource is required for UserTemplate');
-    }
+    const inputSource = ensureInputSource(this, options);
     let input: string;
     let updatedSession = session;
 
-    if (inputSource instanceof StaticInputSource) {
-      input = interpolateTemplate(
-        await inputSource.getInput(),
-        session.metadata,
-      );
-    } else {
-      input = await inputSource.getInput({
+    input = interpolateTemplate(
+      await inputSource.getInput({
         metadata: session.metadata,
-      });
-    }
+      }),
+      session.metadata,
+    );
 
-    if (this.options.onInput) {
+    if (this.options?.onInput) {
       this.options.onInput(input);
     }
 
-    if (this.options.validate && !this.options.validator) {
+    if (this.options?.validate && !this.options.validator) {
       const validateFn = this.options.validate;
       this.options.validator = new CustomValidator(
         async (content: string) => {
@@ -187,7 +226,7 @@ export class UserTemplate extends Template {
       metadata: createMetadata(),
     });
 
-    if (this.options.validator) {
+    if (this.options?.validator) {
       let attempts = 0;
       let result = await this.options.validator.validate(input, updatedSession);
 
@@ -200,12 +239,12 @@ export class UserTemplate extends Template {
           metadata: createMetadata(),
         });
 
-        if (!this.options.inputSource) {
+        if (!this.inputSource) {
           throw new Error(
             'InputSource is required for UserTemplate validation',
           );
         }
-        input = await this.options.inputSource.getInput({
+        input = await this.inputSource.getInput({
           metadata: updatedSession.metadata,
         });
 
@@ -248,8 +287,6 @@ export class AssistantTemplate<
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput> {
   private options: {
-    content?: string;
-    generateOptions?: GenerateOptions;
     validator?: IValidator;
     maxAttempts?: number;
     raiseError?: boolean;
@@ -272,15 +309,15 @@ export class AssistantTemplate<
         typeof validatorOrOptions === 'object' &&
         !('validate' in validatorOrOptions)
       ) {
+        this.generateOptionsOrContent = contentOrGenerateOptions;
         this.options = {
-          content: contentOrGenerateOptions,
           validator: validatorOrOptions.validator,
           maxAttempts: validatorOrOptions.maxAttempts,
           raiseError: validatorOrOptions.raiseError,
         };
       } else {
+        this.generateOptionsOrContent = contentOrGenerateOptions;
         this.options = {
-          content: contentOrGenerateOptions,
           validator: validatorOrOptions as IValidator | undefined,
           maxAttempts: 1,
           raiseError: true,
@@ -292,15 +329,17 @@ export class AssistantTemplate<
         typeof validatorOrOptions === 'object' &&
         !('validate' in validatorOrOptions)
       ) {
+        this.generateOptionsOrContent =
+          contentOrGenerateOptions as GenerateOptions;
         this.options = {
-          generateOptions: contentOrGenerateOptions,
           validator: validatorOrOptions.validator,
           maxAttempts: validatorOrOptions.maxAttempts,
           raiseError: validatorOrOptions.raiseError,
         };
       } else {
+        this.generateOptionsOrContent =
+          contentOrGenerateOptions as GenerateOptions;
         this.options = {
-          generateOptions: contentOrGenerateOptions,
           validator: validatorOrOptions as IValidator | undefined,
           maxAttempts: 1,
           raiseError: true,
@@ -316,10 +355,6 @@ export class AssistantTemplate<
     }
   }
 
-  hasOwnGenerateOptions(): boolean {
-    return !!this.options.generateOptions;
-  }
-
   async execute(
     session?: ISession<TInput>,
     options?: {
@@ -328,10 +363,18 @@ export class AssistantTemplate<
     },
   ): Promise<ISession<TOutput>> {
     session = ensureSession(session);
-    if (this.options.content) {
+    const generateOptionsOrContent = ensureGenerateOptionsOrContent(
+      this,
+      options,
+    );
+    if (!generateOptionsOrContent) {
+      throw new Error('generateOptions is required for AssistantTemplate');
+    }
+
+    if (typeof generateOptionsOrContent === 'string') {
       // For fixed content responses
       const interpolatedContent = interpolateTemplate(
-        this.options.content,
+        generateOptionsOrContent,
         session.metadata,
       );
 
@@ -356,14 +399,6 @@ export class AssistantTemplate<
       }) as unknown as ISession<TOutput>;
     }
 
-    // Use parent's generateOptions if none is provided
-    const generateOptions =
-      this.options.generateOptions || options?.generateOptions;
-
-    if (!generateOptions) {
-      throw new Error('generateOptions is required for AssistantTemplate');
-    }
-
     let attempts = 0;
     let lastValidationError: string | undefined;
 
@@ -371,7 +406,10 @@ export class AssistantTemplate<
       attempts++;
 
       // Cast session to any to avoid type issues with the generateText function
-      const response = await generateText(session as ISession, generateOptions);
+      const response = await generateText(
+        session as ISession,
+        generateOptionsOrContent,
+      );
 
       if (
         !this.options.validator ||
@@ -404,7 +442,7 @@ export class AssistantTemplate<
 
     const finalResponse = await generateText(
       session as ISession,
-      generateOptions,
+      generateOptionsOrContent,
     );
 
     // Add the assistant message to the session
@@ -423,7 +461,7 @@ export class AssistantTemplate<
         const toolCallId = toolCall.id;
 
         // Get the tool from the generateOptions
-        const tools = generateOptions.tools || {};
+        const tools = generateOptionsOrContent.tools || {};
         const tool = tools[toolName] as {
           execute: (
             args: Record<string, unknown>,
@@ -688,7 +726,7 @@ function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
 /**
  * Base class for LinearTemplate
  */
-class LinearTemplateBase {
+class LinearTemplateBase extends Template {
   templates: Template[] = [];
   private options?: {
     inputSource?: InputSource;
@@ -700,16 +738,9 @@ class LinearTemplateBase {
     inputSource?: InputSource;
     generateOptions?: GenerateOptions;
   }) {
+    super();
     this.templates = options?.templates || [];
     this.options = options;
-  }
-
-  hasOwnInputSource(): boolean {
-    return !!this.options?.inputSource;
-  }
-
-  hasOwnGenerateOptions(): boolean {
-    return !!this.options?.generateOptions;
   }
 
   async execute(
@@ -735,7 +766,7 @@ class LinearTemplateBase {
         childOptions.inputSource = inputSource;
       }
 
-      if (generateOptions && !template.hasOwnGenerateOptions()) {
+      if (generateOptions && !template.hasOwnGenerateOptionsOrContent()) {
         childOptions.generateOptions = generateOptions;
       }
 
@@ -772,7 +803,7 @@ export class Agent extends LinearTemplate {
 /**
  * Base class for LoopTemplate
  */
-class LoopTemplateBase {
+class LoopTemplateBase extends Template {
   templates: Template[] = [];
   exitCondition?: (session: ISession) => boolean;
   private options?: {
@@ -786,17 +817,10 @@ class LoopTemplateBase {
     inputSource?: InputSource;
     generateOptions?: GenerateOptions;
   }) {
+    super();
     this.templates = options?.templates || [];
     this.exitCondition = options?.exitCondition;
     this.options = options;
-  }
-
-  hasOwnInputSource(): boolean {
-    return !!this.options?.inputSource;
-  }
-
-  hasOwnGenerateOptions(): boolean {
-    return !!this.options?.generateOptions;
   }
 
   setExitCondition(condition: (session: ISession) => boolean): this {
@@ -832,7 +856,7 @@ class LoopTemplateBase {
           childOptions.inputSource = inputSource;
         }
 
-        if (generateOptions && !template.hasOwnGenerateOptions()) {
+        if (generateOptions && !template.hasOwnGenerateOptionsOrContent()) {
           childOptions.generateOptions = generateOptions;
         }
 
@@ -886,14 +910,6 @@ export class SubroutineTemplate extends Template {
     this.options = options;
   }
 
-  hasOwnInputSource(): boolean {
-    return !!this.options?.inputSource;
-  }
-
-  hasOwnGenerateOptions(): boolean {
-    return !!this.options?.generateOptions;
-  }
-
   async execute(
     session?: ISession,
     options?: {
@@ -918,7 +934,7 @@ export class SubroutineTemplate extends Template {
       childOptions.inputSource = inputSource;
     }
 
-    if (generateOptions && !this.template.hasOwnGenerateOptions()) {
+    if (generateOptions && !this.template.hasOwnGenerateOptionsOrContent()) {
       childOptions.generateOptions = generateOptions;
     }
 

@@ -4,7 +4,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
   Agent,
-} from '@prompttrail/core';
+} from '../packages/core/src/index.js';
 
 // Imports from ai and zod for tool definition
 import { tool, type Tool } from 'ai'; // Removed unused Message import
@@ -109,8 +109,7 @@ export class CodingAgent {
     ); // Add tools using fluent API
 
     // CodingAgent Template
-    this.template = new Agent({
-    })
+    this.template = new Agent({})
       .addSystem(
         'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
       )
@@ -122,6 +121,7 @@ export class CodingAgent {
   // Add a user message to the session and get AI response
   async run(prompt?: string): Promise<void> {
     if (prompt) {
+      console.log('Running agent with prompt:', prompt);
       // We only need to pass inputSource now, as generateOptions will be propagated from parent
       this.template.execute(createSession(), {
         inputSource: new StaticInputSource(prompt),
@@ -185,5 +185,13 @@ const runAgent = async (): Promise<void> => {
   }
 };
 
-// Run the agent
-runAgent();
+// Run the agent if this file is executed directly
+if (require.main === module) {
+  runAgent()
+    .then(() => {
+      console.log('Agent completed successfully.');
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+    });
+}
