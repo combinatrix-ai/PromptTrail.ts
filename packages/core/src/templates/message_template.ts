@@ -1,4 +1,8 @@
-import { ContentSource, StaticContentSource, BasicModelContentSource } from '../content_source';
+import {
+  ContentSource,
+  StaticContentSource,
+  BasicModelContentSource,
+} from '../content_source';
 import type { ModelContentOutput } from '../content_source';
 import { createMetadata } from '../metadata';
 import { createSession } from '../session';
@@ -168,7 +172,7 @@ export class UserTemplateContentSource extends StaticContentSource {
       onInput?: (input: string) => void;
       default?: string;
       validator?: IValidator;
-    }
+    },
   ) {
     super(content);
     if (options) {
@@ -257,7 +261,7 @@ export class ContentSourceUserTemplate<
         // Default to empty static content
         source = new StaticContentSource('');
       }
-      
+
       // Copy options
       options.description = contentOrSource.description;
       options.validate = contentOrSource.validate;
@@ -282,7 +286,7 @@ export class ContentSourceUserTemplate<
 
     // Get content from the content source
     let input = await this.contentSource.getContent(
-      validSession as unknown as ISession<Record<string, unknown>>
+      validSession as unknown as ISession<Record<string, unknown>>,
     );
 
     // Handle onInput callback if provided
@@ -313,10 +317,7 @@ export class ContentSourceUserTemplate<
 
     // Handle validation if needed
     if (this.options?.validator) {
-      updatedSession = await this.validateInput(
-        updatedSession,
-        input
-      );
+      updatedSession = await this.validateInput(updatedSession, input);
     }
 
     return updatedSession;
@@ -333,8 +334,8 @@ export class ContentSourceUserTemplate<
     let updatedSession = session;
     let attempts = 0;
     let result = await this.options.validator.validate(
-      input, 
-      updatedSession as unknown as ISession<Record<string, unknown>>
+      input,
+      updatedSession as unknown as ISession<Record<string, unknown>>,
     );
 
     while (!result.isValid) {
@@ -347,7 +348,7 @@ export class ContentSourceUserTemplate<
       });
 
       const newInput = await this.contentSource.getContent(
-        updatedSession as unknown as ISession<Record<string, unknown>>
+        updatedSession as unknown as ISession<Record<string, unknown>>,
       );
 
       if (this.options.onInput) {
@@ -361,8 +362,8 @@ export class ContentSourceUserTemplate<
       });
 
       result = await this.options.validator.validate(
-        newInput, 
-        updatedSession as unknown as ISession<Record<string, unknown>>
+        newInput,
+        updatedSession as unknown as ISession<Record<string, unknown>>,
       );
 
       const validator = this.options.validator as {
@@ -441,12 +442,12 @@ export class ContentSourceAssistantTemplate<
         async getContent(session: ISession): Promise<ModelContentOutput> {
           const interpolatedContent = interpolateTemplate(
             contentSource,
-            session.metadata
+            session.metadata,
           );
           return {
-            content: interpolatedContent
+            content: interpolatedContent,
           };
-        }
+        },
       } as ContentSource<ModelContentOutput>;
     }
   }
@@ -455,24 +456,28 @@ export class ContentSourceAssistantTemplate<
     const validSession = session ? session : createSession<TMetadata>();
 
     if (!this.contentSource) {
-      throw new Error('ContentSource is required for ContentSourceAssistantTemplate');
+      throw new Error(
+        'ContentSource is required for ContentSourceAssistantTemplate',
+      );
     }
 
     // For static content with validation
     if (this.staticContent && this.validator) {
       const interpolatedContent = interpolateTemplate(
         this.staticContent,
-        validSession.metadata
+        validSession.metadata,
       );
-      
+
       // Validate the content
       const result = await this.validator.validate(
         interpolatedContent,
-        validSession as unknown as ISession<Record<string, unknown>>
+        validSession as unknown as ISession<Record<string, unknown>>,
       );
 
       if (!result.isValid && this.raiseError) {
-        throw new Error('Assistant content validation failed: ' + (result.instruction || ''));
+        throw new Error(
+          'Assistant content validation failed: ' + (result.instruction || ''),
+        );
       }
 
       // If validation passes or raiseError is false, add the message and return
@@ -481,7 +486,7 @@ export class ContentSourceAssistantTemplate<
         content: interpolatedContent,
         metadata: createMetadata(),
       });
-      
+
       return updatedSession as unknown as ISession<TOutput>;
     }
 
@@ -494,18 +499,18 @@ export class ContentSourceAssistantTemplate<
       // Try up to maxAttempts times
       while (attempts < this.maxAttempts) {
         attempts++;
-        
+
         // Get content from the content source
         const modelOutput = await this.contentSource.getContent(
-          validSession as unknown as ISession<Record<string, unknown>>
+          validSession as unknown as ISession<Record<string, unknown>>,
         );
-        
+
         lastModelOutput = modelOutput;
-        
+
         // Validate the content
         const result = await this.validator.validate(
           modelOutput.content,
-          validSession as unknown as ISession<Record<string, unknown>>
+          validSession as unknown as ISession<Record<string, unknown>>,
         );
 
         if (result.isValid) {
@@ -516,28 +521,30 @@ export class ContentSourceAssistantTemplate<
             toolCalls: modelOutput.toolCalls,
             metadata: createMetadata(),
           });
-          
+
           // Update session metadata if provided
           if (modelOutput.metadata) {
-            updatedSession = updatedSession.updateMetadata(modelOutput.metadata as any);
+            updatedSession = updatedSession.updateMetadata(
+              modelOutput.metadata as any,
+            );
           }
-          
+
           // Add structured output to metadata if available
           if (modelOutput.structuredOutput) {
             updatedSession = updatedSession.updateMetadata({
               structured_output: modelOutput.structuredOutput,
             } as any);
           }
-          
+
           return updatedSession as unknown as ISession<TOutput>;
         }
 
         lastValidationError = result.instruction || 'Invalid content';
-        
+
         // If we've reached max attempts and raiseError is true, throw an error
         if (attempts >= this.maxAttempts && this.raiseError) {
           throw new Error(
-            `Assistant response validation failed${this.maxAttempts > 1 ? ` after ${this.maxAttempts} attempts` : ''}: ${lastValidationError}`
+            `Assistant response validation failed${this.maxAttempts > 1 ? ` after ${this.maxAttempts} attempts` : ''}: ${lastValidationError}`,
           );
         }
       }
@@ -545,39 +552,41 @@ export class ContentSourceAssistantTemplate<
       // If we get here, validation failed but raiseError is false
       // Make one final attempt to get content
       const finalModelOutput = await this.contentSource.getContent(
-        validSession as unknown as ISession<Record<string, unknown>>
+        validSession as unknown as ISession<Record<string, unknown>>,
       );
-      
+
       let updatedSession = validSession.addMessage({
         type: 'assistant',
         content: finalModelOutput.content,
         toolCalls: finalModelOutput.toolCalls,
         metadata: createMetadata(),
       });
-      
+
       // Update session metadata if provided
       if (finalModelOutput.metadata) {
-        updatedSession = updatedSession.updateMetadata(finalModelOutput.metadata as any);
+        updatedSession = updatedSession.updateMetadata(
+          finalModelOutput.metadata as any,
+        );
       }
-      
+
       // Add structured output to metadata if available
       if (finalModelOutput.structuredOutput) {
         updatedSession = updatedSession.updateMetadata({
           structured_output: finalModelOutput.structuredOutput,
         } as any);
       }
-      
+
       return updatedSession as unknown as ISession<TOutput>;
     }
 
     // If no validation is needed, just get content and return
     const modelOutput = await this.contentSource.getContent(
-      validSession as unknown as ISession<Record<string, unknown>>
+      validSession as unknown as ISession<Record<string, unknown>>,
     );
 
     // Process the model output
     let updatedSession = validSession;
-    
+
     // Add the assistant message to the session
     updatedSession = updatedSession.addMessage({
       type: 'assistant',
@@ -585,19 +594,21 @@ export class ContentSourceAssistantTemplate<
       toolCalls: modelOutput.toolCalls,
       metadata: createMetadata(),
     });
-    
+
     // Update session metadata if provided
     if (modelOutput.metadata) {
-      updatedSession = updatedSession.updateMetadata(modelOutput.metadata as any);
+      updatedSession = updatedSession.updateMetadata(
+        modelOutput.metadata as any,
+      );
     }
-    
+
     // Add structured output to metadata if available
     if (modelOutput.structuredOutput) {
       updatedSession = updatedSession.updateMetadata({
         structured_output: modelOutput.structuredOutput,
       } as any);
     }
-    
+
     return updatedSession as unknown as ISession<TOutput>;
   }
 }
@@ -649,7 +660,10 @@ export class AssistantTemplate<
       const modelContentSource = new BasicModelContentSource(contentSource);
       super(modelContentSource, validatorOrOptions);
     } else {
-      super(contentSource as ContentSource<ModelContentOutput> | string, validatorOrOptions);
+      super(
+        contentSource as ContentSource<ModelContentOutput> | string,
+        validatorOrOptions,
+      );
     }
   }
 }

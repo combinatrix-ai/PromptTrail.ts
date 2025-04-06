@@ -14,7 +14,10 @@ import { z } from 'zod';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
-import { StaticContentSource, BasicModelContentSource } from '../packages/core/src/content_source.js';
+import {
+  StaticContentSource,
+  BasicModelContentSource,
+} from '../packages/core/src/content_source.js';
 import { AssistantTemplate } from '../packages/core/src/templates/basic.js';
 
 // Convert exec to promise-based
@@ -124,23 +127,24 @@ export class CodingAgent {
     if (!prompt) {
       throw new Error('Prompt is required to run the agent.');
     }
-    
+
     console.log('Running agent with prompt:', prompt);
-    
+
     // Create a new session
     const session = createSession();
-    
+
     // Create a new agent with the same templates but with specific content sources
-    const systemPrompt = 'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
+    const systemPrompt =
+      'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
     const userContent = new StaticContentSource(prompt);
     const assistantContent = new BasicModelContentSource(this.generateOptions);
-    
+
     // Create a new agent with the content sources
     const agent = new Agent()
       .addSystem(systemPrompt)
       .addUser(userContent)
       .addAssistant(assistantContent);
-    
+
     // Execute the agent
     await agent.execute(session);
   }

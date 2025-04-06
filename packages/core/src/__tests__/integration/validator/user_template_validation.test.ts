@@ -45,10 +45,10 @@ describe('UserTemplate with real API validation', () => {
           description: 'Please provide a short answer (max 5 words)',
           validator: shortAnswerValidator,
           onInput: () => {},
-          validate: async () => true
-        })
+          validate: async () => true,
+        }),
       );
-      
+
       // Override the getContent method to return our test responses
       (template.getContentSource() as any).getContent = getResponse;
 

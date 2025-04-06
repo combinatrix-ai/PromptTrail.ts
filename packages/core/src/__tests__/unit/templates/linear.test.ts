@@ -317,7 +317,9 @@ describe('Templates', () => {
     });
 
     it('should support ContentSource', async () => {
-      const template = new UserTemplate(new StaticContentSource('default value'));
+      const template = new UserTemplate(
+        new StaticContentSource('default value'),
+      );
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);
@@ -328,7 +330,7 @@ describe('Templates', () => {
       const contentSource = new UserTemplateContentSource('', {});
       // Override getContent method
       contentSource.getContent = async () => 'custom input';
-      
+
       const template = new UserTemplate(contentSource);
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
@@ -342,15 +344,15 @@ describe('Templates', () => {
         .mockImplementation((input: string) =>
           Promise.resolve(input === 'valid input'),
         );
-      
+
       const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
         validate,
       });
-      
+
       // Override getContent method
       contentSource.getContent = async () => 'valid input';
-      
+
       const template = new UserTemplate(contentSource);
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
@@ -361,15 +363,15 @@ describe('Templates', () => {
 
     it('should call onInput callback', async () => {
       const onInput = vi.fn();
-      
+
       const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
         onInput,
       });
-      
+
       // Override getContent method
       contentSource.getContent = async () => 'test input';
-      
+
       const template = new UserTemplate(contentSource);
       await template.execute(createSession());
       expect(onInput).toHaveBeenCalledWith('test input');
@@ -377,23 +379,23 @@ describe('Templates', () => {
 
     it('should retry when validation fails', async () => {
       let attempts = 0;
-      
+
       const validate = vi
         .fn()
         .mockImplementation((input: string) =>
           Promise.resolve(input === 'valid input'),
         );
-      
+
       const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
         validate,
       });
-      
+
       // Override getContent method
       contentSource.getContent = async () => {
         return attempts++ === 0 ? 'invalid input' : 'valid input';
       };
-      
+
       const template = new UserTemplate(contentSource);
 
       const session = await template.execute(createSession());
@@ -423,15 +425,15 @@ describe('Templates', () => {
           raiseErrorAfterMaxAttempts: true,
         },
       );
-      
+
       const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
         validator,
       });
-      
+
       // Override getContent method
       contentSource.getContent = async () => 'invalid input';
-      
+
       const template = new UserTemplate(contentSource);
 
       await expect(template.execute(createSession())).rejects.toThrow(
@@ -452,15 +454,15 @@ describe('Templates', () => {
           raiseErrorAfterMaxAttempts: false,
         },
       );
-      
+
       const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
         validator,
       });
-      
+
       // Override getContent method
       contentSource.getContent = async () => 'invalid input';
-      
+
       const template = new UserTemplate(contentSource);
 
       const session = await template.execute(createSession());

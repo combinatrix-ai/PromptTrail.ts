@@ -165,7 +165,10 @@ export abstract class ComposedTemplate<
    * トランスフォーマーテンプレートを追加
    */
   addTransformer(
-    transformer: SessionTransformer<Record<string, unknown>, Record<string, unknown>>,
+    transformer: SessionTransformer<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >,
   ): this {
     this.templates.push(new TransformerTemplate(transformer));
     return this;
@@ -197,9 +200,7 @@ export abstract class ComposedTemplate<
   /**
    * テンプレートの実行（サブクラスで実装）
    */
-  abstract execute(
-    session?: ISession<TInput>,
-  ): Promise<ISession<TOutput>>;
+  abstract execute(session?: ISession<TInput>): Promise<ISession<TOutput>>;
 }
 
 /**
@@ -221,13 +222,9 @@ export class SubroutineTemplate extends ComposedTemplate {
     this.contentSource = options.contentSource;
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
-    const {
-      session: validSession,
-      contentSource,
-    } = TemplateUtils.prepareExecutionOptions(this, session);
+  async execute(session?: ISession): Promise<ISession> {
+    const { session: validSession, contentSource } =
+      TemplateUtils.prepareExecutionOptions(this, session);
 
     // Create child session using initWith function
     const childSession = this.options.initWith(validSession);
@@ -278,13 +275,9 @@ export class LoopTemplate extends ComposedTemplate {
     return this;
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
-    const {
-      session: validSession,
-      contentSource,
-    } = TemplateUtils.prepareExecutionOptions(this, session);
+  async execute(session?: ISession): Promise<ISession> {
+    const { session: validSession, contentSource } =
+      TemplateUtils.prepareExecutionOptions(this, session);
 
     if (!this.exitCondition) {
       throw new Error('Exit condition not set for LoopTemplate');
@@ -331,13 +324,9 @@ export class LinearTemplate extends ComposedTemplate {
     }
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
-    const {
-      session: validSession,
-      contentSource,
-    } = TemplateUtils.prepareExecutionOptions(this, session);
+  async execute(session?: ISession): Promise<ISession> {
+    const { session: validSession, contentSource } =
+      TemplateUtils.prepareExecutionOptions(this, session);
 
     let currentSession = validSession;
 

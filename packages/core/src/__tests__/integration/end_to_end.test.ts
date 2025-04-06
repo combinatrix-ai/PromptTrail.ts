@@ -166,7 +166,12 @@ The weather in San Francisco is currently 72°F and sunny.
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new UserTemplateContentSource('Should we continue? (yes/no): no', {}))
+          .addUser(
+            new UserTemplateContentSource(
+              'Should we continue? (yes/no): no',
+              {},
+            ),
+          )
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (
@@ -295,7 +300,12 @@ describe('End-to-End Workflows with Real APIs', () => {
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new UserTemplateContentSource('Should we continue? (yes/no): no', {}))
+          .addUser(
+            new UserTemplateContentSource(
+              'Should we continue? (yes/no): no',
+              {},
+            ),
+          )
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (

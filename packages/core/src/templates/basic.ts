@@ -6,10 +6,10 @@ import type { ISession } from '../types';
 import { type IValidator } from '../validators';
 import { CustomValidator } from '../validators';
 import { createSession } from '../session';
-import { 
-  ContentSource, 
-  StaticContentSource, 
-  type ModelContentOutput
+import {
+  ContentSource,
+  StaticContentSource,
+  type ModelContentOutput,
 } from '../content_source';
 
 /**
@@ -60,7 +60,7 @@ export class TemplateUtils {
    * Convert string to ContentSource
    */
   static convertToContentSource(
-    input: string | ContentSource<unknown> | undefined
+    input: string | ContentSource<unknown> | undefined,
   ): ContentSource<unknown> | undefined {
     if (input === undefined) {
       return undefined;
@@ -80,7 +80,6 @@ export class TemplateUtils {
   }
 }
 
-
 /**
  * Base class for all templates
  */
@@ -91,9 +90,7 @@ export abstract class Template<
 > {
   protected contentSource?: ContentSource<TContentType>;
 
-  abstract execute(
-    session?: ISession<TInput>,
-  ): Promise<ISession<TOutput>>;
+  abstract execute(session?: ISession<TInput>): Promise<ISession<TOutput>>;
 
   getContentSource(): ContentSource<TContentType> | undefined {
     return this.contentSource;
@@ -118,7 +115,7 @@ export class SystemTemplate extends Template<
 > {
   constructor(contentOrSource: string | ContentSource<string>) {
     super();
-    
+
     // Convert string to StaticContentSource if needed
     if (typeof contentOrSource === 'string') {
       this.contentSource = new StaticContentSource(contentOrSource);
@@ -127,13 +124,9 @@ export class SystemTemplate extends Template<
     }
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
-    const { session: validSession, contentSource } = TemplateUtils.prepareExecutionOptions(
-      this,
-      session,
-    );
+  async execute(session?: ISession): Promise<ISession> {
+    const { session: validSession, contentSource } =
+      TemplateUtils.prepareExecutionOptions(this, session);
 
     if (!contentSource) {
       throw new Error('ContentSource is required for SystemTemplate');
@@ -143,7 +136,7 @@ export class SystemTemplate extends Template<
     if (typeof content !== 'string') {
       throw new Error('Expected string content from ContentSource');
     }
-    
+
     return validSession.addMessage({
       type: 'system',
       content,
@@ -202,7 +195,7 @@ export class UserTemplate extends Template<
         // Default to empty static content
         this.contentSource = new StaticContentSource('');
       }
-      
+
       this.options = {
         description: inputOrConfig.description,
         validate: inputOrConfig.validate,
@@ -213,9 +206,7 @@ export class UserTemplate extends Template<
     }
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
+  async execute(session?: ISession): Promise<ISession> {
     const { session: validSession, contentSource } =
       TemplateUtils.prepareExecutionOptions(this, session);
 
@@ -330,7 +321,10 @@ export class AssistantTemplate<
   TOutput extends Record<string, unknown> = TInput,
 > extends Template<TInput, TOutput, ModelContentOutput> {
   constructor(
-    contentSource?: ContentSource<ModelContentOutput> | string | GenerateOptions,
+    contentSource?:
+      | ContentSource<ModelContentOutput>
+      | string
+      | GenerateOptions,
   ) {
     super();
 
@@ -348,19 +342,17 @@ export class AssistantTemplate<
         async getContent(session: ISession): Promise<ModelContentOutput> {
           const interpolatedContent = TemplateUtils.interpolateContent(
             contentSource,
-            session
+            session,
           );
           return {
-            content: interpolatedContent
+            content: interpolatedContent,
           };
-        }
+        },
       } as ContentSource<ModelContentOutput>;
     }
   }
 
-  async execute(
-    session?: ISession<TInput>,
-  ): Promise<ISession<TOutput>> {
+  async execute(session?: ISession<TInput>): Promise<ISession<TOutput>> {
     const { session: validSession, contentSource } =
       TemplateUtils.prepareExecutionOptions(
         this as unknown as Template<
@@ -376,16 +368,20 @@ export class AssistantTemplate<
 
     // Get content from the content source
     const modelOutput = await contentSource.getContent(validSession);
-    
-    if (!modelOutput || typeof modelOutput !== 'object' || typeof (modelOutput as any).content !== 'string') {
+
+    if (
+      !modelOutput ||
+      typeof modelOutput !== 'object' ||
+      typeof (modelOutput as any).content !== 'string'
+    ) {
       throw new Error('Expected ModelContentOutput from ContentSource');
     }
-    
+
     const typedOutput = modelOutput as ModelContentOutput;
-    
+
     // Process the model output
     let updatedSession = validSession;
-    
+
     // Add the assistant message to the session
     updatedSession = updatedSession.addMessage({
       type: 'assistant',
@@ -393,19 +389,21 @@ export class AssistantTemplate<
       toolCalls: typedOutput.toolCalls,
       metadata: createMetadata(),
     });
-    
+
     // Update session metadata if provided
     if (typedOutput.metadata) {
-      updatedSession = updatedSession.updateMetadata(typedOutput.metadata as any);
+      updatedSession = updatedSession.updateMetadata(
+        typedOutput.metadata as any,
+      );
     }
-    
+
     // Add structured output to metadata if available
     if (typedOutput.structuredOutput) {
       updatedSession = updatedSession.updateMetadata({
         structured_output: typedOutput.structuredOutput,
       } as any);
     }
-    
+
     return updatedSession as ISession<TOutput>;
   }
 }
@@ -426,9 +424,7 @@ export class ToolResultTemplate<
     super();
   }
 
-  async execute(
-    session?: ISession<TInput>,
-  ): Promise<ISession<TOutput>> {
+  async execute(session?: ISession<TInput>): Promise<ISession<TOutput>> {
     const { session: validSession } = TemplateUtils.prepareExecutionOptions(
       this as unknown as Template<
         Record<string, unknown>,
@@ -468,12 +464,11 @@ export class IfTemplate extends Template {
     this.elseTemplate = options.elseTemplate;
   }
 
-  async execute(
-    session?: ISession,
-  ): Promise<ISession> {
-    const {
-      session: validSession,
-    } = TemplateUtils.prepareExecutionOptions(this, session);
+  async execute(session?: ISession): Promise<ISession> {
+    const { session: validSession } = TemplateUtils.prepareExecutionOptions(
+      this,
+      session,
+    );
 
     if (this.condition(validSession)) {
       return this.thenTemplate.execute(validSession);
