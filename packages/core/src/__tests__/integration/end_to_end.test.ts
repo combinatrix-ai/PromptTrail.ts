@@ -5,7 +5,8 @@ import { extractMarkdown } from '../../utils/markdown_extractor';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
-import { StaticInputSource } from '../../input_source';
+import { StaticContentSource } from '../../content_source';
+import { UserTemplateContentSource } from '../../templates/message_template';
 import { createCalculatorTool, createWeatherTool } from './utils/test_tools';
 
 /**
@@ -165,7 +166,7 @@ The weather in San Francisco is currently 72°F and sunny.
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new StaticInputSource('Should we continue? (yes/no): no'))
+          .addUser(new UserTemplateContentSource('Should we continue? (yes/no): no', {}))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (
@@ -294,7 +295,7 @@ describe('End-to-End Workflows with Real APIs', () => {
         new LoopTemplate()
           .addUser('Tell me something interesting.')
           .addAssistant(generateOptions)
-          .addUser(new StaticInputSource('Should we continue? (yes/no): no'))
+          .addUser(new UserTemplateContentSource('Should we continue? (yes/no): no', {}))
           .setExitCondition((session) => {
             const lastMessage = session.getLastMessage();
             return (

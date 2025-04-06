@@ -20,6 +20,8 @@ export {
   SchemaModelContentSource,
 } from './content_source';
 
+export { UserTemplateContentSource } from './templates/message_template';
+
 export type { ModelContentOutput } from './content_source';
 
 /**

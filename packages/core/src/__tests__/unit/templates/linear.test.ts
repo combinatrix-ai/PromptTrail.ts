@@ -10,7 +10,8 @@ import {
   SubroutineTemplate,
   IfTemplate,
 } from '../../../templates';
-import { CallbackInputSource, StaticInputSource } from '../../../input_source';
+import { StaticContentSource } from '../../../content_source';
+import { UserTemplateContentSource } from '../../../templates/message_template';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
 import {
@@ -315,17 +316,20 @@ describe('Templates', () => {
       expect(messages[0].content).toBe('test message');
     });
 
-    it('should support InputSource', async () => {
-      const template = new UserTemplate(new StaticInputSource('default value'));
+    it('should support ContentSource', async () => {
+      const template = new UserTemplate(new StaticContentSource('default value'));
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('default value');
     });
 
-    it('should support custom input source', async () => {
-      const inputSource = new CallbackInputSource(async () => 'custom input');
-      const template = new UserTemplate(inputSource);
+    it('should support custom content source', async () => {
+      const contentSource = new UserTemplateContentSource('', {});
+      // Override getContent method
+      contentSource.getContent = async () => 'custom input';
+      
+      const template = new UserTemplate(contentSource);
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);
@@ -333,17 +337,21 @@ describe('Templates', () => {
     });
 
     it('should validate input', async () => {
-      const inputSource = new CallbackInputSource(async () => 'valid input');
       const validate = vi
         .fn()
         .mockImplementation((input: string) =>
           Promise.resolve(input === 'valid input'),
         );
-      const template = new UserTemplate({
+      
+      const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
-        inputSource,
         validate,
       });
+      
+      // Override getContent method
+      contentSource.getContent = async () => 'valid input';
+      
+      const template = new UserTemplate(contentSource);
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
       expect(messages).toHaveLength(1);
@@ -353,32 +361,40 @@ describe('Templates', () => {
 
     it('should call onInput callback', async () => {
       const onInput = vi.fn();
-      const template = new UserTemplate({
+      
+      const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
-        inputSource: new CallbackInputSource(async () => 'test input'),
         onInput,
       });
+      
+      // Override getContent method
+      contentSource.getContent = async () => 'test input';
+      
+      const template = new UserTemplate(contentSource);
       await template.execute(createSession());
       expect(onInput).toHaveBeenCalledWith('test input');
     });
 
     it('should retry when validation fails', async () => {
       let attempts = 0;
-      const inputSource = new CallbackInputSource(async () => {
-        return attempts++ === 0 ? 'invalid input' : 'valid input';
-      });
-
+      
       const validate = vi
         .fn()
         .mockImplementation((input: string) =>
           Promise.resolve(input === 'valid input'),
         );
-
-      const template = new UserTemplate({
+      
+      const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
-        inputSource,
         validate,
       });
+      
+      // Override getContent method
+      contentSource.getContent = async () => {
+        return attempts++ === 0 ? 'invalid input' : 'valid input';
+      };
+      
+      const template = new UserTemplate(contentSource);
 
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
@@ -395,8 +411,6 @@ describe('Templates', () => {
     });
 
     it('should respect maxAttempts and raiseError options', async () => {
-      const inputSource = new CallbackInputSource(async () => 'invalid input');
-
       const validator = new CustomValidator(
         async (content: string) => {
           return content === 'valid input'
@@ -409,12 +423,16 @@ describe('Templates', () => {
           raiseErrorAfterMaxAttempts: true,
         },
       );
-
-      const template = new UserTemplate({
+      
+      const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
-        inputSource,
         validator,
       });
+      
+      // Override getContent method
+      contentSource.getContent = async () => 'invalid input';
+      
+      const template = new UserTemplate(contentSource);
 
       await expect(template.execute(createSession())).rejects.toThrow(
         'Input validation failed after',
@@ -422,8 +440,6 @@ describe('Templates', () => {
     });
 
     it('should not throw error when raiseError is false', async () => {
-      const inputSource = new CallbackInputSource(async () => 'invalid input');
-
       const validator = new CustomValidator(
         async (content: string) => {
           return content === 'valid input'
@@ -436,12 +452,16 @@ describe('Templates', () => {
           raiseErrorAfterMaxAttempts: false,
         },
       );
-
-      const template = new UserTemplate({
+      
+      const contentSource = new UserTemplateContentSource('', {
         description: 'test description',
-        inputSource,
         validator,
       });
+      
+      // Override getContent method
+      contentSource.getContent = async () => 'invalid input';
+      
+      const template = new UserTemplate(contentSource);
 
       const session = await template.execute(createSession());
       const messages = session.getMessagesByType('user');
