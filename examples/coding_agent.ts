@@ -1,232 +1,197 @@
+// Imports from @prompttrail/core
 import {
-  createTool,
-  type Tool,
-  type SchemaType,
-  type Message,
-  type ToolResultMetadata,
-  type InferSchemaType,
-  type Session,
   createSession,
+  createGenerateOptions,
   type GenerateOptions,
-  createMetadata,
-  generateText,
-} from '@prompttrail/core';
+  Agent,
+} from '../packages/core/src/index.js';
+
+// Imports from ai and zod for tool definition
+import { tool, type Tool } from 'ai'; // Removed unused Message import
+import { z } from 'zod';
+
+// Node.js built-in modules
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
-import { fileURLToPath } from 'url';
+import { StaticInputSource } from '../packages/core/src/input_source.js';
 
 // Convert exec to promise-based
 const execAsync = promisify(exec);
 
-// Define tool schemas
-const shellCommandSchema = {
-  properties: {
-    command: { type: 'string', description: 'Shell command to execute' },
-  },
-  required: ['command'],
-} as const satisfies SchemaType;
-
-const readFileSchema = {
-  properties: {
-    path: { type: 'string', description: 'Path to the file to read' },
-  },
-  required: ['path'],
-} as const satisfies SchemaType;
-
-const writeFileSchema = {
-  properties: {
-    path: { type: 'string', description: 'Path to write the file' },
-    content: { type: 'string', description: 'Content to write to the file' },
-  },
-  required: ['path', 'content'],
-} as const satisfies SchemaType;
-
-// Create tools
-const shellCommandTool = createTool({
-  name: 'shell_command',
+// Create tools using 'ai' tool function and Zod schemas
+const shellCommandTool = tool({
   description: 'Execute a shell command',
-  schema: shellCommandSchema,
-  execute: async (input: InferSchemaType<typeof shellCommandSchema>) => {
-    const { stdout, stderr } = await execAsync(input.command);
-    return { stdout, stderr };
-  },
-});
-
-const readFileTool = createTool({
-  name: 'read_file',
-  description: 'Read content from a file',
-  schema: readFileSchema,
-  execute: async (input: InferSchemaType<typeof readFileSchema>) => {
-    const content = await readFile(input.path, 'utf-8');
-    return { content };
-  },
-});
-
-const writeFileTool = createTool({
-  name: 'write_file',
-  description: 'Write content to a file',
-  schema: writeFileSchema,
-  execute: async (input: InferSchemaType<typeof writeFileSchema>) => {
-    await writeFile(input.path, input.content, 'utf-8');
-    return { success: true };
-  },
-});
-
-// Define tool input types
-type ToolSchemas = {
-  shell_command: typeof shellCommandSchema;
-  read_file: typeof readFileSchema;
-  write_file: typeof writeFileSchema;
-};
-
-// CodingAgent class to manage tools and session
-export class CodingAgent {
-  private session: Session;
-  private tools: Tool<SchemaType>[];
-  private generateOptions: GenerateOptions;
-
-  constructor(config: { provider: 'openai' | 'anthropic'; apiKey: string }) {
-    this.tools = [shellCommandTool, readFileTool, writeFileTool];
-
-    // Initialize generateOptions based on provider
-    if (config.provider === 'openai') {
-      this.generateOptions = {
-        provider: {
-          type: 'openai',
-          apiKey: config.apiKey,
-          modelName: 'gpt-4',
-        },
-        temperature: 0.7,
-        tools: this.tools,
-      };
-    } else {
-      this.generateOptions = {
-        provider: {
-          type: 'anthropic',
-          apiKey: config.apiKey,
-          modelName: 'claude-3-opus-20240229',
-        },
-        temperature: 0.7,
-        tools: this.tools,
-      };
+  parameters: z.object({
+    command: z.string().describe('Shell command to execute'),
+  }),
+  execute: async (input: z.infer<z.ZodObject<{ command: z.ZodString }>>) => {
+    try {
+      const { stdout, stderr } = await execAsync(input.command);
+      return { stdout, stderr };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Command failed';
+      return { stdout: '', stderr: message };
     }
+  },
+});
 
-    // Initialize session
-    this.session = createSession({
-      messages: [
-        {
-          type: 'system',
-          content:
-            'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
-        },
-      ],
-    });
+const readFileTool = tool({
+  description: 'Read content from a file',
+  parameters: z.object({
+    path: z.string().describe('Path to the file to read'),
+  }),
+  execute: async (input: z.infer<z.ZodObject<{ path: z.ZodString }>>) => {
+    try {
+      const content = await readFile(input.path, 'utf-8');
+      return { content };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { error: `Failed to read file: ${message}` };
+    }
+  },
+});
+
+const writeFileTool = tool({
+  description: 'Write content to a file',
+  parameters: z.object({
+    path: z.string().describe('Path to write the file'),
+    content: z.string().describe('Content to write to the file'),
+  }),
+  execute: async (
+    input: z.infer<z.ZodObject<{ path: z.ZodString; content: z.ZodString }>>,
+  ) => {
+    try {
+      await writeFile(input.path, input.content, 'utf-8');
+      return { success: true };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: `Failed to write file: ${message}` };
+    }
+  },
+});
+
+// Define the type for the tools record based on 'ai' Tool type
+type ToolsMap = Record<string, Tool>;
+
+export class CodingAgent {
+  private tools: ToolsMap;
+  private generateOptions: GenerateOptions;
+  private template: Agent;
+
+  constructor(config: {
+    provider: 'openai' | 'anthropic';
+    apiKey: string;
+    modelName?: string;
+  }) {
+    // Store tools in the record
+    this.tools = {
+      shell_command: shellCommandTool,
+      read_file: readFileTool,
+      write_file: writeFileTool,
+    };
+
+    // Initialize generateOptions using fluent API
+    const baseOptions = {
+      provider: {
+        type: config.provider,
+        apiKey: config.apiKey,
+        modelName:
+          config.provider === 'openai'
+            ? 'gpt-4o-mini'
+            : 'claude-3-5-haiku-20240620',
+      },
+      temperature: 0.7,
+    };
+
+    this.generateOptions = createGenerateOptions(baseOptions).addTools(
+      this.tools,
+    ); // Add tools using fluent API
+
+    // CodingAgent Template
+    this.template = new Agent({})
+      .addSystem(
+        'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
+      )
+      .addUser()
+      // addAssistant can now be called without generateOptions, it will use the parent's one
+      .addAssistant();
   }
 
   // Add a user message to the session and get AI response
-  async processUserMessage(content: string): Promise<void> {
-    // Add user message
-    this.session = this.session.addMessage({
-      type: 'user',
-      content,
-    });
-
-    // Get AI response
-    while (true) {
-      const response = await generateText(this.session, this.generateOptions);
-      this.session = this.session.addMessage(response);
-
-      if (response.type === 'assistant') {
-        const toolCalls = response.toolCalls;
-        if (toolCalls && toolCalls.length > 0) {
-          // Handle tool calls
-          for (const toolCall of toolCalls) {
-            const result = await this.executeTool(
-              toolCall.name as keyof ToolSchemas,
-              toolCall.arguments as InferSchemaType<
-                ToolSchemas[keyof ToolSchemas]
-              >,
-            );
-            await this.addToolResult(result, toolCall.id);
-          }
-          continue;
-        }
-      }
-      // No more tool calls, break the loop
-      break;
+  async run(prompt?: string): Promise<void> {
+    if (prompt) {
+      console.log('Running agent with prompt:', prompt);
+      // We only need to pass inputSource now, as generateOptions will be propagated from parent
+      this.template.execute(createSession(), {
+        inputSource: new StaticInputSource(prompt),
+        generateOptions: this.generateOptions,
+      });
+    } else {
+      // Raise an error if no prompt is provided
+      throw new Error('Prompt is required to run the agent.');
     }
-  }
-
-  // Add a tool result message to the session
-  private async addToolResult(
-    result: unknown,
-    toolCallId: string,
-  ): Promise<void> {
-    this.session = this.session.addMessage({
-      type: 'tool_result',
-      content: JSON.stringify(result),
-      result,
-      metadata: createMetadata<ToolResultMetadata>({ initial: { toolCallId } }),
-    });
-  }
-
-  // Execute a tool and add the result to the session
-  private async executeTool<K extends keyof ToolSchemas>(
-    toolName: K,
-    args: InferSchemaType<ToolSchemas[K]>,
-  ): Promise<unknown> {
-    const tool = this.tools.find((t) => t.name === toolName);
-    if (!tool) {
-      throw new Error(`Tool not found: ${toolName}`);
-    }
-
-    const result = await tool.execute(args);
-    return result;
-  }
-
-  // Get all messages in the session
-  getMessages(): readonly Message[] {
-    return this.session.messages;
   }
 
   // Example usage of the agent
   async runExample(): Promise<void> {
     // Example 1: List files
-    await this.processUserMessage(
+    await this.run(
       'List the files in the current directory and tell me what you see.',
     );
 
     // Example 2: Create and read a file
-    await this.processUserMessage(
+    await this.run(
       'Create a file named example.txt with some interesting content, then read it back and explain what you wrote.',
     );
 
     // Example 3: Advanced task
-    await this.processUserMessage(
+    await this.run(
       'Create a simple Node.js script that prints "Hello, World!" and run it.',
     );
   }
 }
 
-// Example usage
-if (fileURLToPath(import.meta.url) === process.argv[1]) {
-  // Get API key from environment variable based on provider
-  const provider = (process.env.AI_PROVIDER || 'openai') as
-    | 'openai'
-    | 'anthropic';
-  const apiKey =
-    provider === 'openai'
-      ? process.env.OPENAI_API_KEY
-      : process.env.ANTHROPIC_API_KEY;
+// Run the agent if this file is executed directly
+const runAgent = async (): Promise<void> => {
+  try {
+    // Get API key from environment variable based on provider
+    const provider = (process.env.AI_PROVIDER || 'openai') as
+      | 'openai'
+      | 'anthropic';
+    const apiKey =
+      provider === 'openai'
+        ? process.env.OPENAI_API_KEY
+        : process.env.ANTHROPIC_API_KEY;
 
-  if (!apiKey) {
-    console.error(
-      `${provider.toUpperCase()}_API_KEY environment variable is required`,
-    );
-    process.exit(1);
+    if (!apiKey) {
+      console.error(
+        `${provider.toUpperCase()}_API_KEY environment variable is required`,
+      );
+      process.exit(1);
+    }
+
+    const agent = new CodingAgent({ provider, apiKey });
+
+    // Check if --test argument is provided
+    if (process.argv.includes('--test')) {
+      console.log('Running example tests...');
+      await agent.runExample();
+    } else {
+      await agent.run('What can you help me with today?');
+    }
+  } catch (error) {
+    console.error('Error running agent:', error);
   }
+};
 
-  const agent = new CodingAgent({ provider, apiKey });
-  agent.runExample().catch(console.error);
+// Run the agent if this file is executed directly
+if (require.main === module) {
+  runAgent()
+    .then(() => {
+      console.log('Agent completed successfully.');
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+    });
 }

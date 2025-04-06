@@ -12,7 +12,7 @@ export interface InputSource {
    * @param context Input context including metadata
    * @returns Promise resolving to the input string
    */
-  getInput(context?: { metadata?: Metadata }): Promise<string>;
+  getInput(context: { metadata: Metadata }): Promise<string>;
 
   /**
    * Get the validator associated with this input source

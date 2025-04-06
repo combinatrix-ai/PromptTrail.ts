@@ -442,7 +442,7 @@ const petNameTemplate = new LinearTemplate()
   .addSystem('You are a helpful assistant that suggests pet names.')
   .addUser('Suggest a name for a pet cat.')
   // Add assistant with validator directly
-  .addAssistant({ 
+  .addAssistant({
     generateOptions,
     validator: combinedValidator,
     maxAttempts: 3,
@@ -467,12 +467,16 @@ const noNumbersValidator = new RegexNoMatchValidator({
 });
 
 // OR logic with AnyValidator
-const anyValidator = new AnyValidator([
-  new RegexMatchValidator({ regex: /^[A-Z]/ }),
-  new RegexMatchValidator({ regex: /!$/ }),
-], {
-  description: 'Response must either start with a capital letter OR end with an exclamation mark',
-});
+const anyValidator = new AnyValidator(
+  [
+    new RegexMatchValidator({ regex: /^[A-Z]/ }),
+    new RegexMatchValidator({ regex: /!$/ }),
+  ],
+  {
+    description:
+      'Response must either start with a capital letter OR end with an exclamation mark',
+  },
+);
 
 // Use validators with InputSource for user input validation
 const userInputTemplate = new LinearTemplate()
@@ -633,8 +637,14 @@ import {
 
 // Create session with your conversation
 const session = createSession()
-  .addMessage({ type: 'system', content: 'You are a helpful assistant with MCP tool access.' })
-  .addMessage({ type: 'user', content: 'Can you search for the latest AI papers?' });
+  .addMessage({
+    type: 'system',
+    content: 'You are a helpful assistant with MCP tool access.',
+  })
+  .addMessage({
+    type: 'user',
+    content: 'Can you search for the latest AI papers?',
+  });
 
 // Create options with MCP server configuration using the fluent API
 const options = createGenerateOptions({

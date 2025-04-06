@@ -1,5 +1,5 @@
-import type { Session } from '../types';
-import type { MessageRole } from '../types';
+import type { ISession, TMessage } from '../types';
+import type { TMessageRole } from '../types';
 import {
   createTransformer,
   type SessionTransformer,
@@ -22,7 +22,7 @@ export interface PatternExtractorOptions<T extends Record<string, unknown>> {
   /**
    * Message types to extract from (default: ['assistant'])
    */
-  messageTypes?: MessageRole[];
+  messageTypes?: TMessageRole[];
 
   /**
    * Optional transformation function to apply to the matched content
@@ -82,8 +82,8 @@ export function extractPattern<T extends Record<string, unknown>>(
           : new RegExp(option.pattern);
 
       // Get relevant messages
-      const messages = session.messages.filter((msg) =>
-        messageTypes.includes(msg.type as MessageRole),
+      const messages = session.messages.filter((msg: TMessage) =>
+        messageTypes.includes(msg.type as TMessageRole),
       );
 
       let matched = false;
@@ -119,6 +119,6 @@ export function extractPattern<T extends Record<string, unknown>>(
     const updatedSession = session.updateMetadata(extractedData as T);
 
     // Return the updated session
-    return updatedSession as Session<Record<string, unknown> & T>;
+    return updatedSession as ISession<Record<string, unknown> & T>;
   });
 }

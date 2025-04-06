@@ -1,7 +1,7 @@
-import type { Message } from './types';
+import type { TMessage } from './types';
 import type { Metadata } from './metadata';
 import { createMetadata } from './metadata';
-import type { Session } from './types';
+import type { ISession } from './types';
 import { ValidationError } from './types';
 
 /**
@@ -11,10 +11,10 @@ import { ValidationError } from './types';
  * Internal session implementation
  */
 class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
-  implements Session<T>
+  implements ISession<T>
 {
   constructor(
-    public readonly messages: readonly Message[] = [],
+    public readonly messages: readonly TMessage[] = [],
     public readonly metadata: Metadata<T> = createMetadata<T>(),
     public readonly print: boolean = false,
   ) {}
@@ -22,7 +22,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new session with additional message
    */
-  addMessage(message: Message): Session<T> {
+  addMessage(message: TMessage): ISession<T> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -48,7 +48,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
    */
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
-  ): Session<T & U> {
+  ): ISession<T & U> {
     return new _SessionImpl<T & U>(
       this.messages,
       this.metadata.merge(metadata),
@@ -59,18 +59,18 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Get the last message in the session
    */
-  getLastMessage(): Message | undefined {
+  getLastMessage(): TMessage | undefined {
     return this.messages[this.messages.length - 1];
   }
 
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends Message['type']>(
+  getMessagesByType<U extends TMessage['type']>(
     type: U,
-  ): Extract<Message, { type: U }>[] {
+  ): Extract<TMessage, { type: U }>[] {
     return this.messages.filter(
-      (msg): msg is Extract<Message, { type: U }> => msg.type === type,
+      (msg): msg is Extract<TMessage, { type: U }> => msg.type === type,
     );
   }
 
@@ -121,7 +121,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
    */
   static fromJSON<U extends Record<string, unknown>>(
     json: Record<string, unknown>,
-  ): Session<U> {
+  ): ISession<U> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -129,7 +129,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     }
 
     return createSession<U>({
-      messages: json.messages as Message[],
+      messages: json.messages as TMessage[],
       metadata: json.metadata as U,
       print: json.print as boolean,
     });
@@ -141,11 +141,11 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
  */
 export function createSession<T extends Record<string, unknown>>(
   options: {
-    messages?: Message[];
+    messages?: TMessage[];
     metadata?: T;
     print?: boolean;
   } = {},
-): Session<T> {
+): ISession<T> {
   return new _SessionImpl<T>(
     options.messages,
     options.metadata

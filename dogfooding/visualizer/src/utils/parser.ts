@@ -278,7 +278,7 @@ export function parseTemplateCode(code: string): {
       return (
         node.type === containerType &&
         node.position.y <= (templateMatch?.index || 0) &&
-        !((node.data as NodeData).childIds?.length)
+        !(node.data as NodeData).childIds?.length
       );
     });
 
@@ -693,7 +693,9 @@ export function generateTemplateCode(graph: {
   // Generate code for independent templates
   const independentTemplates = nodes.filter(
     (node) =>
-      node.type !== 'Linear' && node.type !== 'Loop' && !(node.data as NodeData).parentId,
+      node.type !== 'Linear' &&
+      node.type !== 'Loop' &&
+      !(node.data as NodeData).parentId,
   );
 
   independentTemplates.forEach((node) => {
@@ -708,15 +710,18 @@ export function generateTemplateCode(graph: {
       case 'User': {
         code += `const ${varName} = new UserTemplate({\n`;
         code += `  description: '${(node.data as NodeData).description || ''}',\n`;
-        if ((node.data as NodeData).default) code += `  default: '${(node.data as NodeData).default}',\n`;
+        if ((node.data as NodeData).default)
+          code += `  default: '${(node.data as NodeData).default}',\n`;
         code += `});\n\n`;
         break;
       }
 
       case 'Assistant': {
         code += `const ${varName} = new AssistantTemplate({\n`;
-        if ((node.data as NodeData).model) code += `  model: '${(node.data as NodeData).model}',\n`;
-        if ((node.data as NodeData).content) code += `  content: '${(node.data as NodeData).content}',\n`;
+        if ((node.data as NodeData).model)
+          code += `  model: '${(node.data as NodeData).model}',\n`;
+        if ((node.data as NodeData).content)
+          code += `  content: '${(node.data as NodeData).content}',\n`;
         code += `});\n\n`;
         break;
       }
@@ -756,7 +761,8 @@ export function generateTemplateCode(graph: {
           code += `  })`;
         } else if (child.type === 'Assistant') {
           code += `\n  .addAssistant({`;
-          if ((child.data as NodeData).model) code += `\n    model: '${(child.data as NodeData).model}',`;
+          if ((child.data as NodeData).model)
+            code += `\n    model: '${(child.data as NodeData).model}',`;
           if ((child.data as NodeData).content)
             code += `\n    content: '${(child.data as NodeData).content}',`;
           code += `\n  })`;

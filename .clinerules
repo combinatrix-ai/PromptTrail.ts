@@ -20,6 +20,7 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 - Check types: `pnpm -C packages/core typecheck`
 - Lint code: `pnpm lint` (fix issues) or `pnpm lint:check`
 - Format code: `pnpm format` (fix) or `pnpm format:check`
+- When you run ts files, use `bun path/to/script.ts` instead of `ts-node`. Start from root to correct dependency resolve.
 
 ## Coding Style Guidelines
 

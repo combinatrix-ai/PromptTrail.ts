@@ -769,7 +769,7 @@ describe('Templates', () => {
         .addUser('Status check')
         .addAssistant('Checking status...');
 
-      // Add an IfTemplate to the LinearTemplate
+      // Create an IfTemplate
       const ifTemplate = new IfTemplate({
         condition: (session: ISession) =>
           Boolean(session.metadata.get('isLoggedIn')),
@@ -777,8 +777,8 @@ describe('Templates', () => {
         elseTemplate: new SystemTemplate('User is not logged in'),
       });
 
-      // Add the IfTemplate to the LinearTemplate
-      template['templates'].push(ifTemplate);
+      // Add the IfTemplate to the LinearTemplate using the addTemplate method
+      template.addTemplate(ifTemplate);
 
       // Execute the template
       const result = await template.execute(session);
