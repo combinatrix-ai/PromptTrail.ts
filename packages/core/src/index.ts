@@ -15,7 +15,7 @@ export { createGenerateOptions, GenerateOptions } from './generate_options';
 /**
  * Session transformers and extractors
  */
-export * from './utils/extractors';
+export * from './utils';
 export * from './schema_template';
 
 /**
