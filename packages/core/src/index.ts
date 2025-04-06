@@ -7,6 +7,22 @@ export { createSession } from './session';
 export * from './templates';
 
 /**
+ * Content sources
+ */
+export {
+  ContentSource,
+  StringContentSource,
+  ModelContentSource,
+  StaticContentSource,
+  CLIContentSource,
+  CallbackContentSource,
+  BasicModelContentSource,
+  SchemaModelContentSource,
+} from './content_source';
+
+export type { ModelContentOutput } from './content_source';
+
+/**
  * Tool system
  */
 export { tool } from 'ai';
