@@ -109,21 +109,23 @@ export class CodingAgent {
     ); // Add tools using fluent API
 
     // CodingAgent Template
-    this.template = new Agent({ inputSource: new StaticInputSource('') })
+    this.template = new Agent({
+    })
       .addSystem(
         'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
       )
-      // addUser can now be called without InputSource, it will use the parent's inputSource
       .addUser()
-      .addAssistant(this.generateOptions);
+      // addAssistant can now be called without generateOptions, it will use the parent's one
+      .addAssistant();
   }
 
   // Add a user message to the session and get AI response
   async run(prompt?: string): Promise<void> {
     if (prompt) {
-      // Create a session and execute the template with the prompt as inputSource
+      // We only need to pass inputSource now, as generateOptions will be propagated from parent
       this.template.execute(createSession(), {
         inputSource: new StaticInputSource(prompt),
+        generateOptions: this.generateOptions,
       });
     } else {
       // Raise an error if no prompt is provided
@@ -170,7 +172,14 @@ const runAgent = async (): Promise<void> => {
     }
 
     const agent = new CodingAgent({ provider, apiKey });
-    await agent.run('What can you help me with today?');
+
+    // Check if --test argument is provided
+    if (process.argv.includes('--test')) {
+      console.log('Running example tests...');
+      await agent.runExample();
+    } else {
+      await agent.run('What can you help me with today?');
+    }
   } catch (error) {
     console.error('Error running agent:', error);
   }
