@@ -12,18 +12,23 @@ import {
   TransformerTemplate,
   UserTemplate,
 } from './basic';
+import { ContentSource } from '../content_source';
 
 /**
  * テンプレート操作を提供する中間基底クラス
  * 共通のテンプレート追加メソッドを実装
  */
-export abstract class ComposedTemplate extends Template {
+export abstract class ComposedTemplate<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TOutput extends Record<string, unknown> = TInput,
+  TContentType = unknown,
+> extends Template<TInput, TOutput, TContentType> {
   protected templates: Template[] = [];
 
   /**
    * システムメッセージテンプレートを追加
    */
-  addSystem(content: string): this {
+  addSystem(content: string | ContentSource<string>): this {
     this.templates.push(new SystemTemplate(content));
     return this;
   }
@@ -32,11 +37,13 @@ export abstract class ComposedTemplate extends Template {
    * ユーザーメッセージテンプレートを追加
    */
   addUser(
-    contentOrInputSource?:
+    contentOrSource?:
       | string
       | InputSource
+      | ContentSource<string>
       | {
           inputSource?: InputSource;
+          contentSource?: ContentSource<string>;
           description?: string;
           validate?: (input: string) => Promise<boolean>;
           onInput?: (input: string) => void;
@@ -44,14 +51,14 @@ export abstract class ComposedTemplate extends Template {
           validator?: IValidator;
         },
   ): this {
-    this.templates.push(new UserTemplate(contentOrInputSource));
+    this.templates.push(new UserTemplate(contentOrSource));
     return this;
   }
 
   /**
    * アシスタントメッセージテンプレートを追加
    */
-  addAssistant(contentOrGenerateOptions?: string | GenerateOptions): this {
+  addAssistant(contentOrGenerateOptions?: string | GenerateOptions | ContentSource<any>): this {
     this.templates.push(new AssistantTemplate(contentOrGenerateOptions));
     return this;
   }
@@ -87,8 +94,9 @@ export abstract class ComposedTemplate extends Template {
     template: Template;
     initWith: (parentSession: ISession) => ISession;
     squashWith?: (parentSession: ISession, childSession: ISession) => ISession;
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }): this;
   addSubroutine(
     arg:
@@ -100,8 +108,9 @@ export abstract class ComposedTemplate extends Template {
             parentSession: ISession,
             childSession: ISession,
           ) => ISession;
-          inputSource?: InputSource;
-          generateOptions?: GenerateOptions;
+          contentSource?: ContentSource<unknown>;
+          inputSource?: InputSource; // For backward compatibility
+          generateOptions?: GenerateOptions; // For backward compatibility
         },
   ): this {
     const template =
@@ -117,8 +126,9 @@ export abstract class ComposedTemplate extends Template {
   addLoop(options: {
     templates: Template[];
     exitCondition: (session: ISession) => boolean;
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }): this;
   addLoop(
     arg:
@@ -126,8 +136,9 @@ export abstract class ComposedTemplate extends Template {
       | {
           templates: Template[];
           exitCondition: (session: ISession) => boolean;
-          inputSource?: InputSource;
-          generateOptions?: GenerateOptions;
+          contentSource?: ContentSource<unknown>;
+          inputSource?: InputSource; // For backward compatibility
+          generateOptions?: GenerateOptions; // For backward compatibility
         },
   ): this {
     const template = arg instanceof LoopTemplate ? arg : new LoopTemplate(arg);
@@ -141,16 +152,18 @@ export abstract class ComposedTemplate extends Template {
   addLinear(template: LinearTemplate): this;
   addLinear(options: {
     templates: Template[];
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }): this;
   addLinear(
     arg:
       | LinearTemplate
       | {
           templates: Template[];
-          inputSource?: InputSource;
-          generateOptions?: GenerateOptions;
+          contentSource?: ContentSource<unknown>;
+          inputSource?: InputSource; // For backward compatibility
+          generateOptions?: GenerateOptions; // For backward compatibility
         },
   ): this {
     const template =
@@ -162,8 +175,8 @@ export abstract class ComposedTemplate extends Template {
   /**
    * トランスフォーマーテンプレートを追加
    */
-  addTransformer<TOutput extends Record<string, unknown>>(
-    transformer: SessionTransformer<Record<string, unknown>, TOutput>,
+  addTransformer(
+    transformer: SessionTransformer<Record<string, unknown>, Record<string, unknown>>,
   ): this {
     this.templates.push(new TransformerTemplate(transformer));
     return this;
@@ -196,12 +209,12 @@ export abstract class ComposedTemplate extends Template {
    * テンプレートの実行（サブクラスで実装）
    */
   abstract execute(
-    session?: ISession,
+    session?: ISession<TInput>,
     options?: {
       inputSource?: InputSource;
-      generateOptions?: GenerateOptions;
+      generateOptions?: GenerateOptions | string;
     },
-  ): Promise<ISession>;
+  ): Promise<ISession<TOutput>>;
 }
 
 /**
@@ -216,11 +229,14 @@ export class SubroutineTemplate extends ComposedTemplate {
         parentSession: ISession,
         childSession: ISession,
       ) => ISession;
-      inputSource?: InputSource;
-      generateOptions?: GenerateOptions;
+      contentSource?: ContentSource<unknown>;
+      inputSource?: InputSource; // For backward compatibility
+      generateOptions?: GenerateOptions; // For backward compatibility
     },
   ) {
     super();
+    this.contentSource = options.contentSource;
+    // For backward compatibility
     this.inputSource = options.inputSource;
     this.generateOptionsOrContent = options.generateOptions;
   }
@@ -234,6 +250,7 @@ export class SubroutineTemplate extends ComposedTemplate {
   ): Promise<ISession> {
     const {
       session: validSession,
+      contentSource,
       inputSource,
       generateOptions,
     } = TemplateUtils.prepareExecutionOptions(this, session, options);
@@ -246,13 +263,20 @@ export class SubroutineTemplate extends ComposedTemplate {
       generateOptions?: GenerateOptions | string;
     } = {};
 
-    if (inputSource && !this.options.template.hasOwnInputSource()) {
+    // Propagate contentSource if template doesn't have its own
+    if (contentSource && !this.options.template.hasOwnContentSource?.()) {
+      // We can't directly pass contentSource since the execute method doesn't accept it
+      // This will be handled by the template's execute method
+    }
+
+    // For backward compatibility
+    if (inputSource && !this.options.template.hasOwnInputSource?.()) {
       childOptions.inputSource = inputSource;
     }
 
     if (
       generateOptions &&
-      !this.options.template.hasOwnGenerateOptionsOrContent()
+      !this.options.template.hasOwnGenerateOptionsOrContent?.()
     ) {
       childOptions.generateOptions = generateOptions;
     }
@@ -282,12 +306,15 @@ export class LoopTemplate extends ComposedTemplate {
   constructor(options?: {
     templates?: Template[];
     exitCondition?: (session: ISession) => boolean;
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }) {
     super();
     this.templates = options?.templates || [];
     this.exitCondition = options?.exitCondition;
+    this.contentSource = options?.contentSource;
+    // For backward compatibility
     this.inputSource = options?.inputSource;
     this.generateOptionsOrContent = options?.generateOptions;
   }
@@ -307,6 +334,7 @@ export class LoopTemplate extends ComposedTemplate {
   ): Promise<ISession> {
     const {
       session: validSession,
+      contentSource,
       inputSource,
       generateOptions,
     } = TemplateUtils.prepareExecutionOptions(this, session, options);
@@ -324,11 +352,18 @@ export class LoopTemplate extends ComposedTemplate {
           generateOptions?: GenerateOptions | string;
         } = {};
 
-        if (inputSource && !template.hasOwnInputSource()) {
+        // Propagate contentSource if template doesn't have its own
+        if (contentSource && !template.hasOwnContentSource?.()) {
+          // We can't directly pass contentSource since the execute method doesn't accept it
+          // This will be handled by the template's execute method
+        }
+
+        // For backward compatibility
+        if (inputSource && !template.hasOwnInputSource?.()) {
           childOptions.inputSource = inputSource;
         }
 
-        if (generateOptions && !template.hasOwnGenerateOptionsOrContent()) {
+        if (generateOptions && !template.hasOwnGenerateOptionsOrContent?.()) {
           childOptions.generateOptions = generateOptions;
         }
 
@@ -346,10 +381,13 @@ export class LoopTemplate extends ComposedTemplate {
 export class LinearTemplate extends ComposedTemplate {
   constructor(options?: {
     templates?: Template[];
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }) {
     super();
+    this.contentSource = options?.contentSource;
+    // For backward compatibility
     this.inputSource = options?.inputSource;
     this.generateOptionsOrContent = options?.generateOptions;
 
@@ -370,6 +408,7 @@ export class LinearTemplate extends ComposedTemplate {
   ): Promise<ISession> {
     const {
       session: validSession,
+      contentSource,
       inputSource,
       generateOptions,
     } = TemplateUtils.prepareExecutionOptions(this, session, options);
@@ -382,11 +421,18 @@ export class LinearTemplate extends ComposedTemplate {
         generateOptions?: GenerateOptions;
       } = {};
 
-      if (inputSource && !template.hasOwnInputSource()) {
+      // Propagate contentSource if template doesn't have its own
+      if (contentSource && !template.hasOwnContentSource?.()) {
+        // We can't directly pass contentSource since the execute method doesn't accept it
+        // This will be handled by the template's execute method
+      }
+
+      // For backward compatibility
+      if (inputSource && !template.hasOwnInputSource?.()) {
         childOptions.inputSource = inputSource;
       }
 
-      if (generateOptions && !template.hasOwnGenerateOptionsOrContent()) {
+      if (generateOptions && !template.hasOwnGenerateOptionsOrContent?.()) {
         childOptions.generateOptions = generateOptions as GenerateOptions;
       }
 
@@ -401,8 +447,9 @@ export class LinearTemplate extends ComposedTemplate {
 export class Agent extends LinearTemplate {
   constructor(options?: {
     templates?: Template[];
-    inputSource?: InputSource;
-    generateOptions?: GenerateOptions;
+    contentSource?: ContentSource<unknown>;
+    inputSource?: InputSource; // For backward compatibility
+    generateOptions?: GenerateOptions; // For backward compatibility
   }) {
     super(options);
   }

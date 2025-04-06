@@ -10,6 +10,13 @@ import type { ISession } from '../types';
 import { type IValidator } from '../validators';
 import { CustomValidator } from '../validators';
 import { createSession } from '../session';
+import { 
+  ContentSource, 
+  StaticContentSource, 
+  type ModelContentOutput, 
+  BasicModelContentSource,
+  StringContentSource
+} from '../content_source';
 
 /**
  * Collection of shared utilities for templates
@@ -42,23 +49,32 @@ export class TemplateUtils {
     },
   ): {
     session: ISession;
+    contentSource?: ContentSource<unknown>;
     inputSource?: InputSource;
     generateOptions?: GenerateOptions | string;
   } {
     session = TemplateUtils.ensureSession(session);
 
+    // ContentSource is prioritized as follows:
+    // 1. template.contentSource (passed in the constructor)
+    const contentSource = template.getContentSource();
+
+    // For backward compatibility:
     // InputSource is prioritized as follows:
     // 1. options.inputSource (passed in the execute method)
-    // 2. template.inputSource (passed in the constructor)
-    const inputSource = options?.inputSource ?? template.getInputSource();
+    // 2. template.getInputSource() (if available for backward compatibility)
+    const inputSource = options?.inputSource ?? 
+      ('getInputSource' in template && typeof template.getInputSource === 'function' ? 
+        template.getInputSource() : undefined);
 
     // GenerateOptions is prioritized as follows:
     // 1. options.generateOptions (passed in the execute method)
-    // 2. template.generateOptionsOrContent (passed in the constructor)
-    const generateOptions =
-      options?.generateOptions ?? template.getGenerateOptionsOrContent();
+    // 2. template.getGenerateOptionsOrContent() (if available for backward compatibility)
+    const generateOptions = options?.generateOptions ?? 
+      ('getGenerateOptionsOrContent' in template && typeof template.getGenerateOptionsOrContent === 'function' ? 
+        template.getGenerateOptionsOrContent() : undefined);
 
-    return { session, inputSource, generateOptions };
+    return { session, contentSource, inputSource, generateOptions };
   }
 
   /**
@@ -66,6 +82,62 @@ export class TemplateUtils {
    */
   static interpolateContent(content: string, session: ISession): string {
     return interpolateTemplate(content, session.metadata || createMetadata());
+  }
+
+  /**
+   * Convert legacy inputs to ContentSource
+   */
+  static convertToContentSource(
+    input: string | InputSource | GenerateOptions | ContentSource<unknown> | undefined
+  ): ContentSource<unknown> | undefined {
+    if (input === undefined) {
+      return undefined;
+    }
+
+    // If it's already a ContentSource, return it
+    if (input instanceof ContentSource) {
+      return input;
+    }
+
+    // If it's a string, convert to StaticContentSource
+    if (typeof input === 'string') {
+      return new StaticContentSource(input);
+    }
+
+    // If it's an InputSource, convert to a wrapper ContentSource
+    if (input && typeof input === 'object' && 'getInput' in input) {
+      return new InputSourceWrapper(input as InputSource);
+    }
+
+    // If it's GenerateOptions, convert to BasicModelContentSource
+    if (input && typeof input === 'object' && 'provider' in input) {
+      return new BasicModelContentSource(input as GenerateOptions);
+    }
+
+    return undefined;
+  }
+}
+
+/**
+ * Wrapper to convert InputSource to ContentSource for backward compatibility
+ */
+class InputSourceWrapper extends StringContentSource {
+  constructor(private inputSource: InputSource) {
+    super();
+  }
+
+  async getContent(session: ISession): Promise<string> {
+    return this.inputSource.getInput({
+      metadata: session.metadata,
+    });
+  }
+
+  hasValidator(): boolean {
+    return !!this.inputSource.getValidator();
+  }
+
+  getValidator(): IValidator | undefined {
+    return this.inputSource.getValidator();
   }
 }
 
@@ -75,7 +147,11 @@ export class TemplateUtils {
 export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
+  TContentType = unknown,
 > {
+  protected contentSource?: ContentSource<TContentType>;
+  
+  // For backward compatibility
   protected inputSource?: InputSource;
   protected generateOptionsOrContent?: GenerateOptions | string;
 
@@ -87,25 +163,37 @@ export abstract class Template<
     },
   ): Promise<ISession<TOutput>>;
 
+  getContentSource(): ContentSource<TContentType> | undefined {
+    return this.contentSource;
+  }
+
+  // For backward compatibility
   getInputSource(): InputSource | undefined {
     return this.inputSource;
   }
 
+  // For backward compatibility
   getGenerateOptionsOrContent(): GenerateOptions | string | undefined {
     return this.generateOptionsOrContent;
   }
 
   /**
-   * Indicates whether the template instance was constructed with its own InputSource.
-   * Container templates use this to decide whether to propagate their InputSource.
+   * Indicates whether the template instance was constructed with its own ContentSource.
+   * Container templates use this to decide whether to propagate their ContentSource.
+   */
+  hasOwnContentSource(): boolean {
+    return !!this.contentSource;
+  }
+
+  /**
+   * For backward compatibility
    */
   hasOwnInputSource(): boolean {
     return !!this.inputSource;
   }
 
   /**
-   * Indicates whether the template instance was constructed with its own GenerateOptions.
-   * Container templates use this to decide whether to propagate their GenerateOptions.
+   * For backward compatibility
    */
   hasOwnGenerateOptionsOrContent(): boolean {
     return !!this.generateOptionsOrContent;
@@ -115,9 +203,20 @@ export abstract class Template<
 /**
  * Class for templating system messages
  */
-export class SystemTemplate extends Template {
-  constructor(private content: string) {
+export class SystemTemplate extends Template<
+  Record<string, unknown>,
+  Record<string, unknown>,
+  string
+> {
+  constructor(contentOrSource: string | ContentSource<string>) {
     super();
+    
+    // Convert string to StaticContentSource if needed
+    if (typeof contentOrSource === 'string') {
+      this.contentSource = new StaticContentSource(contentOrSource);
+    } else {
+      this.contentSource = contentOrSource;
+    }
   }
 
   async execute(
@@ -127,19 +226,21 @@ export class SystemTemplate extends Template {
       generateOptions?: GenerateOptions;
     },
   ): Promise<ISession> {
-    const { session: validSession } = TemplateUtils.prepareExecutionOptions(
+    const { session: validSession, contentSource } = TemplateUtils.prepareExecutionOptions(
       this,
       session,
       options,
     );
 
-    const interpolatedContent = TemplateUtils.interpolateContent(
-      this.content,
-      validSession,
-    );
+    if (!contentSource) {
+      throw new Error('ContentSource is required for SystemTemplate');
+    }
+
+    const content = await contentSource.getContent(validSession) as string;
+    
     return validSession.addMessage({
       type: 'system',
-      content: interpolatedContent,
+      content,
       metadata: createMetadata(),
     });
   }
@@ -148,7 +249,11 @@ export class SystemTemplate extends Template {
 /**
  * Class for templating user messages
  */
-export class UserTemplate extends Template {
+export class UserTemplate extends Template<
+  Record<string, unknown>,
+  Record<string, unknown>,
+  string
+> {
   private options: {
     description?: string;
     validate?: (input: string) => Promise<boolean>;
@@ -161,8 +266,10 @@ export class UserTemplate extends Template {
     inputOrConfig:
       | string
       | InputSource
+      | ContentSource<string>
       | {
           inputSource?: InputSource;
+          contentSource?: ContentSource<string>;
           description?: string;
           validate?: (input: string) => Promise<boolean>;
           onInput?: (input: string) => void;
@@ -176,15 +283,31 @@ export class UserTemplate extends Template {
 
     // Process the input options
     if (typeof inputOrConfig === 'string') {
-      this.inputSource = new StaticInputSource(inputOrConfig);
+      this.contentSource = new StaticContentSource(inputOrConfig);
+    } else if (
+      inputOrConfig !== undefined &&
+      typeof inputOrConfig === 'object' &&
+      inputOrConfig instanceof ContentSource
+    ) {
+      this.contentSource = inputOrConfig;
     } else if (
       inputOrConfig !== undefined &&
       typeof inputOrConfig === 'object' &&
       'getInput' in inputOrConfig
     ) {
+      // For backward compatibility
       this.inputSource = inputOrConfig as InputSource;
+      this.contentSource = new InputSourceWrapper(inputOrConfig as InputSource);
     } else if (typeof inputOrConfig === 'object') {
-      this.inputSource = inputOrConfig.inputSource;
+      // Handle object configuration
+      if (inputOrConfig.contentSource) {
+        this.contentSource = inputOrConfig.contentSource;
+      } else if (inputOrConfig.inputSource) {
+        // For backward compatibility
+        this.inputSource = inputOrConfig.inputSource;
+        this.contentSource = new InputSourceWrapper(inputOrConfig.inputSource);
+      }
+      
       this.options = {
         description: inputOrConfig.description,
         validate: inputOrConfig.validate,
@@ -202,25 +325,24 @@ export class UserTemplate extends Template {
       generateOptions?: GenerateOptions;
     },
   ): Promise<ISession> {
-    const { session: validSession, inputSource } =
+    const { session: validSession, contentSource, inputSource } =
       TemplateUtils.prepareExecutionOptions(this, session, options);
 
-    // Use the input source passed to the template or fallback to the one provided at execution time
-    const effectiveInputSource = this.inputSource ?? inputSource;
+    // Use the content source or convert input source for backward compatibility
+    let effectiveContentSource = contentSource as ContentSource<string>;
+    
+    if (!effectiveContentSource && inputSource) {
+      effectiveContentSource = new InputSourceWrapper(inputSource);
+    }
 
-    if (!effectiveInputSource) {
-      throw new Error('InputSource is required for UserTemplate');
+    if (!effectiveContentSource) {
+      throw new Error('ContentSource is required for UserTemplate');
     }
 
     let input: string;
     let updatedSession = validSession;
 
-    input = TemplateUtils.interpolateContent(
-      await effectiveInputSource.getInput({
-        metadata: validSession.metadata,
-      }),
-      validSession,
-    );
+    input = await effectiveContentSource.getContent(validSession);
 
     if (this.options?.onInput) {
       this.options.onInput(input);
@@ -249,7 +371,7 @@ export class UserTemplate extends Template {
       updatedSession = await this.validateInput(
         updatedSession,
         input,
-        effectiveInputSource,
+        effectiveContentSource,
       );
     }
 
@@ -259,7 +381,7 @@ export class UserTemplate extends Template {
   private async validateInput(
     session: ISession,
     input: string,
-    inputSource: InputSource,
+    contentSource: ContentSource<string>,
   ): Promise<ISession> {
     if (!this.options?.validator) {
       return session;
@@ -278,9 +400,7 @@ export class UserTemplate extends Template {
         metadata: createMetadata(),
       });
 
-      const newInput = await inputSource.getInput({
-        metadata: updatedSession.metadata,
-      });
+      const newInput = await contentSource.getContent(updatedSession);
 
       if (this.options.onInput) {
         this.options.onInput(newInput);
@@ -319,7 +439,7 @@ export class UserTemplate extends Template {
 export class AssistantTemplate<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
-> extends Template<TInput, TOutput> {
+> extends Template<TInput, TOutput, ModelContentOutput> {
   private options: {
     validator?: IValidator;
     maxAttempts?: number;
@@ -327,7 +447,7 @@ export class AssistantTemplate<
   };
 
   constructor(
-    contentOrGenerateOptions?: string | GenerateOptions,
+    contentOrGenerateOptions?: string | GenerateOptions | ContentSource<ModelContentOutput>,
     validatorOrOptions?:
       | IValidator
       | {
@@ -360,7 +480,37 @@ export class AssistantTemplate<
       }
     }
 
-    this.generateOptionsOrContent = contentOrGenerateOptions;
+    // Set content source based on input type
+    if (contentOrGenerateOptions instanceof ContentSource) {
+      this.contentSource = contentOrGenerateOptions;
+    } else if (typeof contentOrGenerateOptions === 'string') {
+      // For backward compatibility, store the string content
+      this.generateOptionsOrContent = contentOrGenerateOptions;
+      // Create a static content source that returns a ModelContentOutput
+      this.contentSource = {
+        async getContent(session: ISession): Promise<ModelContentOutput> {
+          const interpolatedContent = TemplateUtils.interpolateContent(
+            contentOrGenerateOptions,
+            session
+          );
+          return {
+            content: interpolatedContent
+          };
+        }
+      } as ContentSource<ModelContentOutput>;
+    } else if (contentOrGenerateOptions && typeof contentOrGenerateOptions === 'object') {
+      // For backward compatibility, store the generate options
+      this.generateOptionsOrContent = contentOrGenerateOptions as GenerateOptions;
+      // Create a model content source
+      this.contentSource = new BasicModelContentSource(
+        contentOrGenerateOptions as GenerateOptions,
+        this.options.validator ? {
+          validator: this.options.validator,
+          maxAttempts: this.options.maxAttempts,
+          raiseError: this.options.raiseError
+        } : undefined
+      );
+    }
   }
 
   async execute(
@@ -370,7 +520,7 @@ export class AssistantTemplate<
       generateOptions?: GenerateOptions;
     },
   ): Promise<ISession<TOutput>> {
-    const { session: validSession, generateOptions } =
+    const { session: validSession, contentSource, generateOptions } =
       TemplateUtils.prepareExecutionOptions(
         this as unknown as Template<
           Record<string, unknown>,
@@ -380,27 +530,88 @@ export class AssistantTemplate<
         options,
       );
 
-    // Use the generate options passed to the template or fallback to the one provided at execution time
-    const effectiveGenerateOptions =
-      this.generateOptionsOrContent ?? generateOptions;
-
-    if (!effectiveGenerateOptions) {
-      throw new Error('GenerateOptions is required for AssistantTemplate');
+    // Use the content source or create one from generate options for backward compatibility
+    let effectiveContentSource = contentSource as ContentSource<ModelContentOutput>;
+    
+    if (!effectiveContentSource && generateOptions) {
+      if (typeof generateOptions === 'string') {
+        // Create a static content source for string content
+        effectiveContentSource = {
+          async getContent(session: ISession): Promise<ModelContentOutput> {
+            const interpolatedContent = TemplateUtils.interpolateContent(
+              generateOptions,
+              session
+            );
+            return {
+              content: interpolatedContent
+            };
+          }
+        } as ContentSource<ModelContentOutput>;
+      } else {
+        // Create a model content source for generate options
+        effectiveContentSource = new BasicModelContentSource(
+          generateOptions as GenerateOptions,
+          this.options.validator ? {
+            validator: this.options.validator,
+            maxAttempts: this.options.maxAttempts,
+            raiseError: this.options.raiseError
+          } : undefined
+        );
+      }
     }
 
-    if (typeof effectiveGenerateOptions === 'string') {
-      return this.handleStaticContent(
-        validSession,
-        effectiveGenerateOptions,
-      ) as Promise<ISession<TOutput>>;
+    if (!effectiveContentSource) {
+      throw new Error('ContentSource is required for AssistantTemplate');
     }
 
-    return this.handleGeneratedContent(
-      validSession,
-      effectiveGenerateOptions,
-    ) as Promise<ISession<TOutput>>;
+    // Get content from the content source
+    const modelOutput = await effectiveContentSource.getContent(validSession);
+    
+    // Process the model output
+    let updatedSession = validSession;
+    
+    // Add the assistant message to the session
+    updatedSession = updatedSession.addMessage({
+      type: 'assistant',
+      content: modelOutput.content,
+      toolCalls: modelOutput.toolCalls,
+      metadata: createMetadata(),
+    });
+    
+    // Update session metadata if provided
+    if (modelOutput.metadata) {
+      updatedSession = updatedSession.updateMetadata(modelOutput.metadata as any);
+    }
+    
+    // Add structured output to metadata if available
+    if (modelOutput.structuredOutput) {
+      updatedSession = updatedSession.updateMetadata({
+        structured_output: modelOutput.structuredOutput,
+      } as any);
+    }
+    
+    // Handle tool calls if any
+    if (modelOutput.toolCalls && Array.isArray(modelOutput.toolCalls) && modelOutput.toolCalls.length > 0) {
+      // If we have the original GenerateOptions, use it for tool execution
+      if (this.generateOptionsOrContent && typeof this.generateOptionsOrContent !== 'string') {
+        updatedSession = await this.handleToolCalls(
+          updatedSession,
+          modelOutput.toolCalls,
+          this.generateOptionsOrContent
+        );
+      } else if (generateOptions && typeof generateOptions !== 'string') {
+        updatedSession = await this.handleToolCalls(
+          updatedSession,
+          modelOutput.toolCalls,
+          generateOptions
+        );
+      }
+    }
+    
+    return updatedSession as ISession<TOutput>;
   }
 
+  // For backward compatibility
   private async handleStaticContent(
     session: ISession,
     content: string,
@@ -430,6 +641,7 @@ export class AssistantTemplate<
     });
   }
 
+  // For backward compatibility
   private async handleGeneratedContent(
     session: ISession,
     generateOptions: GenerateOptions,

@@ -4,12 +4,16 @@ export * from './basic';
 // Export composed templates
 export * from './composed';
 
-// Export content source based templates with renamed exports
+// Export content source based templates
 export {
   ContentSourceTemplate,
   MessageTemplate,
-  SystemTemplate as ContentSourceSystemTemplate,
-  UserTemplate as ContentSourceUserTemplate,
-  AssistantTemplate as ContentSourceAssistantTemplate,
-  ToolResultTemplate as ContentSourceToolResultTemplate,
+  ContentSourceSystemTemplate,
+  ContentSourceUserTemplate,
+  ContentSourceAssistantTemplate,
+  ToolResultTemplate,
+  // Also export the original names for backward compatibility
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
 } from './message_template';
