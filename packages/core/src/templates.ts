@@ -50,13 +50,13 @@ export class TemplateUtils {
     // InputSource is prioritized as follows:
     // 1. options.inputSource (passed in the execute method)
     // 2. template.inputSource (passed in the constructor)
-    const inputSource = options?.inputSource ?? template.inputSource;
+    const inputSource = options?.inputSource ?? template.getInputSource();
 
     // GenerateOptions is prioritized as follows:
     // 1. options.generateOptions (passed in the execute method)
     // 2. template.generateOptionsOrContent (passed in the constructor)
     const generateOptions =
-      options?.generateOptions ?? template.generateOptionsOrContent;
+      options?.generateOptions ?? template.getGenerateOptionsOrContent();
 
     return { session, inputSource, generateOptions };
   }
@@ -86,6 +86,14 @@ export abstract class Template<
       generateOptions?: GenerateOptions | string;
     },
   ): Promise<ISession<TOutput>>;
+
+  getInputSource(): InputSource | undefined {
+    return this.inputSource;
+  }
+
+  getGenerateOptionsOrContent(): GenerateOptions | string | undefined {
+    return this.generateOptionsOrContent;
+  }
 
   /**
    * Indicates whether the template instance was constructed with its own InputSource.
@@ -294,7 +302,7 @@ export class UserTemplate extends Template {
       if (validator.maxAttempts && attempts >= validator.maxAttempts) {
         if (validator.raiseErrorAfterMaxAttempts) {
           throw new Error(
-            `Input validation failed after ${attempts} attempts: ${result.instruction || ''}`,
+            `Input validation failed after ${attempts} attempts: ${!result.isValid && 'instruction' in result ? result.instruction : ''}`,
           );
         }
         break;
@@ -363,7 +371,14 @@ export class AssistantTemplate<
     },
   ): Promise<ISession<TOutput>> {
     const { session: validSession, generateOptions } =
-      TemplateUtils.prepareExecutionOptions(this, session, options);
+      TemplateUtils.prepareExecutionOptions(
+        this as unknown as Template<
+          Record<string, unknown>,
+          Record<string, unknown>
+        >,
+        session as ISession<Record<string, unknown>> | undefined,
+        options,
+      );
 
     // Use the generate options passed to the template or fallback to the one provided at execution time
     const effectiveGenerateOptions =
@@ -554,11 +569,20 @@ export class ToolResultTemplate<
     super();
   }
 
-  async execute(session?: ISession<TInput>): Promise<ISession<TOutput>> {
+  async execute(
+    session?: ISession<TInput>,
+    options?: {
+      inputSource?: InputSource;
+      generateOptions?: GenerateOptions | string;
+    },
+  ): Promise<ISession<TOutput>> {
     const { session: validSession } = TemplateUtils.prepareExecutionOptions(
-      this,
-      session,
-      {},
+      this as unknown as Template<
+        Record<string, unknown>,
+        Record<string, unknown>
+      >,
+      session as ISession<Record<string, unknown>> | undefined,
+      options,
     );
 
     const metadata = createMetadata<{ toolCallId: string }>();
@@ -693,26 +717,53 @@ export abstract class ComposedTemplate extends Template {
   /**
    * 条件付きテンプレートを追加
    */
+  addIf(template: IfTemplate): this;
   addIf(options: {
     condition: (session: ISession) => boolean;
     thenTemplate: Template;
     elseTemplate?: Template;
-  }): this {
-    this.templates.push(new IfTemplate(options));
+  }): this;
+  addIf(
+    arg:
+      | IfTemplate
+      | {
+          condition: (session: ISession) => boolean;
+          thenTemplate: Template;
+          elseTemplate?: Template;
+        },
+  ): this {
+    const template = arg instanceof IfTemplate ? arg : new IfTemplate(arg);
+    this.templates.push(template);
     return this;
   }
 
   /**
    * サブルーチンテンプレートを追加
    */
+  addSubroutine(template: SubroutineTemplate): this;
   addSubroutine(options: {
     template: Template;
     initWith: (parentSession: ISession) => ISession;
     squashWith?: (parentSession: ISession, childSession: ISession) => ISession;
     inputSource?: InputSource;
     generateOptions?: GenerateOptions;
-  }): this {
-    const template = new SubroutineTemplate(options);
+  }): this;
+  addSubroutine(
+    arg:
+      | SubroutineTemplate
+      | {
+          template: Template;
+          initWith: (parentSession: ISession) => ISession;
+          squashWith?: (
+            parentSession: ISession,
+            childSession: ISession,
+          ) => ISession;
+          inputSource?: InputSource;
+          generateOptions?: GenerateOptions;
+        },
+  ): this {
+    const template =
+      arg instanceof SubroutineTemplate ? arg : new SubroutineTemplate(arg);
     this.templates.push(template);
     return this;
   }
@@ -720,37 +771,48 @@ export abstract class ComposedTemplate extends Template {
   /**
    * ループテンプレートを追加
    */
+  addLoop(template: LoopTemplate): this;
   addLoop(options: {
     templates: Template[];
     exitCondition: (session: ISession) => boolean;
     inputSource?: InputSource;
     generateOptions?: GenerateOptions;
-  }): this {
-    const template = new LoopTemplate(options);
+  }): this;
+  addLoop(
+    arg:
+      | LoopTemplate
+      | {
+          templates: Template[];
+          exitCondition: (session: ISession) => boolean;
+          inputSource?: InputSource;
+          generateOptions?: GenerateOptions;
+        },
+  ): this {
+    const template = arg instanceof LoopTemplate ? arg : new LoopTemplate(arg);
     this.templates.push(template);
     return this;
   }
-  // Fluent APIのための経過措置、本来は下記のようなものであるべき
-  // addLoop(options: {
-  //   templates: Template[];
-  //   exitCondition: (session: ISession) => boolean;
-  //   inputSource?: InputSource;
-  //   generateOptions?: GenerateOptions;
-  // }): this {
-  //   const template = new LoopTemplate(options);
-  //   this.templates.push(template);
-  //   return this;
-  // }
 
   /**
    * Linearテンプレートを追加
    */
+  addLinear(template: LinearTemplate): this;
   addLinear(options: {
     templates: Template[];
     inputSource?: InputSource;
     generateOptions?: GenerateOptions;
-  }): this {
-    const template = new LinearTemplate(options);
+  }): this;
+  addLinear(
+    arg:
+      | LinearTemplate
+      | {
+          templates: Template[];
+          inputSource?: InputSource;
+          generateOptions?: GenerateOptions;
+        },
+  ): this {
+    const template =
+      arg instanceof LinearTemplate ? arg : new LinearTemplate(arg);
     this.templates.push(template);
     return this;
   }

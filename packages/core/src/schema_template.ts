@@ -60,6 +60,10 @@ export class SchemaTemplate<
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
     if (!this.generateOptionsOrContent) {
       throw new Error('No generateOptions provided for SchemaTemplate');
+    } else if (typeof this.generateOptionsOrContent === 'string') {
+      throw new Error(
+        'String generateOptions is not supported for SchemaTemplate. Use GenerateOptions class instead.',
+      );
     }
 
     const messages = session.messages;
