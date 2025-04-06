@@ -9,6 +9,7 @@ import { type GenerateOptions } from './generate_options';
 import type { ISession, ISchemaType } from './types';
 import { type IValidator } from './validators/base';
 import { CustomValidator } from './validators/custom';
+import { createSession } from './session';
 
 /**
  * Base class for all templates
@@ -17,7 +18,31 @@ export abstract class Template<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
 > {
-  abstract execute(session: ISession<TInput>): Promise<ISession<TOutput>>;
+  abstract execute(
+    session?: ISession<TInput>,
+    options?: { inputSource?: InputSource },
+  ): Promise<ISession<TOutput>>;
+
+  /**
+   * Indicates whether the template instance was constructed with its own InputSource.
+   * Container templates use this to decide whether to propagate their InputSource.
+   */
+  hasOwnInputSource(): boolean {
+    return false;
+  }
+}
+
+/**
+ * Helper function to make sure session is not undefined
+ */
+
+function ensureSession<TInput extends Record<string, unknown>>(
+  session: ISession<TInput> | undefined,
+): ISession<TInput> {
+  if (!session) {
+    return createSession<TInput>();
+  }
+  return session;
 }
 
 /**
@@ -28,12 +53,17 @@ export class SystemTemplate extends Template {
     super();
   }
 
-  async execute(session: ISession): Promise<ISession> {
+  async execute(
+    session?: ISession,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    options?: { inputSource?: InputSource },
+  ): Promise<ISession> {
+    session = ensureSession(session);
     const interpolatedContent = interpolateTemplate(
       this.content,
-      session.metadata,
+      session?.metadata || createMetadata(),
     );
-    return session.addMessage({
+    return session!.addMessage({
       type: 'system',
       content: interpolatedContent,
       metadata: createMetadata(),
@@ -46,7 +76,7 @@ export class SystemTemplate extends Template {
  */
 export class UserTemplate extends Template {
   private options: {
-    inputSource: InputSource;
+    inputSource?: InputSource; // Optionalに変更
     description?: string;
     validate?: (input: string) => Promise<boolean>;
     onInput?: (input: string) => void;
@@ -59,13 +89,13 @@ export class UserTemplate extends Template {
       | string
       | InputSource
       | {
-          inputSource: InputSource;
+          inputSource?: InputSource;
           description?: string;
           validate?: (input: string) => Promise<boolean>;
           onInput?: (input: string) => void;
           default?: string;
           validator?: IValidator;
-        },
+        } = {},
   ) {
     super();
 
@@ -80,31 +110,39 @@ export class UserTemplate extends Template {
     } else {
       // Options object constructor case
       this.options = optionsOrDescription as {
-        inputSource: InputSource;
+        inputSource?: InputSource;
         description?: string;
         validate?: (input: string) => Promise<boolean>;
         onInput?: (input: string) => void;
         default?: string;
+        validator?: IValidator;
       };
     }
   }
 
-  async execute(session: ISession): Promise<ISession> {
+  hasOwnInputSource(): boolean {
+    return !!this.options.inputSource;
+  }
+
+  async execute(
+    session?: ISession,
+    options?: { inputSource?: InputSource },
+  ): Promise<ISession> {
+    session = ensureSession(session);
+    let inputSource = options?.inputSource ?? this.options.inputSource;
+    if (!inputSource) {
+      throw new Error('InputSource is required for UserTemplate');
+    }
     let input: string;
     let updatedSession = session;
 
-    if (this.options.inputSource instanceof StaticInputSource) {
-      // For static input sources
+    if (inputSource instanceof StaticInputSource) {
       input = interpolateTemplate(
-        await this.options.inputSource.getInput(),
+        await inputSource.getInput(),
         session.metadata,
       );
-    } else if (this.options.inputSource instanceof CallbackInputSource) {
-      input = await this.options.inputSource.getInput({
-        metadata: session.metadata,
-      });
     } else {
-      input = await this.options.inputSource.getInput({
+      input = await inputSource.getInput({
         metadata: session.metadata,
       });
     }
@@ -145,6 +183,11 @@ export class UserTemplate extends Template {
           metadata: createMetadata(),
         });
 
+        if (!this.options.inputSource) {
+          throw new Error(
+            'InputSource is required for UserTemplate validation',
+          );
+        }
         input = await this.options.inputSource.getInput({
           metadata: updatedSession.metadata,
         });
@@ -255,7 +298,8 @@ export class AssistantTemplate<
     }
   }
 
-  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
+  async execute(session?: ISession<TInput>): Promise<ISession<TOutput>> {
+    session = ensureSession(session);
     if (this.options.content) {
       // For fixed content responses
       const interpolatedContent = interpolateTemplate(
@@ -420,7 +464,8 @@ export class ToolResultTemplate<
     super();
   }
 
-  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
+  async execute(session?: ISession<TInput>): Promise<ISession<TOutput>> {
+    session = ensureSession(session);
     const metadata = createMetadata<{ toolCallId: string }>();
     metadata.set('toolCallId', this.options.toolCallId);
 
@@ -447,7 +492,8 @@ export class IfTemplate extends Template {
     super();
   }
 
-  async execute(session: ISession): Promise<ISession> {
+  async execute(session?: ISession): Promise<ISession> {
+    session = ensureSession(session);
     if (this.options.condition(session)) {
       return this.options.thenTemplate.execute(session);
     } else if (this.options.elseTemplate) {
@@ -481,7 +527,19 @@ function WithUser<TBase extends Constructor<{ templates: Template[] }>>(
   Base: TBase,
 ) {
   return class extends Base {
-    addUser(contentOrInputSource: string | InputSource): this {
+    addUser(
+      contentOrInputSource?:
+        | string
+        | InputSource
+        | {
+            inputSource?: InputSource;
+            description?: string;
+            validate?: (input: string) => Promise<boolean>;
+            onInput?: (input: string) => void;
+            default?: string;
+            validator?: IValidator;
+          },
+    ): this {
       this.templates.push(new UserTemplate(contentOrInputSource));
       return this;
     }
@@ -503,7 +561,7 @@ function WithLoop<TBase extends Constructor<{ templates: Template[] }>>(
   Base: TBase,
 ) {
   return class extends Base {
-    addLoop(loop: LoopTemplate): this {
+    addLoop(loop: Template): this {
       this.templates.push(loop);
       return this;
     }
@@ -587,8 +645,11 @@ function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
         parentSession: ISession,
         childSession: ISession,
       ) => ISession;
+      inputSource?: InputSource;
     }): this {
-      this.templates.push(new SubroutineTemplate(options));
+      // Create a template instance directly instead of using SubroutineTemplate constructor
+      const template = new SubroutineTemplate(options);
+      this.templates.push(template);
       return this;
     }
   };
@@ -598,27 +659,48 @@ function WithSubroutine<TBase extends Constructor<{ templates: Template[] }>>(
  * Template for linear sequence of templates
  */
 export class LinearTemplate extends WithSchema(
-  WithTransformer(
-    WithSubroutine(
-      WithIf(
-        WithLoop(
-          WithSystem(
-            WithUser(
-              WithAssistant(
+  WithAssistant(
+    WithUser(
+      WithSystem(
+        WithTransformer(
+          WithSubroutine(
+            WithIf(
+              WithLoop(
                 class {
                   templates: Template[] = [];
+                  private options?: { inputSource?: InputSource };
 
-                  constructor(options?: { templates?: Template[] }) {
+                  constructor(options?: {
+                    templates?: Template[];
+                    inputSource?: InputSource;
+                  }) {
                     this.templates = options?.templates || [];
+                    this.options = options;
+                  }
+
+                  hasOwnInputSource(): boolean {
+                    return !!this.options?.inputSource;
                   }
 
                   async execute(
-                    session: ISession<Record<string, unknown>>,
+                    session?: ISession<Record<string, unknown>>,
+                    options?: { inputSource?: InputSource },
                   ): Promise<ISession<Record<string, unknown>>> {
+                    session = ensureSession(session);
                     let currentSession: ISession<Record<string, unknown>> =
                       session;
+                    const inputSource =
+                      options?.inputSource ?? this.options?.inputSource;
+
                     for (const template of this.templates) {
-                      currentSession = await template.execute(currentSession);
+                      const childOptions: { inputSource?: InputSource } = {};
+                      if (inputSource && !template.hasOwnInputSource()) {
+                        childOptions.inputSource = inputSource;
+                      }
+                      currentSession = await template.execute(
+                        currentSession,
+                        childOptions,
+                      );
                     }
                     return currentSession;
                   }
@@ -634,7 +716,7 @@ export class LinearTemplate extends WithSchema(
 
 // Agent class is alias for LinearTemplate
 export class Agent extends LinearTemplate {
-  constructor(options?: { templates?: Template[] }) {
+  constructor(options?: { templates?: Template[]; inputSource?: InputSource }) {
     super(options);
   }
 }
@@ -643,23 +725,30 @@ export class Agent extends LinearTemplate {
  * Template for looping sequence of templates
  */
 export class LoopTemplate extends WithSchema(
-  WithTransformer(
-    WithSubroutine(
-      WithIf(
-        WithLoop(
-          WithSystem(
-            WithUser(
-              WithAssistant(
+  WithAssistant(
+    WithUser(
+      WithSystem(
+        WithTransformer(
+          WithSubroutine(
+            WithIf(
+              WithLoop(
                 class {
                   templates: Template[] = [];
                   exitCondition?: (session: ISession) => boolean;
+                  private options?: { inputSource?: InputSource };
 
                   constructor(options?: {
                     templates?: Template[];
                     exitCondition?: (session: ISession) => boolean;
+                    inputSource?: InputSource;
                   }) {
                     this.templates = options?.templates || [];
                     this.exitCondition = options?.exitCondition;
+                    this.options = options;
+                  }
+
+                  hasOwnInputSource(): boolean {
+                    return !!this.options?.inputSource;
                   }
 
                   setExitCondition(
@@ -669,7 +758,11 @@ export class LoopTemplate extends WithSchema(
                     return this;
                   }
 
-                  async execute(session: ISession): Promise<ISession> {
+                  async execute(
+                    session?: ISession,
+                    options?: { inputSource?: InputSource },
+                  ): Promise<ISession> {
+                    session = ensureSession(session);
                     if (!this.exitCondition) {
                       throw new Error(
                         'Exit condition not set for LoopTemplate',
@@ -677,10 +770,19 @@ export class LoopTemplate extends WithSchema(
                     }
 
                     let currentSession = session;
+                    const inputSource =
+                      options?.inputSource ?? this.options?.inputSource;
 
                     do {
                       for (const template of this.templates) {
-                        currentSession = await template.execute(currentSession);
+                        const childOptions: { inputSource?: InputSource } = {};
+                        if (inputSource && !template.hasOwnInputSource()) {
+                          childOptions.inputSource = inputSource;
+                        }
+                        currentSession = await template.execute(
+                          currentSession,
+                          childOptions,
+                        );
                       }
                     } while (!this.exitCondition(currentSession));
 
@@ -700,21 +802,22 @@ export class LoopTemplate extends WithSchema(
  * Template for nested conversations with separate session context
  */
 export class SubroutineTemplate extends WithSchema(
-  WithTransformer(
-    WithSubroutine(
-      WithIf(
-        WithLoop(
-          WithSystem(
-            WithUser(
-              WithAssistant(
+  WithAssistant(
+    WithUser(
+      WithSystem(
+        WithTransformer(
+          WithSubroutine(
+            WithIf(
+              WithLoop(
                 class {
-                  templates: Template[] = [];
-                  template!: Template;
-                  initWith!: (parentSession: ISession) => ISession;
-                  squashWith?: (
+                  protected templates: Template[] = [];
+                  protected template!: Template;
+                  protected initWith!: (parentSession: ISession) => ISession;
+                  protected squashWith?: (
                     parentSession: ISession,
                     childSession: ISession,
                   ) => ISession;
+                  protected options?: { inputSource?: InputSource };
 
                   constructor(options: {
                     template: Template;
@@ -723,19 +826,39 @@ export class SubroutineTemplate extends WithSchema(
                       parentSession: ISession,
                       childSession: ISession,
                     ) => ISession;
+                    inputSource?: InputSource;
                   }) {
                     this.template = options.template;
                     this.initWith = options.initWith;
                     this.squashWith = options.squashWith;
+                    this.options = options;
                   }
 
-                  async execute(session: ISession): Promise<ISession> {
+                  hasOwnInputSource(): boolean {
+                    return !!this.options?.inputSource;
+                  }
+
+                  async execute(
+                    session?: ISession,
+                    options?: { inputSource?: InputSource },
+                  ): Promise<ISession> {
+                    session = ensureSession(session);
                     // Create child session using initWith function
                     const childSession = this.initWith(session);
 
+                    const inputSource =
+                      options?.inputSource ?? this.options?.inputSource;
+                    const childOptions: { inputSource?: InputSource } = {};
+
+                    if (inputSource && !this.template.hasOwnInputSource()) {
+                      childOptions.inputSource = inputSource;
+                    }
+
                     // Execute the template with child session
-                    const resultSession =
-                      await this.template.execute(childSession);
+                    const resultSession = await this.template.execute(
+                      childSession,
+                      childOptions,
+                    );
 
                     // If squashWith is provided, merge results back to parent session
                     if (this.squashWith) {
@@ -768,7 +891,8 @@ export class TransformerTemplate extends Template {
     super();
   }
 
-  async execute(session: ISession): Promise<ISession> {
+  async execute(session?: ISession): Promise<ISession> {
+    session = ensureSession(session);
     return this.transformer.transform(session);
   }
 }
