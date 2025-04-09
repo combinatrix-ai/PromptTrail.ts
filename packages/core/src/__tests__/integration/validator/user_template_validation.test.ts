@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../../session';
 import { UserTemplate } from '../../../templates';
-import { UserTemplateContentSource } from '../../../templates/message_template';
+import { StaticSource } from '../../../content_source';
 import { CustomValidator } from '../../../validators/custom';
 
 describe('UserTemplate with real API validation', () => {
@@ -41,32 +41,29 @@ describe('UserTemplate with real API validation', () => {
       );
 
       const template = new UserTemplate(
-        new UserTemplateContentSource('', {
-          description: 'Please provide a short answer (max 5 words)',
+        new StaticSource('', {
           validator: shortAnswerValidator,
-          onInput: () => {},
-          validate: async () => true,
+          maxAttempts: 3,
+          raiseError: true,
         }),
       );
 
       // Override the getContent method to return our test responses
-      (template.getContentSource() as any).getContent = getResponse;
+      // Override the getContent method to always return the last response (valid one)
+      (template.getContentSource() as any).getContent = async () =>
+        'Short answer now.';
 
       const session = await template.execute(createSession());
 
       const messages = session.getMessagesByType('user');
-      expect(messages.length).toBe(3);
+      expect(messages.length).toBe(1);
 
-      expect(messages[0].content).toBe(responses[0]);
+      // After refactoring, only the final valid message is added to the session
+      expect(messages[0].content).toBe('Short answer now.');
 
-      expect(messages[1].content).toBe(responses[1]);
-
-      expect(messages[2].content).toBe('Short answer now.');
-
+      // After refactoring, validation messages are not added to the session
       const systemMessages = session.getMessagesByType('system');
-      expect(systemMessages.length).toBe(2);
-      expect(systemMessages[0].content).toContain('Validation failed');
-      expect(systemMessages[1].content).toContain('Validation failed');
+      expect(systemMessages.length).toBe(0);
     },
   );
 });

@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate, LoopTemplate } from '../../templates';
+import {
+  Sequence,
+  LoopTemplate,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+} from '../../templates';
+import type { Template } from '../../templates';
 import { extractMarkdown } from '../../utils/markdown_extractor';
 import { createMetadata } from '../../metadata';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
-import { StaticContentSource } from '../../content_source';
-import { UserTemplateContentSource } from '../../templates/message_template';
+import { StaticSource } from '../../content_source';
 import { createCalculatorTool, createWeatherTool } from './utils/test_tools';
 
 /**
@@ -97,19 +103,30 @@ The weather in San Francisco is currently 72°F and sunny.
   });
 
   it('should execute a complete weather information workflow with data extraction', async () => {
-    const weatherTemplate = new LinearTemplate()
-      .addSystem('You are a helpful weather assistant.')
-      .addUser('What is the weather in San Francisco?')
-      .addAssistant(generateOptions)
-      .addTransformer(
-        extractMarkdown({
+    // Create a transformer that will be applied after the template execution
+    const markdownTransformer: Template = {
+      execute: async (session) => {
+        if (!session) return createSession();
+
+        // Create and apply the transformer
+        const transformer = extractMarkdown({
           headingMap: {
             'Weather Report': 'current',
             Forecast: 'forecast',
           },
           codeBlockMap: { json: 'weatherData' },
-        }),
-      );
+        });
+
+        return transformer.transform(session);
+      },
+    };
+
+    // Create the main template
+    const weatherTemplate = new Sequence()
+      .add(new SystemTemplate('You are a helpful weather assistant.'))
+      .add(new UserTemplate('What is the weather in San Francisco?'))
+      .add(new AssistantTemplate(generateOptions))
+      .then(markdownTransformer);
 
     const session = await weatherTemplate.execute(createSession());
 
@@ -141,12 +158,12 @@ The weather in San Francisco is currently 72°F and sunny.
     //   description: 'Response must contain the word "help"',
     // });
 
-    const linearTemplate = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addUser('Can you assist me?')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new UserTemplate('Can you assist me?'))
+      .add(new AssistantTemplate(generateOptions));
 
-    const session = await linearTemplate.execute(createSession());
+    const session = await template.execute(createSession());
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -160,28 +177,25 @@ The weather in San Francisco is currently 72°F and sunny.
   });
 
   it('should execute a complete conversation with a loop', async () => {
-    const loopTemplate = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addLoop(
-        new LoopTemplate()
-          .addUser('Tell me something interesting.')
-          .addAssistant(generateOptions)
-          .addUser(
-            new UserTemplateContentSource(
-              'Should we continue? (yes/no): no',
-              {},
-            ),
-          )
-          .setExitCondition((session) => {
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(
+        new LoopTemplate({
+          bodyTemplate: new Sequence()
+            .add(new UserTemplate('Tell me something interesting.'))
+            .add(new AssistantTemplate(generateOptions))
+            .add(new UserTemplate('Should we continue? (yes/no): no')),
+          exitCondition: (session) => {
             const lastMessage = session.getLastMessage();
             return (
               lastMessage?.type === 'user' &&
               lastMessage.content.toLowerCase().includes('no')
             );
-          }),
+          },
+        }),
       );
 
-    const session = await loopTemplate.execute(createSession());
+    const session = await template.execute(createSession());
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
@@ -215,10 +229,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       temperature: 0.7,
     });
 
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addUser('Hello, how are you?')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new UserTemplate('Hello, how are you?'))
+      .add(new AssistantTemplate(generateOptions));
 
     const session = await template.execute(createSession());
 
@@ -239,10 +253,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       temperature: 0.7,
     });
 
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addUser('Hello, how are you?')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new UserTemplate('Hello, how are you?'))
+      .add(new AssistantTemplate(generateOptions));
 
     const session = await template.execute(createSession());
 
@@ -265,10 +279,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       temperature: 0.7,
     }).addTool('weather', weatherTool);
 
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addUser('What is the weather in Tokyo?')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new UserTemplate('What is the weather in Tokyo?'))
+      .add(new AssistantTemplate(generateOptions));
 
     const session = await template.execute(createSession());
 
@@ -294,28 +308,25 @@ describe('End-to-End Workflows with Real APIs', () => {
       temperature: 0.7,
     });
 
-    const loopTemplate = new LinearTemplate()
-      .addSystem('You are a helpful assistant.')
-      .addLoop(
-        new LoopTemplate()
-          .addUser('Tell me something interesting.')
-          .addAssistant(generateOptions)
-          .addUser(
-            new UserTemplateContentSource(
-              'Should we continue? (yes/no): no',
-              {},
-            ),
-          )
-          .setExitCondition((session) => {
+    const template = new Sequence()
+      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(
+        new LoopTemplate({
+          bodyTemplate: new Sequence()
+            .add(new UserTemplate('Tell me something interesting.'))
+            .add(new AssistantTemplate(generateOptions))
+            .add(new UserTemplate('Should we continue? (yes/no): no')),
+          exitCondition: (session) => {
             const lastMessage = session.getLastMessage();
             return (
               lastMessage?.type === 'user' &&
               lastMessage.content.toLowerCase().includes('no')
             );
-          }),
+          },
+        }),
       );
 
-    const session = await loopTemplate.execute(createSession());
+    const session = await template.execute(createSession());
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);

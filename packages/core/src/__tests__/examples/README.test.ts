@@ -3,7 +3,13 @@ import { createSession } from '../../session';
 import { createGenerateOptions } from '../../generate_options';
 import * as generateModule from '../../generate';
 import { createMetadata } from '../../metadata';
-import { LinearTemplate } from '../../templates';
+import {
+  Sequence,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+  type Template,
+} from '../../templates';
 
 vi.mock('../../generate', () => {
   return {
@@ -34,10 +40,10 @@ describe('README Examples', () => {
         temperature: 0.7,
       });
 
-      const chat = new LinearTemplate()
-        .addSystem("I'm a helpful assistant.")
-        .addUser("What's TypeScript?")
-        .addAssistant(generateOptions);
+      const chat = new Sequence()
+        .add(new SystemTemplate("I'm a helpful assistant."))
+        .add(new UserTemplate("What's TypeScript?"))
+        .add(new AssistantTemplate(generateOptions));
 
       const session = await chat.execute(
         createSession({
@@ -148,10 +154,14 @@ describe('README Examples', () => {
         temperature: 0.7,
       }).addTool('calculator', calculator);
 
-      const chat = new LinearTemplate()
-        .addSystem("I'm a helpful assistant with calculator abilities.")
-        .addUser('What is 123 * 456?')
-        .addAssistant(generateOptions);
+      const chat = new Sequence()
+        .add(
+          new SystemTemplate(
+            "I'm a helpful assistant with calculator abilities.",
+          ),
+        )
+        .add(new UserTemplate('What is 123 * 456?'))
+        .add(new AssistantTemplate(generateOptions));
 
       await chat.execute(createSession());
 
@@ -201,23 +211,37 @@ function factorial(n: number): number {
         temperature: 0.7,
       });
 
-      const codeTemplate = new LinearTemplate()
-        .addSystem(
-          "You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.",
-        )
-        .addUser(
-          'Write a function to calculate the factorial of a number with explanation.',
-        )
-        .addAssistant(generateOptions)
-        .addTransformer(
-          extractMarkdown({
+      // Create a transformer that will be applied after the template execution
+      const markdownTransformer: Template = {
+        execute: async (session) => {
+          if (!session) return createSession();
+
+          // Create and apply the transformer
+          const transformer = extractMarkdown({
             headingMap: {
               Explanation: 'explanation',
               'Usage Example': 'usageExample',
             },
             codeBlockMap: { typescript: 'code' },
-          }),
-        );
+          });
+
+          return transformer.transform(session);
+        },
+      };
+
+      const codeTemplate = new Sequence()
+        .add(
+          new SystemTemplate(
+            "You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.",
+          ),
+        )
+        .add(
+          new UserTemplate(
+            'Write a function to calculate the factorial of a number with explanation.',
+          ),
+        )
+        .add(new AssistantTemplate(generateOptions))
+        .then(markdownTransformer);
 
       const session = await codeTemplate.execute(createSession());
 
@@ -256,10 +280,10 @@ function factorial(n: number): number {
         },
       });
 
-      const chat = new LinearTemplate()
-        .addSystem('You must respond with JSON.')
-        .addUser('Give me some user data')
-        .addAssistant(generateOptions);
+      const chat = new Sequence()
+        .add(new SystemTemplate('You must respond with JSON.'))
+        .add(new UserTemplate('Give me some user data'))
+        .add(new AssistantTemplate(generateOptions));
 
       const session = await chat.execute(createSession());
 
@@ -286,13 +310,15 @@ function factorial(n: number): number {
         ],
       });
 
-      const template = new LinearTemplate()
-        .addSystem(
-          `You are a helpful assistant with access to external tools.
+      const template = new Sequence()
+        .add(
+          new SystemTemplate(
+            `You are a helpful assistant with access to external tools.
              You can use these tools when needed to provide accurate information.`,
+          ),
         )
-        .addUser('Can you check the weather in San Francisco?')
-        .addAssistant(generateOptions);
+        .add(new UserTemplate('Can you check the weather in San Francisco?'))
+        .add(new AssistantTemplate(generateOptions));
 
       const session = await template.execute(createSession());
 
@@ -332,12 +358,12 @@ function factorial(n: number): number {
           metadata: createMetadata(),
         });
 
-      const quiz = new LinearTemplate()
-        .addSystem("I'm your TypeScript quiz master!")
-        .addUser('Ready for a question?')
-        .addAssistant(generateOptions)
-        .addUser('What is generics in TypeScript?')
-        .addAssistant(generateOptions);
+      const quiz = new Sequence()
+        .add(new SystemTemplate("I'm your TypeScript quiz master!"))
+        .add(new UserTemplate('Ready for a question?'))
+        .add(new AssistantTemplate(generateOptions))
+        .add(new UserTemplate('What is generics in TypeScript?'))
+        .add(new AssistantTemplate(generateOptions));
 
       const session = await quiz.execute(createSession());
 

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate } from '../../templates';
+import {
+  Sequence,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+} from '../../templates';
 import { createMetadata } from '../../metadata';
 import type { GenerateOptions } from '../../generate_options';
 
@@ -45,10 +50,14 @@ describe('Browser Compatibility', () => {
     });
 
     // Create a template
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant in a browser environment.')
-      .addUser('Hello from the browser!')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(
+        new SystemTemplate(
+          'You are a helpful assistant in a browser environment.',
+        ),
+      )
+      .add(new UserTemplate('Hello from the browser!'))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template
     const result = await template.execute(createSession());
@@ -77,10 +86,14 @@ describe('Browser Compatibility', () => {
     });
 
     // Create a template
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant in a browser environment.')
-      .addUser('Hello from the browser!')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(
+        new SystemTemplate(
+          'You are a helpful assistant in a browser environment.',
+        ),
+      )
+      .add(new UserTemplate('Hello from the browser!'))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template should throw
     await expect(template.execute(createSession())).rejects.toThrow();

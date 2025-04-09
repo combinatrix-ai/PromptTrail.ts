@@ -10,19 +10,19 @@ export * from './templates';
  * Content sources
  */
 export {
-  ContentSource,
-  StringContentSource,
-  ModelContentSource,
-  StaticContentSource,
-  CLIContentSource,
-  CallbackContentSource,
-  BasicModelContentSource,
-  SchemaModelContentSource,
+  Source, // Renamed base class
+  TextSource, // Renamed
+  ModelSource, // Renamed
+  StaticSource, // Renamed
+  CLISource, // Renamed
+  CallbackSource, // Renamed
+  LlmSource, // Renamed
+  SchemaSource, // Renamed
 } from './content_source';
 
-export { UserTemplateContentSource } from './templates/message_template';
+// Removed export from deleted file: UserTemplateContentSource
 
-export type { ModelContentOutput } from './content_source';
+export type { ModelOutput } from './content_source'; // Renamed from ModelContentOutput
 
 /**
  * Tool system

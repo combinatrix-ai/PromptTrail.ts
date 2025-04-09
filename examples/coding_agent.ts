@@ -3,7 +3,10 @@ import {
   createSession,
   createGenerateOptions,
   type GenerateOptions,
-  Agent,
+  Sequence as Agent,
+  AssistantTemplate,
+  SystemTemplate,
+  UserTemplate,
 } from '../packages/core/src/index.js';
 
 // Imports from ai and zod for tool definition
@@ -15,10 +18,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
 import {
-  StaticContentSource,
-  BasicModelContentSource,
+  StaticSource,
+  LlmSource,
 } from '../packages/core/src/content_source.js';
-import { AssistantTemplate } from '../packages/core/src/templates/basic.js';
 
 // Convert exec to promise-based
 const execAsync = promisify(exec);
@@ -113,13 +115,14 @@ export class CodingAgent {
     ); // Add tools using fluent API
 
     // CodingAgent Template
-    this.template = new Agent({})
-      .addSystem(
-        'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
+    this.template = new Agent()
+      .add(
+        new SystemTemplate(
+          'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
+        ),
       )
-      .addUser()
-      // addAssistant can now be called without generateOptions, it will use the parent's one
-      .addAssistant();
+      .add(new UserTemplate('What can I help you with?'))
+      .add(new AssistantTemplate(this.generateOptions));
   }
 
   // Add a user message to the session and get AI response
@@ -136,14 +139,14 @@ export class CodingAgent {
     // Create a new agent with the same templates but with specific content sources
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
-    const userContent = new StaticContentSource(prompt);
-    const assistantContent = new BasicModelContentSource(this.generateOptions);
+    const userContent = new StaticSource(prompt);
+    const assistantContent = new LlmSource(this.generateOptions);
 
     // Create a new agent with the content sources
     const agent = new Agent()
-      .addSystem(systemPrompt)
-      .addUser(userContent)
-      .addAssistant(assistantContent);
+      .add(new SystemTemplate(systemPrompt))
+      .add(new UserTemplate(userContent))
+      .add(new AssistantTemplate(assistantContent));
 
     // Execute the agent
     await agent.execute(session);

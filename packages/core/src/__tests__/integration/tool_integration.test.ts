@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate } from '../../templates';
+import {
+  Sequence,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+} from '../../templates';
 import { generateText } from '../../generate';
 import { createGenerateOptions } from '../../generate_options';
 import { createMetadata } from '../../metadata';
@@ -76,10 +81,10 @@ describe('Tool Integration with ai-sdk', () => {
       .setToolChoice('auto');
 
     // Create a conversation template
-    const template = new LinearTemplate()
-      .addSystem("I'm a helpful assistant with access to tools.")
-      .addUser('What is 123 * 456?')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new SystemTemplate("I'm a helpful assistant with access to tools."))
+      .add(new UserTemplate('What is 123 * 456?'))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template
     const session = await template.execute(createSession());

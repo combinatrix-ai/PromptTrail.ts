@@ -1,19 +1,18 @@
-// Export all from basic.ts for backward compatibility
-export * from './basic';
+// Export core template interfaces and base class
+export type { Template, IComposedTemplate } from './interfaces';
+export { BaseTemplate } from './interfaces';
+export { ComposedTemplate } from './composition';
 
-// Export composed templates
-export * from './composed';
+// Export concrete template implementations
+export { SystemTemplate } from './system';
+export { UserTemplate } from './user';
+export { AssistantTemplate } from './assistant';
+export { IfTemplate } from './if';
+export { LoopTemplate } from './loop';
+export { Sequence } from './sequence';
 
-// Export content source based templates
-export {
-  ContentSourceTemplate,
-  MessageTemplate,
-  ContentSourceSystemTemplate,
-  ContentSourceUserTemplate,
-  ContentSourceAssistantTemplate,
-  ToolResultTemplate,
-  // Also export the original names for backward compatibility
-  SystemTemplate,
-  UserTemplate,
-  AssistantTemplate,
-} from './message_template';
+// Export factory methods
+export { TemplateFactory } from './factory';
+
+// Alias Sequence as Agent for backward compatibility
+export { Sequence as Agent } from './sequence';
