@@ -7,28 +7,31 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 ## ✨ Features
 
 - 🔒 [**TypeScript-First**](#-typescript-first-design) - Full TypeScript support with inference and generics
-- 📝 [**Template-Based**](#-building-templates) - Composable conversation building blocks
-- 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
-- 🛠️ [**Tool Integration**](#-tool-integration) - First-class support for function calling
+- 📝 [**Template-Based**](#%EF%B8%8F-building-templates) - Composable conversation building blocks
+- 🧩 [**Composable Patterns**](#-complex-control-flow) - Mix and match templates for complex flows
 - 🔌 [**Multi-Provider**](#-model-configuration) - Works with OpenAI, Anthropic (with MCP support), and extensible for more
+- 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
 - 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
-- 🧩 [**Composable Patterns**](#-interactive-loops) - Mix and match templates for complex flows
 - 📊 [**Structured Data Extraction**](#-session-to-metadata-conversion) - Extract and transform data from LLM outputs
-- 🛡️ [**Validation**](#-validation) - Validate both user input and LLM responses
-- 🧩 [**Schema Validation**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
+- 🛡️ [**Validation**](#%EF%B8%8F-validation) - Validate both user input and LLM responses
+- 🧪 [**Structured Output**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
+- 🛠️ [**Tool Integration**](#%EF%B8%8F-tool-integration) - First-class support for function calling
+- 🔌 [**MCP Support**](#-mcp-support) - Integration with Anthropic's Model Context Protocol
 - 🌐 [**Browser Compatible**](#-browser-support) - Works in both Node.js and browser environments
 
 ## 🔧 Installation
 
+> **Note:** This package is not yet published on npm. Install directly from GitHub:
+
 ```bash
 # Using pnpm (recommended)
-pnpm add @prompttrail/core
+pnpm add github:combinatrix-ai/PromptTrail.ts
 
 # Using npm
-npm install @prompttrail/core
+npm install github:combinatrix-ai/PromptTrail.ts
 
 # Using yarn
-yarn add @prompttrail/core
+yarn add github:combinatrix-ai/PromptTrail.ts
 ```
 
 ## 🚀 Quick Start
@@ -619,10 +622,6 @@ const mathChat = new LinearTemplate()
   .addUser("What's 123 * 456?")
   .addAssistant({ generateOptions });
 ```
-
-## 📚 API Explorer
-
-Your IDE is your best friend! We've packed PromptTrail with TypeScript goodies:
 
 ### 🔌 MCP Support
 

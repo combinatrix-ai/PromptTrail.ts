@@ -1,3 +1,5 @@
 node_modules/
 PromptTrail
 dist/
+hello.js
+example.txt

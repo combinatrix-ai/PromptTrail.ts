@@ -3,7 +3,10 @@ import {
   createSession,
   createGenerateOptions,
   type GenerateOptions,
-  Agent,
+  Sequence as Agent,
+  AssistantTemplate,
+  SystemTemplate,
+  UserTemplate,
 } from '../packages/core/src/index.js';
 
 // Imports from ai and zod for tool definition
@@ -14,7 +17,10 @@ import { z } from 'zod';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
-import { StaticInputSource } from '../packages/core/src/input_source.js';
+import {
+  StaticSource,
+  LlmSource,
+} from '../packages/core/src/content_source.js';
 
 // Convert exec to promise-based
 const execAsync = promisify(exec);
@@ -109,28 +115,41 @@ export class CodingAgent {
     ); // Add tools using fluent API
 
     // CodingAgent Template
-    this.template = new Agent({})
-      .addSystem(
-        'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
+    this.template = new Agent()
+      .add(
+        new SystemTemplate(
+          'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
+        ),
       )
-      .addUser()
-      // addAssistant can now be called without generateOptions, it will use the parent's one
-      .addAssistant();
+      .add(new UserTemplate('What can I help you with?'))
+      .add(new AssistantTemplate(this.generateOptions));
   }
 
   // Add a user message to the session and get AI response
   async run(prompt?: string): Promise<void> {
-    if (prompt) {
-      console.log('Running agent with prompt:', prompt);
-      // We only need to pass inputSource now, as generateOptions will be propagated from parent
-      this.template.execute(createSession(), {
-        inputSource: new StaticInputSource(prompt),
-        generateOptions: this.generateOptions,
-      });
-    } else {
-      // Raise an error if no prompt is provided
+    if (!prompt) {
       throw new Error('Prompt is required to run the agent.');
     }
+
+    console.log('Running agent with prompt:', prompt);
+
+    // Create a new session
+    const session = createSession();
+
+    // Create a new agent with the same templates but with specific content sources
+    const systemPrompt =
+      'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
+    const userContent = new StaticSource(prompt);
+    const assistantContent = new LlmSource(this.generateOptions);
+
+    // Create a new agent with the content sources
+    const agent = new Agent()
+      .add(new SystemTemplate(systemPrompt))
+      .add(new UserTemplate(userContent))
+      .add(new AssistantTemplate(assistantContent));
+
+    // Execute the agent
+    await agent.execute(session);
   }
 
   // Example usage of the agent

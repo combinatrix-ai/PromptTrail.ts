@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LinearTemplate } from '../../templates';
+import {
+  Sequence,
+  SystemTemplate,
+  UserTemplate,
+  AssistantTemplate,
+} from '../../templates';
 import { createGenerateOptions } from '../../generate_options';
 import { createSession } from '../../session';
 import type { GenerateOptions } from '../../generate_options';
@@ -29,10 +34,10 @@ describe('Simple Example', () => {
     });
 
     // Create a simple conversation template
-    const chat = new LinearTemplate()
-      .addSystem("I'm a helpful assistant.")
-      .addUser("What's TypeScript?")
-      .addAssistant(generateOptions);
+    const chat = new Sequence()
+      .add(new SystemTemplate("I'm a helpful assistant."))
+      .add(new UserTemplate("What's TypeScript?"))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template
     const session = await chat.execute(createSession());
@@ -69,10 +74,10 @@ describe('Simple Example', () => {
     session.metadata.set('topic', 'TypeScript');
 
     // Create a template with interpolation
-    const chat = new LinearTemplate()
-      .addSystem('Hello, ${username}!')
-      .addUser('Tell me about ${topic}.')
-      .addAssistant(generateOptions);
+    const chat = new Sequence()
+      .add(new SystemTemplate('Hello, ${username}!'))
+      .add(new UserTemplate('Tell me about ${topic}.'))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template
     const result = await chat.execute(session);
@@ -100,10 +105,10 @@ describe('Simple Example', () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Create a template
-    const chat = new LinearTemplate()
-      .addSystem("I'm a helpful assistant.")
-      .addUser("What's TypeScript?")
-      .addAssistant(generateOptions);
+    const chat = new Sequence()
+      .add(new SystemTemplate("I'm a helpful assistant."))
+      .add(new UserTemplate("What's TypeScript?"))
+      .add(new AssistantTemplate(generateOptions));
 
     // Execute the template with print mode enabled
     // We only care about the side effect of console.log being called

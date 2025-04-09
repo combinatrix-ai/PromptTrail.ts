@@ -5,7 +5,7 @@ import { z } from 'zod';
 /**
  * Import Template class from templates
  */
-import { Template } from './templates';
+import { BaseTemplate } from './templates'; // Import BaseTemplate instead of Template
 import { GenerateOptions } from './generate_options';
 
 /**
@@ -26,7 +26,9 @@ export class SchemaTemplate<
   TOutput extends Record<string, unknown> = TInput & {
     structured_output: Record<string, unknown>;
   },
-> extends Template<TInput, TOutput> {
+> extends BaseTemplate<TInput, TOutput> {
+  // Extend BaseTemplate
+  private generateOptions: GenerateOptions; // Renamed from generateOptionsOrContent
   private schema: z.ZodType;
   private maxAttempts: number;
   private schemaName?: string;
@@ -41,8 +43,8 @@ export class SchemaTemplate<
     maxAttempts?: number;
     functionName?: string;
   }) {
-    super();
-    this.generateOptionsOrContent = options.generateOptions;
+    super(); // Call super constructor only once
+    this.generateOptions = options.generateOptions;
     this.schema = options.schema;
     this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
     this.schemaName = options.schemaName;
@@ -50,21 +52,14 @@ export class SchemaTemplate<
     this.functionName = options.functionName;
   }
 
-  hasOwnInputSource(): boolean {
-    return !!this.inputSource;
-  }
-  hasOwnGenerateOptionsOrContent(): boolean {
-    return !!this.generateOptionsOrContent;
-  }
+  // Remove methods not present in BaseTemplate
 
   async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
-    if (!this.generateOptionsOrContent) {
+    // Access the renamed generateOptions property
+    if (!this.generateOptions) {
       throw new Error('No generateOptions provided for SchemaTemplate');
-    } else if (typeof this.generateOptionsOrContent === 'string') {
-      throw new Error(
-        'String generateOptions is not supported for SchemaTemplate. Use GenerateOptions class instead.',
-      );
     }
+    // String check is no longer needed as type is enforced by constructor
 
     const messages = session.messages;
 
@@ -94,26 +89,23 @@ export class SchemaTemplate<
       currentAttempt++;
       try {
         const model =
-          this.generateOptionsOrContent.provider.type === 'openai'
-            ? openai(this.generateOptionsOrContent.provider.modelName)
-            : anthropic(this.generateOptionsOrContent.provider.modelName);
+          this.generateOptions.provider.type === 'openai'
+            ? openai(this.generateOptions.provider.modelName)
+            : anthropic(this.generateOptions.provider.modelName);
 
-        if (this.generateOptionsOrContent.provider.apiKey) {
-          if (this.generateOptionsOrContent.provider.type === 'openai') {
-            process.env.OPENAI_API_KEY =
-              this.generateOptionsOrContent.provider.apiKey;
-          } else if (
-            this.generateOptionsOrContent.provider.type === 'anthropic'
-          ) {
+        if (this.generateOptions.provider.apiKey) {
+          if (this.generateOptions.provider.type === 'openai') {
+            process.env.OPENAI_API_KEY = this.generateOptions.provider.apiKey;
+          } else if (this.generateOptions.provider.type === 'anthropic') {
             process.env.ANTHROPIC_API_KEY =
-              this.generateOptionsOrContent.provider.apiKey;
+              this.generateOptions.provider.apiKey;
           }
         }
 
         const result = await generateText({
           model,
           messages: aiMessages,
-          temperature: this.generateOptionsOrContent.temperature,
+          temperature: this.generateOptions.temperature,
           experimental_output: Output.object({
             schema: this.schema,
           }),

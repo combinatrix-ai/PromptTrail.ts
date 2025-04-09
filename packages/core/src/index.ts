@@ -7,6 +7,24 @@ export { createSession } from './session';
 export * from './templates';
 
 /**
+ * Content sources
+ */
+export {
+  Source, // Renamed base class
+  TextSource, // Renamed
+  ModelSource, // Renamed
+  StaticSource, // Renamed
+  CLISource, // Renamed
+  CallbackSource, // Renamed
+  LlmSource, // Renamed
+  SchemaSource, // Renamed
+} from './content_source';
+
+// Removed export from deleted file: UserTemplateContentSource
+
+export type { ModelOutput } from './content_source'; // Renamed from ModelContentOutput
+
+/**
  * Tool system
  */
 export { tool } from 'ai';

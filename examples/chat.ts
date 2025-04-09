@@ -7,15 +7,15 @@ import {
   createGenerateOptions,
 } from '../packages/core/src/index';
 import { CLIInputSource } from '../packages/core/src/input_source';
-import type { Session } from '../packages/core/src/session';
-import type { Message } from '../packages/core/src/types';
+import type { ISession } from '../packages/core/src/types';
+import type { TMessage } from '../packages/core/src/types';
 import type { Metadata } from '../packages/core/src/metadata';
 
 // Wrapper session that logs messages
-class LoggingSession<T extends Record<string, unknown>> implements Session<T> {
-  constructor(private session: Session<T>) {}
+class LoggingSession<T extends Record<string, unknown>> implements ISession<T> {
+  constructor(private session: ISession<T>) {}
 
-  get messages(): readonly Message[] {
+  get messages(): readonly TMessage[] {
     return this.session.messages;
   }
 
@@ -27,24 +27,24 @@ class LoggingSession<T extends Record<string, unknown>> implements Session<T> {
     return true; // LoggingSession always prints
   }
 
-  addMessage(message: Message): Session<T> {
+  addMessage(message: TMessage): ISession<T> {
     // Create new session with the message
     return new LoggingSession(this.session.addMessage(message));
   }
 
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
-  ): Session<T & U> {
+  ): ISession<T & U> {
     return new LoggingSession(this.session.updateMetadata(metadata));
   }
 
-  getLastMessage(): Message | undefined {
+  getLastMessage(): TMessage | undefined {
     return this.session.getLastMessage();
   }
 
-  getMessagesByType<U extends Message['type']>(
+  getMessagesByType<U extends TMessage['type']>(
     type: U,
-  ): Extract<Message, { type: U }>[] {
+  ): Extract<TMessage, { type: U }>[] {
     return this.session.getMessagesByType(type);
   }
 
@@ -62,10 +62,10 @@ function createLoggingSession<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(
   options: {
-    messages?: Message[];
+    messages?: TMessage[];
     metadata?: T;
   } = {},
-): Session<T> {
+): ISession<T> {
   return new LoggingSession(createSession<T>({ ...options, print: true }));
 }
 
@@ -117,7 +117,7 @@ async function main() {
       )
       .addLoop(
         new LoopTemplate({
-          templates: [userTemplate, new AssistantTemplate({ generateOptions })],
+          templates: [userTemplate, new AssistantTemplate(generateOptions)],
           exitCondition: (session) => {
             const lastUserMessage = session
               .getMessagesByType('user')
