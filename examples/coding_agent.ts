@@ -1,31 +1,32 @@
-// Imports from @prompttrail/core
+/**
+ * Interactive Coding Agent Example
+ *
+ * This example demonstrates how to create an interactive coding agent using PromptTrail.
+ * The agent can execute shell commands, read and write files, and maintain a conversation.
+ */
+
+// Import PromptTrail core components
 import {
   createSession,
   createGenerateOptions,
   type GenerateOptions,
-  Sequence as Agent,
-  AssistantTemplate,
+  Agent,
   SystemTemplate,
-  UserTemplate,
+  CLISource,
 } from '../packages/core/src/index.js';
 
-// Imports from ai and zod for tool definition
-import { tool, type Tool } from 'ai'; // Removed unused Message import
+// Import tool definitions from ai SDK
+import { tool, type Tool } from 'ai';
 import { z } from 'zod';
 
-// Node.js built-in modules
+// Node.js modules for file and command operations
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
-import {
-  StaticSource,
-  LlmSource,
-} from '../packages/core/src/content_source.js';
-
-// Convert exec to promise-based
+// Convert exec to promise-based for async/await usage
 const execAsync = promisify(exec);
 
-// Create tools using 'ai' tool function and Zod schemas
+// Define shell command tool
 const shellCommandTool = tool({
   description: 'Execute a shell command',
   parameters: z.object({
@@ -42,6 +43,7 @@ const shellCommandTool = tool({
   },
 });
 
+// Define file reading tool
 const readFileTool = tool({
   description: 'Read content from a file',
   parameters: z.object({
@@ -58,6 +60,7 @@ const readFileTool = tool({
   },
 });
 
+// Define file writing tool
 const writeFileTool = tool({
   description: 'Write content to a file',
   parameters: z.object({
@@ -77,27 +80,30 @@ const writeFileTool = tool({
   },
 });
 
-// Define the type for the tools record based on 'ai' Tool type
+// Type definition for tools collection
 type ToolsMap = Record<string, Tool>;
 
+/**
+ * CodingAgent class that provides an interactive coding assistant
+ * with tool capabilities for shell commands and file operations
+ */
 export class CodingAgent {
   private tools: ToolsMap;
   private generateOptions: GenerateOptions;
-  private template: Agent;
 
   constructor(config: {
     provider: 'openai' | 'anthropic';
     apiKey: string;
     modelName?: string;
   }) {
-    // Store tools in the record
+    // Register all available tools
     this.tools = {
       shell_command: shellCommandTool,
       read_file: readFileTool,
       write_file: writeFileTool,
     };
 
-    // Initialize generateOptions using fluent API
+    // Configure the LLM options
     const baseOptions = {
       provider: {
         type: config.provider,
@@ -110,71 +116,84 @@ export class CodingAgent {
       temperature: 0.7,
     };
 
+    // Create options with tools using the fluent API
     this.generateOptions = createGenerateOptions(baseOptions).addTools(
       this.tools,
-    ); // Add tools using fluent API
-
-    // CodingAgent Template
-    this.template = new Agent()
-      .add(
-        new SystemTemplate(
-          'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.',
-        ),
-      )
-      .add(new UserTemplate('What can I help you with?'))
-      .add(new AssistantTemplate(this.generateOptions));
+    );
   }
 
-  // Add a user message to the session and get AI response
-  async run(prompt?: string): Promise<void> {
-    if (!prompt) {
-      throw new Error('Prompt is required to run the agent.');
-    }
+  /**
+   * Run the agent in interactive mode
+   * This creates a continuous conversation loop that exits when the user types "exit"
+   */
+  async run(initialPrompt?: string): Promise<void> {
+    console.log(
+      '\nStarting interactive coding agent (type "exit" to end)...\n',
+    );
 
-    console.log('Running agent with prompt:', prompt);
+    // Create interactive input source
+    const userCliSource = new CLISource('Your request (type "exit" to end): ');
 
-    // Create a new session
-    const session = createSession();
+    // Create session with console output
+    const session = createSession({ print: true });
 
-    // Create a new agent with the same templates but with specific content sources
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
-    const userContent = new StaticSource(prompt);
-    const assistantContent = new LlmSource(this.generateOptions);
 
-    // Create a new agent with the content sources
-    const agent = new Agent()
-      .add(new SystemTemplate(systemPrompt))
-      .add(new UserTemplate(userContent))
-      .add(new AssistantTemplate(assistantContent));
+    const agent = new Agent().add(new SystemTemplate(systemPrompt)).addIf(
+      (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
+      // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
+      new Agent()
+        .addUser(initialPrompt as string)
+        .addAssistant(this.generateOptions),
+      // Otherwise, this is interactive mode
+      new Agent().addLoop(
+        new Agent().addUser(userCliSource).addAssistant(this.generateOptions),
+        (session) => {
+          const lastUserMessage = session
+            .getMessagesByType('user')
+            .slice(-1)[0];
+          return lastUserMessage?.content.toLowerCase().trim() === 'exit';
+        },
+      ),
+    );
 
-    // Execute the agent
+    // Execute the interactive template
     await agent.execute(session);
+    console.log('\nCoding agent session ended. Goodbye!\n');
   }
 
-  // Example usage of the agent
+  /**
+   * Run predefined examples to demonstrate agent capabilities
+   */
   async runExample(): Promise<void> {
-    // Example 1: List files
-    await this.run(
+    // Example 1: Basic file listing
+    console.log('\n=== Example 1: List files ===\n');
+    this.run(
       'List the files in the current directory and tell me what you see.',
     );
 
-    // Example 2: Create and read a file
-    await this.run(
+    // Example 2: File creation and reading
+    console.log('\n=== Example 2: Create and read a file ===\n');
+    this.run(
       'Create a file named example.txt with some interesting content, then read it back and explain what you wrote.',
     );
 
-    // Example 3: Advanced task
-    await this.run(
+    // Example 3: Create and run a script
+    console.log('\n=== Example 3: Advanced task ===\n');
+    this.run(
       'Create a simple Node.js script that prints "Hello, World!" and run it.',
     );
+    console.log('\n=== Examples completed ===\n');
   }
 }
 
-// Run the agent if this file is executed directly
+/**
+ * Main entry point for the coding agent
+ */
 const runAgent = async (): Promise<void> => {
   try {
-    // Get API key from environment variable based on provider
+    // Get configuration from environment variables
     const provider = (process.env.AI_PROVIDER || 'openai') as
       | 'openai'
       | 'anthropic';
@@ -190,21 +209,23 @@ const runAgent = async (): Promise<void> => {
       process.exit(1);
     }
 
+    // Initialize the agent
     const agent = new CodingAgent({ provider, apiKey });
 
-    // Check if --test argument is provided
+    // Run examples or interactive mode
     if (process.argv.includes('--test')) {
       console.log('Running example tests...');
       await agent.runExample();
     } else {
-      await agent.run('What can you help me with today?');
+      // Start interactive session
+      await agent.run();
     }
   } catch (error) {
     console.error('Error running agent:', error);
   }
 };
 
-// Run the agent if this file is executed directly
+// Auto-run when executed directly
 if (require.main === module) {
   runAgent()
     .then(() => {
