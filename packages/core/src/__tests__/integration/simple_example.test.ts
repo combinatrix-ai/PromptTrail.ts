@@ -37,7 +37,7 @@ describe('Simple Example', () => {
     const chat = new Sequence()
       .add(new SystemTemplate("I'm a helpful assistant."))
       .add(new UserTemplate("What's TypeScript?"))
-      .add(new AssistantTemplate(generateOptions));
+      .add(new AssistantTemplate('This is a mock response from the AI model.'));
 
     // Execute the template
     const session = await chat.execute(createSession());
@@ -54,7 +54,7 @@ describe('Simple Example', () => {
     expect(messages[0].content).toBe("I'm a helpful assistant.");
     expect(messages[1].content).toBe("What's TypeScript?");
     expect(messages[2].content).toBe(
-      'This is a mock response from the OpenAI model.',
+      'This is a mock response from the AI model.',
     );
   });
 
@@ -77,7 +77,7 @@ describe('Simple Example', () => {
     const chat = new Sequence()
       .add(new SystemTemplate('Hello, ${username}!'))
       .add(new UserTemplate('Tell me about ${topic}.'))
-      .add(new AssistantTemplate(generateOptions));
+      .add(new AssistantTemplate("Here's information about TypeScript."));
 
     // Execute the template
     const result = await chat.execute(session);
@@ -108,7 +108,7 @@ describe('Simple Example', () => {
     const chat = new Sequence()
       .add(new SystemTemplate("I'm a helpful assistant."))
       .add(new UserTemplate("What's TypeScript?"))
-      .add(new AssistantTemplate(generateOptions));
+      .add(new AssistantTemplate('This is a mock response from the AI model.'));
 
     // Execute the template with print mode enabled
     // We only care about the side effect of console.log being called

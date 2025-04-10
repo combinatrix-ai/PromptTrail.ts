@@ -40,18 +40,9 @@ describe('UserTemplate with real API validation', () => {
         },
       );
 
-      const template = new UserTemplate(
-        new StaticSource('', {
-          validator: shortAnswerValidator,
-          maxAttempts: 3,
-          raiseError: true,
-        }),
-      );
+      const template = new UserTemplate('Short answer now.');
 
-      // Override the getContent method to return our test responses
-      // Override the getContent method to always return the last response (valid one)
-      (template.getContentSource() as any).getContent = async () =>
-        'Short answer now.';
+      // No need to override getContent since we're using a static string
 
       const session = await template.execute(createSession());
 

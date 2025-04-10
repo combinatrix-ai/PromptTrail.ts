@@ -1,9 +1,15 @@
 import { createMetadata } from '../metadata';
 import type { Session, AssistantMessage } from '../types';
 import { BaseTemplate } from './interfaces';
-import type { Source, ModelOutput, ValidationOptions } from '../content_source';
+import {
+  Source,
+  ModelOutput,
+  ValidationOptions,
+  LlmSource,
+} from '../content_source';
 import type { IValidator } from '../validators/base';
 import { GenerateOptions } from '../generate_options';
+import { interpolateTemplate } from '../utils/template_interpolation';
 
 export class AssistantTemplate extends BaseTemplate<any, any> {
   private maxAttempts: number;
@@ -12,12 +18,24 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
   private isStaticContent: boolean;
 
   constructor(
-    contentOrSource: string | Source<ModelOutput> | GenerateOptions,
+    contentOrSource:
+      | string
+      | Source<ModelOutput>
+      | GenerateOptions
+      | Record<string, any>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
     super();
     this.isStaticContent = typeof contentOrSource === 'string';
+
+    // Use the initializeContentSource method from BaseTemplate
     this.contentSource = this.initializeContentSource(contentOrSource, 'model');
+
+    if (!this.contentSource) {
+      throw new Error(
+        `Failed to initialize content source from: ${typeof contentOrSource}`,
+      );
+    }
 
     // Handle both validator and options cases
     if (validatorOrOptions) {

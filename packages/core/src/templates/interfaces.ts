@@ -55,9 +55,15 @@ export abstract class BaseTemplate<
   }
 
   protected initializeContentSource(
-    input: string | Source<any> | GenerateOptions | undefined,
+    input:
+      | string
+      | Source<any>
+      | GenerateOptions
+      | Record<string, any>
+      | undefined,
     expectedSourceType: 'string' | 'model' | 'any' = 'any',
   ): Source<any> | undefined {
+    // Remove debug logs
     if (input === undefined) {
       return undefined;
     }
@@ -81,14 +87,33 @@ export abstract class BaseTemplate<
         return new StaticSource(input);
       }
     }
-
-    if (input instanceof GenerateOptions) {
+    // Check if it's a GenerateOptions instance or has the same constructor name
+    if (
+      input instanceof GenerateOptions ||
+      (input &&
+        typeof input === 'object' &&
+        input.constructor &&
+        input.constructor.name === 'GenerateOptions')
+    ) {
       if (expectedSourceType === 'string') {
         throw new Error(
           'GenerateOptions cannot be used for a string-based source.',
         );
       }
-      return new LlmSource(input);
+      return new LlmSource(input as GenerateOptions);
+    }
+
+    // Handle plain objects that might be GenerateOptions
+    if (typeof input === 'object' && input !== null) {
+      if (expectedSourceType === 'string') {
+        throw new Error('Object cannot be used for a string-based source.');
+      }
+
+      // Check if it has the properties of a GenerateOptions
+      if ('provider' in input) {
+        // Create a new LlmSource directly with the input
+        return new LlmSource(input as any);
+      }
     }
 
     throw new Error(
