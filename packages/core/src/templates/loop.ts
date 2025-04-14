@@ -1,15 +1,20 @@
-import type { Session } from '../types';
+import type { Session } from '../types'; // Imports the generic Session type
 import { BaseTemplate } from './interfaces';
 import type { Template } from './interfaces';
 
-export class LoopTemplate extends BaseTemplate<any, any> {
+// Make LoopTemplate generic over the metadata type T
+export class LoopTemplate<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends BaseTemplate<any, any> { // BaseTemplate generics might need review later
+  // TODO: Review if Template<any, any> is correct or needs T
   private bodyTemplate: Template<any, any>;
-  private exitCondition: (session: Session) => boolean;
+  private exitCondition: (session: Session<T>) => boolean; // Use Session<T>
   private maxIterations: number;
 
+  // Update constructor signature to use Session<T>
   constructor(options: {
     bodyTemplate: Template<any, any>;
-    exitCondition: (session: Session) => boolean;
+    exitCondition: (session: Session<T>) => boolean;
     maxIterations?: number;
   }) {
     super();
@@ -18,8 +23,10 @@ export class LoopTemplate extends BaseTemplate<any, any> {
     this.maxIterations = options.maxIterations ?? 100; // Default to 100 iterations
   }
 
-  async execute(session?: Session): Promise<Session> {
-    let currentSession = this.ensureSession(session);
+  // Update execute signature to use Session<T>
+  async execute(session?: Session<T>): Promise<Session<T>> {
+    // Assuming ensureSession can handle or infer T, or needs update
+    let currentSession = this.ensureSession(session) as Session<T>; // Cast for now, review ensureSession later
     let iterations = 0;
 
     // Original simple while loop

@@ -6,7 +6,11 @@ import type { GenerateOptions } from '../generate_options';
 import { TemplateFactory } from './factory';
 import type { TTransformFunction } from './transform';
 
-export class Sequence extends BaseTemplate<any, any> {
+// Make Sequence generic over the metadata type T
+export class Sequence<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends BaseTemplate<any, any> { // BaseTemplate generics might need review later
+  // TODO: Review if Template<any, any> is correct or needs T
   private templates: Template<any, any>[] = [];
 
   constructor(templates?: Template<any, any>[]) {
@@ -34,7 +38,8 @@ export class Sequence extends BaseTemplate<any, any> {
     return this.add(TemplateFactory.assistant(content));
   }
   
-    addTransform(transformFn: TTransformFunction): this {
+    // Update addTransform to use generic TTransformFunction<T>
+    addTransform(transformFn: TTransformFunction<T>): this {
       return this.add(TemplateFactory.transform(transformFn));
     }
 
@@ -53,8 +58,10 @@ export class Sequence extends BaseTemplate<any, any> {
     return this.add(TemplateFactory.loop(bodyTemplate, exitCondition));
   }
 
-  async execute(session?: Session): Promise<Session> {
-    let currentSession = this.ensureSession(session);
+  // Update execute signature to use Session<T>
+  async execute(session?: Session<T>): Promise<Session<T>> {
+    // Assuming ensureSession can handle or infer T, or needs update
+    let currentSession = this.ensureSession(session) as Session<T>; // Cast for now, review ensureSession later
 
     for (const template of this.templates) {
       currentSession = await template.execute(currentSession);

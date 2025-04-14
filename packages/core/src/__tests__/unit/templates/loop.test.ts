@@ -7,9 +7,10 @@ import { Sequence } from '../../../templates/sequence';
 import { LoopTemplate } from '../../../templates/loop';
 import { UserTemplate } from '../../../templates/user';
 import type { Session } from '../../../types';
+import { SystemTemplate } from '../../../templates/system';
 
 // Mock the generate module
-vi.mock('../../generate', () => ({
+vi.mock('../../../generate', () => ({
   generateText: vi.fn(),
 }));
 
@@ -124,14 +125,17 @@ describe('Loop Template', () => {
       return counter >= 2; // Exit after 2 iterations
     };
     
-    // Create the loop template using addXXX methods
-    const loopTemplate = new LoopTemplate({
-      exitCondition,
-      bodyTemplate: new Sequence()  // Empty sequence as a placeholder
-    })
+    // Define the body template as a Sequence using addXXX methods
+    const bodySequence = new Sequence()
       .addSystem('System message')
       .addUser('User message')
       .addAssistant('Assistant message');
+
+    // Create the loop template correctly
+    const loopTemplate = new LoopTemplate({
+      exitCondition,
+      bodyTemplate: bodySequence // Pass the defined sequence here
+    });
     
     // Execute the template and verify the result
     const session = await loopTemplate.execute(createSession());
@@ -227,14 +231,15 @@ describe('Loop Template', () => {
       bodyTemplate: new Sequence()
         .add(new UserTemplate('Adding to counter'))
         .addTransform((session) => {
-          // Get the current counter value or initialize to 0
-          const counter = session.metadata.get('counter') || 0;
+          // Get the current counter value, default to 0, ensure it's a number
+          const counter = (session.metadata.get('counter') as number | undefined) ?? 0;
           // Increment the counter
           return session.updateMetadata({ counter: counter + 1 });
         }),
       exitCondition: (session: Session) => {
         // Exit when counter reaches 3
-        return (session.metadata.get('counter') || 0) >= 3;
+        // Get counter, default to 0, ensure it's a number before comparing
+        return ((session.metadata.get('counter') as number | undefined) ?? 0) >= 3;
       }
     });
     

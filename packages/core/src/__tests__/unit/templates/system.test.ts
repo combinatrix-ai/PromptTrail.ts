@@ -197,8 +197,9 @@ describe('SystemTemplate', () => {
 
   it('should handle a session with existing messages', async () => {
     // Create a session with an existing message
-    const session = createSession();
-    session.addMessage({
+    // Create session and assign the result of addMessage back
+    let session = createSession();
+    session = session.addMessage({
       type: 'user',
       content: 'Hello',
       metadata: createMetadata(),

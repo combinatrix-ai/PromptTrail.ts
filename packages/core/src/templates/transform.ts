@@ -1,20 +1,25 @@
 import type { Session } from '../types';
 import { BaseTemplate } from './interfaces';
 
-export type TTransformFunction = (session: Session) => Session | Promise<Session>;
+// Make TTransformFunction generic
+export type TTransformFunction<T extends Record<string, unknown> = Record<string, unknown>> =
+  (session: Session<T>) => Session<any> | Promise<Session<any>>; // Return Session<any> to allow metadata changes
 
-export interface ITransformTemplateParams {
-  transformFn: TTransformFunction;
+// Make params interface generic
+export interface ITransformTemplateParams<T extends Record<string, unknown> = Record<string, unknown>> {
+  transformFn: TTransformFunction<T>;
 }
 
 /**
  * A template that applies a transformation function to the session.
  * It doesn't add messages directly but modifies the session state (e.g., metadata).
  */
-export class TransformTemplate extends BaseTemplate<Record<string, unknown>, Record<string, unknown>> {
-  private transformFn: TTransformFunction;
+// Make TransformTemplate generic
+export class TransformTemplate<T extends Record<string, unknown> = Record<string, unknown>> extends BaseTemplate<T, T> {
+  private transformFn: TTransformFunction<T>;
 
-  constructor(params: ITransformTemplateParams | TTransformFunction) {
+  // Update constructor signature
+  constructor(params: ITransformTemplateParams<T> | TTransformFunction<T>) {
     super();
     if (typeof params === 'function') {
       this.transformFn = params;
@@ -23,11 +28,12 @@ export class TransformTemplate extends BaseTemplate<Record<string, unknown>, Rec
     }
   }
 
-  async execute(session?: Session<Record<string, unknown>>): Promise<Session<Record<string, unknown>>> {
-    const currentSession = this.ensureSession(session); // ensureSession now correctly expects Session<Record<string, unknown>> | undefined
+  // Update execute signature
+  async execute(session?: Session<T>): Promise<Session<any>> { // Return Session<any>
+    const currentSession = this.ensureSession(session);
     // Apply the transformation function
-    // transformFn expects Session<Record<string, unknown>> and currentSession is Session<Record<string, unknown>>
     const updatedSession = await this.transformFn(currentSession);
-    return updatedSession;
+    // Cast the result back to Session<any> as the transform might have changed metadata type
+    return updatedSession as Session<any>;
   }
 }

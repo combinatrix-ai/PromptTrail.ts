@@ -9,7 +9,7 @@ import type { Session } from '../../../types';
 import { Sequence } from '../../../templates/sequence';
 
 // Mock the generate module
-vi.mock('../../generate', () => ({
+vi.mock('../../../generate', () => ({
   generateText: vi.fn(),
 }));
 

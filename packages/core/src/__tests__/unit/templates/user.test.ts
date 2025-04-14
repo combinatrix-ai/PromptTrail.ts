@@ -4,7 +4,24 @@ import { CallbackSource, CLISource, StaticSource } from '../../../content_source
 import { CustomValidator } from '../../../validators/custom';
 import { UserTemplate } from '../../../templates/user';
 
+// Define mockReadline and the mock at the describe level due to hoisting
+const mockReadline = {
+  question: vi.fn(),
+  close: vi.fn(),
+};
+
+vi.mock('node:readline/promises', () => ({
+  createInterface: vi.fn().mockReturnValue(mockReadline),
+}));
+
 describe('UserTemplate', () => {
+  // Reset mocks before each test if needed, or manage within the specific test
+  beforeEach(() => {
+    vi.clearAllMocks(); // Clears mock calls, reset state if necessary
+    // If mockReadline needs specific state reset:
+    // mockReadline.question.mockReset();
+    // mockReadline.close.mockReset();
+  });
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
     const mockSource = new StaticSource('User query from source');
@@ -69,17 +86,9 @@ describe('UserTemplate', () => {
   });
 
   it('should work with CLISource', async () => {
-    // Mock stdin/stdout for CLI interaction
-    const mockReadline = {
-      question: vi.fn().mockResolvedValue('CLI user input'),
-      close: vi.fn(),
-    };
-    
-    // Mock readline module
-    vi.mock('node:readline/promises', () => ({
-      createInterface: vi.fn().mockReturnValue(mockReadline),
-    }));
-    
+    // Set the mock behavior for this specific test
+    mockReadline.question.mockResolvedValue('CLI user input');
+
     // Create a CLISource
     const cliSource = new CLISource('Enter your query: ');
     
