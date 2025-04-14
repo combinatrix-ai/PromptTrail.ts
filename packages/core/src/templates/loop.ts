@@ -22,6 +22,7 @@ export class LoopTemplate extends BaseTemplate<any, any> {
     let currentSession = this.ensureSession(session);
     let iterations = 0;
 
+    // Original simple while loop
     while (
       iterations < this.maxIterations &&
       !this.exitCondition(currentSession)

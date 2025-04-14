@@ -4,6 +4,7 @@ import type { Template } from './interfaces';
 import type { Source, ModelOutput } from '../content_source';
 import type { GenerateOptions } from '../generate_options';
 import { TemplateFactory } from './factory';
+import type { TTransformFunction } from './transform';
 
 export class Sequence extends BaseTemplate<any, any> {
   private templates: Template<any, any>[] = [];
@@ -32,6 +33,10 @@ export class Sequence extends BaseTemplate<any, any> {
   addAssistant(content: string | Source<ModelOutput> | GenerateOptions): this {
     return this.add(TemplateFactory.assistant(content));
   }
+  
+    addTransform(transformFn: TTransformFunction): this {
+      return this.add(TemplateFactory.transform(transformFn));
+    }
 
   addIf(
     condition: (session: Session) => boolean,

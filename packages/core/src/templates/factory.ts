@@ -8,6 +8,7 @@ import { AssistantTemplate } from './assistant';
 import { IfTemplate } from './if';
 import { LoopTemplate } from './loop';
 import { Sequence } from './sequence';
+import { TransformTemplate, TTransformFunction } from './transform'; // Correct import
 import type { Session } from '../types';
 
 /**
@@ -46,4 +47,9 @@ export class TemplateFactory {
   static sequence(templates?: Template<any, any>[]): Template<any, any> {
     return new Sequence(templates);
   }
-}
+
+  // Added transform method correctly inside the class
+  static transform(transformFn: TTransformFunction): Template<any, any> {
+    return new TransformTemplate(transformFn);
+  }
+} // Correct closing brace for the class

@@ -5,6 +5,7 @@ import type { ModelOutput } from '../content_source';
 import { GenerateOptions } from '../generate_options';
 import { interpolateTemplate } from '../utils/template_interpolation';
 import { ComposedTemplate } from './composition';
+// Imports related to loopIf removed
 
 /**
  * Core template interface
@@ -120,4 +121,5 @@ export abstract class BaseTemplate<
       `Unsupported input type for content source: ${typeof input}`,
     );
   }
-}
+
+} // Correct closing brace for BaseTemplate class
