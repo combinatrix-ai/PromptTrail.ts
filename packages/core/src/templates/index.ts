@@ -10,6 +10,7 @@ export { AssistantTemplate } from './assistant';
 export { IfTemplate } from './if';
 export { LoopTemplate } from './loop';
 export { Sequence } from './sequence';
+export { SubroutineTemplate } from './subroutine';
 
 // Export factory methods
 export { TemplateFactory } from './factory';
