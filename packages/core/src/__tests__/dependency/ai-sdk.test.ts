@@ -160,7 +160,7 @@ describe('Tool Integration', () => {
               location: z.string().describe('Activity location'),
               day: z.number().describe('Day number (1, 2, 3, etc.)'),
               duration: z.number().describe('Duration in minutes'),
-              cost: z.number().describe('Cost in USD'), 
+              cost: z.number().describe('Cost in USD'),
               // TODO: Check Optional is working
             }),
           )

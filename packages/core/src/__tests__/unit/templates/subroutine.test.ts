@@ -9,7 +9,8 @@ import type { ISession } from '../../../types'; // Use ISession
 import type { Metadata } from '../../../metadata'; // Use Metadata
 
 // Mock the generate module
-vi.mock('../../../generate', () => ({ // Correct path for mock
+vi.mock('../../../generate', () => ({
+  // Correct path for mock
   generateText: vi.fn(),
 }));
 
@@ -54,7 +55,8 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser('Extract information')
         .addAssistant('Information extracted')
-        .addTransform((session: ISession<any>) => { // Add type hint
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
           // Cast result to satisfy Sequence's transform type expectation
           return session.updateMetadata({
             extractedData: { name: 'Alice', age: 30 },
@@ -124,12 +126,14 @@ describe('SubroutineTemplate', () => {
     const subroutine = new SubroutineTemplate<{ userName: string }>( // P = { userName: string }
       new Sequence()
         // Wrap function in a custom Source class
-        .addUser(new class extends Source<string> {
+        .addUser(
+          new (class extends Source<string> {
             // Accept ISession<any> to match base class, cast metadata internally
             async getContent(session: ISession<any>) {
-                return `Hello, ${(session.metadata as Metadata<any>).get('userName')}!`;
+              return `Hello, ${(session.metadata as Metadata<any>).get('userName')}!`;
             }
-        }())
+          })(),
+        )
         .addAssistant('Nice to meet you!'),
     );
 
@@ -172,7 +176,8 @@ describe('SubroutineTemplate', () => {
           }),
         )
         // Transformer is part of the inner template's execution
-        .addTransform((session: ISession<any>) => { // Add type hint
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
           const lastMessage = session.getLastMessage();
           const content = lastMessage?.content || '';
           const tempMatch = content.match(/(\d+)°C/);
@@ -213,9 +218,12 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser('Inner subroutine question')
         .addAssistant('Inner subroutine answer')
-        .addTransform((session: ISession<any>) => { // Add type hint
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
           // Cast result
-          return session.updateMetadata({ inner: 'completed' }) as ISession<any>;
+          return session.updateMetadata({
+            inner: 'completed',
+          }) as ISession<any>;
         }),
     );
 
@@ -225,9 +233,12 @@ describe('SubroutineTemplate', () => {
         .addUser('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
         .addUser('Outer subroutine end')
-        .addTransform((session: ISession<any>) => { // Add type hint
-           // Cast result
-          return session.updateMetadata({ outer: 'completed' }) as ISession<any>;
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
+          // Cast result
+          return session.updateMetadata({
+            outer: 'completed',
+          }) as ISession<any>;
         }),
     );
 
@@ -258,7 +269,8 @@ describe('SubroutineTemplate', () => {
     const isolatedSubroutine = new SubroutineTemplate<any, any>(
       new Sequence()
         .addUser('Testing isolated context')
-        .addTransform((session: ISession<any>) => { // Add type hint
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
           // Try to access parent metadata (should be undefined due to isolated context)
           const parentData = session.metadata.get('parentData');
           // Set new metadata in the isolated context
@@ -281,20 +293,25 @@ describe('SubroutineTemplate', () => {
     expect(messages[0].content).toBe('Testing isolated context');
 
     // The isolatedData should NOT be available in the result due to isolated context
-    expect((resultSession.metadata as Metadata<any>).get('isolatedData')).toBeUndefined(); // Cast to check dynamic key
+    expect(
+      (resultSession.metadata as Metadata<any>).get('isolatedData'),
+    ).toBeUndefined(); // Cast to check dynamic key
 
     // The parentDataVisible metadata (set inside isolated context) should also NOT be merged back
-    expect((resultSession.metadata as Metadata<any>).get('parentDataVisible')).toBeUndefined(); // Cast to check dynamic key
+    expect(
+      (resultSession.metadata as Metadata<any>).get('parentDataVisible'),
+    ).toBeUndefined(); // Cast to check dynamic key
 
     // Parent metadata should remain unchanged
     expect(resultSession.metadata.get('parentData')).toBe('visible');
 
     // --- Test shared context (default) ---
-     // Specify Parent metadata type P as any, Subroutine S as any
+    // Specify Parent metadata type P as any, Subroutine S as any
     const sharedSubroutine = new SubroutineTemplate<any, any>(
       new Sequence()
         .addUser('Testing shared context')
-        .addTransform((session: ISession<any>) => { // Add type hint
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
           // Try to access parent metadata (should be visible via default initWith)
           const parentData = session.metadata.get('parentData');
           // Set new metadata in the shared context
@@ -312,12 +329,17 @@ describe('SubroutineTemplate', () => {
     const sharedResultSession = await sharedSubroutine.execute(parentSession);
 
     // The sharedData should be available in the result (merged by default squashWith)
-    expect((sharedResultSession.metadata as Metadata<any>).get('sharedData')).toBe( // Cast to check dynamic key
+    expect(
+      (sharedResultSession.metadata as Metadata<any>).get('sharedData'),
+    ).toBe(
+      // Cast to check dynamic key
       'visible to parent',
     );
 
     // The parentDataVisible should be true and merged back
-    expect((sharedResultSession.metadata as Metadata<any>).get('parentDataVisible')).toBe(true); // Cast to check dynamic key
+    expect(
+      (sharedResultSession.metadata as Metadata<any>).get('parentDataVisible'),
+    ).toBe(true); // Cast to check dynamic key
 
     // Parent metadata should still be there
     expect(sharedResultSession.metadata.get('parentData')).toBe('visible');
@@ -325,39 +347,50 @@ describe('SubroutineTemplate', () => {
 
   it('should use the initWith function when provided', async () => {
     // Create a custom session initializer function (initWith)
-    const customInitWith = vi.fn().mockImplementation((parentSession: ISession<any>) => { // Use any for parent type in mock
+    const customInitWith = vi
+      .fn()
+      .mockImplementation((parentSession: ISession<any>) => {
+        // Use any for parent type in mock
         // Create a new session, selectively copying metadata
         const newSession = createSession<any>(); // Use any for subroutine type S in mock
         const userName = parentSession.metadata.get('userName');
         if (userName) {
-            newSession.metadata.set('userName', userName);
+          newSession.metadata.set('userName', userName);
         }
         // Add custom initialization metadata
         newSession.metadata.set('customInit', true);
         // Don't copy messages for this test
         return newSession;
-    });
+      });
 
     // Create a parent session with various metadata - use any type
     const parentSession = createSession<any>()
-        .updateMetadata({ userName: 'Charlie' })
-        .updateMetadata({ sensitiveData: 'should not be copied' });
+      .updateMetadata({ userName: 'Charlie' })
+      .updateMetadata({ sensitiveData: 'should not be copied' });
 
     // Create a subroutine with the custom initWith function
     // Specify Parent type P and Subroutine type S as any
     const subroutine = new SubroutineTemplate<any, any>(
-        new Sequence().addUser(new class extends Source<string> {
-            // Accept ISession<any> to match base class, cast metadata internally
-            async getContent(session: ISession<any>) {
-                const userName = (session.metadata as Metadata<any>).get('userName');
-                const customInit = (session.metadata as Metadata<any>).get('customInit');
-                const sensitiveData = (session.metadata as Metadata<any>).get('sensitiveData'); // Check if undefined
-                return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
-                    sensitiveData === undefined ? 'protected' : 'exposed'
-                }`;
-            }
-        }()),
-        { initWith: customInitWith },
+      new Sequence().addUser(
+        new (class extends Source<string> {
+          // Accept ISession<any> to match base class, cast metadata internally
+          async getContent(session: ISession<any>) {
+            const userName = (session.metadata as Metadata<any>).get(
+              'userName',
+            );
+            const customInit = (session.metadata as Metadata<any>).get(
+              'customInit',
+            );
+            const sensitiveData = (session.metadata as Metadata<any>).get(
+              'sensitiveData',
+            ); // Check if undefined
+            return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
+              sensitiveData === undefined ? 'protected' : 'exposed'
+            }`;
+          }
+        })(),
+      ),
+      { initWith: customInitWith },
     );
 
     // Execute the subroutine
@@ -376,7 +409,9 @@ describe('SubroutineTemplate', () => {
     );
     // Verify metadata reflects custom init and default merge (only subroutine metadata added)
     expect(resultSession.metadata.get('userName')).toBe('Charlie'); // From parent via initWith
-    expect((resultSession.metadata as Metadata<any>).get('customInit')).toBe(true); // Cast to check dynamic key
+    expect((resultSession.metadata as Metadata<any>).get('customInit')).toBe(
+      true,
+    ); // Cast to check dynamic key
     expect(resultSession.metadata.get('sensitiveData')).toBe(
       'should not be copied',
     ); // From parent (default merge)
@@ -388,46 +423,59 @@ describe('SubroutineTemplate', () => {
     let parentSession = createSession<any>() // Use let
       .updateMetadata({ user: { name: 'Dave', age: 30 } });
     // Assign the result of the second update back to parentSession
-    parentSession = parentSession.updateMetadata({ preferences: { theme: 'dark' } });
+    parentSession = parentSession.updateMetadata({
+      preferences: { theme: 'dark' },
+    });
 
     // Create a custom merger function (squashWith)
-    const customSquashWith = vi.fn().mockImplementation(
+    const customSquashWith = vi
+      .fn()
+      .mockImplementation(
         (parent: ISession<any>, subroutine: ISession<any>) => {
-            // Start with a clone of the parent's metadata object
-            const mergedMetadataObject = { ...parent.metadata.toObject() };
+          // Start with a clone of the parent's metadata object
+          const mergedMetadataObject = { ...parent.metadata.toObject() };
 
-            const subroutineMeta = subroutine.metadata.toObject();
+          const subroutineMeta = subroutine.metadata.toObject();
 
-            // Deep merge 'user' object
-            if (subroutineMeta.user && typeof subroutineMeta.user === 'object') {
-                const currentUser = mergedMetadataObject.user || {};
-                // Ensure name from parent is kept if not overwritten by subroutine
-                mergedMetadataObject.user = { ...currentUser, ...subroutineMeta.user };
+          // Deep merge 'user' object
+          if (subroutineMeta.user && typeof subroutineMeta.user === 'object') {
+            const currentUser = mergedMetadataObject.user || {};
+            // Ensure name from parent is kept if not overwritten by subroutine
+            mergedMetadataObject.user = {
+              ...currentUser,
+              ...subroutineMeta.user,
+            };
+          }
+
+          // Simple overwrite for 'preferences'
+          if (subroutineMeta.preferences) {
+            mergedMetadataObject.preferences = subroutineMeta.preferences;
+          }
+
+          // Add/overwrite any other keys from subroutine
+          for (const key in subroutineMeta) {
+            if (
+              key !== 'user' &&
+              key !== 'preferences' &&
+              subroutineMeta.hasOwnProperty(key)
+            ) {
+              mergedMetadataObject[key] = subroutineMeta[key];
             }
+          }
 
-            // Simple overwrite for 'preferences'
-            if (subroutineMeta.preferences) {
-                mergedMetadataObject.preferences = subroutineMeta.preferences;
-            }
+          // Create final session - keep parent messages, use merged metadata
+          // Create final session - use merged metadata object
+          let finalSession = createSession({ metadata: mergedMetadataObject });
+          // Add parent messages (as per this test's custom logic)
+          parent.messages.forEach(
+            (msg) => (finalSession = finalSession.addMessage(msg)),
+          );
 
-            // Add/overwrite any other keys from subroutine
-            for (const key in subroutineMeta) {
-                if (key !== 'user' && key !== 'preferences' && subroutineMeta.hasOwnProperty(key)) {
-                    mergedMetadataObject[key] = subroutineMeta[key];
-                }
-            }
+          // Optionally add subroutine messages if needed (not done in this example)
 
-            // Create final session - keep parent messages, use merged metadata
-            // Create final session - use merged metadata object
-            let finalSession = createSession({ metadata: mergedMetadataObject });
-            // Add parent messages (as per this test's custom logic)
-            parent.messages.forEach(msg => finalSession = finalSession.addMessage(msg));
-
-            // Optionally add subroutine messages if needed (not done in this example)
-
-            return finalSession;
+          return finalSession;
         },
-    );
+      );
 
     // Define types for clarity
     // Define types for clarity (though we'll use 'any' in the template instance)
@@ -437,18 +485,19 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with the custom squashWith function
     // Specify Parent type P and Subroutine type S as any
     const subroutine = new SubroutineTemplate<any, any>(
-        new Sequence()
-            .addUser('Updating user profile')
-            .addTransform((session: ISession<any>) => { // Add type hint
-                // This metadata will be processed by squashWith
-                // Cast result
-                return session.updateMetadata({
-                    user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
-                    preferences: { notifications: true }, // Overwrite preferences
-                    status: 'updated', // Add new key
-                }) as ISession<any>;
-            }),
-        { squashWith: customSquashWith },
+      new Sequence()
+        .addUser('Updating user profile')
+        .addTransform((session: ISession<any>) => {
+          // Add type hint
+          // This metadata will be processed by squashWith
+          // Cast result
+          return session.updateMetadata({
+            user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
+            preferences: { notifications: true }, // Overwrite preferences
+            status: 'updated', // Add new key
+          }) as ISession<any>;
+        }),
+      { squashWith: customSquashWith },
     );
 
     // Execute the subroutine
@@ -469,7 +518,8 @@ describe('SubroutineTemplate', () => {
     const preferences = resultSession.metadata.get('preferences');
     expect(preferences).toEqual({ notifications: true }); // Overwritten
 
-    expect((resultSession.metadata as Metadata<any>).get('status')).toBe('updated'); // Cast to check dynamic key
+    expect((resultSession.metadata as Metadata<any>).get('status')).toBe(
+      'updated',
+    ); // Cast to check dynamic key
   });
-
 });

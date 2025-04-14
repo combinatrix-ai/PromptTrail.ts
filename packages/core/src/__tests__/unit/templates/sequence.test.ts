@@ -51,7 +51,7 @@ describe('Sequence Template', () => {
     const sequence = new Sequence([
       systemTemplate,
       userTemplate,
-      assistantTemplate
+      assistantTemplate,
     ]);
 
     const session = await sequence.execute(createSession());
@@ -88,7 +88,7 @@ describe('Sequence Template', () => {
       .addIf(
         (session) => session.getLastMessage()?.content === 'Hello',
         new AssistantTemplate('Hello there!'),
-        new AssistantTemplate('I did not understand.')
+        new AssistantTemplate('I did not understand.'),
       );
 
     const session = await sequence.execute(createSession());
@@ -107,7 +107,7 @@ describe('Sequence Template', () => {
       .addIf(
         (session) => session.getLastMessage()?.content === 'Hello',
         new AssistantTemplate('Hello there!'),
-        new AssistantTemplate('I did not understand.')
+        new AssistantTemplate('I did not understand.'),
       );
 
     const session2 = await sequence2.execute(createSession());
@@ -121,14 +121,15 @@ describe('Sequence Template', () => {
     const sequence = new Sequence()
       .addSystem('You are a helpful assistant.')
       .addUser('Start the loop')
-      .addLoop( // Use addLoop directly
+      .addLoop(
+        // Use addLoop directly
         new UserTemplate('This is iteration message'),
         (session) => {
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
           // The check runs *before* the body, so check if counter will exceed 3 *after* incrementing
           return counter > 3;
-        }
+        },
       );
 
     const session = await sequence.execute(createSession());
@@ -150,13 +151,13 @@ describe('Sequence Template', () => {
   it('should support addLoop method (formerly loopIf() method)', async () => {
     let counter = 0;
 
-    const bodyTemplate = new Sequence()
-      .addUser('This is iteration message');
+    const bodyTemplate = new Sequence().addUser('This is iteration message');
 
     const sequence = new Sequence()
       .addSystem('You are a helpful assistant.')
       .addUser('Start the loop')
-      .addLoop(bodyTemplate, (session) => { // Use addLoop
+      .addLoop(bodyTemplate, (session) => {
+        // Use addLoop
         counter++;
         // Exit condition should be true *after* the 3rd iteration completes
         return counter > 3;
@@ -207,13 +208,13 @@ describe('Sequence Template', () => {
     let innerCounter = 0;
 
     // Define the body of the inner loop
-    const innerLoopBody = new Sequence()
-      .addUser('Inner loop message');
+    const innerLoopBody = new Sequence().addUser('Inner loop message');
 
     // Define the body of the outer loop, which includes the inner loop
     const outerLoopBody = new Sequence()
       .addUser('Outer loop start')
-      .addLoop(innerLoopBody, (session) => { // Inner loop definition
+      .addLoop(innerLoopBody, (session) => {
+        // Inner loop definition
         innerCounter++;
         // Exit inner loop when counter *exceeds* 2 (after 2 iterations)
         const shouldExitInner = innerCounter > 2;
@@ -225,7 +226,8 @@ describe('Sequence Template', () => {
     // Define the main sequence containing the outer loop
     const mainSequence = new Sequence()
       .addSystem('You are a helpful assistant.')
-      .addLoop(outerLoopBody, (session) => { // Outer loop definition
+      .addLoop(outerLoopBody, (session) => {
+        // Outer loop definition
         outerCounter++;
         // Reset inner counter *before* the outer loop body executes for this iteration
         innerCounter = 0;
@@ -258,7 +260,6 @@ describe('Sequence Template', () => {
     expect(messages[9].type).toBe('user');
     expect(messages[9].content).toBe('All done');
   });
-
 
   it('should support default ContentSource for UserTemplate', async () => {
     const sequence = new Sequence()
@@ -307,12 +308,13 @@ describe('Sequence Template', () => {
     // Verify the generateText was called using vi.mocked()
     expect(vi.mocked(generateText)).toHaveBeenCalledWith(
       expect.anything(), // Session object
-      expect.objectContaining({ // GenerateOptions object
+      expect.objectContaining({
+        // GenerateOptions object
         provider: expect.objectContaining({
           type: 'openai',
           modelName: 'gpt-4',
         }),
-      })
+      }),
     );
   });
 
@@ -325,7 +327,9 @@ describe('Sequence Template', () => {
         const nameMatch = message.match(/my name is (\w+)/i);
         const name = nameMatch ? nameMatch[1] : 'unknown';
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({ userName: name }) as unknown as Session<Record<string, unknown>>;
+        return session.updateMetadata({ userName: name }) as unknown as Session<
+          Record<string, unknown>
+        >;
       })
       .addUser('Nice to meet you, ${userName}');
 
@@ -356,7 +360,9 @@ describe('Sequence Template', () => {
       .addUser('First message')
       .addTransform((session) => {
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({ counter: 1 }) as unknown as Session<Record<string, unknown>>;
+        return session.updateMetadata({ counter: 1 }) as unknown as Session<
+          Record<string, unknown>
+        >;
       });
 
     const sequence2 = new Sequence()
@@ -365,14 +371,16 @@ describe('Sequence Template', () => {
         // Ensure counter is treated as a number
         const counter = Number(session.metadata.get('counter') || 0);
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({ counter: counter + 1 }) as unknown as Session<Record<string, unknown>>;
+        return session.updateMetadata({
+          counter: counter + 1,
+        }) as unknown as Session<Record<string, unknown>>;
       });
 
     const mainSequence = new Sequence()
       .add(sequence1)
       .add(sequence2)
       // Note: Template interpolation uses `${metadataKey}` syntax
-      .addUser('Counter value: ${counter}'); 
+      .addUser('Counter value: ${counter}');
 
     const session = await mainSequence.execute(createSession());
 

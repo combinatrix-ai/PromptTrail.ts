@@ -2,11 +2,14 @@ import type { Session } from '../types';
 import { BaseTemplate } from './interfaces';
 
 // Make TTransformFunction generic
-export type TTransformFunction<T extends Record<string, unknown> = Record<string, unknown>> =
-  (session: Session<T>) => Session<any> | Promise<Session<any>>; // Return Session<any> to allow metadata changes
+export type TTransformFunction<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = (session: Session<T>) => Session<any> | Promise<Session<any>>; // Return Session<any> to allow metadata changes
 
 // Make params interface generic
-export interface ITransformTemplateParams<T extends Record<string, unknown> = Record<string, unknown>> {
+export interface ITransformTemplateParams<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
   transformFn: TTransformFunction<T>;
 }
 
@@ -15,7 +18,9 @@ export interface ITransformTemplateParams<T extends Record<string, unknown> = Re
  * It doesn't add messages directly but modifies the session state (e.g., metadata).
  */
 // Make TransformTemplate generic
-export class TransformTemplate<T extends Record<string, unknown> = Record<string, unknown>> extends BaseTemplate<T, T> {
+export class TransformTemplate<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends BaseTemplate<T, T> {
   private transformFn: TTransformFunction<T>;
 
   // Update constructor signature
@@ -29,7 +34,8 @@ export class TransformTemplate<T extends Record<string, unknown> = Record<string
   }
 
   // Update execute signature
-  async execute(session?: Session<T>): Promise<Session<any>> { // Return Session<any>
+  async execute(session?: Session<T>): Promise<Session<any>> {
+    // Return Session<any>
     const currentSession = this.ensureSession(session);
     // Apply the transformation function
     const updatedSession = await this.transformFn(currentSession);

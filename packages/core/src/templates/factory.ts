@@ -51,8 +51,9 @@ export class TemplateFactory {
   // Added transform method correctly inside the class
   // Make transform method generic
   static transform<T extends Record<string, unknown> = Record<string, unknown>>(
-    transformFn: TTransformFunction<T>
-  ): Template<T, any> { // Return Template<T, any>
+    transformFn: TTransformFunction<T>,
+  ): Template<T, any> {
+    // Return Template<T, any>
     // Pass the generic type to TransformTemplate constructor
     return new TransformTemplate<T>(transformFn);
   }

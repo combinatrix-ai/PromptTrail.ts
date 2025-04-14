@@ -5,7 +5,8 @@ import type { Template } from './interfaces';
 // Make LoopTemplate generic over the metadata type T
 export class LoopTemplate<
   T extends Record<string, unknown> = Record<string, unknown>,
-> extends BaseTemplate<any, any> { // BaseTemplate generics might need review later
+> extends BaseTemplate<any, any> {
+  // BaseTemplate generics might need review later
   // TODO: Review if Template<any, any> is correct or needs T
   private bodyTemplate: Template<any, any>;
   private exitCondition: (session: Session<T>) => boolean; // Use Session<T>

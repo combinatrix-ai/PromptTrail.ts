@@ -76,8 +76,6 @@ export const createMessage = (
   }
 };
 
-
-
 /**
  * Create a weather tool for testing
  */

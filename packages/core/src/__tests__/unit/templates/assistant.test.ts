@@ -25,13 +25,13 @@ describe('AssistantTemplate', () => {
     // StaticSource is not generic, pass the ModelOutput object directly
     // StaticSource constructor expects a string
     const mockSource = new StaticSource('This is a test response');
-    
+
     // Create an AssistantTemplate with the source
     const template = new AssistantTemplate(mockSource);
-    
+
     // Verify the template has the content source
     expect(template.getContentSource()).toBeDefined();
-    
+
     // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
@@ -41,7 +41,7 @@ describe('AssistantTemplate', () => {
   it('should handle text on constructor', async () => {
     // Create an AssistantTemplate with a static text
     const template = new AssistantTemplate('This is static content');
-    
+
     // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
@@ -55,7 +55,7 @@ describe('AssistantTemplate', () => {
       content: 'Generated content',
       metadata: createMetadata(),
     });
-    
+
     // Create GenerateOptions
     const options = createGenerateOptions({
       provider: {
@@ -65,15 +65,15 @@ describe('AssistantTemplate', () => {
       },
       temperature: 0.7,
     });
-    
+
     // Create an AssistantTemplate with the generate options
     const template = new AssistantTemplate(options);
-    
+
     // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
-    
+
     // Verify the generate function was called with the correct arguments
     expect(generateText).toHaveBeenCalledWith(
       expect.anything(),
@@ -82,7 +82,7 @@ describe('AssistantTemplate', () => {
           type: 'openai',
           modelName: 'gpt-4',
         }),
-      })
+      }),
     );
   });
 
@@ -98,10 +98,10 @@ describe('AssistantTemplate', () => {
     // Create a session with metadata
     const session = createSession();
     session.metadata.set('username', 'Alice');
-    
+
     // Create an AssistantTemplate with interpolated text
     const template = new AssistantTemplate('Hello, ${username}!');
-    
+
     // Execute the template and verify the result
     const result = await template.execute(session);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
@@ -112,23 +112,29 @@ describe('AssistantTemplate', () => {
     const validator = new CustomValidator((content) => {
       return content.includes('valid')
         ? { isValid: true }
-        : { isValid: false, instruction: 'Content must include the word "valid"' };
+        : {
+            isValid: false,
+            instruction: 'Content must include the word "valid"',
+          };
     });
-    
+
     // Create an AssistantTemplate with valid content and the validator
-    const validTemplate = new AssistantTemplate('This is valid content', validator);
-    
+    const validTemplate = new AssistantTemplate(
+      'This is valid content',
+      validator,
+    );
+
     // Execute the template and verify it passes validation
     const validResult = await validTemplate.execute(createSession());
     expect(validResult.getLastMessage()?.content).toBe('This is valid content');
-    
+
     // Create an AssistantTemplate with invalid content and the validator
     const invalidTemplate = new AssistantTemplate('This is invalid', validator);
-    
+
     // Execute the template and verify it fails validation
     // Expect the execute method to throw the specific validation error
     await expect(invalidTemplate.execute(createSession())).rejects.toThrow(
-      'Assistant content validation failed' // Matches error thrown on line 90 in assistant.ts
+      'Assistant content validation failed', // Matches error thrown on line 90 in assistant.ts
     );
   });
 
@@ -146,9 +152,9 @@ describe('AssistantTemplate', () => {
       ],
       metadata: createMetadata(),
     });
-    
+
     const weatherTool = createWeatherTool();
-    
+
     // Create GenerateOptions with the weather tool
     const options = createGenerateOptions({
       provider: {
@@ -157,14 +163,16 @@ describe('AssistantTemplate', () => {
         modelName: 'gpt-4',
       },
     }).addTool('weather', weatherTool);
-    
+
     // Create an AssistantTemplate with the generate options
     const template = new AssistantTemplate(options);
-    
+
     // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()?.type).toBe('assistant');
-    expect(session.getLastMessage()?.content).toBe('I need to check the weather');
+    expect(session.getLastMessage()?.content).toBe(
+      'I need to check the weather',
+    );
     // TODO: Fix this type error, toolCalls argument should exist on Message
     expect(session.getLastMessage()?.toolCalls).toEqual([
       {
@@ -174,7 +182,6 @@ describe('AssistantTemplate', () => {
       },
     ]);
   });
-
 
   it('should retry when validation fails and maxAttempts > 1', async () => {
     // Mock the generate function to return different responses on each call
@@ -189,14 +196,17 @@ describe('AssistantTemplate', () => {
         content: 'This is valid content',
         metadata: createMetadata(),
       });
-    
+
     // Create a custom validator
     const validator = new CustomValidator((content) => {
       return content.includes('valid')
         ? { isValid: true }
-        : { isValid: false, instruction: 'Content must include the word "valid"' };
+        : {
+            isValid: false,
+            instruction: 'Content must include the word "valid"',
+          };
     });
-    
+
     // Create GenerateOptions
     const options = createGenerateOptions({
       provider: {
@@ -205,14 +215,14 @@ describe('AssistantTemplate', () => {
         modelName: 'gpt-4',
       },
     });
-    
+
     // Create an AssistantTemplate with validation options
     const template = new AssistantTemplate(options, {
       validator,
       maxAttempts: 2,
       raiseError: true,
     });
-    
+
     // Execute the template and verify it succeeds on the second attempt
     const session = await template.execute(createSession());
     expect(session.getLastMessage()?.content).toBe('This is valid content');
@@ -226,14 +236,17 @@ describe('AssistantTemplate', () => {
       content: 'This is invalid',
       metadata: createMetadata(),
     });
-    
+
     // Create a custom validator
     const validator = new CustomValidator((content) => {
       return content.includes('valid')
         ? { isValid: true }
-        : { isValid: false, instruction: 'Content must include the word "valid"' };
+        : {
+            isValid: false,
+            instruction: 'Content must include the word "valid"',
+          };
     });
-    
+
     // Create GenerateOptions
     const options = createGenerateOptions({
       provider: {
@@ -242,14 +255,14 @@ describe('AssistantTemplate', () => {
         modelName: 'gpt-4',
       },
     });
-    
+
     // Create an AssistantTemplate with validation options and raiseError set to false
     const template = new AssistantTemplate(options, {
       validator,
       maxAttempts: 1,
       raiseError: false,
     });
-    
+
     // Execute the template and verify it doesn't throw an error
     const session = await template.execute(createSession());
     expect(session.getLastMessage()?.content).toBe('This is invalid');

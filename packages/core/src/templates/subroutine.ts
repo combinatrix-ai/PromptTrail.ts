@@ -9,7 +9,10 @@ import { createMetadata } from '../metadata';
  * @template P - Type of the parent session metadata (Record<string, unknown>).
  * @template S - Type of the subroutine session metadata (Record<string, unknown>).
  */
-export interface ISubroutineTemplateOptions<P extends Record<string, unknown> = Record<string, unknown>, S extends Record<string, unknown> = Record<string, unknown>> {
+export interface ISubroutineTemplateOptions<
+  P extends Record<string, unknown> = Record<string, unknown>,
+  S extends Record<string, unknown> = Record<string, unknown>,
+> {
   /**
    * A function to initialize the session for the subroutine based on the parent session.
    * Defaults to cloning the parent session's messages and metadata.
@@ -28,7 +31,10 @@ export interface ISubroutineTemplateOptions<P extends Record<string, unknown> = 
    * @param subroutineSession The final session after the subroutine execution (ISession<S>).
    * @returns The merged session (ISession<P>).
    */
-  squashWith?: (parentSession: ISession<P>, subroutineSession: ISession<S>) => ISession<P>;
+  squashWith?: (
+    parentSession: ISession<P>,
+    subroutineSession: ISession<S>,
+  ) => ISession<P>;
 
   /**
    * If true, messages generated within the subroutine are retained in the final merged session.
@@ -62,7 +68,12 @@ export interface ISubroutineTemplateOptions<P extends Record<string, unknown> = 
  * @template P - Type of the parent session metadata (Record<string, unknown>).
  * @template S - Type of the subroutine session metadata (Record<string, unknown>).
  */
-export class SubroutineTemplate<P extends Record<string, unknown> = Record<string, unknown>, S extends Record<string, unknown> = Record<string, unknown>> implements Template<P, P> { // Output metadata type is P
+export class SubroutineTemplate<
+  P extends Record<string, unknown> = Record<string, unknown>,
+  S extends Record<string, unknown> = Record<string, unknown>,
+> implements Template<P, P>
+{
+  // Output metadata type is P
   public readonly id?: string;
   private readonly template: Template<S, S>; // Use Template interface, assume subroutine output metadata is S
   private readonly options: ISubroutineTemplateOptions<P, S>;
@@ -72,7 +83,10 @@ export class SubroutineTemplate<P extends Record<string, unknown> = Record<strin
    * @param template The inner template (subroutine) to execute.
    * @param options Configuration options for the subroutine execution and context management.
    */
-  constructor(template: Template<S, S>, options?: ISubroutineTemplateOptions<P, S>) {
+  constructor(
+    template: Template<S, S>,
+    options?: ISubroutineTemplateOptions<P, S>,
+  ) {
     this.template = template;
     this.options = {
       retainMessages: true, // Default: retain messages
@@ -87,36 +101,44 @@ export class SubroutineTemplate<P extends Record<string, unknown> = Record<strin
    * @param parentSession The parent session context.
    * @returns The parent session updated according to the subroutine execution and merging logic.
    */
-  async execute(parentSession: ISession<P>): Promise<ISession<P>> { // Return ISession<P>
+  async execute(parentSession: ISession<P>): Promise<ISession<P>> {
+    // Return ISession<P>
     // 1. Initialize subroutine session
-    const initialSubroutineSession = this.initializeSubroutineSession(parentSession);
+    const initialSubroutineSession =
+      this.initializeSubroutineSession(parentSession);
 
     // 2. Execute the inner template
-    const finalSubroutineSessionResult = await this.template.execute(initialSubroutineSession);
+    const finalSubroutineSessionResult = await this.template.execute(
+      initialSubroutineSession,
+    );
 
     // Handle potential errors or early exits from the subroutine
     if (finalSubroutineSessionResult instanceof Error) {
-        // Decide how to handle subroutine errors. Propagate? Log?
-        // For now, let's propagate the error.
-        // Re-throw the error to comply with the return type Promise<ISession<P>>
-        console.error(`Subroutine execution failed: ${finalSubroutineSessionResult.message}`);
-        throw finalSubroutineSessionResult;
+      // Decide how to handle subroutine errors. Propagate? Log?
+      // For now, let's propagate the error.
+      // Re-throw the error to comply with the return type Promise<ISession<P>>
+      console.error(
+        `Subroutine execution failed: ${finalSubroutineSessionResult.message}`,
+      );
+      throw finalSubroutineSessionResult;
     }
-     if (finalSubroutineSessionResult === null) {
-        // Decide how to handle subroutine null exit. Maybe merge back the initial state?
-        // For now, let's treat it as if the subroutine did nothing significant and merge back.
-        console.warn('Subroutine returned null, merging back initial state.');
-        // Fall through to merge logic, which will use the state before the subroutine potentially modified it.
-        // This might need refinement based on desired behavior for null returns.
-        // Let's use the session state *before* the subroutine potentially returned null.
-         return this.mergeSessions(parentSession, initialSubroutineSession);
+    if (finalSubroutineSessionResult === null) {
+      // Decide how to handle subroutine null exit. Maybe merge back the initial state?
+      // For now, let's treat it as if the subroutine did nothing significant and merge back.
+      console.warn('Subroutine returned null, merging back initial state.');
+      // Fall through to merge logic, which will use the state before the subroutine potentially modified it.
+      // This might need refinement based on desired behavior for null returns.
+      // Let's use the session state *before* the subroutine potentially returned null.
+      return this.mergeSessions(parentSession, initialSubroutineSession);
     }
 
     const finalSubroutineSession = finalSubroutineSessionResult;
 
-
     // 3. Merge results back into the parent session
-    const finalParentSession = this.mergeSessions(parentSession, finalSubroutineSession);
+    const finalParentSession = this.mergeSessions(
+      parentSession,
+      finalSubroutineSession,
+    );
 
     return finalParentSession;
   }
@@ -137,17 +159,20 @@ export class SubroutineTemplate<P extends Record<string, unknown> = Record<strin
     // This assumes S is compatible with P or the user handles potential type issues.
     // Cast the parent metadata object to S. This might be unsafe if P and S differ significantly,
     // but it reflects the default intention of inheriting context.
-    const clonedMetadataObject = parentSession.metadata.toObject() as unknown as S; // Cast via unknown
+    const clonedMetadataObject =
+      parentSession.metadata.toObject() as unknown as S; // Cast via unknown
     let clonedSession = createSession<S>({ metadata: clonedMetadataObject });
     // Add messages immutably
     parentSession.messages.forEach((msg: Message) => {
       clonedSession = clonedSession.addMessage(msg);
     });
     return clonedSession;
-
   }
 
-  private mergeSessions(parentSession: ISession<P>, subroutineSession: ISession<S>): ISession<P> {
+  private mergeSessions(
+    parentSession: ISession<P>,
+    subroutineSession: ISession<S>,
+  ): ISession<P> {
     if (this.options.squashWith) {
       // Use the custom merger
       return this.options.squashWith(parentSession, subroutineSession);
@@ -164,7 +189,7 @@ export class SubroutineTemplate<P extends Record<string, unknown> = Record<strin
       // that are not present (by reference) in the original parentSession.
       const parentMessageSet = new Set(parentSession.messages);
       const newMessages = subroutineSession.messages.filter(
-        (msg) => !parentMessageSet.has(msg)
+        (msg) => !parentMessageSet.has(msg),
       );
       finalMessages = [...finalMessages, ...newMessages]; // Append only new messages
     } else {
@@ -172,12 +197,14 @@ export class SubroutineTemplate<P extends Record<string, unknown> = Record<strin
       finalMessages = [...parentSession.messages];
     }
 
-
     if (!this.options.isolatedContext) {
       // Merge metadata only if not isolated
       // Default merge: Subroutine metadata overwrites parent metadata for conflicting keys
       // Default merge: Subroutine metadata overwrites parent metadata for conflicting keys
-      finalMetadata = { ...finalMetadata, ...subroutineSession.metadata.toObject() }; // Use toObject()
+      finalMetadata = {
+        ...finalMetadata,
+        ...subroutineSession.metadata.toObject(),
+      }; // Use toObject()
     }
 
     // Create a new session with the merged state, passing the raw metadata object

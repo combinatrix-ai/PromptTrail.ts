@@ -121,5 +121,4 @@ export abstract class BaseTemplate<
       `Unsupported input type for content source: ${typeof input}`,
     );
   }
-
 } // Correct closing brace for BaseTemplate class

@@ -1,11 +1,7 @@
 import { createMetadata } from '../metadata';
 import type { Session, AssistantMessage } from '../types';
 import { BaseTemplate } from './interfaces';
-import {
-  Source,
-  ModelOutput,
-  ValidationOptions,
-} from '../content_source';
+import { Source, ModelOutput, ValidationOptions } from '../content_source';
 import type { IValidator } from '../validators/base';
 import { GenerateOptions } from '../generate_options';
 
@@ -77,7 +73,12 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
           // Handle plain string source
           outputContent = rawOutput;
           // No tool calls, metadata, or structured output from static string
-        } else if (rawOutput && typeof rawOutput === 'object' && 'content' in rawOutput && typeof rawOutput.content === 'string') {
+        } else if (
+          rawOutput &&
+          typeof rawOutput === 'object' &&
+          'content' in rawOutput &&
+          typeof rawOutput.content === 'string'
+        ) {
           // Handle ModelOutput object source
           const modelOutput = rawOutput as ModelOutput;
           outputContent = modelOutput.content;
@@ -184,7 +185,10 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
     // Let's return the session state corresponding to the last *attempted* output (lastOutput).
     if (!lastOutput) {
       // This should ideally not happen if the loop ran at least once, but handle defensively
-      throw lastError ?? new Error('Assistant generation failed without specific error');
+      throw (
+        lastError ??
+        new Error('Assistant generation failed without specific error')
+      );
     }
 
     // Reconstruct the message and session state from the last attempt (lastOutput)

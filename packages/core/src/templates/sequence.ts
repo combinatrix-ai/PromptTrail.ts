@@ -9,7 +9,8 @@ import type { TTransformFunction } from './transform';
 // Make Sequence generic over the metadata type T
 export class Sequence<
   T extends Record<string, unknown> = Record<string, unknown>,
-> extends BaseTemplate<any, any> { // BaseTemplate generics might need review later
+> extends BaseTemplate<any, any> {
+  // BaseTemplate generics might need review later
   // TODO: Review if Template<any, any> is correct or needs T
   private templates: Template<any, any>[] = [];
 
@@ -37,11 +38,11 @@ export class Sequence<
   addAssistant(content: string | Source<ModelOutput> | GenerateOptions): this {
     return this.add(TemplateFactory.assistant(content));
   }
-  
-    // Update addTransform to use generic TTransformFunction<T>
-    addTransform(transformFn: TTransformFunction<T>): this {
-      return this.add(TemplateFactory.transform(transformFn));
-    }
+
+  // Update addTransform to use generic TTransformFunction<T>
+  addTransform(transformFn: TTransformFunction<T>): this {
+    return this.add(TemplateFactory.transform(transformFn));
+  }
 
   addIf(
     condition: (session: Session) => boolean,
