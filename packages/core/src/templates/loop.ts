@@ -19,6 +19,12 @@ export class LoopTemplate<
     maxIterations?: number;
   }) {
     super();
+    if (!options.bodyTemplate) {
+      throw new Error('LoopTemplate requires a bodyTemplate.');
+    }
+    if (!options.exitCondition) {
+      throw new Error('LoopTemplate requires an exitCondition function.');
+    }
     this.bodyTemplate = options.bodyTemplate;
     this.exitCondition = options.exitCondition;
     this.maxIterations = options.maxIterations ?? 100; // Default to 100 iterations
