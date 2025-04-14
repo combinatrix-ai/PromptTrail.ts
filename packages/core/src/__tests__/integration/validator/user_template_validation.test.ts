@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../../session';
 import { UserTemplate } from '../../../templates';
-import { StaticSource } from '../../../content_source';
 import { CustomValidator } from '../../../validators/custom';
 
 describe('UserTemplate with real API validation', () => {

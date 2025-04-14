@@ -20,6 +20,7 @@ export class GenerateOptions {
   topK?: number;
   tools: Record<string, unknown> = {};
   toolChoice?: 'auto' | 'required' | 'none';
+  dangerouslyAllowBrowser?: boolean;
   mcpServers?: IMCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 
@@ -31,6 +32,7 @@ export class GenerateOptions {
     topK?: number;
     tools?: Record<string, unknown>;
     toolChoice?: 'auto' | 'required' | 'none';
+    dangerouslyAllowBrowser?: boolean;
     mcpServers?: IMCPServerConfig[];
     sdkOptions?: Record<string, unknown>;
   }) {
@@ -41,6 +43,7 @@ export class GenerateOptions {
     this.topK = options.topK;
     this.tools = options.tools || {};
     this.toolChoice = options.toolChoice;
+    this.dangerouslyAllowBrowser = options.dangerouslyAllowBrowser;
     this.mcpServers = options.mcpServers;
     this.sdkOptions = options.sdkOptions;
   }
@@ -142,6 +145,7 @@ export function createGenerateOptions(options: {
   topK?: number;
   tools?: Record<string, unknown>;
   toolChoice?: 'auto' | 'required' | 'none';
+  dangerouslyAllowBrowser?: boolean;
   mcpServers?: IMCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 }): GenerateOptions {

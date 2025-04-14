@@ -4,7 +4,7 @@ import { BaseTemplate } from './interfaces';
 import type { Source } from '../content_source';
 
 export class UserTemplate extends BaseTemplate<any, any> {
-  constructor(contentOrSource: string | Source<string>) {
+  constructor(contentOrSource?: string | Source<string>) {
     super();
     this.contentSource = this.initializeContentSource(
       contentOrSource,

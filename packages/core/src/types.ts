@@ -29,6 +29,11 @@ export interface BaseMessage<
 > {
   content: string;
   metadata?: Metadata<T>;
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
 }
 
 // Keep old name for backward compatibility

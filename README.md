@@ -575,34 +575,26 @@ This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has 
 Extend LLM capabilities with function calling:
 
 ```typescript
-// Define a calculator tool
-const calculator = new Tool({
-  name: 'calculator',
-  description: 'Perform arithmetic operations',
-  schema: {
-    type: 'object',
-    properties: {
-      a: { type: 'number', description: 'First number' },
-      b: { type: 'number', description: 'Second number' },
-      operation: {
-        type: 'string',
-        enum: ['add', 'subtract', 'multiply', 'divide'],
-        description: 'Operation to perform',
-      },
-    },
-    required: ['a', 'b', 'operation'],
-  },
-  execute: async (input) => {
-    switch (input.operation) {
-      case 'add':
-        return { result: input.a + input.b };
-      case 'subtract':
-        return { result: input.a - input.b };
-      case 'multiply':
-        return { result: input.a * input.b };
-      case 'divide':
-        return { result: input.a / input.b };
-    }
+// Define a weather forecast tool
+const weather_forecast = new tool({
+  description: 'Get weather information',
+  parameters: z.object({
+    location: z.string().describe('Location to get weather information for'),
+  }),
+  execute: async (input: { location: string }) => {
+    const location = input.location;
+    // const _weatherCondition = '72°F and Thunderstorms';
+    const forecast = [
+      'Today: Thunderstorms',
+      'Tomorrow: Cloudy',
+      'Monday: Rainy',
+    ];
+    return {
+      location,
+      temperature: 72,
+      condition: 'Thunderstorms',
+      forecast,
+    };
   },
 });
 
@@ -614,13 +606,15 @@ const generateOptions: GenerateOptions = {
     modelName: 'gpt-4o-mini',
   },
   temperature: 0.7,
-  tools: [calculator],
+  tools: [weather_forecast],
 };
 
-const mathChat = new LinearTemplate()
-  .addSystem('I can help with calculations.')
-  .addUser("What's 123 * 456?")
+const weatherTemplate = new LinearTemplate()
+  .addSystem("I'm a weather assistant.")
+  .addUser("What's the weather like in New York?")
   .addAssistant({ generateOptions });
+
+await weatherTemplate.execute(createSession());
 ```
 
 ### 🔌 MCP Support
@@ -629,7 +623,7 @@ PromptTrail provides comprehensive support for Anthropic's Model Context Protoco
 
 ```typescript
 import {
-  generateText,
+  generateText, // ai-sdk wrapper
   createGenerateOptions,
   createSession,
 } from '@prompttrail/core';

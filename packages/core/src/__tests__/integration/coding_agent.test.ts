@@ -1,6 +1,4 @@
-import { describe, beforeEach, afterEach, it } from 'vitest';
-import { existsSync, unlinkSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { describe, it } from 'vitest';
 import { CodingAgent } from '../../../../../examples/coding_agent';
 
 describe('CodingAgent Integration', () => {

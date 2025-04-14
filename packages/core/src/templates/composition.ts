@@ -1,6 +1,6 @@
 import type { Session } from '../types';
 import { createSession } from '../session';
-import type { Template, IComposedTemplate, BaseTemplate } from './interfaces';
+import type { Template, IComposedTemplate } from './interfaces';
 
 /**
  * Represents a sequence of templates executed one after another.

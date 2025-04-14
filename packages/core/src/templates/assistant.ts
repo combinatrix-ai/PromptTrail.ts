@@ -5,11 +5,9 @@ import {
   Source,
   ModelOutput,
   ValidationOptions,
-  LlmSource,
 } from '../content_source';
 import type { IValidator } from '../validators/base';
 import { GenerateOptions } from '../generate_options';
-import { interpolateTemplate } from '../utils/template_interpolation';
 
 export class AssistantTemplate extends BaseTemplate<any, any> {
   private maxAttempts: number;
@@ -18,7 +16,7 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
   private isStaticContent: boolean;
 
   constructor(
-    contentOrSource:
+    contentOrSource?:
       | string
       | Source<ModelOutput>
       | GenerateOptions

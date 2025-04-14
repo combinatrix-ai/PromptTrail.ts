@@ -12,36 +12,6 @@ import {
   type GenerateOptions,
 } from '../../generate_options';
 import { AssistantTemplate } from '../../templates';
-import { LlmSource } from '../../content_source';
-
-class TestValidator implements IValidator {
-  private description: string;
-
-  constructor(
-    private shouldPass: boolean,
-    private feedback?: string,
-  ) {
-    this.description =
-      feedback || (shouldPass ? 'Valid content' : 'Invalid content');
-  }
-
-  async validate(
-    _content: string,
-    _context: ISession,
-  ): Promise<TValidationResult> {
-    return this.shouldPass
-      ? { isValid: true }
-      : { isValid: false, instruction: this.feedback || 'Validation failed' };
-  }
-
-  getDescription(): string {
-    return this.description || 'Test validator';
-  }
-
-  getErrorMessage(): string {
-    return this.feedback || 'Validation failed';
-  }
-}
 
 describe('AssistantTemplate with Validator', () => {
   let generateOptions: GenerateOptions;
