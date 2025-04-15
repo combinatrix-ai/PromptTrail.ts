@@ -38,10 +38,13 @@ export class TemplateFactory {
   }
 
   static loop(
-    bodyTemplate: Template<any, any>,
-    exitCondition: (session: Session) => boolean,
+    bodyTemplate?: Template<any, any>,
+    exitCondition?: (session: Session) => boolean,
   ): Template<any, any> {
-    return new LoopTemplate({ bodyTemplate, exitCondition });
+    return new LoopTemplate({ 
+      bodyTemplate, 
+      exitCondition 
+    });
   }
 
   static sequence(templates?: Template<any, any>[]): Template<any, any> {

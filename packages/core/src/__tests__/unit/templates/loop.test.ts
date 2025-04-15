@@ -59,6 +59,77 @@ describe('Loop Template', () => {
     // Removed checks for the 3rd message as it's not generated
   });
 
+  it('should be instantiated without exitCondition and bodyTemplate but be error on execute', async () => {
+    // Create an instance of the test template
+    const template = new LoopTemplate();
+
+    // Expect the execute method to throw an error
+    await expect(template.execute(createSession())).rejects.toThrow(
+      'LoopTemplate requires a bodyTemplate.',
+    );
+  });
+
+  it('should allow setting body template and exit condition after instantiation', async () => {
+    // Create a counter for the loop condition
+    let counter = 0;
+
+    // Create the loop condition function
+    const exitCondition = (session: Session) => {
+      counter++;
+      return counter >= 3; // Exit after 3 iterations
+    };
+
+    // Create a simple body template that adds a user message
+    const bodyTemplate = new UserTemplate('Iteration message');
+
+    // Create the loop template without body and exit condition
+    const loopTemplate = new LoopTemplate()
+      .setBody(bodyTemplate)
+      .setLoopIf(exitCondition)
+      .setMaxIterations(10);
+
+    // Execute the template and verify the result
+    const session = await loopTemplate.execute(createSession());
+
+    // Should have executed the body template 2 times due to exit condition check before execution
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(2); // Expect 2 iterations
+    expect(messages[0].type).toBe('user');
+    expect(messages[0].content).toBe('Iteration message');
+    expect(messages[1].type).toBe('user');
+    expect(messages[1].content).toBe('Iteration message');
+  });
+
+  it('should support addXXX methods directly on LoopTemplate', async () => {
+    // Create a counter for the loop condition
+    let counter = 0;
+
+    // Create the loop template with addXXX methods
+    const loopTemplate = new LoopTemplate()
+      .setLoopIf((session: Session) => {
+        counter++;
+        return counter >= 2; // Exit after 2 iterations
+      })
+      .addSystem('System message')
+      .addUser('User message')
+      .addAssistant('Assistant message');
+
+    // Execute the template and verify the result
+    const session = await loopTemplate.execute(createSession());
+
+    // Should have executed the body template 1 time (exit condition counter >= 2)
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(3); // 3 messages × 1 iteration
+
+    // First (and only) iteration
+    expect(messages[0].type).toBe('system');
+    expect(messages[0].content).toBe('System message');
+    expect(messages[1].type).toBe('user');
+    expect(messages[1].content).toBe('User message');
+    expect(messages[2].type).toBe('assistant');
+    expect(messages[2].content).toBe('Assistant message');
+  });
+
   it('should handle a nested loop', async () => {
     // Create counters for the outer and inner loops
     let outerCounter = 0;
@@ -101,14 +172,35 @@ describe('Loop Template', () => {
     // Removed checks for other messages
   });
 
-  it('should be error if exitCondition is not provided', async () => {
+  it('should execute body template once when no exit condition is provided', async () => {
     // Create a loop template without an exit condition
-    expect(() => {
-      // @ts-ignore - Intentionally missing required property for test
-      new LoopTemplate({
-        bodyTemplate: new UserTemplate('Test'),
-      });
-    }).toThrow();
+    const template = new LoopTemplate({
+      bodyTemplate: new UserTemplate('Test message'),
+    });
+    
+    // Should not throw on instantiation
+    expect(template).toBeInstanceOf(LoopTemplate);
+    
+    // Mock console.warn to check for warnings
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    
+    // Execute the template
+    const session = createSession();
+    const result = await template.execute(session);
+    
+    // Should have executed the body template exactly once
+    const messages = Array.from(result.messages);
+    expect(messages).toHaveLength(1); // One message should be added
+    expect(messages[0].type).toBe('user');
+    expect(messages[0].content).toBe('Test message');
+    
+    // Should have logged a warning about missing exit condition
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('LoopTemplate executed without an exit condition')
+    );
+    
+    // Restore console.warn
+    warnSpy.mockRestore();
   });
 
   it('should handle addXXX methods', async () => {
