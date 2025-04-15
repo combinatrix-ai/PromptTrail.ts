@@ -20,29 +20,16 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle ContentSource on constructor', async () => {
-    // Create a mock ModelOutput source
-    // StaticSource should provide ModelOutput for AssistantTemplate
-    // StaticSource is not generic, pass the ModelOutput object directly
-    // StaticSource constructor expects a string
     const mockSource = new StaticSource('This is a test response');
-
-    // Create an AssistantTemplate with the source
     const template = new AssistantTemplate(mockSource);
-
-    // Verify the template has the content source
     expect(template.getContentSource()).toBeDefined();
-
-    // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is a test response');
   });
 
   it('should handle text on constructor', async () => {
-    // Create an AssistantTemplate with a static text
     const template = new AssistantTemplate('This is static content');
-
-    // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is static content');
@@ -66,10 +53,7 @@ describe('AssistantTemplate', () => {
       temperature: 0.7,
     });
 
-    // Create an AssistantTemplate with the generate options
     const template = new AssistantTemplate(options);
-
-    // Execute the template and verify the result
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
@@ -86,30 +70,29 @@ describe('AssistantTemplate', () => {
     );
   });
 
-  it('should throw error during instantiation if no ContentSource is provided', () => {
-    // Expect the constructor to throw an error
-    expect(() => {
-      // Removed unused @ts-expect-error
-      new AssistantTemplate();
-    }).toThrow('Failed to initialize content source');
+  it('should throw error during execution if no ContentSource is provided', async () => {
+    // This should not throw an error during instantiation
+    const template = new AssistantTemplate();
+    
+    // But, if we try to execute it, it should throw an error
+    // because no content source is given by anyone.
+    await expect(template.execute(createSession()))
+      // Use .rejects to assert that a promise-returning function throws an error when called
+      .rejects
+      .toThrow('Content source required for AssistantTemplate');
   });
 
   it('should support interpolation in static content', async () => {
-    // Create a session with metadata
     const session = createSession();
     session.metadata.set('username', 'Alice');
-
-    // Create an AssistantTemplate with interpolated text
     const template = new AssistantTemplate('Hello, ${username}!');
-
-    // Execute the template and verify the result
     const result = await template.execute(session);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
   });
 
-  it('should validate content with a custom validator', async () => {
+  it('should validate content with a custom validator - valid content', async () => {
     // Create a custom validator that only accepts content containing a specific word
-    const validator = new CustomValidator((content) => { // Revert to synchronous
+    const validator = new CustomValidator((content) => {
       return content.includes('valid')
         ? { isValid: true }
         : {
@@ -127,10 +110,22 @@ describe('AssistantTemplate', () => {
     // Execute the template and verify it passes validation
     const validResult = await validTemplate.execute(createSession());
     expect(validResult.getLastMessage()?.content).toBe('This is valid content');
+  });
+
+  it('should return invalid content when validation fails and raiseError is false', async () => {
+    // Create a custom validator that only accepts content containing a specific word
+    const validator = new CustomValidator((content) => {
+      return content.includes('valid')
+        ? { isValid: true }
+        : {
+            isValid: false,
+            instruction: 'Content must include the word "valid"',
+          };
+    });
 
     // Create an AssistantTemplate with invalid content and the validator
     // Set raiseError to false to avoid throwing errors
-    const invalidTemplate = new AssistantTemplate('This is invalid', {
+    const invalidTemplate = new AssistantTemplate('This is not pass', {
       validator,
       raiseError: false,
       maxAttempts: 1
@@ -143,7 +138,7 @@ describe('AssistantTemplate', () => {
     const invalidResult = await invalidTemplate.execute(createSession());
     
     // Verify that the invalid content was still returned despite failing validation
-    expect(invalidResult.getLastMessage()?.content).toBe('This is invalid');
+    expect(invalidResult.getLastMessage()?.content).toBe('This is not pass');
     
     // Restore the spy
     consoleWarnSpy.mockRestore();
@@ -261,3 +256,4 @@ describe('AssistantTemplate', () => {
     expect(session.getLastMessage()?.content).toBe('This is invalid');
   });
 });
+

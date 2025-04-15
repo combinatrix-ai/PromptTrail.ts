@@ -24,13 +24,7 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
 
     // Use the initializeContentSource method from BaseTemplate
     this.contentSource = this.initializeContentSource(contentOrSource, 'model');
-
-    if (!this.contentSource) {
-      throw new Error(
-        `Failed to initialize content source from: ${typeof contentOrSource}`,
-      );
-    }
-
+    
     // Handle both validator and options cases
     if (validatorOrOptions) {
       if ('validate' in validatorOrOptions) {
