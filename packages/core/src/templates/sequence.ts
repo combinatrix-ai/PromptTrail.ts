@@ -5,6 +5,7 @@ import type { Source, ModelOutput } from '../content_source';
 import type { GenerateOptions } from '../generate_options';
 import { TemplateFactory } from './factory';
 import type { TTransformFunction } from './transform';
+import type { ISubroutineTemplateOptions } from './subroutine';
 
 // Make Sequence generic over the metadata type T
 export class Sequence<
@@ -57,6 +58,13 @@ export class Sequence<
     exitCondition: (session: Session) => boolean,
   ): this {
     return this.add(TemplateFactory.loop(bodyTemplate, exitCondition));
+  }
+
+  addSubroutine(
+    templateOrTemplates: Template<any, any> | Template<any, any>[],
+    options?: ISubroutineTemplateOptions<any, any>,
+  ): this {
+    return this.add(TemplateFactory.subroutine(templateOrTemplates, options));
   }
 
   // Update execute signature to use Session<T>

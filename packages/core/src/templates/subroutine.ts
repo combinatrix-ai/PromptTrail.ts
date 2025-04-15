@@ -1,8 +1,13 @@
 import { createSession } from '../session';
-import type { ISession, Message } from '../types'; // Import ISession and Message
+import type { ISession, Message, Session } from '../types'; // Import ISession, Message, and Session
+import { BaseTemplate } from './interfaces';
 import type { Template } from './interfaces'; // Use Template interface
 import type { Metadata } from '../metadata'; // Use Metadata interface
 import { createMetadata } from '../metadata';
+import type { Source, ModelOutput } from '../content_source';
+import type { GenerateOptions } from '../generate_options';
+import { TemplateFactory } from './factory';
+import type { TTransformFunction } from './transform';
 
 /**
  * Options for configuring the SubroutineTemplate.
@@ -59,7 +64,7 @@ export interface ISubroutineTemplateOptions<
 }
 
 /**
- * A template that executes another template (the subroutine) within a potentially
+ * A template that executes a list of templates (the subroutine) within a potentially
  * isolated or customized session context.
  *
  * This allows encapsulating complex logic, controlling context visibility, and
@@ -71,29 +76,87 @@ export interface ISubroutineTemplateOptions<
 export class SubroutineTemplate<
   P extends Record<string, unknown> = Record<string, unknown>,
   S extends Record<string, unknown> = Record<string, unknown>,
-> implements Template<P, P>
+> extends BaseTemplate<P, P>
 {
   // Output metadata type is P
   public readonly id?: string;
-  private readonly template: Template<S, S>; // Use Template interface, assume subroutine output metadata is S
+  private templates: Template<any, any>[] = [];
   private readonly options: ISubroutineTemplateOptions<P, S>;
 
   /**
    * Creates an instance of SubroutineTemplate.
-   * @param template The inner template (subroutine) to execute.
+   * @param templateOrTemplates The inner template(s) (subroutine) to execute.
    * @param options Configuration options for the subroutine execution and context management.
    */
   constructor(
-    template: Template<S, S>,
+    templateOrTemplates?: Template<S, S> | Template<any, any>[],
     options?: ISubroutineTemplateOptions<P, S>,
   ) {
-    this.template = template;
+    super();
     this.options = {
       retainMessages: true, // Default: retain messages
       isolatedContext: false, // Default: share context
       ...options,
     };
     this.id = this.options.id;
+
+    // Initialize templates array
+    if (templateOrTemplates) {
+      if (Array.isArray(templateOrTemplates)) {
+        this.templates = [...templateOrTemplates];
+      } else {
+        this.templates = [templateOrTemplates];
+      }
+    }
+  }
+
+  /**
+   * Adds a template to the subroutine.
+   * @param template The template to add.
+   * @returns This instance for method chaining.
+   */
+  add(template: Template<any, any>): this {
+    this.templates.push(template);
+    return this;
+  }
+
+  // Convenience methods for adding specific template types
+  addSystem(content: string | Source<string>): this {
+    return this.add(TemplateFactory.system(content));
+  }
+
+  addUser(content: string | Source<string>): this {
+    return this.add(TemplateFactory.user(content));
+  }
+
+  addAssistant(content: string | Source<ModelOutput> | GenerateOptions): this {
+    return this.add(TemplateFactory.assistant(content));
+  }
+
+  addTransform(transformFn: TTransformFunction<S>): this {
+    return this.add(TemplateFactory.transform(transformFn));
+  }
+
+  addIf(
+    condition: (session: Session) => boolean,
+    thenTemplate: Template<any, any>,
+    elseTemplate?: Template<any, any>,
+  ): this {
+    return this.add(TemplateFactory.if(condition, thenTemplate, elseTemplate));
+  }
+
+  addLoop(
+    bodyTemplate: Template<any, any>,
+    exitCondition: (session: Session) => boolean,
+  ): this {
+    return this.add(TemplateFactory.loop(bodyTemplate, exitCondition));
+  }
+
+  addSubroutine(
+    template: Template<any, any>,
+    options?: ISubroutineTemplateOptions<any, any>,
+  ): this {
+    return this.add(new SubroutineTemplate(template, options));
   }
 
   /**
@@ -107,37 +170,36 @@ export class SubroutineTemplate<
     const initialSubroutineSession =
       this.initializeSubroutineSession(parentSession);
 
-    // 2. Execute the inner template
-    const finalSubroutineSessionResult = await this.template.execute(
-      initialSubroutineSession,
-    );
-
-    // Handle potential errors or early exits from the subroutine
-    if (finalSubroutineSessionResult instanceof Error) {
-      // Decide how to handle subroutine errors. Propagate? Log?
-      // For now, let's propagate the error.
-      // Re-throw the error to comply with the return type Promise<ISession<P>>
-      console.error(
-        `Subroutine execution failed: ${finalSubroutineSessionResult.message}`,
-      );
-      throw finalSubroutineSessionResult;
-    }
-    if (finalSubroutineSessionResult === null) {
-      // Decide how to handle subroutine null exit. Maybe merge back the initial state?
-      // For now, let's treat it as if the subroutine did nothing significant and merge back.
-      console.warn('Subroutine returned null, merging back initial state.');
-      // Fall through to merge logic, which will use the state before the subroutine potentially modified it.
-      // This might need refinement based on desired behavior for null returns.
-      // Let's use the session state *before* the subroutine potentially returned null.
-      return this.mergeSessions(parentSession, initialSubroutineSession);
+    // 2. Execute all templates in sequence
+    let currentSession = initialSubroutineSession;
+    
+    if (this.templates.length === 0) {
+      // If no templates, just return the initialized session
+      return this.mergeSessions(parentSession, currentSession);
     }
 
-    const finalSubroutineSession = finalSubroutineSessionResult;
+    for (const template of this.templates) {
+      const result = await template.execute(currentSession);
+      
+      // Handle potential errors or early exits
+      if (result instanceof Error) {
+        console.error(`Subroutine execution failed: ${result.message}`);
+        throw result;
+      }
+      
+      if (result === null) {
+        console.warn('Template in subroutine returned null, stopping execution.');
+        // Return the session state before the template that returned null
+        return this.mergeSessions(parentSession, currentSession);
+      }
+      
+      currentSession = result;
+    }
 
     // 3. Merge results back into the parent session
     const finalParentSession = this.mergeSessions(
       parentSession,
-      finalSubroutineSession,
+      currentSession
     );
 
     return finalParentSession;

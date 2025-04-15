@@ -3,14 +3,14 @@ import { createSession } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
-import { Source } from '../../../content_source'; // Import Source
-import { SubroutineTemplate, Sequence } from '../../../templates'; // Use correct imports
-import type { ISession } from '../../../types'; // Use ISession
-import type { Metadata } from '../../../metadata'; // Use Metadata
+import { Source } from '../../../content_source';
+import { SubroutineTemplate, Sequence, LoopTemplate } from '../../../templates';
+import { TemplateFactory } from '../../../templates/factory';
+import type { ISession, Session } from '../../../types';
+import type { Metadata } from '../../../metadata';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
-  // Correct path for mock
   generateText: vi.fn(),
 }));
 
@@ -26,6 +26,8 @@ describe('SubroutineTemplate', () => {
     });
   });
 
+  // Original functionality tests
+  
   it('should execute a simple subroutine and merge results by default', async () => {
     // Create a subroutine template with a simple sequence
     const subroutine = new SubroutineTemplate(
@@ -56,8 +58,6 @@ describe('SubroutineTemplate', () => {
         .addUser('Extract information')
         .addAssistant('Information extracted')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
-          // Cast result to satisfy Sequence's transform type expectation
           return session.updateMetadata({
             extractedData: { name: 'Alice', age: 30 },
           }) as ISession<any>;
@@ -122,13 +122,10 @@ describe('SubroutineTemplate', () => {
     });
 
     // Create a subroutine that uses parent context (via default initWith)
-    // Specify Parent metadata type P
-    const subroutine = new SubroutineTemplate<{ userName: string }>( // P = { userName: string }
+    const subroutine = new SubroutineTemplate<{ userName: string }>(
       new Sequence()
-        // Wrap function in a custom Source class
         .addUser(
           new (class extends Source<string> {
-            // Accept ISession<any> to match base class, cast metadata internally
             async getContent(session: ISession<any>) {
               return `Hello, ${(session.metadata as Metadata<any>).get('userName')}!`;
             }
@@ -138,7 +135,6 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine with the parent session
-    // sessionWithMessage is ISession<{ userName: string }>, matching subroutine's P type
     const resultSession = await subroutine.execute(sessionWithMessage);
 
     // Verify the messages (parent + new)
@@ -171,13 +167,11 @@ describe('SubroutineTemplate', () => {
             provider: {
               type: 'openai',
               apiKey: 'test-api-key',
-              modelName: 'gpt-4o-mini', // Use latest model
+              modelName: 'gpt-4o-mini',
             },
           }),
         )
-        // Transformer is part of the inner template's execution
         .addTransform((session: ISession<any>) => {
-          // Add type hint
           const lastMessage = session.getLastMessage();
           const content = lastMessage?.content || '';
           const tempMatch = content.match(/(\d+)°C/);
@@ -186,7 +180,6 @@ describe('SubroutineTemplate', () => {
           const weatherCondition = weatherMatch
             ? weatherMatch[1].toLowerCase()
             : null;
-          // Cast result to satisfy Sequence's transform type expectation
           return session.updateMetadata({
             weatherData: {
               location: 'Tokyo',
@@ -205,22 +198,20 @@ describe('SubroutineTemplate', () => {
     expect(messages).toHaveLength(2); // User, Assistant
 
     // Verify the extracted metadata was merged back
-    const weatherData = session.metadata.get('weatherData') as any; // Cast for easier access
+    const weatherData = session.metadata.get('weatherData') as any;
     expect(weatherData).toBeDefined();
     expect(weatherData.location).toBe('Tokyo');
     expect(weatherData.temperature).toBe(25);
     expect(weatherData.condition).toBe('sunny');
   });
 
-  it('should handle nested subroutines', async () => {
+  it('should handle nested subroutines (original style)', async () => {
     // Create an inner subroutine
     const innerSubroutine = new SubroutineTemplate(
       new Sequence()
         .addUser('Inner subroutine question')
         .addAssistant('Inner subroutine answer')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
-          // Cast result
           return session.updateMetadata({
             inner: 'completed',
           }) as ISession<any>;
@@ -234,8 +225,6 @@ describe('SubroutineTemplate', () => {
         .add(innerSubroutine) // Nest the subroutine
         .addUser('Outer subroutine end')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
-          // Cast result
           return session.updateMetadata({
             outer: 'completed',
           }) as ISession<any>;
@@ -265,16 +254,13 @@ describe('SubroutineTemplate', () => {
     });
 
     // Create a subroutine with isolatedContext = true
-    // Specify Parent metadata type P as any, Subroutine S as any
     const isolatedSubroutine = new SubroutineTemplate<any, any>(
       new Sequence()
         .addUser('Testing isolated context')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
           // Try to access parent metadata (should be undefined due to isolated context)
           const parentData = session.metadata.get('parentData');
           // Set new metadata in the isolated context
-          // Cast result
           return session.updateMetadata({
             isolatedData: 'not visible to parent',
             parentDataVisible: parentData !== undefined, // This will be false
@@ -284,7 +270,6 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    // parentSession is ISession<{ parentData: string }>, matching subroutine's P type
     const resultSession = await isolatedSubroutine.execute(parentSession);
 
     // Verify the parent session received the user message (retainMessages is true by default)
@@ -295,51 +280,43 @@ describe('SubroutineTemplate', () => {
     // The isolatedData should NOT be available in the result due to isolated context
     expect(
       (resultSession.metadata as Metadata<any>).get('isolatedData'),
-    ).toBeUndefined(); // Cast to check dynamic key
+    ).toBeUndefined();
 
     // The parentDataVisible metadata (set inside isolated context) should also NOT be merged back
     expect(
       (resultSession.metadata as Metadata<any>).get('parentDataVisible'),
-    ).toBeUndefined(); // Cast to check dynamic key
+    ).toBeUndefined();
 
     // Parent metadata should remain unchanged
     expect(resultSession.metadata.get('parentData')).toBe('visible');
 
     // --- Test shared context (default) ---
-    // Specify Parent metadata type P as any, Subroutine S as any
     const sharedSubroutine = new SubroutineTemplate<any, any>(
       new Sequence()
         .addUser('Testing shared context')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
           // Try to access parent metadata (should be visible via default initWith)
           const parentData = session.metadata.get('parentData');
           // Set new metadata in the shared context
-          // Cast result
           return session.updateMetadata({
             sharedData: 'visible to parent',
             parentDataVisible: parentData !== undefined, // This will be true
           }) as ISession<any>;
         }),
-      // { isolatedContext: false } // Default
     );
 
     // Execute the subroutine
-    // parentSession is ISession<{ parentData: string }>, matching subroutine's P type
     const sharedResultSession = await sharedSubroutine.execute(parentSession);
 
     // The sharedData should be available in the result (merged by default squashWith)
     expect(
       (sharedResultSession.metadata as Metadata<any>).get('sharedData'),
-    ).toBe(
-      // Cast to check dynamic key
-      'visible to parent',
-    );
+    ).toBe('visible to parent');
 
     // The parentDataVisible should be true and merged back
     expect(
       (sharedResultSession.metadata as Metadata<any>).get('parentDataVisible'),
-    ).toBe(true); // Cast to check dynamic key
+    ).toBe(true);
 
     // Parent metadata should still be there
     expect(sharedResultSession.metadata.get('parentData')).toBe('visible');
@@ -350,9 +327,8 @@ describe('SubroutineTemplate', () => {
     const customInitWith = vi
       .fn()
       .mockImplementation((parentSession: ISession<any>) => {
-        // Use any for parent type in mock
         // Create a new session, selectively copying metadata
-        const newSession = createSession<any>(); // Use any for subroutine type S in mock
+        const newSession = createSession<any>();
         const userName = parentSession.metadata.get('userName');
         if (userName) {
           newSession.metadata.set('userName', userName);
@@ -363,17 +339,15 @@ describe('SubroutineTemplate', () => {
         return newSession;
       });
 
-    // Create a parent session with various metadata - use any type
+    // Create a parent session with various metadata
     const parentSession = createSession<any>()
       .updateMetadata({ userName: 'Charlie' })
       .updateMetadata({ sensitiveData: 'should not be copied' });
 
     // Create a subroutine with the custom initWith function
-    // Specify Parent type P and Subroutine type S as any
     const subroutine = new SubroutineTemplate<any, any>(
       new Sequence().addUser(
         new (class extends Source<string> {
-          // Accept ISession<any> to match base class, cast metadata internally
           async getContent(session: ISession<any>) {
             const userName = (session.metadata as Metadata<any>).get(
               'userName',
@@ -383,7 +357,7 @@ describe('SubroutineTemplate', () => {
             );
             const sensitiveData = (session.metadata as Metadata<any>).get(
               'sensitiveData',
-            ); // Check if undefined
+            );
             return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
               sensitiveData === undefined ? 'protected' : 'exposed'
             }`;
@@ -394,35 +368,31 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    // parentSession matches subroutine's P type
     const resultSession = await subroutine.execute(parentSession);
 
     // Verify the custom initWith function was called
     expect(customInitWith).toHaveBeenCalledWith(parentSession);
 
     // Verify the message reflects the custom session initialization
-    // Messages from parent are not copied due to custom initWith logic
     const messages = Array.from(resultSession.messages);
     expect(messages).toHaveLength(1); // Only the addUser message from subroutine
     expect(messages[0].content).toBe(
       'User: Charlie, Custom: true, Sensitive: protected',
     );
-    // Verify metadata reflects custom init and default merge (only subroutine metadata added)
+    // Verify metadata reflects custom init and default merge
     expect(resultSession.metadata.get('userName')).toBe('Charlie'); // From parent via initWith
     expect((resultSession.metadata as Metadata<any>).get('customInit')).toBe(
       true,
-    ); // Cast to check dynamic key
+    );
     expect(resultSession.metadata.get('sensitiveData')).toBe(
       'should not be copied',
-    ); // From parent (default merge)
+    );
   });
 
   it('should use the squashWith function when provided', async () => {
     // Create a parent session with nested metadata
-    // Use any type for parent session
-    let parentSession = createSession<any>() // Use let
+    let parentSession = createSession<any>()
       .updateMetadata({ user: { name: 'Dave', age: 30 } });
-    // Assign the result of the second update back to parentSession
     parentSession = parentSession.updateMetadata({
       preferences: { theme: 'dark' },
     });
@@ -463,7 +433,6 @@ describe('SubroutineTemplate', () => {
             }
           }
 
-          // Create final session - keep parent messages, use merged metadata
           // Create final session - use merged metadata object
           let finalSession = createSession({ metadata: mergedMetadataObject });
           // Add parent messages (as per this test's custom logic)
@@ -471,26 +440,16 @@ describe('SubroutineTemplate', () => {
             (msg) => (finalSession = finalSession.addMessage(msg)),
           );
 
-          // Optionally add subroutine messages if needed (not done in this example)
-
           return finalSession;
         },
       );
 
-    // Define types for clarity
-    // Define types for clarity (though we'll use 'any' in the template instance)
-    // type ParentMeta = { user: { name: string; age: number }; preferences: { theme: string } };
-    // type SubroutineMeta = { user?: { age?: number; occupation?: string }; preferences?: { notifications?: boolean }; status?: string };
-
     // Create a subroutine with the custom squashWith function
-    // Specify Parent type P and Subroutine type S as any
     const subroutine = new SubroutineTemplate<any, any>(
       new Sequence()
         .addUser('Updating user profile')
         .addTransform((session: ISession<any>) => {
-          // Add type hint
           // This metadata will be processed by squashWith
-          // Cast result
           return session.updateMetadata({
             user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
             preferences: { notifications: true }, // Overwrite preferences
@@ -501,7 +460,6 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    // parentSession matches subroutine's P type
     const resultSession = await subroutine.execute(parentSession);
 
     // Verify the custom squashWith function was called
@@ -520,6 +478,191 @@ describe('SubroutineTemplate', () => {
 
     expect((resultSession.metadata as Metadata<any>).get('status')).toBe(
       'updated',
-    ); // Cast to check dynamic key
+    );
+  });
+
+  // New functionality tests for list of templates and method chaining
+
+  it('should support adding multiple templates via method chaining', async () => {
+    // Create a subroutine template with method chaining
+    const subroutine = new SubroutineTemplate()
+      .addSystem('You are a helpful assistant.')
+      .addUser('What is your name?')
+      .addAssistant('I am an AI assistant.');
+
+    // Execute the subroutine
+    const session = await subroutine.execute(createSession());
+
+    // Verify the messages were added
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(3);
+    expect(messages[0].type).toBe('system');
+    expect(messages[0].content).toBe('You are a helpful assistant.');
+    expect(messages[1].type).toBe('user');
+    expect(messages[1].content).toBe('What is your name?');
+    expect(messages[2].type).toBe('assistant');
+    expect(messages[2].content).toBe('I am an AI assistant.');
+  });
+
+  it('should support adding templates via constructor array', async () => {
+    // Create templates to add
+    const systemTemplate = new SubroutineTemplate().addSystem('System instruction');
+    const userTemplate = new SubroutineTemplate().addUser('User message');
+    const assistantTemplate = new SubroutineTemplate().addAssistant('Assistant response');
+
+    // Create a subroutine with an array of templates
+    const subroutine = new SubroutineTemplate([
+      systemTemplate,
+      userTemplate,
+      assistantTemplate
+    ]);
+
+    // Execute the subroutine
+    const session = await subroutine.execute(createSession());
+
+    // Verify all templates were executed
+    const messages = Array.from(session.messages);
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it('should support nested subroutines with method chaining', async () => {
+    // Create a nested subroutine
+    const innerSubroutine = new SubroutineTemplate()
+      .addUser('Inner question')
+      .addAssistant('Inner answer')
+      .addTransform((session: ISession<any>) => {
+        return session.updateMetadata({
+          inner: 'completed',
+        }) as ISession<any>;
+      });
+
+    // Create an outer subroutine that includes the inner one
+    const outerSubroutine = new SubroutineTemplate()
+      .addUser('Outer start')
+      .addSubroutine(innerSubroutine)
+      .addUser('Outer end')
+      .addTransform((session: ISession<any>) => {
+        return session.updateMetadata({
+          outer: 'completed',
+        }) as ISession<any>;
+      });
+
+    // Execute the nested subroutines
+    const session = await outerSubroutine.execute(createSession());
+
+    // Verify the messages
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(4);
+    expect(messages[0].content).toBe('Outer start');
+    expect(messages[1].content).toBe('Inner question');
+    expect(messages[2].content).toBe('Inner answer');
+    expect(messages[3].content).toBe('Outer end');
+
+    // Verify the metadata
+    expect(session.metadata.get('inner')).toBe('completed');
+    expect(session.metadata.get('outer')).toBe('completed');
+  });
+
+  it('should support adding subroutines to LinearTemplate (Sequence)', async () => {
+    // Create a subroutine
+    const subroutine = new SubroutineTemplate()
+      .addUser('Subroutine question')
+      .addAssistant('Subroutine answer');
+
+    // Create a sequence that includes the subroutine
+    const sequence = new Sequence()
+      .addSystem('Main system message')
+      .addSubroutine(subroutine)
+      .addUser('Final user message');
+
+    // Execute the sequence
+    const session = await sequence.execute(createSession());
+
+    // Verify the messages
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(4);
+    expect(messages[0].type).toBe('system');
+    expect(messages[0].content).toBe('Main system message');
+    expect(messages[1].type).toBe('user');
+    expect(messages[1].content).toBe('Subroutine question');
+    expect(messages[2].type).toBe('assistant');
+    expect(messages[2].content).toBe('Subroutine answer');
+    expect(messages[3].type).toBe('user');
+    expect(messages[3].content).toBe('Final user message');
+  });
+
+  it('should support adding subroutines to LoopTemplate', async () => {
+    // Create a session with initial metadata
+    const initialSession = createSession<{ count: number }>().updateMetadata({ count: 0 });
+    
+    // Create a simple subroutine that adds a user message and increments count
+    const subroutine = new SubroutineTemplate()
+      .addUser('Loop iteration')
+      .addTransform((session: ISession<any>) => {
+        const currentCount = (session.metadata.get('count') as number) || 0;
+        return session.updateMetadata({
+          count: currentCount + 1
+        }) as ISession<any>;
+      });
+    
+    // Create a loop that uses addSubroutine
+    const loop = new LoopTemplate<{ count: number }>()
+      .addSubroutine(subroutine)
+      .setLoopIf((session) => {
+        const count = (session.metadata.get('count') as number) || 0;
+        return count >= 3; // Exit when count reaches 3 or more
+      });
+    
+    // Execute the loop
+    const session = await loop.execute(initialSession);
+    
+    // Verify the count was incremented to 3
+    expect(session.metadata.get('count')).toBe(3);
+    
+    // Verify the messages (3 iterations with 1 user message per iteration)
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(3);
+    expect(messages.filter(m => m.type === 'user').length).toBe(3);
+  });
+
+  it('should work with direct loop implementation', async () => {
+    // Create a session with initial metadata
+    const initialSession = createSession().updateMetadata({ count: 0 });
+    
+    // Create a simple counter template using transform
+    const counterTemplate = TemplateFactory.transform((session: Session) => {
+      const currentCount = (session.metadata.get('count') as number) || 0;
+      
+      return session.updateMetadata({
+        count: currentCount + 1
+      });
+    });
+    
+    // Create a loop directly using TemplateFactory
+    const loop = TemplateFactory.loop(
+      counterTemplate,
+      (session: Session) => {
+        const count = (session.metadata.get('count') as number) || 0;
+        return count >= 3; // Exit when count reaches 3 or more
+      }
+    );
+    
+    // Execute the loop
+    const session = await loop.execute(initialSession);
+    
+    // Verify the count was incremented to 3
+    expect(session.metadata.get('count')).toBe(3);
+  });
+
+  it('should handle empty templates list gracefully', async () => {
+    // Create a subroutine with no templates
+    const subroutine = new SubroutineTemplate();
+
+    // Execute the subroutine
+    const session = await subroutine.execute(createSession());
+
+    // Verify no messages were added
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(0);
   });
 });

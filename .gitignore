@@ -1,5 +1,9 @@
+.git
 node_modules/
 PromptTrail
 dist/
 hello.js
 example.txt
+*.js
+*.js.map
+vscode-extension/

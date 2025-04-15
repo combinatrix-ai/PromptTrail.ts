@@ -8,6 +8,7 @@ import { AssistantTemplate } from './assistant';
 import { IfTemplate } from './if';
 import { LoopTemplate } from './loop';
 import { Sequence } from './sequence';
+import { SubroutineTemplate, ISubroutineTemplateOptions } from './subroutine';
 import { TransformTemplate, TTransformFunction } from './transform'; // Correct import
 import type { Session } from '../types';
 
@@ -49,6 +50,16 @@ export class TemplateFactory {
 
   static sequence(templates?: Template<any, any>[]): Template<any, any> {
     return new Sequence(templates);
+  }
+
+  static subroutine<
+    P extends Record<string, unknown> = Record<string, unknown>,
+    S extends Record<string, unknown> = Record<string, unknown>
+  >(
+    templateOrTemplates?: Template<S, S> | Template<any, any>[],
+    options?: ISubroutineTemplateOptions<P, S>,
+  ): Template<P, P> {
+    return new SubroutineTemplate<P, S>(templateOrTemplates, options);
   }
 
   // Added transform method correctly inside the class
