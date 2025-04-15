@@ -195,9 +195,9 @@ const quiz = new Agent()
       return anotherQuestionCount === 1;
     },
     // Create child subroutine like function call
-    thenTemplate: new SubroutineTemplate({
-      // Note: Agent is alias of LinearTemplate
-      template: new LinearTemplate()
+    thenTemplate: new Subroutine({
+      // Note: Agent is alias of Sequence
+      template: new Sequence()
         .addSystem("Hmm, don't you like answering quizzes?")
         .addUser('Then you give *me* a TypeScript quiz!')
         .addAssistant({ generateOptions: generateOptions }),
@@ -321,7 +321,7 @@ Extract structured data from LLM outputs:
 
 ````typescript
 import {
-  LinearTemplate,
+  Sequence,
   createSession,
   extractMarkdown,
   extractPattern,
@@ -339,7 +339,7 @@ const generateOptions: GenerateOptions = {
 };
 
 // Create a template that extracts structured data from responses
-const codeTemplate = new LinearTemplate()
+const codeTemplate = new Sequence()
   .addSystem(
     "You're a TypeScript expert. Always include code examples in ```typescript blocks and use ## headings for sections.",
   )
@@ -366,7 +366,7 @@ console.log('Code:', session.metadata.get('code'));
 console.log('Explanation:', session.metadata.get('explanation'));
 
 // You can also extract data using regex patterns
-const dataTemplate = new LinearTemplate()
+const dataTemplate = new Sequence()
   .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
   .addTransformer(
     extractPattern([
@@ -393,7 +393,7 @@ Validate and ensure quality of both user input and LLM responses with a unified 
 
 ```typescript
 import {
-  LinearTemplate,
+  Sequence,
   createSession,
   createGenerateOptions,
   RegexMatchValidator,
@@ -441,7 +441,7 @@ const generateOptions = createGenerateOptions({
 });
 
 // Create a template that asks for a pet name with validation
-const petNameTemplate = new LinearTemplate()
+const petNameTemplate = new Sequence()
   .addSystem('You are a helpful assistant that suggests pet names.')
   .addUser('Suggest a name for a pet cat.')
   // Add assistant with validator directly
@@ -482,7 +482,7 @@ const anyValidator = new AnyValidator(
 );
 
 // Use validators with InputSource for user input validation
-const userInputTemplate = new LinearTemplate()
+const userInputTemplate = new Sequence()
   .addSystem('You are a helpful assistant.')
   .addUser({
     inputSource: new CLIInputSource(),
@@ -500,7 +500,7 @@ Force LLMs to produce structured outputs using schemas:
 
 ```typescript
 import {
-  LinearTemplate,
+  Sequence,
   createSession,
   defineSchema,
   createStringProperty,
@@ -546,7 +546,7 @@ const generateOptions: GenerateOptions = {
 };
 
 // Create a template with schema validation
-const template = new LinearTemplate()
+const template = new Sequence()
   .addSystem('Extract product information from the text.')
   .addUser(
     'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock.',
@@ -609,7 +609,7 @@ const generateOptions: GenerateOptions = {
   tools: [weather_forecast],
 };
 
-const weatherTemplate = new LinearTemplate()
+const weatherTemplate = new Sequence()
   .addSystem("I'm a weather assistant.")
   .addUser("What's the weather like in New York?")
   .addAssistant({ generateOptions });

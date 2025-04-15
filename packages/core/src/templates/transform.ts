@@ -18,7 +18,7 @@ export interface ITransformTemplateParams<
  * It doesn't add messages directly but modifies the session state (e.g., metadata).
  */
 // Make TransformTemplate generic
-export class TransformTemplate<
+export class Transform<
   T extends Record<string, unknown> = Record<string, unknown>,
 > extends BaseTemplate<T, T> {
   private transformFn: TTransformFunction<T>;

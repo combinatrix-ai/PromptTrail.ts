@@ -6,7 +6,7 @@ import {
   StaticSource,
 } from '../../../content_source';
 import { CustomValidator } from '../../../validators/custom';
-import { UserTemplate } from '../../../templates/user';
+import { User } from '../../../templates/user';
 
 // Mock the readline module
 vi.mock('node:readline/promises', () => {
@@ -29,7 +29,7 @@ describe('UserTemplate', () => {
     const mockSource = new StaticSource('User query from source');
 
     // Create a UserTemplate with the source
-    const template = new UserTemplate(mockSource);
+    const template = new User(mockSource);
 
     // Verify the template has the content source
     expect(template.getContentSource()).toBeDefined();
@@ -42,7 +42,7 @@ describe('UserTemplate', () => {
 
   it('should handle text on constructor', async () => {
     // Create a UserTemplate with a static text
-    const template = new UserTemplate('User static message');
+    const template = new User('User static message');
 
     // Execute the template and verify the result
     const session = await template.execute(createSession());
@@ -52,7 +52,7 @@ describe('UserTemplate', () => {
 
   it('should be instantiated without ContentSource, but be error on execute', async () => {
     // Create an instance of the test template
-    const template = new UserTemplate();
+    const template = new User();
 
     // Expect the execute method to throw an error
     await expect(template.execute(createSession())).rejects.toThrow(
@@ -66,7 +66,7 @@ describe('UserTemplate', () => {
     session.metadata.set('query', 'weather');
 
     // Create a UserTemplate with interpolated text
-    const template = new UserTemplate('What is the ${query} like today?');
+    const template = new User('What is the ${query} like today?');
 
     // Execute the template and verify the result
     const result = await template.execute(session);
@@ -80,7 +80,7 @@ describe('UserTemplate', () => {
     const session = createSession();
     session.metadata.set('query', 'weather');
 
-    const template = new UserTemplate(
+    const template = new User(
       new StaticSource('What is the ${query} like today?'),
     );
 
@@ -94,7 +94,7 @@ describe('UserTemplate', () => {
     const cliSource = new CLISource('Enter your query: ');
 
     // Create a UserTemplate with the CLI source
-    const template = new UserTemplate(cliSource);
+    const template = new User(cliSource);
 
     // Execute the template and verify the result
     const session = await template.execute(createSession());
@@ -113,7 +113,7 @@ describe('UserTemplate', () => {
     const callbackSource = new CallbackSource(callback);
 
     // Create a UserTemplate with the callback source
-    const template = new UserTemplate(callbackSource);
+    const template = new User(callbackSource);
 
     // Execute the template and verify the result
     const session = await template.execute(createSession());
@@ -143,7 +143,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a UserTemplate with valid source
-    const validTemplate = new UserTemplate(validSource);
+    const validTemplate = new User(validSource);
 
     // Execute the template and verify it passes validation
     const validResult = await validTemplate.execute(createSession());
@@ -186,7 +186,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a UserTemplate with the callback source
-    const template = new UserTemplate(callbackSource);
+    const template = new User(callbackSource);
 
     // Execute the template and verify it succeeds
     const session = await template.execute(createSession());
@@ -221,7 +221,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a UserTemplate with the invalid source
-    const template = new UserTemplate(invalidSource);
+    const template = new User(invalidSource);
 
     // Execute the template and verify it doesn't throw an error
     const session = await template.execute(createSession());

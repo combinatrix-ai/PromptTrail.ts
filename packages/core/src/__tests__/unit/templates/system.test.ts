@@ -4,7 +4,7 @@ import { CallbackSource, StaticSource } from '../../../content_source';
 import { createMetadata } from '../../../metadata';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
-import { SystemTemplate } from '../../../templates/system';
+import { System } from '../../../templates/system';
 
 describe('SystemTemplate', () => {
   it('should handle ContentSource on constructor', async () => {
@@ -12,7 +12,7 @@ describe('SystemTemplate', () => {
     const mockSource = new StaticSource('You are a helpful assistant.');
 
     // Create a SystemTemplate with the source
-    const template = new SystemTemplate(mockSource);
+    const template = new System(mockSource);
 
     // Verify the template has the content source
     expect(template.getContentSource()).toBeDefined();
@@ -27,7 +27,7 @@ describe('SystemTemplate', () => {
 
   it('should handle text on constructor', async () => {
     // Create a SystemTemplate with a static text
-    const template = new SystemTemplate('You are a helpful assistant.');
+    const template = new System('You are a helpful assistant.');
 
     // Execute the template and verify the result
     const session = await template.execute(createSession());
@@ -41,7 +41,7 @@ describe('SystemTemplate', () => {
     // Create an instance of the test template
     try {
       // @ts-expect-error
-      new SystemTemplate();
+      new System();
     } catch (error) {
       // Expect the error to be thrown
       expect(error).toBeInstanceOf(Error);
@@ -55,7 +55,7 @@ describe('SystemTemplate', () => {
     session.metadata.set('rules', 'be helpful and clear');
 
     // Create a SystemTemplate with interpolated text
-    const template = new SystemTemplate('You are a ${role}. Always ${rules}.');
+    const template = new System('You are a ${role}. Always ${rules}.');
 
     // Execute the template and verify the result
     const result = await template.execute(session);
@@ -75,7 +75,7 @@ describe('SystemTemplate', () => {
     const callbackSource = new CallbackSource(callback);
 
     // Create a SystemTemplate with the callback source
-    const template = new SystemTemplate(callbackSource);
+    const template = new System(callbackSource);
 
     // Create a session with metadata
     const session = createSession();
@@ -116,7 +116,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a SystemTemplate with valid source
-    const validTemplate = new SystemTemplate(validSource);
+    const validTemplate = new System(validSource);
 
     // Execute the template and verify it passes validation
     const validResult = await validTemplate.execute(createSession());
@@ -132,7 +132,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a SystemTemplate with invalid source
-    const invalidTemplate = new SystemTemplate(invalidSource);
+    const invalidTemplate = new System(invalidSource);
 
     // Execute the template and verify it fails validation
     await expect(invalidTemplate.execute(createSession())).rejects.toThrow();
@@ -168,7 +168,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a SystemTemplate with the callback source
-    const template = new SystemTemplate(callbackSource);
+    const template = new System(callbackSource);
 
     // Execute the template and verify it succeeds on the second attempt
     const session = await template.execute(createSession());
@@ -202,7 +202,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a SystemTemplate with the invalid source
-    const template = new SystemTemplate(invalidSource);
+    const template = new System(invalidSource);
 
     // Execute the template and verify it doesn't throw an error
     const session = await template.execute(createSession());
@@ -220,7 +220,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a SystemTemplate
-    const template = new SystemTemplate('You are a helpful assistant.');
+    const template = new System('You are a helpful assistant.');
 
     // Execute the template and verify the result
     const result = await template.execute(session);
@@ -236,13 +236,13 @@ describe('SystemTemplate', () => {
 
   it('should properly initialize with various constructor inputs', async () => {
     // Test with string constructor
-    const template1 = new SystemTemplate('String initialization');
+    const template1 = new System('String initialization');
     const result1 = await template1.execute(createSession());
     expect(result1.getLastMessage()!.content).toBe('String initialization');
 
     // Test with StaticSource constructor
     const source = new StaticSource('Source initialization');
-    const template2 = new SystemTemplate(source);
+    const template2 = new System(source);
     const result2 = await template2.execute(createSession());
     expect(result2.getLastMessage()!.content).toBe('Source initialization');
   });

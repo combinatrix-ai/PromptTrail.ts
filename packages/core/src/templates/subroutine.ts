@@ -73,7 +73,7 @@ export interface ISubroutineTemplateOptions<
  * @template P - Type of the parent session metadata (Record<string, unknown>).
  * @template S - Type of the subroutine session metadata (Record<string, unknown>).
  */
-export class SubroutineTemplate<
+export class Subroutine<
   P extends Record<string, unknown> = Record<string, unknown>,
   S extends Record<string, unknown> = Record<string, unknown>,
 > extends BaseTemplate<P, P> {
@@ -155,7 +155,7 @@ export class SubroutineTemplate<
     template: Template<any, any>,
     options?: ISubroutineTemplateOptions<any, any>,
   ): this {
-    return this.add(new SubroutineTemplate(template, options));
+    return this.add(new Subroutine(template, options));
   }
 
   /**

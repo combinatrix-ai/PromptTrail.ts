@@ -4,10 +4,10 @@ import { StaticListSource } from '../../../content_source';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/sequence';
-import { LoopTemplate } from '../../../templates/loop';
-import { UserTemplate } from '../../../templates/user';
+import { Loop } from '../../../templates/loop';
+import { User } from '../../../templates/user';
 import type { Session } from '../../../types';
-import { SystemTemplate } from '../../../templates/system';
+import { System } from '../../../templates/system';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -37,10 +37,10 @@ describe('Loop Template', () => {
     };
 
     // Create a simple body template that adds a user message
-    const bodyTemplate = new UserTemplate('Iteration message');
+    const bodyTemplate = new User('Iteration message');
 
     // Create the loop template
-    const loopTemplate = new LoopTemplate({
+    const loopTemplate = new Loop({
       bodyTemplate,
       exitCondition,
       maxIterations: 10,
@@ -61,7 +61,7 @@ describe('Loop Template', () => {
 
   it('should be instantiated without exitCondition and bodyTemplate but be error on execute', async () => {
     // Create an instance of the test template
-    const template = new LoopTemplate();
+    const template = new Loop();
 
     // Expect the execute method to throw an error
     await expect(template.execute(createSession())).rejects.toThrow(
@@ -80,10 +80,10 @@ describe('Loop Template', () => {
     };
 
     // Create a simple body template that adds a user message
-    const bodyTemplate = new UserTemplate('Iteration message');
+    const bodyTemplate = new User('Iteration message');
 
     // Create the loop template without body and exit condition
-    const loopTemplate = new LoopTemplate()
+    const loopTemplate = new Loop()
       .setBody(bodyTemplate)
       .setLoopIf(exitCondition)
       .setMaxIterations(10);
@@ -105,7 +105,7 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop template with addXXX methods
-    const loopTemplate = new LoopTemplate()
+    const loopTemplate = new Loop()
       .setLoopIf((session: Session) => {
         counter++;
         return counter >= 2; // Exit after 2 iterations
@@ -136,8 +136,8 @@ describe('Loop Template', () => {
     let innerCounter = 0;
 
     // Create the inner loop template
-    const innerLoopTemplate = new LoopTemplate({
-      bodyTemplate: new UserTemplate('Inner iteration'),
+    const innerLoopTemplate = new Loop({
+      bodyTemplate: new User('Inner iteration'),
       exitCondition: (session: Session) => {
         innerCounter++;
         return innerCounter % 2 === 0; // Exit after 2 inner iterations for each outer iteration
@@ -145,9 +145,9 @@ describe('Loop Template', () => {
     });
 
     // Create the outer loop template
-    const outerLoopTemplate = new LoopTemplate({
+    const outerLoopTemplate = new Loop({
       bodyTemplate: new Sequence()
-        .add(new UserTemplate('Outer iteration'))
+        .add(new User('Outer iteration'))
         .add(innerLoopTemplate),
       exitCondition: (session: Session) => {
         outerCounter++;
@@ -174,12 +174,12 @@ describe('Loop Template', () => {
 
   it('should execute body template once when no exit condition is provided', async () => {
     // Create a loop template without an exit condition
-    const template = new LoopTemplate({
-      bodyTemplate: new UserTemplate('Test message'),
+    const template = new Loop({
+      bodyTemplate: new User('Test message'),
     });
 
     // Should not throw on instantiation
-    expect(template).toBeInstanceOf(LoopTemplate);
+    expect(template).toBeInstanceOf(Loop);
 
     // Mock console.warn to check for warnings
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -222,7 +222,7 @@ describe('Loop Template', () => {
       .addAssistant('Assistant message');
 
     // Create the loop template correctly
-    const loopTemplate = new LoopTemplate({
+    const loopTemplate = new Loop({
       exitCondition,
       bodyTemplate: bodySequence, // Pass the defined sequence here
     });
@@ -250,8 +250,8 @@ describe('Loop Template', () => {
     const neverExitCondition = () => false;
 
     // Create a loop template with a low maxIterations value
-    const loopTemplate = new LoopTemplate({
-      bodyTemplate: new UserTemplate('This would loop forever'),
+    const loopTemplate = new Loop({
+      bodyTemplate: new User('This would loop forever'),
       exitCondition: neverExitCondition,
       maxIterations: 5,
     });
@@ -286,8 +286,8 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop template
-    const loopTemplate = new LoopTemplate({
-      bodyTemplate: new UserTemplate(listSource),
+    const loopTemplate = new Loop({
+      bodyTemplate: new User(listSource),
       exitCondition: (session: Session) => {
         counter++;
         return counter >= 3; // Exit after 3 iterations
@@ -307,9 +307,9 @@ describe('Loop Template', () => {
 
   it('should update and use session metadata in the exit condition', async () => {
     // Create the loop template with a metadata-based exit condition
-    const loopTemplate = new LoopTemplate({
+    const loopTemplate = new Loop({
       bodyTemplate: new Sequence()
-        .add(new UserTemplate('Adding to counter'))
+        .add(new User('Adding to counter'))
         .addTransform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
@@ -345,12 +345,12 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop template with a conditional branch
-    const loopTemplate = new LoopTemplate({
-      bodyTemplate: new Sequence().add(new UserTemplate('User input')).addIf(
+    const loopTemplate = new Loop({
+      bodyTemplate: new Sequence().add(new User('User input')).addIf(
         // Condition based on iteration count
         () => counter % 2 === 0, // True on even iterations
-        new SystemTemplate('This is an even iteration'),
-        new SystemTemplate('This is an odd iteration'),
+        new System('This is an even iteration'),
+        new System('This is an odd iteration'),
       ),
       exitCondition: () => {
         counter++;

@@ -2,7 +2,7 @@ import type { Session } from '../types';
 import { BaseTemplate } from './interfaces';
 import type { Template } from './interfaces';
 
-export class IfTemplate extends BaseTemplate<any, any> {
+export class Conditional extends BaseTemplate<any, any> {
   private condition: (session: Session) => boolean;
   private thenTemplate: Template<any, any>;
   private elseTemplate?: Template<any, any>;

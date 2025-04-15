@@ -1,16 +1,16 @@
 // Export core template interfaces and base class
 export type { Template, IComposedTemplate } from './interfaces';
 export { BaseTemplate } from './interfaces';
-export { ComposedTemplate } from './composition';
+export { Composed as ComposedTemplate } from './composition';
 
 // Export concrete template implementations
-export { SystemTemplate } from './system';
-export { UserTemplate } from './user';
-export { AssistantTemplate } from './assistant';
-export { IfTemplate } from './if';
-export { LoopTemplate } from './loop';
+export { System as SystemTemplate } from './system';
+export { User as UserTemplate } from './user';
+export { Assistant as AssistantTemplate } from './assistant';
+export { Conditional as IfTemplate } from './conditional';
+export { Loop as LoopTemplate } from './loop';
 export { Sequence } from './sequence';
-export { SubroutineTemplate } from './subroutine';
+export { Subroutine as SubroutineTemplate } from './subroutine';
 
 // Export factory methods
 export { TemplateFactory } from './factory';

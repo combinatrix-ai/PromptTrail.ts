@@ -5,7 +5,7 @@ import { Source, ModelOutput, ValidationOptions } from '../content_source';
 import type { IValidator } from '../validators/base';
 import { GenerateOptions } from '../generate_options';
 
-export class AssistantTemplate extends BaseTemplate<any, any> {
+export class Assistant extends BaseTemplate<any, any> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;

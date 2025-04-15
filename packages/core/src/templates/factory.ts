@@ -2,14 +2,14 @@ import type { Source } from '../content_source';
 import type { ModelOutput } from '../content_source';
 import type { GenerateOptions } from '../generate_options';
 import type { Template } from './interfaces';
-import { SystemTemplate } from './system';
-import { UserTemplate } from './user';
-import { AssistantTemplate } from './assistant';
-import { IfTemplate } from './if';
-import { LoopTemplate } from './loop';
+import { System } from './system';
+import { User } from './user';
+import { Assistant } from './assistant';
+import { Conditional } from './conditional';
+import { Loop } from './loop';
 import { Sequence } from './sequence';
-import { SubroutineTemplate, ISubroutineTemplateOptions } from './subroutine';
-import { TransformTemplate, TTransformFunction } from './transform'; // Correct import
+import { Subroutine, ISubroutineTemplateOptions } from './subroutine';
+import { Transform, TTransformFunction } from './transform'; // Correct import
 import type { Session } from '../types';
 
 /**
@@ -17,17 +17,17 @@ import type { Session } from '../types';
  */
 export class TemplateFactory {
   static system(content: string | Source<string>): Template<any, any> {
-    return new SystemTemplate(content);
+    return new System(content);
   }
 
   static user(content: string | Source<string>): Template<any, any> {
-    return new UserTemplate(content);
+    return new User(content);
   }
 
   static assistant(
     content: string | Source<ModelOutput> | GenerateOptions,
   ): Template<any, any> {
-    return new AssistantTemplate(content);
+    return new Assistant(content);
   }
 
   static if(
@@ -35,14 +35,14 @@ export class TemplateFactory {
     thenTemplate: Template<any, any>,
     elseTemplate?: Template<any, any>,
   ): Template<any, any> {
-    return new IfTemplate({ condition, thenTemplate, elseTemplate });
+    return new Conditional({ condition, thenTemplate, elseTemplate });
   }
 
   static loop(
     bodyTemplate?: Template<any, any>,
     exitCondition?: (session: Session) => boolean,
   ): Template<any, any> {
-    return new LoopTemplate({
+    return new Loop({
       bodyTemplate,
       exitCondition,
     });
@@ -59,7 +59,7 @@ export class TemplateFactory {
     templateOrTemplates?: Template<S, S> | Template<any, any>[],
     options?: ISubroutineTemplateOptions<P, S>,
   ): Template<P, P> {
-    return new SubroutineTemplate<P, S>(templateOrTemplates, options);
+    return new Subroutine<P, S>(templateOrTemplates, options);
   }
 
   // Added transform method correctly inside the class
@@ -69,6 +69,6 @@ export class TemplateFactory {
   ): Template<T, any> {
     // Return Template<T, any>
     // Pass the generic type to TransformTemplate constructor
-    return new TransformTemplate<T>(transformFn);
+    return new Transform<T>(transformFn);
   }
 } // Correct closing brace for the class

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AssistantTemplate } from '../../../templates/assistant';
+import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
-import { UserTemplate } from '../../../templates/user';
-import { IfTemplate } from '../../../templates/if';
+import { User } from '../../../templates/user';
+import { Conditional } from '../../../templates/conditional';
 import type { Session } from '../../../types';
 import { Sequence } from '../../../templates/sequence';
 
@@ -30,11 +30,11 @@ describe('If Template', () => {
     const condition = () => true;
 
     // Create then and else templates
-    const thenTemplate = new UserTemplate('Then branch executed');
-    const elseTemplate = new UserTemplate('Else branch executed');
+    const thenTemplate = new User('Then branch executed');
+    const elseTemplate = new User('Else branch executed');
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -55,11 +55,11 @@ describe('If Template', () => {
     const condition = () => false;
 
     // Create then and else templates
-    const thenTemplate = new UserTemplate('Then branch executed');
-    const elseTemplate = new UserTemplate('Else branch executed');
+    const thenTemplate = new User('Then branch executed');
+    const elseTemplate = new User('Else branch executed');
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -80,10 +80,10 @@ describe('If Template', () => {
     const condition = () => false;
 
     // Create a then template
-    const thenTemplate = new UserTemplate('Then branch executed');
+    const thenTemplate = new User('Then branch executed');
 
     // Create an if template without an else branch
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       // No elseTemplate
@@ -117,11 +117,11 @@ describe('If Template', () => {
     };
 
     // Create then and else templates
-    const thenTemplate = new UserTemplate('Admin access granted');
-    const elseTemplate = new UserTemplate('Access denied');
+    const thenTemplate = new User('Admin access granted');
+    const elseTemplate = new User('Access denied');
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -163,13 +163,13 @@ describe('If Template', () => {
     };
 
     // Create then and else templates
-    const thenTemplate = new AssistantTemplate('Hello! I am an AI assistant.');
-    const elseTemplate = new AssistantTemplate(
+    const thenTemplate = new Assistant('Hello! I am an AI assistant.');
+    const elseTemplate = new Assistant(
       'I did not understand your message.',
     );
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -217,7 +217,7 @@ describe('If Template', () => {
       .addUser('User message in else branch');
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -237,7 +237,7 @@ describe('If Template', () => {
     // Test the else branch too by changing the condition
     const elseCondition = () => false;
 
-    const elseIfTemplate = new IfTemplate({
+    const elseIfTemplate = new Conditional({
       condition: elseCondition,
       thenTemplate,
       elseTemplate,
@@ -261,18 +261,18 @@ describe('If Template', () => {
     session.metadata.set('isAuthenticated', true);
 
     // Create a nested if template structure
-    const innerIfTemplate = new IfTemplate({
+    const innerIfTemplate = new Conditional({
       condition: (session) => session.metadata.get('isAuthenticated') === true,
-      thenTemplate: new UserTemplate('User is authenticated'),
-      elseTemplate: new UserTemplate('User is not authenticated'),
+      thenTemplate: new User('User is authenticated'),
+      elseTemplate: new User('User is not authenticated'),
     });
 
-    const outerIfTemplate = new IfTemplate({
+    const outerIfTemplate = new Conditional({
       condition: (session) => session.metadata.get('userRole') === 'admin',
       thenTemplate: new Sequence()
         .addUser('Admin role detected')
         .add(innerIfTemplate),
-      elseTemplate: new UserTemplate('Not an admin'),
+      elseTemplate: new User('Not an admin'),
     });
 
     // Execute the template and verify the result
@@ -325,7 +325,7 @@ describe('If Template', () => {
       });
 
     // Create an if template
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,
@@ -343,7 +343,7 @@ describe('If Template', () => {
     // Test with the else branch
     const elseCondition = () => false;
 
-    const elseIfTemplate = new IfTemplate({
+    const elseIfTemplate = new Conditional({
       condition: elseCondition,
       thenTemplate,
       elseTemplate,
@@ -360,16 +360,16 @@ describe('If Template', () => {
     session.metadata.set('messageType', 'greeting');
 
     // Create templates for different message types
-    const greetingTemplate = new UserTemplate('Hello, nice to meet you!');
-    const questionTemplate = new UserTemplate('I have a question for you.');
-    const statementTemplate = new UserTemplate('Here is some information.');
+    const greetingTemplate = new User('Hello, nice to meet you!');
+    const questionTemplate = new User('I have a question for you.');
+    const statementTemplate = new User('Here is some information.');
 
     // Create a complex if-else chain using nested IFs to simulate a switch statement
-    const messageTypeHandler = new IfTemplate({
+    const messageTypeHandler = new Conditional({
       condition: (session) =>
         session.metadata.get('messageType') === 'greeting',
       thenTemplate: greetingTemplate,
-      elseTemplate: new IfTemplate({
+      elseTemplate: new Conditional({
         condition: (session) =>
           session.metadata.get('messageType') === 'question',
         thenTemplate: questionTemplate,

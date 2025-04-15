@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AssistantTemplate } from '../../../templates/assistant';
+import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import type { Session } from '../../../types'; // Import Session type from types.ts
 import { createGenerateOptions } from '../../../generate_options';
@@ -7,8 +7,8 @@ import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate'; // Import the actual function name
 import { expect_messages } from '../../utils';
 import { Sequence } from '../../../templates/sequence';
-import { SystemTemplate } from '../../../templates/system';
-import { UserTemplate } from '../../../templates/user';
+import { System } from '../../../templates/system';
+import { User } from '../../../templates/user';
 // import { count } from 'console'; // Removed unused import
 
 // Mock the generate module directly. Vitest replaces the actual generateText export with a mock.
@@ -28,9 +28,9 @@ describe('Sequence Template', () => {
 
   it('should execute simple linear sequence', async () => {
     const sequence = new Sequence()
-      .add(new SystemTemplate('You are a helpful assistant.'))
-      .add(new UserTemplate('Hello, who are you?'))
-      .add(new AssistantTemplate('I am an AI assistant.'));
+      .add(new System('You are a helpful assistant.'))
+      .add(new User('Hello, who are you?'))
+      .add(new Assistant('I am an AI assistant.'));
 
     const session = await sequence.execute(createSession());
 
@@ -44,9 +44,9 @@ describe('Sequence Template', () => {
   });
 
   it('should create a sequence with constructor arguments', async () => {
-    const systemTemplate = new SystemTemplate('You are a helpful assistant.');
-    const userTemplate = new UserTemplate('Hello, who are you?');
-    const assistantTemplate = new AssistantTemplate('I am an AI assistant.');
+    const systemTemplate = new System('You are a helpful assistant.');
+    const userTemplate = new User('Hello, who are you?');
+    const assistantTemplate = new Assistant('I am an AI assistant.');
 
     const sequence = new Sequence([
       systemTemplate,
@@ -87,8 +87,8 @@ describe('Sequence Template', () => {
       .addUser('Hello')
       .addIf(
         (session) => session.getLastMessage()?.content === 'Hello',
-        new AssistantTemplate('Hello there!'),
-        new AssistantTemplate('I did not understand.'),
+        new Assistant('Hello there!'),
+        new Assistant('I did not understand.'),
       );
 
     const session = await sequence.execute(createSession());
@@ -106,8 +106,8 @@ describe('Sequence Template', () => {
       .addUser('Goodbye')
       .addIf(
         (session) => session.getLastMessage()?.content === 'Hello',
-        new AssistantTemplate('Hello there!'),
-        new AssistantTemplate('I did not understand.'),
+        new Assistant('Hello there!'),
+        new Assistant('I did not understand.'),
       );
 
     const session2 = await sequence2.execute(createSession());
@@ -123,7 +123,7 @@ describe('Sequence Template', () => {
       .addUser('Start the loop')
       .addLoop(
         // Use addLoop directly
-        new UserTemplate('This is iteration message'),
+        new User('This is iteration message'),
         (session) => {
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes

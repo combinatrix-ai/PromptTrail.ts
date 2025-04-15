@@ -8,7 +8,7 @@ import type { TTransformFunction } from './transform';
 import type { ISubroutineTemplateOptions } from './subroutine';
 
 // Make LoopTemplate generic over the metadata type T
-export class LoopTemplate<
+export class Loop<
   T extends Record<string, unknown> = Record<string, unknown>,
 > extends BaseTemplate<any, any> {
   // BaseTemplate generics might need review later

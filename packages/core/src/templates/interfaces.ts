@@ -4,7 +4,7 @@ import { Source, StaticSource, LlmSource } from '../content_source';
 import type { ModelOutput } from '../content_source';
 import { GenerateOptions } from '../generate_options';
 import { interpolateTemplate } from '../utils/template_interpolation';
-import { ComposedTemplate } from './composition';
+import { Composed } from './composition';
 // Imports related to loopIf removed
 
 /**
@@ -44,7 +44,7 @@ export abstract class BaseTemplate<
   then<TNextOut extends Record<string, unknown>>(
     next: Template<TOut, TNextOut>,
   ): IComposedTemplate<TIn, TNextOut> {
-    return new ComposedTemplate<TIn, TNextOut>([this, next]);
+    return new Composed<TIn, TNextOut>([this, next]);
   }
 
   protected ensureSession(session?: Session<TIn>): Session<TIn> {

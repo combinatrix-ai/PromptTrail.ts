@@ -3,7 +3,7 @@ import type { Session, UserMessage } from '../types';
 import { BaseTemplate } from './interfaces';
 import type { Source } from '../content_source';
 
-export class UserTemplate extends BaseTemplate<any, any> {
+export class User extends BaseTemplate<any, any> {
   constructor(contentOrSource?: string | Source<string>) {
     super();
     this.contentSource = this.initializeContentSource(

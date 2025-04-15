@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AssistantTemplate } from '../../../templates/assistant';
+import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import { StaticSource } from '../../../content_source';
 import type { ModelOutput } from '../../../content_source'; // Use "import type"
@@ -21,7 +21,7 @@ describe('AssistantTemplate', () => {
 
   it('should handle ContentSource on constructor', async () => {
     const mockSource = new StaticSource('This is a test response');
-    const template = new AssistantTemplate(mockSource);
+    const template = new Assistant(mockSource);
     expect(template.getContentSource()).toBeDefined();
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
@@ -29,7 +29,7 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle text on constructor', async () => {
-    const template = new AssistantTemplate('This is static content');
+    const template = new Assistant('This is static content');
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is static content');
@@ -53,7 +53,7 @@ describe('AssistantTemplate', () => {
       temperature: 0.7,
     });
 
-    const template = new AssistantTemplate(options);
+    const template = new Assistant(options);
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
@@ -72,7 +72,7 @@ describe('AssistantTemplate', () => {
 
   it('should throw error during execution if no ContentSource is provided', async () => {
     // This should not throw an error during instantiation
-    const template = new AssistantTemplate();
+    const template = new Assistant();
 
     // But, if we try to execute it, it should throw an error
     // because no content source is given by anyone.
@@ -84,7 +84,7 @@ describe('AssistantTemplate', () => {
   it('should support interpolation in static content', async () => {
     const session = createSession();
     session.metadata.set('username', 'Alice');
-    const template = new AssistantTemplate('Hello, ${username}!');
+    const template = new Assistant('Hello, ${username}!');
     const result = await template.execute(session);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
   });
@@ -101,7 +101,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create an AssistantTemplate with valid content and the validator
-    const validTemplate = new AssistantTemplate(
+    const validTemplate = new Assistant(
       'This is valid content',
       validator,
     );
@@ -124,7 +124,7 @@ describe('AssistantTemplate', () => {
 
     // Create an AssistantTemplate with invalid content and the validator
     // Set raiseError to false to avoid throwing errors
-    const invalidTemplate = new AssistantTemplate('This is not pass', {
+    const invalidTemplate = new Assistant('This is not pass', {
       validator,
       raiseError: false,
       maxAttempts: 1,
@@ -172,7 +172,7 @@ describe('AssistantTemplate', () => {
     }).addTool('weather', weatherTool);
 
     // Create an AssistantTemplate with the generate options
-    const template = new AssistantTemplate(options);
+    const template = new Assistant(options);
 
     // Execute the template and verify the result
     const session = await template.execute(createSession());
@@ -206,7 +206,7 @@ describe('AssistantTemplate', () => {
     const validContent = new StaticSource('This is valid content');
 
     // Create an AssistantTemplate with the static content and validator
-    const template = new AssistantTemplate(validContent, {
+    const template = new Assistant(validContent, {
       validator,
       maxAttempts: 2,
       raiseError: true,
@@ -245,7 +245,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create an AssistantTemplate with validation options and raiseError set to false
-    const template = new AssistantTemplate(options, {
+    const template = new Assistant(options, {
       validator,
       maxAttempts: 1,
       raiseError: false,

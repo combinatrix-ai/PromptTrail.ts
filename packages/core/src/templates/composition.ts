@@ -6,7 +6,7 @@ import type { Template, IComposedTemplate } from './interfaces';
  * Represents a sequence of templates executed one after another.
  * Used internally by the `then` composition method.
  */
-export class ComposedTemplate<
+export class Composed<
   TStart extends Record<string, unknown> = Record<string, unknown>,
   TEnd extends Record<string, unknown> = TStart,
 > implements IComposedTemplate<TStart, TEnd>
