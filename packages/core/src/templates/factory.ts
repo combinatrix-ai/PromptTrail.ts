@@ -42,9 +42,9 @@ export class TemplateFactory {
     bodyTemplate?: Template<any, any>,
     exitCondition?: (session: Session) => boolean,
   ): Template<any, any> {
-    return new LoopTemplate({ 
-      bodyTemplate, 
-      exitCondition 
+    return new LoopTemplate({
+      bodyTemplate,
+      exitCondition,
     });
   }
 
@@ -54,7 +54,7 @@ export class TemplateFactory {
 
   static subroutine<
     P extends Record<string, unknown> = Record<string, unknown>,
-    S extends Record<string, unknown> = Record<string, unknown>
+    S extends Record<string, unknown> = Record<string, unknown>,
   >(
     templateOrTemplates?: Template<S, S> | Template<any, any>[],
     options?: ISubroutineTemplateOptions<P, S>,

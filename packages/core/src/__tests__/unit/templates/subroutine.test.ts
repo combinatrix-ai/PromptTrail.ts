@@ -27,7 +27,7 @@ describe('SubroutineTemplate', () => {
   });
 
   // Original functionality tests
-  
+
   it('should execute a simple subroutine and merge results by default', async () => {
     // Create a subroutine template with a simple sequence
     const subroutine = new SubroutineTemplate(
@@ -391,8 +391,9 @@ describe('SubroutineTemplate', () => {
 
   it('should use the squashWith function when provided', async () => {
     // Create a parent session with nested metadata
-    let parentSession = createSession<any>()
-      .updateMetadata({ user: { name: 'Dave', age: 30 } });
+    let parentSession = createSession<any>().updateMetadata({
+      user: { name: 'Dave', age: 30 },
+    });
     parentSession = parentSession.updateMetadata({
       preferences: { theme: 'dark' },
     });
@@ -506,15 +507,19 @@ describe('SubroutineTemplate', () => {
 
   it('should support adding templates via constructor array', async () => {
     // Create templates to add
-    const systemTemplate = new SubroutineTemplate().addSystem('System instruction');
+    const systemTemplate = new SubroutineTemplate().addSystem(
+      'System instruction',
+    );
     const userTemplate = new SubroutineTemplate().addUser('User message');
-    const assistantTemplate = new SubroutineTemplate().addAssistant('Assistant response');
+    const assistantTemplate = new SubroutineTemplate().addAssistant(
+      'Assistant response',
+    );
 
     // Create a subroutine with an array of templates
     const subroutine = new SubroutineTemplate([
       systemTemplate,
       userTemplate,
-      assistantTemplate
+      assistantTemplate,
     ]);
 
     // Execute the subroutine
@@ -593,18 +598,20 @@ describe('SubroutineTemplate', () => {
 
   it('should support adding subroutines to LoopTemplate', async () => {
     // Create a session with initial metadata
-    const initialSession = createSession<{ count: number }>().updateMetadata({ count: 0 });
-    
+    const initialSession = createSession<{ count: number }>().updateMetadata({
+      count: 0,
+    });
+
     // Create a simple subroutine that adds a user message and increments count
     const subroutine = new SubroutineTemplate()
       .addUser('Loop iteration')
       .addTransform((session: ISession<any>) => {
         const currentCount = (session.metadata.get('count') as number) || 0;
         return session.updateMetadata({
-          count: currentCount + 1
+          count: currentCount + 1,
         }) as ISession<any>;
       });
-    
+
     // Create a loop that uses addSubroutine
     const loop = new LoopTemplate<{ count: number }>()
       .addSubroutine(subroutine)
@@ -612,44 +619,41 @@ describe('SubroutineTemplate', () => {
         const count = (session.metadata.get('count') as number) || 0;
         return count >= 3; // Exit when count reaches 3 or more
       });
-    
+
     // Execute the loop
     const session = await loop.execute(initialSession);
-    
+
     // Verify the count was incremented to 3
     expect(session.metadata.get('count')).toBe(3);
-    
+
     // Verify the messages (3 iterations with 1 user message per iteration)
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
-    expect(messages.filter(m => m.type === 'user').length).toBe(3);
+    expect(messages.filter((m) => m.type === 'user').length).toBe(3);
   });
 
   it('should work with direct loop implementation', async () => {
     // Create a session with initial metadata
     const initialSession = createSession().updateMetadata({ count: 0 });
-    
+
     // Create a simple counter template using transform
     const counterTemplate = TemplateFactory.transform((session: Session) => {
       const currentCount = (session.metadata.get('count') as number) || 0;
-      
+
       return session.updateMetadata({
-        count: currentCount + 1
+        count: currentCount + 1,
       });
     });
-    
+
     // Create a loop directly using TemplateFactory
-    const loop = TemplateFactory.loop(
-      counterTemplate,
-      (session: Session) => {
-        const count = (session.metadata.get('count') as number) || 0;
-        return count >= 3; // Exit when count reaches 3 or more
-      }
-    );
-    
+    const loop = TemplateFactory.loop(counterTemplate, (session: Session) => {
+      const count = (session.metadata.get('count') as number) || 0;
+      return count >= 3; // Exit when count reaches 3 or more
+    });
+
     // Execute the loop
     const session = await loop.execute(initialSession);
-    
+
     // Verify the count was incremented to 3
     expect(session.metadata.get('count')).toBe(3);
   });

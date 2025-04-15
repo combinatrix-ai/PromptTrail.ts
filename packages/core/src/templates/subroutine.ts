@@ -76,8 +76,7 @@ export interface ISubroutineTemplateOptions<
 export class SubroutineTemplate<
   P extends Record<string, unknown> = Record<string, unknown>,
   S extends Record<string, unknown> = Record<string, unknown>,
-> extends BaseTemplate<P, P>
-{
+> extends BaseTemplate<P, P> {
   // Output metadata type is P
   public readonly id?: string;
   private templates: Template<any, any>[] = [];
@@ -172,7 +171,7 @@ export class SubroutineTemplate<
 
     // 2. Execute all templates in sequence
     let currentSession = initialSubroutineSession;
-    
+
     if (this.templates.length === 0) {
       // If no templates, just return the initialized session
       return this.mergeSessions(parentSession, currentSession);
@@ -180,26 +179,28 @@ export class SubroutineTemplate<
 
     for (const template of this.templates) {
       const result = await template.execute(currentSession);
-      
+
       // Handle potential errors or early exits
       if (result instanceof Error) {
         console.error(`Subroutine execution failed: ${result.message}`);
         throw result;
       }
-      
+
       if (result === null) {
-        console.warn('Template in subroutine returned null, stopping execution.');
+        console.warn(
+          'Template in subroutine returned null, stopping execution.',
+        );
         // Return the session state before the template that returned null
         return this.mergeSessions(parentSession, currentSession);
       }
-      
+
       currentSession = result;
     }
 
     // 3. Merge results back into the parent session
     const finalParentSession = this.mergeSessions(
       parentSession,
-      currentSession
+      currentSession,
     );
 
     return finalParentSession;

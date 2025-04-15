@@ -591,7 +591,8 @@ describe('Default Content Source', () => {
 
     it('should allow default sources to be dynamically determined', async () => {
       // Create a function that generates content based on the session state
-      const dynamicContentFn = (metadata: Metadata) => { // Accept Metadata instead of ISession
+      const dynamicContentFn = (metadata: Metadata) => {
+        // Accept Metadata instead of ISession
         const count = metadata.get('messageCount') || 0; // Use metadata directly
         // Provide default for count before adding
         // Explicitly cast count to number | undefined before using ??
@@ -603,7 +604,8 @@ describe('Default Content Source', () => {
       // Wrap the dynamic logic in a CallbackSource
       // CallbackSource expects context object { metadata? } not full session
       const dynamicSource = new CallbackSource(
-        async (context: { metadata?: Metadata }) => { // Expect Metadata type
+        async (context: { metadata?: Metadata }) => {
+          // Expect Metadata type
           // Pass the context to dynamicContentFn if it needs it, or just metadata
           // Assuming dynamicContentFn needs metadata, let's adjust its signature too if needed
           // For now, let's assume dynamicContentFn can work with just the context object

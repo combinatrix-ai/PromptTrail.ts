@@ -169,9 +169,11 @@ describe('UserTemplate', () => {
 
     // Mock console.log to avoid test output noise
     const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    
+
     // Mock console.warn to avoid test output noise
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleWarnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
 
     // Create a callback that returns a valid value
     const callback = vi.fn().mockResolvedValue('This is valid user input');
@@ -190,11 +192,11 @@ describe('UserTemplate', () => {
     const session = await template.execute(createSession());
     expect(session.getLastMessage()?.content).toBe('This is valid user input');
     expect(callback).toHaveBeenCalledTimes(1);
-    
+
     // Restore console mocks
     consoleLogSpy.mockRestore();
     consoleWarnSpy.mockRestore();
-    
+
     // Restore console mocks
     consoleLogSpy.mockRestore();
     consoleWarnSpy.mockRestore();

@@ -177,28 +177,30 @@ describe('Loop Template', () => {
     const template = new LoopTemplate({
       bodyTemplate: new UserTemplate('Test message'),
     });
-    
+
     // Should not throw on instantiation
     expect(template).toBeInstanceOf(LoopTemplate);
-    
+
     // Mock console.warn to check for warnings
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    
+
     // Execute the template
     const session = createSession();
     const result = await template.execute(session);
-    
+
     // Should have executed the body template exactly once
     const messages = Array.from(result.messages);
     expect(messages).toHaveLength(1); // One message should be added
     expect(messages[0].type).toBe('user');
     expect(messages[0].content).toBe('Test message');
-    
+
     // Should have logged a warning about missing exit condition
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('LoopTemplate executed without an exit condition')
+      expect.stringContaining(
+        'LoopTemplate executed without an exit condition',
+      ),
     );
-    
+
     // Restore console.warn
     warnSpy.mockRestore();
   });

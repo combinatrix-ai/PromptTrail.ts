@@ -102,14 +102,14 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Verify console.log was called at least once for each message type
     // The actual format of the log calls may vary
     expect(consoleSpy).toHaveBeenCalled();
-    
+
     // Check that each message type was logged
     const allCalls = consoleSpy.mock.calls.flat();
     const allCallsStr = JSON.stringify(allCalls);
-    
+
     expect(allCallsStr).toContain("I'm a helpful assistant");
     expect(allCallsStr).toContain("What's TypeScript");
-    expect(allCallsStr).toContain("This is a mock response");
+    expect(allCallsStr).toContain('This is a mock response');
 
     // Restore console.log
     consoleSpy.mockRestore();
@@ -408,13 +408,13 @@ describe('End-to-End Workflows with Real APIs', () => {
       )
       .add(new UserTemplate('123456789'))
       .add(new AssistantTemplate(openAIgenerateOptions));
-    
+
     // Create a subroutine template with the body
     const subroutine = new SubroutineTemplate(subroutineBody);
-    
+
     // Execute the subroutine
     const session = await subroutine.execute(createSession());
-    
+
     // Verify the result
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -443,10 +443,10 @@ describe('End-to-End Workflows with Real APIs', () => {
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'user', 'assistant']);
-    
+
     // Check that toolCalls is an array
     expect(Array.isArray(messages[2].toolCalls)).toBe(true);
-    
+
     // Check that the tool call is for the weather tool
     if (messages[2].toolCalls) {
       expect(messages[2].toolCalls.length).toBeGreaterThan(0);
@@ -462,8 +462,10 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with a loop and user input', async () => {
     // Use StaticSource instead of CLISource to avoid waiting for user input
     // Only one response: "no" to exit the loop immediately
-    const continueResponses = new StaticSource('Should we continue? (yes/no): no');
-    
+    const continueResponses = new StaticSource(
+      'Should we continue? (yes/no): no',
+    );
+
     const template = new Sequence()
       .add(new SystemTemplate('You are a helpful assistant.'))
       .add(
@@ -471,9 +473,7 @@ describe('End-to-End Workflows with Real APIs', () => {
           bodyTemplate: new Sequence()
             .add(new UserTemplate(new StaticSource('What is your name?')))
             .add(new AssistantTemplate(openAIgenerateOptions))
-            .add(
-              new UserTemplate(continueResponses),
-            ),
+            .add(new UserTemplate(continueResponses)),
           exitCondition: (session) => {
             const lastMessage = session.getLastMessage();
             return (

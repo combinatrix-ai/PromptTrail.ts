@@ -73,13 +73,12 @@ describe('AssistantTemplate', () => {
   it('should throw error during execution if no ContentSource is provided', async () => {
     // This should not throw an error during instantiation
     const template = new AssistantTemplate();
-    
+
     // But, if we try to execute it, it should throw an error
     // because no content source is given by anyone.
     await expect(template.execute(createSession()))
       // Use .rejects to assert that a promise-returning function throws an error when called
-      .rejects
-      .toThrow('Content source required for AssistantTemplate');
+      .rejects.toThrow('Content source required for AssistantTemplate');
   });
 
   it('should support interpolation in static content', async () => {
@@ -128,18 +127,20 @@ describe('AssistantTemplate', () => {
     const invalidTemplate = new AssistantTemplate('This is not pass', {
       validator,
       raiseError: false,
-      maxAttempts: 1
+      maxAttempts: 1,
     });
 
     // Spy on console.warn to check if validation fails
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    
+    const consoleWarnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
+
     // Execute the template
     const invalidResult = await invalidTemplate.execute(createSession());
-    
+
     // Verify that the invalid content was still returned despite failing validation
     expect(invalidResult.getLastMessage()?.content).toBe('This is not pass');
-    
+
     // Restore the spy
     consoleWarnSpy.mockRestore();
   });
@@ -188,7 +189,6 @@ describe('AssistantTemplate', () => {
       },
     ]);
   });
-
 
   // Modify this test to use a static content source for simplicity
   it('should retry when validation fails and maxAttempts > 1', async () => {
@@ -256,4 +256,3 @@ describe('AssistantTemplate', () => {
     expect(session.getLastMessage()?.content).toBe('This is invalid');
   });
 });
-

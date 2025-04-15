@@ -24,7 +24,7 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
 
     // Use the initializeContentSource method from BaseTemplate
     this.contentSource = this.initializeContentSource(contentOrSource, 'model');
-    
+
     // Handle both validator and options cases
     if (validatorOrOptions) {
       if ('validate' in validatorOrOptions) {
@@ -69,31 +69,50 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
 
         if (typeof rawOutput === 'string') {
           outputContent = rawOutput;
-        } else if (rawOutput && typeof rawOutput === 'object' && 'content' in rawOutput && typeof rawOutput.content === 'string') {
+        } else if (
+          rawOutput &&
+          typeof rawOutput === 'object' &&
+          'content' in rawOutput &&
+          typeof rawOutput.content === 'string'
+        ) {
           const modelOutput = rawOutput as ModelOutput;
           outputContent = modelOutput.content;
           outputToolCalls = modelOutput.toolCalls;
           outputMetadata = modelOutput.metadata;
           outputStructured = modelOutput.structuredOutput;
         } else {
-          throw new Error('Invalid content source output for AssistantTemplate');
+          throw new Error(
+            'Invalid content source output for AssistantTemplate',
+          );
         }
         console.log(`[Debug] Attempt ${attempts}: Raw Output =`, rawOutput); // DEBUG
 
         // Store the output of this attempt
-        currentOutput = { content: outputContent, toolCalls: outputToolCalls, metadata: outputMetadata, structuredOutput: outputStructured };
+        currentOutput = {
+          content: outputContent,
+          toolCalls: outputToolCalls,
+          metadata: outputMetadata,
+          structuredOutput: outputStructured,
+        };
         lastOutput = currentOutput; // Keep track of the very last output
 
         // 2. Validate Content (if validator exists)
         if (this.validator) {
-          const validationResult = await this.validator.validate(outputContent, validSession);
+          const validationResult = await this.validator.validate(
+            outputContent,
+            validSession,
+          );
           if (!validationResult.isValid) {
             console.log(`[Debug] Attempt ${attempts}: Validation FAILED`); // DEBUG
             // Throw specific error based on content type
-            throw new Error(this.isStaticContent ? 'Assistant content validation failed' : 'Assistant response validation failed');
+            throw new Error(
+              this.isStaticContent
+                ? 'Assistant content validation failed'
+                : 'Assistant response validation failed',
+            );
           }
         } else {
-           console.log(`[Debug] Attempt ${attempts}: Validation PASSED`); // DEBUG
+          console.log(`[Debug] Attempt ${attempts}: Validation PASSED`); // DEBUG
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately
@@ -105,13 +124,16 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
         };
         let updatedSession = validSession.addMessage(message);
         if (currentOutput.metadata) {
-          updatedSession = updatedSession.updateMetadata(currentOutput.metadata as any);
+          updatedSession = updatedSession.updateMetadata(
+            currentOutput.metadata as any,
+          );
         }
         if (currentOutput.structuredOutput) {
-          updatedSession = updatedSession.updateMetadata({ structured_output: currentOutput.structuredOutput } as any);
+          updatedSession = updatedSession.updateMetadata({
+            structured_output: currentOutput.structuredOutput,
+          } as any);
         }
         return updatedSession; // Exit loop and function on success
-
       } catch (error) {
         // 4. Handle Error (Validation or other error during try block)
         currentError = error as Error;
@@ -119,7 +141,9 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
 
         if (attempts < this.maxAttempts) {
           // Not the last attempt, log and retry
-          console.warn(`Attempt ${attempts} failed: ${currentError.message}. Retrying...`);
+          console.warn(
+            `Attempt ${attempts} failed: ${currentError.message}. Retrying...`,
+          );
           continue; // Go to next iteration
         } else {
           // Last attempt failed
@@ -129,7 +153,9 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
             return Promise.reject(lastError);
           } else {
             // If raiseError is false, break the loop to handle returning the last output below
-            console.warn(`Validation failed after ${attempts} attempts. raiseError is false, returning last output.`);
+            console.warn(
+              `Validation failed after ${attempts} attempts. raiseError is false, returning last output.`,
+            );
             break; // Exit the loop
           }
         }
@@ -148,15 +174,21 @@ export class AssistantTemplate extends BaseTemplate<any, any> {
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);
       if (lastOutput.metadata) {
-        lastAttemptSession = lastAttemptSession.updateMetadata(lastOutput.metadata as any);
+        lastAttemptSession = lastAttemptSession.updateMetadata(
+          lastOutput.metadata as any,
+        );
       }
       if (lastOutput.structuredOutput) {
-        lastAttemptSession = lastAttemptSession.updateMetadata({ structured_output: lastOutput.structuredOutput } as any);
+        lastAttemptSession = lastAttemptSession.updateMetadata({
+          structured_output: lastOutput.structuredOutput,
+        } as any);
       }
       return lastAttemptSession; // Resolve with the session containing the last (failed) output
     }
 
     // Should not be reachable if logic is correct
-    throw new Error('Assistant template execution finished in an unexpected state. No result or definitive error.');
+    throw new Error(
+      'Assistant template execution finished in an unexpected state. No result or definitive error.',
+    );
   }
 }

@@ -18,11 +18,13 @@ export class LoopTemplate<
   private maxIterations: number;
 
   // Update constructor signature to use Session<T> and make parameters optional
-  constructor(options: {
-    bodyTemplate?: Template<any, any>;
-    exitCondition?: (session: Session<T>) => boolean;
-    maxIterations?: number;
-  } = {}) {
+  constructor(
+    options: {
+      bodyTemplate?: Template<any, any>;
+      exitCondition?: (session: Session<T>) => boolean;
+      maxIterations?: number;
+    } = {},
+  ) {
     super();
     this.bodyTemplate = options.bodyTemplate;
     this.exitCondition = options.exitCondition;
@@ -53,8 +55,13 @@ export class LoopTemplate<
       this.bodyTemplate = template;
     } else {
       // If bodyTemplate already exists, convert it to a Sequence if it's not already one
-      if (!(this.bodyTemplate instanceof TemplateFactory.sequence().constructor)) {
-        this.bodyTemplate = TemplateFactory.sequence([this.bodyTemplate, template]);
+      if (
+        !(this.bodyTemplate instanceof TemplateFactory.sequence().constructor)
+      ) {
+        this.bodyTemplate = TemplateFactory.sequence([
+          this.bodyTemplate,
+          template,
+        ]);
       } else {
         // If it's already a Sequence, add the template to it
         (this.bodyTemplate as any).add(template);
@@ -112,7 +119,9 @@ export class LoopTemplate<
 
     // If no exit condition is set, execute the body template once and then exit
     if (!this.exitCondition) {
-      console.warn('LoopTemplate executed without an exit condition. Executing once and exiting.');
+      console.warn(
+        'LoopTemplate executed without an exit condition. Executing once and exiting.',
+      );
       let currentSession = this.ensureSession(session) as Session<T>;
       currentSession = await this.bodyTemplate.execute(currentSession);
       return currentSession;
