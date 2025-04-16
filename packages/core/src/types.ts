@@ -1,4 +1,5 @@
 import type { Metadata } from './metadata';
+import type { TTransformFunction } from './templates/template_types';
 
 /**
  * Message Types
@@ -231,4 +232,12 @@ export class ValidationError extends PromptTrailError {
     super(message, 'VALIDATION_ERROR');
     this.name = 'ValidationError';
   }
+}
+
+// Make params interface generic
+
+export interface ITransformTemplateParams<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
+  transformFn: TTransformFunction<T>;
 }

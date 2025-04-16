@@ -1,13 +1,7 @@
 import type { Session } from '../types';
-import { BaseTemplate } from './interfaces';
+import { BaseTemplate } from './base';
+import { ITransformTemplateParams } from './template_types';
 import type { TTransformFunction } from './template_types';
-
-// Make params interface generic
-export interface ITransformTemplateParams<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> {
-  transformFn: TTransformFunction<T>;
-}
 
 /**
  * A template that applies a transformation function to the session.

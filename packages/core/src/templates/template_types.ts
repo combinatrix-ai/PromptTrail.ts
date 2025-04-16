@@ -1,5 +1,4 @@
 import type { Session } from '../types';
-import type { Template } from './interfaces';
 
 /**
  * Type definition for transform functions
@@ -58,4 +57,11 @@ export interface ISubroutineTemplateOptions<
    * Optional identifier for the template.
    */
   id?: string;
+}
+// Make params interface generic
+
+export interface ITransformTemplateParams<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
+  transformFn: TTransformFunction<T>;
 }

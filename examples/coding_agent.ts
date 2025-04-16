@@ -11,7 +11,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
   Agent,
-  SystemTemplate,
+  System,
   CLISource,
 } from '../packages/core/src/index.js';
 
@@ -140,7 +140,7 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = new Agent().add(new SystemTemplate(systemPrompt)).addIf(
+    const agent = new Agent().add(new System(systemPrompt)).addIf(
       (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
       // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
       new Agent()

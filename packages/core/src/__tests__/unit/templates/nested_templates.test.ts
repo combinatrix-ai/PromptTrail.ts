@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   // Sequence as LinearTemplate, // Remove alias
-  LoopTemplate,
-  SystemTemplate,
-  UserTemplate,
-  AssistantTemplate, // Ensure AssistantTemplate is imported
+  Loop,
+  System,
+  User,
+  Assistant, // Ensure AssistantTemplate is imported
   // SubroutineTemplate, // Keep import commented out as tests are skipped
-  IfTemplate,
+  Conditional,
   Sequence, // Import Sequence directly
 } from '../../../templates'; // Check path and export in index.ts
 import { createSession } from '../../../session';
@@ -69,20 +69,20 @@ describe('Nested Templates', () => {
     // Create a complex nested template structure
     // Note: We're using array-based construction instead of chaining for templates
     // that don't have specific add methods
-    const ifTemplate = new IfTemplate({
+    const ifTemplate = new Conditional({
       condition: () => true, // Always true for this test
       thenTemplate: new Sequence() // Use Sequence
-        .add(new UserTemplate('First question')) // Use add()
-        .add(new AssistantTemplate(generateOptions)), // Use add()
-      elseTemplate: new SystemTemplate('Condition was false'),
+        .add(new User('First question')) // Use add()
+        .add(new Assistant(generateOptions)), // Use add()
+      elseTemplate: new System('Condition was false'),
     });
 
-    const loopTemplate = new LoopTemplate({
+    const loopTemplate = new Loop({
       // Use constructor options
       bodyTemplate: new Sequence() // Use Sequence for body
-        .add(new UserTemplate('Second question')) // Use add()
-        .add(new AssistantTemplate(generateOptions)) // Removed comma
-        .add(new UserTemplate('Follow-up question')), // Ensure comma is present
+        .add(new User('Second question')) // Use add()
+        .add(new Assistant(generateOptions)) // Removed comma
+        .add(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
       exitCondition: (session: ISession) => {
         // Exit after one iteration
@@ -97,7 +97,7 @@ describe('Nested Templates', () => {
     // Combine templates using array-based construction
     // Use Sequence constructor
     const template = new Sequence([
-      new SystemTemplate('You are a helpful assistant.'),
+      new System('You are a helpful assistant.'),
       ifTemplate,
       loopTemplate,
       // subroutineTemplate, // Remove usage of placeholder
@@ -151,7 +151,7 @@ describe('Nested Templates', () => {
     // Use Sequence constructor
     const template = new Sequence([
       // Ensure this line is correct
-      new SystemTemplate('Hello, ${username}!'),
+      new System('Hello, ${username}!'),
       // subroutineTemplate, // Comment out usage as test is skipped
     ]);
 
@@ -183,33 +183,33 @@ describe('Nested Templates', () => {
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
-      .add(new SystemTemplate('Conditional template test')) // Use add()
+      .add(new System('Conditional template test')) // Use add()
       // First level condition
       .add(
-        new IfTemplate({
+        new Conditional({
           // Use add()
           condition: (session) => Boolean(session.metadata.get('condition')),
           thenTemplate: new Sequence() // Use Sequence
-            .add(new UserTemplate('Question when condition is true')) // Use add()
-            .add(new AssistantTemplate(generateOptions)) // Removed comma
+            .add(new User('Question when condition is true')) // Use add()
+            .add(new Assistant(generateOptions)) // Removed comma
             // Nested condition
             .add(
-              new IfTemplate({
+              new Conditional({
                 // Use add()
                 condition: (session) => {
                   // Check if the last message contains a specific text
                   const lastMessage = session.getLastMessage();
                   return lastMessage?.content.includes('Response A') ?? false;
                 },
-                thenTemplate: new UserTemplate(
+                thenTemplate: new User(
                   'Follow-up when response contains "Response A"',
                 ),
-                elseTemplate: new UserTemplate('This should not be added'),
+                elseTemplate: new User('This should not be added'),
               }),
             ), // Close inner addIf
           elseTemplate: new Sequence() // Use Sequence
-            .add(new UserTemplate('Question when condition is false')) // Use add()
-            .add(new AssistantTemplate(generateOptions)), // Use add()
+            .add(new User('Question when condition is false')) // Use add()
+            .add(new Assistant(generateOptions)), // Use add()
         }),
       ); // Close outer addIf
 

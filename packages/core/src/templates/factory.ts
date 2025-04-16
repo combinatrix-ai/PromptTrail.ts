@@ -1,7 +1,7 @@
 import type { Source } from '../content_source';
 import type { ModelOutput } from '../content_source';
 import type { GenerateOptions } from '../generate_options';
-import type { Template } from './interfaces';
+import type { Template } from './base';
 import { System } from './system';
 import { User } from './user';
 import { Assistant } from './assistant';
@@ -11,7 +11,10 @@ import { Sequence } from './sequence';
 import { Subroutine } from './subroutine';
 import { Transform } from './transform';
 import type { Session } from '../types';
-import type { TTransformFunction, ISubroutineTemplateOptions } from './template_types';
+import type {
+  TTransformFunction,
+  ISubroutineTemplateOptions,
+} from './template_types';
 
 /**
  * Factory methods for creating templates

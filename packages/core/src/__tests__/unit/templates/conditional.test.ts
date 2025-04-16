@@ -164,9 +164,7 @@ describe('If Template', () => {
 
     // Create then and else templates
     const thenTemplate = new Assistant('Hello! I am an AI assistant.');
-    const elseTemplate = new Assistant(
-      'I did not understand your message.',
-    );
+    const elseTemplate = new Assistant('I did not understand your message.');
 
     // Create an if template
     const ifTemplate = new Conditional({

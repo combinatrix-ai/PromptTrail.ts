@@ -13,21 +13,17 @@ import { createSession } from '../../session';
 import type { ISession as Session } from '../../types'; // Use "import type"
 import {
   Sequence,
-  LoopTemplate,
-  SystemTemplate,
-  UserTemplate,
-  AssistantTemplate,
+  Loop,
+  System,
+  User,
+  Assistant,
   Agent,
   TemplateFactory,
-  SubroutineTemplate, // Add SubroutineTemplate import
+  Subroutine, // Add SubroutineTemplate import
 } from '../../templates';
 import { createMetadata } from '../../metadata';
 import { createGenerateOptions } from '../../generate_options';
-import {
-  CLISource,
-  StaticListSource,
-  StaticSource,
-} from '../../content_source';
+import { StaticListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';
 
 /**
@@ -61,9 +57,9 @@ const anthroGenerateOptions = createGenerateOptions({
 describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a simple conversation with OpenAI', async () => {
     const template = new Sequence()
-      .add(new SystemTemplate('You are a helpful assistant.'))
-      .add(new UserTemplate('Hello, how are you?'))
-      .add(new AssistantTemplate(openAIgenerateOptions));
+      .add(new System('You are a helpful assistant.'))
+      .add(new User('Hello, how are you?'))
+      .add(new Assistant(openAIgenerateOptions));
 
     const session = await template.execute(createSession());
 
@@ -74,9 +70,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should execute a simple conversation with Anthropic', async () => {
     const template = new Sequence()
-      .add(new SystemTemplate('You are a helpful assistant.'))
-      .add(new UserTemplate('Hello, how are you?'))
-      .add(new AssistantTemplate(anthroGenerateOptions));
+      .add(new System('You are a helpful assistant.'))
+      .add(new User('Hello, how are you?'))
+      .add(new Assistant(anthroGenerateOptions));
 
     const session = await template.execute(createSession());
 
@@ -91,9 +87,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Create a template
     const chat = new Sequence()
-      .add(new SystemTemplate("I'm a helpful assistant."))
-      .add(new UserTemplate("What's TypeScript?"))
-      .add(new AssistantTemplate('This is a mock response from the AI model.'));
+      .add(new System("I'm a helpful assistant."))
+      .add(new User("What's TypeScript?"))
+      .add(new Assistant('This is a mock response from the AI model.'));
 
     // Execute the template with print mode enabled
     // We only care about the side effect of console.log being called
@@ -127,11 +123,11 @@ describe('End-to-End Workflows with Real APIs', () => {
     });
     // Specify the generic type for Sequence
     const template = new Sequence<UserMetadata>()
-      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new System('You are a helpful assistant.'))
       // Interpolating metadata into the assistant message
       // Use ${username} for template interpolation instead of {username}
-      .add(new AssistantTemplate('Hello, ${username}!'))
-      .add(new UserTemplate('My name is not Alice, it is Bob.'))
+      .add(new Assistant('Hello, ${username}!'))
+      .add(new User('My name is not Alice, it is Bob.'))
       // Update metadata with the last message
       .addTransform((session) => {
         // Change name Alice to Bob
@@ -151,13 +147,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should execute agent and sequence', async () => {
     const sequence = new Sequence()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate('123456789'))
-      .add(new AssistantTemplate(openAIgenerateOptions));
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User('123456789'))
+      .add(new Assistant(openAIgenerateOptions));
     const session = await sequence.execute(createSession());
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -166,13 +158,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].content).toContain('123456789');
 
     const agent = new Agent()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate('123456789'))
-      .add(new AssistantTemplate(openAIgenerateOptions));
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User('123456789'))
+      .add(new Assistant(openAIgenerateOptions));
     const agentSession = await agent.execute(createSession());
     const agentMessages = Array.from(agentSession.messages);
     expect(agentMessages).toHaveLength(3);
@@ -183,13 +171,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should UserTemplate handle InputSource', async () => {
     const template = new Sequence()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate(new StaticSource('123456789')))
-      .add(new AssistantTemplate(openAIgenerateOptions));
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User(new StaticSource('123456789')))
+      .add(new Assistant(openAIgenerateOptions));
     const session = await template.execute(createSession());
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -200,20 +184,16 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should execute a if template', async () => {
     const template = new Sequence()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate('YES'))
-      .add(new AssistantTemplate(openAIgenerateOptions))
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User('YES'))
+      .add(new Assistant(openAIgenerateOptions))
       .addIf(
         (session) => {
           const lastMessage = session.getLastMessage();
           return lastMessage!.content.toLowerCase().includes('yes');
         },
-        new UserTemplate('You said YES'),
-        new UserTemplate('You did not say YES'),
+        new User('You said YES'),
+        new User('You did not say YES'),
       );
 
     const session = await template.execute(createSession());
@@ -224,20 +204,16 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[3].content).toContain('You said YES');
 
     const template2 = new Sequence()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate('NO'))
-      .add(new AssistantTemplate(openAIgenerateOptions))
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User('NO'))
+      .add(new Assistant(openAIgenerateOptions))
       .addIf(
         (session) => {
           const lastMessage = session.getLastMessage();
           return lastMessage!.content.toLowerCase().includes('yes');
         },
-        new UserTemplate('You said YES'),
-        new UserTemplate('You did not say YES'),
+        new User('You said YES'),
+        new User('You did not say YES'),
       );
     const session2 = await template2.execute(createSession());
     const messages2 = Array.from(session2.messages);
@@ -249,7 +225,7 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should loop if LoopTemplate is used or Seuqnce().loopIf() is used', async () => {
     const template = new Sequence()
-      .add(new UserTemplate('123456789'))
+      .add(new User('123456789'))
       // Use addLoop with a body template and the exit condition
       .addLoop(
         TemplateFactory.assistant('Loop iteration'), // Added body template
@@ -273,7 +249,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages).toHaveLength(3);
 
     // Define the body template for the loop
-    const loopBodyTemplate = new UserTemplate('Loop message 123456789');
+    const loopBodyTemplate = new User('Loop message 123456789');
 
     // Define the exit condition function
     const loopExitCondition = (
@@ -291,7 +267,7 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Instantiate LoopTemplate correctly
     // Instantiate LoopTemplate correctly using options object and specify generic type
-    const using_loop = new LoopTemplate<{ count: number }>({
+    const using_loop = new Loop<{ count: number }>({
       bodyTemplate: loopBodyTemplate,
       exitCondition: loopExitCondition,
     });
@@ -318,8 +294,8 @@ describe('End-to-End Workflows with Real APIs', () => {
           const lastMessage = session.getLastMessage();
           return lastMessage!.content.toLowerCase().includes('123456789');
         },
-        new UserTemplate('YES'),
-        new UserTemplate('NO'),
+        new User('YES'),
+        new User('NO'),
       );
     const session = await sequence.execute(createSession());
     const messages = Array.from(session.messages);
@@ -363,7 +339,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
-    const loop = new LoopTemplate<{ count: number }>({
+    const loop = new Loop<{ count: number }>({
       bodyTemplate: loopBodySequence,
       exitCondition: loopExitCondition,
     });
@@ -401,16 +377,12 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a subroutine template', async () => {
     // Inherit from parent and merge back to parent
     const subroutineBody = new Sequence()
-      .add(
-        new SystemTemplate(
-          'This is automated API testing. Repeat what user says.',
-        ),
-      )
-      .add(new UserTemplate('123456789'))
-      .add(new AssistantTemplate(openAIgenerateOptions));
+      .add(new System('This is automated API testing. Repeat what user says.'))
+      .add(new User('123456789'))
+      .add(new Assistant(openAIgenerateOptions));
 
     // Create a subroutine template with the body
-    const subroutine = new SubroutineTemplate(subroutineBody);
+    const subroutine = new Subroutine(subroutineBody);
 
     // Execute the subroutine
     const session = await subroutine.execute(createSession());
@@ -434,9 +406,9 @@ describe('End-to-End Workflows with Real APIs', () => {
       .addTool('weather', weatherTool);
 
     const template = new Sequence()
-      .add(new SystemTemplate('You are a helpful assistant.'))
-      .add(new UserTemplate('What is the weather in Tokyo?'))
-      .add(new AssistantTemplate(openAIgenerateOptionsWith));
+      .add(new System('You are a helpful assistant.'))
+      .add(new User('What is the weather in Tokyo?'))
+      .add(new Assistant(openAIgenerateOptionsWith));
 
     const session = await template.execute(createSession());
 
@@ -467,13 +439,13 @@ describe('End-to-End Workflows with Real APIs', () => {
     );
 
     const template = new Sequence()
-      .add(new SystemTemplate('You are a helpful assistant.'))
+      .add(new System('You are a helpful assistant.'))
       .add(
-        new LoopTemplate({
+        new Loop({
           bodyTemplate: new Sequence()
-            .add(new UserTemplate(new StaticSource('What is your name?')))
-            .add(new AssistantTemplate(openAIgenerateOptions))
-            .add(new UserTemplate(continueResponses)),
+            .add(new User(new StaticSource('What is your name?')))
+            .add(new Assistant(openAIgenerateOptions))
+            .add(new User(continueResponses)),
           exitCondition: (session) => {
             const lastMessage = session.getLastMessage();
             return (

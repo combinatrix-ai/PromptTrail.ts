@@ -1,7 +1,7 @@
 import { createSession } from '../session';
 import type { ISession, Message, Session } from '../types';
-import type { Template } from './interfaces';
-import { CompositeTemplateBase } from './template_interfaces';
+import type { Template } from './base';
+import { CompositeTemplateBase } from './base';
 import { addFactoryMethods } from './composite_base';
 import type { ISubroutineTemplateOptions } from './template_types';
 
@@ -33,12 +33,12 @@ export class Subroutine<
     options?: ISubroutineTemplateOptions<P, S>,
   ) {
     super();
-    
+
     // Set options with defaults
     this.retainMessages = options?.retainMessages ?? true;
     this.isolatedContext = options?.isolatedContext ?? false;
     this.id = options?.id;
-    
+
     // Set up init and squash functions
     if (options?.initWith) {
       this.initFunction = options.initWith;
@@ -49,29 +49,35 @@ export class Subroutine<
           // Create a completely new, empty session for isolated context
           return createSession<S>();
         }
-        
+
         // Default: Clone parent session messages and metadata
-        const clonedMetadataObject = parentSession.metadata.toObject() as unknown as S;
-        let clonedSession = createSession<S>({ metadata: clonedMetadataObject });
-        
+        const clonedMetadataObject =
+          parentSession.metadata.toObject() as unknown as S;
+        let clonedSession = createSession<S>({
+          metadata: clonedMetadataObject,
+        });
+
         // Add messages immutably
         parentSession.messages.forEach((msg: Message) => {
           clonedSession = clonedSession.addMessage(msg);
         });
-        
+
         return clonedSession;
       };
     }
-    
+
     if (options?.squashWith) {
       this.squashFunction = options.squashWith;
     } else {
       // Default squash function
-      this.squashFunction = (parentSession: ISession<P>, subroutineSession: ISession<S>): ISession<P> => {
+      this.squashFunction = (
+        parentSession: ISession<P>,
+        subroutineSession: ISession<S>,
+      ): ISession<P> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
         let finalMetadata = parentSession.metadata.toObject();
-        
+
         if (this.retainMessages) {
           // Append messages from the subroutine session that were added after
           // the messages potentially copied from the parent
@@ -81,7 +87,7 @@ export class Subroutine<
           );
           finalMessages = [...finalMessages, ...newMessages];
         }
-        
+
         if (!this.isolatedContext) {
           // Merge metadata only if not isolated
           finalMetadata = {
@@ -89,15 +95,15 @@ export class Subroutine<
             ...subroutineSession.metadata.toObject(),
           };
         }
-        
+
         // Create a new session with the merged state
         let mergedSession = createSession<P>({ metadata: finalMetadata as P });
-        
+
         // Add messages one by one
         finalMessages.forEach((msg: Message) => {
           mergedSession = mergedSession.addMessage(msg);
         });
-        
+
         return mergedSession;
       };
     }
@@ -110,7 +116,7 @@ export class Subroutine<
         this.templates = [templateOrTemplates];
       }
     }
-    
+
     // Add factory methods
     return addFactoryMethods(this);
   }
@@ -130,7 +136,12 @@ export class Subroutine<
    * @param fn Function to merge the subroutine session into the parent session
    * @returns This instance for method chaining
    */
-  squashWith(fn: (parentSession: ISession<P>, subroutineSession: ISession<S>) => ISession<P>): this {
+  squashWith(
+    fn: (
+      parentSession: ISession<P>,
+      subroutineSession: ISession<S>,
+    ) => ISession<P>,
+  ): this {
     this.squashFunction = fn;
     return this;
   }

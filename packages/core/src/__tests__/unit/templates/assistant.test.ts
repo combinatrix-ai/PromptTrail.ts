@@ -101,10 +101,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create an AssistantTemplate with valid content and the validator
-    const validTemplate = new Assistant(
-      'This is valid content',
-      validator,
-    );
+    const validTemplate = new Assistant('This is valid content', validator);
 
     // Execute the template and verify it passes validation
     const validResult = await validTemplate.execute(createSession());

@@ -1,6 +1,6 @@
 import { createMetadata } from '../metadata';
 import type { Session, AssistantMessage } from '../types';
-import { BaseTemplate } from './interfaces';
+import { BaseTemplate } from './base';
 import { Source, ModelOutput, ValidationOptions } from '../content_source';
 import type { IValidator } from '../validators/base';
 import { GenerateOptions } from '../generate_options';

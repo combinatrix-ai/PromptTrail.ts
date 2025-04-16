@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../../session';
-import { UserTemplate } from '../../../templates';
+import { User } from '../../../templates';
 import { CustomValidator } from '../../../validators/custom';
 
 describe('UserTemplate with real API validation', () => {
@@ -39,7 +39,7 @@ describe('UserTemplate with real API validation', () => {
         },
       );
 
-      const template = new UserTemplate('Short answer now.');
+      const template = new User('Short answer now.');
 
       // No need to override getContent since we're using a static string
 

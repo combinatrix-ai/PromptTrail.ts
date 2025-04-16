@@ -1,9 +1,9 @@
 import {
   Sequence,
-  LoopTemplate,
-  UserTemplate,
-  AssistantTemplate,
-  SystemTemplate,
+  Loop,
+  User,
+  Assistant,
+  System,
   createSession,
   createGenerateOptions,
   CLISource,
@@ -26,21 +26,21 @@ async function main() {
   });
 
   // Create a template to get user input via the CLI source
-  const userTemplate = new UserTemplate(userCliSource);
+  const userTemplate = new User(userCliSource);
 
   // Create the main conversation flow using a Sequence
   const template = new Sequence()
     .add(
-      new SystemTemplate(
+      new System(
         'You are a helpful AI assistant. Be concise and friendly in your responses.',
       ),
     )
     .add(
-      new LoopTemplate({
+      new Loop({
         // The body of the loop is a Sequence containing the user turn and assistant turn
         bodyTemplate: new Sequence([
           userTemplate,
-          new AssistantTemplate(generateOptions),
+          new Assistant(generateOptions),
         ]),
         exitCondition: (session) => {
           const lastUserMessage = session

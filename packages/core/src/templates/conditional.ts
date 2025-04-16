@@ -1,6 +1,6 @@
 import type { Session } from '../types';
-import { BaseTemplate } from './interfaces';
-import type { Template } from './interfaces';
+import { BaseTemplate } from './base';
+import type { Template } from './base';
 
 export class Conditional extends BaseTemplate<any, any> {
   private condition: (session: Session) => boolean;

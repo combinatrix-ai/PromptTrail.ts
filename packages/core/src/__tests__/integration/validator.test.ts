@@ -11,7 +11,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../generate_options';
-import { AssistantTemplate } from '../../templates';
+import { Assistant } from '../../templates';
 
 describe('AssistantTemplate with Validator', () => {
   let generateOptions: GenerateOptions;
@@ -36,7 +36,7 @@ describe('AssistantTemplate with Validator', () => {
   });
 
   it('should pass validation when validator passes', async () => {
-    const assistantTemplate = new AssistantTemplate('This is a test response');
+    const assistantTemplate = new Assistant('This is a test response');
 
     const session = await assistantTemplate.execute(createSession());
 
@@ -67,7 +67,7 @@ describe('AssistantTemplate with Validator', () => {
       getErrorMessage: () => 'Validation failed',
     };
 
-    const assistantTemplate = new AssistantTemplate('Response attempt 2');
+    const assistantTemplate = new Assistant('Response attempt 2');
 
     const session = await assistantTemplate.execute(createSession());
 
@@ -82,7 +82,7 @@ describe('AssistantTemplate with Validator', () => {
       getContent: vi.fn().mockRejectedValue(new Error('Validation failed')),
     };
 
-    const assistantTemplate = new AssistantTemplate('This will throw an error');
+    const assistantTemplate = new Assistant('This will throw an error');
 
     // Mock the execute method to throw an error
     assistantTemplate.execute = vi
@@ -95,7 +95,7 @@ describe('AssistantTemplate with Validator', () => {
   });
 
   it('should not throw when validation fails and raiseError is false', async () => {
-    const assistantTemplate = new AssistantTemplate('This is a test response');
+    const assistantTemplate = new Assistant('This is a test response');
 
     const session = await assistantTemplate.execute(createSession());
 

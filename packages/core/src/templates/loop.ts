@@ -1,6 +1,6 @@
 import type { Session } from '../types';
-import type { Template } from './interfaces';
-import { CompositeTemplateBase } from './template_interfaces';
+import type { Template } from './base';
+import { CompositeTemplateBase } from './base';
 import { addFactoryMethods } from './composite_base';
 
 /**
@@ -8,7 +8,7 @@ import { addFactoryMethods } from './composite_base';
  * @template T - Type of the session metadata
  */
 export class Loop<
-  T extends Record<string, unknown> = Record<string, unknown>
+  T extends Record<string, unknown> = Record<string, unknown>,
 > extends CompositeTemplateBase<T, T> {
   /**
    * Creates a new Loop template.
@@ -34,11 +34,10 @@ export class Loop<
     if (options.maxIterations !== undefined) {
       this.maxIterations = options.maxIterations;
     }
-    
+
     // Add factory methods
     return addFactoryMethods(this);
   }
-
 
   /**
    * Sets the body template to execute in each iteration.

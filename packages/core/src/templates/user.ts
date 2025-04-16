@@ -1,6 +1,6 @@
 import { createMetadata } from '../metadata';
 import type { Session, UserMessage } from '../types';
-import { BaseTemplate } from './interfaces';
+import { BaseTemplate } from './base';
 import type { Source } from '../content_source';
 
 export class User extends BaseTemplate<any, any> {

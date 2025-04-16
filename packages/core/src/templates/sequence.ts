@@ -1,6 +1,6 @@
 import type { Session } from '../types';
-import type { Template } from './interfaces';
-import { CompositeTemplateBase } from './template_interfaces';
+import type { Template } from './base';
+import { CompositeTemplateBase } from './base';
 import { addFactoryMethods } from './composite_base';
 
 /**
@@ -19,9 +19,8 @@ export class Sequence<
     if (templates) {
       this.templates = [...templates];
     }
-    
+
     // Add factory methods
     return addFactoryMethods(this);
   }
-
 }
