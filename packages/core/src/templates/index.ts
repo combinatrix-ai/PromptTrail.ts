@@ -1,7 +1,8 @@
-// Export core template interfaces and base class
+// Export core template interfaces and base classes
 export type { Template, IComposedTemplate } from './interfaces';
 export { BaseTemplate } from './interfaces';
 export { Composed as ComposedTemplate } from './composition';
+export { CompositeTemplateBase } from './composite_base';
 
 // Export concrete template implementations
 export { System as SystemTemplate } from './system';

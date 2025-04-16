@@ -1,13 +1,7 @@
 import { createSession } from '../session';
-import type { ISession, Message, Session } from '../types'; // Import ISession, Message, and Session
-import { BaseTemplate } from './interfaces';
-import type { Template } from './interfaces'; // Use Template interface
-import type { Metadata } from '../metadata'; // Use Metadata interface
-import { createMetadata } from '../metadata';
-import type { Source, ModelOutput } from '../content_source';
-import type { GenerateOptions } from '../generate_options';
-import { TemplateFactory } from './factory';
-import type { TTransformFunction } from './transform';
+import type { ISession, Message, Session } from '../types';
+import type { Template } from './interfaces';
+import { CompositeTemplateBase } from './composite_base';
 
 /**
  * Options for configuring the SubroutineTemplate.
@@ -76,11 +70,10 @@ export interface ISubroutineTemplateOptions<
 export class Subroutine<
   P extends Record<string, unknown> = Record<string, unknown>,
   S extends Record<string, unknown> = Record<string, unknown>,
-> extends BaseTemplate<P, P> {
-  // Output metadata type is P
+> extends CompositeTemplateBase<P, P> {
   public readonly id?: string;
-  private templates: Template<any, any>[] = [];
-  private readonly options: ISubroutineTemplateOptions<P, S>;
+  private readonly retainMessages: boolean;
+  private readonly isolatedContext: boolean;
 
   /**
    * Creates an instance of SubroutineTemplate.
@@ -92,12 +85,74 @@ export class Subroutine<
     options?: ISubroutineTemplateOptions<P, S>,
   ) {
     super();
-    this.options = {
-      retainMessages: true, // Default: retain messages
-      isolatedContext: false, // Default: share context
-      ...options,
-    };
-    this.id = this.options.id;
+    
+    // Set options with defaults
+    this.retainMessages = options?.retainMessages ?? true;
+    this.isolatedContext = options?.isolatedContext ?? false;
+    this.id = options?.id;
+    
+    // Set up init and squash functions
+    if (options?.initWith) {
+      this.initFunction = options.initWith;
+    } else {
+      // Default init function
+      this.initFunction = (parentSession: ISession<P>): ISession<S> => {
+        if (this.isolatedContext) {
+          // Create a completely new, empty session for isolated context
+          return createSession<S>();
+        }
+        
+        // Default: Clone parent session messages and metadata
+        const clonedMetadataObject = parentSession.metadata.toObject() as unknown as S;
+        let clonedSession = createSession<S>({ metadata: clonedMetadataObject });
+        
+        // Add messages immutably
+        parentSession.messages.forEach((msg: Message) => {
+          clonedSession = clonedSession.addMessage(msg);
+        });
+        
+        return clonedSession;
+      };
+    }
+    
+    if (options?.squashWith) {
+      this.squashFunction = options.squashWith;
+    } else {
+      // Default squash function
+      this.squashFunction = (parentSession: ISession<P>, subroutineSession: ISession<S>): ISession<P> => {
+        // Default merging logic
+        let finalMessages = [...parentSession.messages];
+        let finalMetadata = parentSession.metadata.toObject();
+        
+        if (this.retainMessages) {
+          // Append messages from the subroutine session that were added after
+          // the messages potentially copied from the parent
+          const parentMessageSet = new Set(parentSession.messages);
+          const newMessages = subroutineSession.messages.filter(
+            (msg) => !parentMessageSet.has(msg),
+          );
+          finalMessages = [...finalMessages, ...newMessages];
+        }
+        
+        if (!this.isolatedContext) {
+          // Merge metadata only if not isolated
+          finalMetadata = {
+            ...finalMetadata,
+            ...subroutineSession.metadata.toObject(),
+          };
+        }
+        
+        // Create a new session with the merged state
+        let mergedSession = createSession<P>({ metadata: finalMetadata as P });
+        
+        // Add messages one by one
+        finalMessages.forEach((msg: Message) => {
+          mergedSession = mergedSession.addMessage(msg);
+        });
+        
+        return mergedSession;
+      };
+    }
 
     // Initialize templates array
     if (templateOrTemplates) {
@@ -110,174 +165,22 @@ export class Subroutine<
   }
 
   /**
-   * Adds a template to the subroutine.
-   * @param template The template to add.
-   * @returns This instance for method chaining.
+   * Sets the initialization function for the subroutine.
+   * @param fn Function to initialize the subroutine session from the parent session
+   * @returns This instance for method chaining
    */
-  add(template: Template<any, any>): this {
-    this.templates.push(template);
+  initWith(fn: (parentSession: ISession<P>) => ISession<S>): this {
+    this.initFunction = fn;
     return this;
   }
 
-  // Convenience methods for adding specific template types
-  addSystem(content: string | Source<string>): this {
-    return this.add(TemplateFactory.system(content));
-  }
-
-  addUser(content: string | Source<string>): this {
-    return this.add(TemplateFactory.user(content));
-  }
-
-  addAssistant(content: string | Source<ModelOutput> | GenerateOptions): this {
-    return this.add(TemplateFactory.assistant(content));
-  }
-
-  addTransform(transformFn: TTransformFunction<S>): this {
-    return this.add(TemplateFactory.transform(transformFn));
-  }
-
-  addIf(
-    condition: (session: Session) => boolean,
-    thenTemplate: Template<any, any>,
-    elseTemplate?: Template<any, any>,
-  ): this {
-    return this.add(TemplateFactory.if(condition, thenTemplate, elseTemplate));
-  }
-
-  addLoop(
-    bodyTemplate: Template<any, any>,
-    exitCondition: (session: Session) => boolean,
-  ): this {
-    return this.add(TemplateFactory.loop(bodyTemplate, exitCondition));
-  }
-
-  addSubroutine(
-    template: Template<any, any>,
-    options?: ISubroutineTemplateOptions<any, any>,
-  ): this {
-    return this.add(new Subroutine(template, options));
-  }
-
   /**
-   * Executes the subroutine template.
-   * @param parentSession The parent session context.
-   * @returns The parent session updated according to the subroutine execution and merging logic.
+   * Sets the squash function for merging the subroutine session back into the parent session.
+   * @param fn Function to merge the subroutine session into the parent session
+   * @returns This instance for method chaining
    */
-  async execute(parentSession: ISession<P>): Promise<ISession<P>> {
-    // Return ISession<P>
-    // 1. Initialize subroutine session
-    const initialSubroutineSession =
-      this.initializeSubroutineSession(parentSession);
-
-    // 2. Execute all templates in sequence
-    let currentSession = initialSubroutineSession;
-
-    if (this.templates.length === 0) {
-      // If no templates, just return the initialized session
-      return this.mergeSessions(parentSession, currentSession);
-    }
-
-    for (const template of this.templates) {
-      const result = await template.execute(currentSession);
-
-      // Handle potential errors or early exits
-      if (result instanceof Error) {
-        console.error(`Subroutine execution failed: ${result.message}`);
-        throw result;
-      }
-
-      if (result === null) {
-        console.warn(
-          'Template in subroutine returned null, stopping execution.',
-        );
-        // Return the session state before the template that returned null
-        return this.mergeSessions(parentSession, currentSession);
-      }
-
-      currentSession = result;
-    }
-
-    // 3. Merge results back into the parent session
-    const finalParentSession = this.mergeSessions(
-      parentSession,
-      currentSession,
-    );
-
-    return finalParentSession;
-  }
-
-  private initializeSubroutineSession(parentSession: ISession<P>): ISession<S> {
-    if (this.options.isolatedContext) {
-      // Create a completely new, empty session for isolated context
-      // We cast the metadata type, assuming the inner template works with the specified S
-      return createSession<S>();
-    }
-
-    if (this.options.initWith) {
-      // Use the custom initializer
-      return this.options.initWith(parentSession);
-    }
-
-    // Default: Clone parent session messages and metadata.
-    // This assumes S is compatible with P or the user handles potential type issues.
-    // Cast the parent metadata object to S. This might be unsafe if P and S differ significantly,
-    // but it reflects the default intention of inheriting context.
-    const clonedMetadataObject =
-      parentSession.metadata.toObject() as unknown as S; // Cast via unknown
-    let clonedSession = createSession<S>({ metadata: clonedMetadataObject });
-    // Add messages immutably
-    parentSession.messages.forEach((msg: Message) => {
-      clonedSession = clonedSession.addMessage(msg);
-    });
-    return clonedSession;
-  }
-
-  private mergeSessions(
-    parentSession: ISession<P>,
-    subroutineSession: ISession<S>,
-  ): ISession<P> {
-    if (this.options.squashWith) {
-      // Use the custom merger
-      return this.options.squashWith(parentSession, subroutineSession);
-    }
-
-    // Default merging logic:
-    let finalMessages = [...parentSession.messages]; // Use messages property
-    let finalMetadata = parentSession.metadata.toObject(); // Use toObject()
-
-    if (this.options.retainMessages) {
-      // Append messages from the subroutine session that were added *after*
-      // the messages potentially copied from the parent by initWith.
-      // The simplest robust way is to find messages in subroutineSession
-      // that are not present (by reference) in the original parentSession.
-      const parentMessageSet = new Set(parentSession.messages);
-      const newMessages = subroutineSession.messages.filter(
-        (msg) => !parentMessageSet.has(msg),
-      );
-      finalMessages = [...finalMessages, ...newMessages]; // Append only new messages
-    } else {
-      // If not retaining messages, the final messages are just the parent's original messages.
-      finalMessages = [...parentSession.messages];
-    }
-
-    if (!this.options.isolatedContext) {
-      // Merge metadata only if not isolated
-      // Default merge: Subroutine metadata overwrites parent metadata for conflicting keys
-      // Default merge: Subroutine metadata overwrites parent metadata for conflicting keys
-      finalMetadata = {
-        ...finalMetadata,
-        ...subroutineSession.metadata.toObject(),
-      }; // Use toObject()
-    }
-
-    // Create a new session with the merged state, passing the raw metadata object
-    // Create the session with metadata first
-    let mergedSession = createSession<P>({ metadata: finalMetadata as P });
-    // Add messages one by one, reassigning the immutable result
-    finalMessages.forEach((msg: Message) => {
-      mergedSession = mergedSession.addMessage(msg);
-    });
-
-    return mergedSession;
+  squashWith(fn: (parentSession: ISession<P>, subroutineSession: ISession<S>) => ISession<P>): this {
+    this.squashFunction = fn;
+    return this;
   }
 }
