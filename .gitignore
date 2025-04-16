@@ -4,6 +4,9 @@ PromptTrail
 dist/
 hello.js
 example.txt
+context.txt
 *.js
 *.js.map
+.DS_Store
+.vscode
 vscode-extension/
