@@ -424,7 +424,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].type).toBe('assistant');
     expect(messages[2].content).toBeDefined();
     expect(messages[2].content).toContain('123456789');
-  });
+  }, 15000);
 
   it('should execute a conversation with weather tool', async () => {
     const weatherTool = createWeatherTool();

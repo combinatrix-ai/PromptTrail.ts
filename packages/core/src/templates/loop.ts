@@ -1,6 +1,7 @@
 import type { Session } from '../types';
 import type { Template } from './interfaces';
-import { CompositeTemplateBase } from './composite_base';
+import { CompositeTemplateBase } from './template_interfaces';
+import { addFactoryMethods } from './composite_base';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
@@ -26,10 +27,16 @@ export class Loop<
     }
     if (options.exitCondition) {
       this.loopCondition = options.exitCondition;
+    } else {
+      // Set loopCondition to a non-function value to trigger the warning
+      this.loopCondition = null as any;
     }
     if (options.maxIterations !== undefined) {
       this.maxIterations = options.maxIterations;
     }
+    
+    // Add factory methods
+    return addFactoryMethods(this);
   }
 
 

@@ -1,6 +1,7 @@
 import type { Session } from '../types';
 import type { Template } from './interfaces';
-import { CompositeTemplateBase } from './composite_base';
+import { CompositeTemplateBase } from './template_interfaces';
+import { addFactoryMethods } from './composite_base';
 
 /**
  * A template that executes a sequence of templates in order.
@@ -18,6 +19,9 @@ export class Sequence<
     if (templates) {
       this.templates = [...templates];
     }
+    
+    // Add factory methods
+    return addFactoryMethods(this);
   }
 
 }

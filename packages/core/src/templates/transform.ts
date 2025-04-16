@@ -1,10 +1,6 @@
 import type { Session } from '../types';
 import { BaseTemplate } from './interfaces';
-
-// Make TTransformFunction generic
-export type TTransformFunction<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> = (session: Session<T>) => Session<any> | Promise<Session<any>>; // Return Session<any> to allow metadata changes
+import type { TTransformFunction } from './template_types';
 
 // Make params interface generic
 export interface ITransformTemplateParams<

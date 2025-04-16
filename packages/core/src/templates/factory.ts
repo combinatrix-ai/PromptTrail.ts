@@ -8,9 +8,10 @@ import { Assistant } from './assistant';
 import { Conditional } from './conditional';
 import { Loop } from './loop';
 import { Sequence } from './sequence';
-import { Subroutine, ISubroutineTemplateOptions } from './subroutine';
-import { Transform, TTransformFunction } from './transform'; // Correct import
+import { Subroutine } from './subroutine';
+import { Transform } from './transform';
 import type { Session } from '../types';
+import type { TTransformFunction, ISubroutineTemplateOptions } from './template_types';
 
 /**
  * Factory methods for creating templates
