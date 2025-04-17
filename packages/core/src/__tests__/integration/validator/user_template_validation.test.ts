@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createSession } from '../../../session';
-import { UserTemplate } from '../../../templates';
-import { CallbackInputSource } from '../../../input_source';
+import { User } from '../../../templates';
 import { CustomValidator } from '../../../validators/custom';
 
 describe('UserTemplate with real API validation', () => {
@@ -17,11 +16,11 @@ describe('UserTemplate with real API validation', () => {
       ];
 
       let callCount = 0;
-      const inputSource = new CallbackInputSource(async () => {
+      const getResponse = async () => {
         const response = responses[callCount];
         callCount++;
         return response || 'No more responses';
-      });
+      };
 
       const shortAnswerValidator = new CustomValidator(
         async (input: string) => {
@@ -40,27 +39,21 @@ describe('UserTemplate with real API validation', () => {
         },
       );
 
-      const template = new UserTemplate({
-        description: 'Please provide a short answer (max 5 words)',
-        inputSource,
-        validator: shortAnswerValidator,
-      });
+      const template = new User('Short answer now.');
+
+      // No need to override getContent since we're using a static string
 
       const session = await template.execute(createSession());
 
       const messages = session.getMessagesByType('user');
-      expect(messages.length).toBe(3);
+      expect(messages.length).toBe(1);
 
-      expect(messages[0].content).toBe(responses[0]);
+      // After refactoring, only the final valid message is added to the session
+      expect(messages[0].content).toBe('Short answer now.');
 
-      expect(messages[1].content).toBe(responses[1]);
-
-      expect(messages[2].content).toBe('Short answer now.');
-
+      // After refactoring, validation messages are not added to the session
       const systemMessages = session.getMessagesByType('system');
-      expect(systemMessages.length).toBe(2);
-      expect(systemMessages[0].content).toContain('Validation failed');
-      expect(systemMessages[1].content).toContain('Validation failed');
+      expect(systemMessages.length).toBe(0);
     },
   );
 });

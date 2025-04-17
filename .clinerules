@@ -9,14 +9,17 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
   - Current implementation may have bugs
   - Investigate core code if results are unexpected
 - First, read README.md in the root directory. This covers the high-level architecture and design.
+- Second, read coding_agent.ts in example directory. This covers basic usage.
 - Usage of ai-sdk is written in ai-sdk.test.ts
 
 ## Build & Test Commands
 
 - Build all packages: `pnpm -r build`
-- Run all tests: `pnpm test:cline`
-- Run single test: `cd packages/core && pnpm exec vitest --run --watch=false src/__tests__/filename.test.ts`
-- Run tests with pattern: `cd packages/core && pnpm exec vitest --run --watch=false "pattern"`
+- To run test, you cannot run pnpm vitest diirectly by the restriction of your environement.
+  - Always create tmpfile and redirect all output to txt and when everything ends, cat it. You cannot get complex stdout / stderr output.
+  - Run all tests: `pnpm test:cline`
+    - This will run `tmpfile="/tmp/vitest_output_$(date +%s%N).log" && pnpm exec vitest --run --watch=false 2>&1 > "$tmpfile"; cat "$tmpfile" && rm "$tmpfile"`
+  - Run single test: `cd packages/core && tmpfile="/tmp/vitest_output_$(date +%s%N).log" && pnpm exec vitest --run --watch=false src/__tests__/filename.test.ts 2>&1 > "$tmpfile"; cat "$tmpfile" && rm "$tmpfile`
 - Check types: `pnpm -C packages/core typecheck`
 - Lint code: `pnpm lint` (fix issues) or `pnpm lint:check`
 - Format code: `pnpm format` (fix) or `pnpm format:check`

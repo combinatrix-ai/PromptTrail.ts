@@ -5,25 +5,30 @@
   "description": "PromptTrail: A lightweight library for Prompt Programming, Agent as Code",
   "type": "module",
   "scripts": {
+    "dump:ts": "find examples packages -type f -name \"*.ts\" ! -path \"*/node_modules/*\" -print0 | while IFS= read -r -d '' file; do echo -e \"\\`\\`\\`ts\\n// $file\\n\"; cat \"$file\"; echo -e \"\\n\\`\\`\\`\\n\"; done > /tmp/ts_files.txt",
+    "dump:ts:copy": "pnpm dump:ts && cat /tmp/ts_files.txt | pbcopy",
     "build": "pnpm -r build",
     "test": "vitest --run --watch=false",
-    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
+    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1; cat \"$tmpfile\" && rm \"$tmpfile\"",
     "readme:test": "node scripts/generate-readme-tests.js && vitest run --config vitest.readme.config.ts readme.test.ts",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm run lint:check && pnpm run format:check"
+    "check": "pnpm run lint:check && pnpm run format:check",
+    "context": "bun run context.ts packages/core/ md ts | tee context.txt"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
     "@types/node": "^20.17.19",
     "@typescript-eslint/eslint-plugin": "^8.24.1",
     "@typescript-eslint/parser": "^8.24.1",
+    "clipboardy": "^4.0.0",
     "eslint": "^9.22.0",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-unused-imports": "^4.1.4",
     "globals": "^16.0.0",
+    "ignore": "^7.0.3",
     "prettier": "^3.5.2",
     "ts-node": "^10.9.2",
     "tsup": "^8.3.6",
@@ -40,9 +45,15 @@
     "@ai-sdk/anthropic": "^1.1.19",
     "@ai-sdk/openai": "^1.2.7",
     "@anthropic-ai/sdk": "^0.36.3",
+    "@prompttrail/core": "link:packages/core",
     "ai": "^4.1.64",
     "nanoid": "^5.1.3",
     "openai": "^4.85.4",
     "zustand": "^5.0.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@prompttrail/core": "link:packages/core"
+    }
   }
 }

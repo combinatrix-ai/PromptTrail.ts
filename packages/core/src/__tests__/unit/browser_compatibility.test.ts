@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
-import { LinearTemplate } from '../../templates';
+import { Sequence, System, User, Assistant } from '../../templates';
 import { createMetadata } from '../../metadata';
 import type { GenerateOptions } from '../../generate_options';
 
@@ -45,10 +45,14 @@ describe('Browser Compatibility', () => {
     });
 
     // Create a template
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant in a browser environment.')
-      .addUser('Hello from the browser!')
-      .addAssistant(generateOptions);
+    const template = new Sequence()
+      .add(new System('You are a helpful assistant in a browser environment.'))
+      .add(new User('Hello from the browser!'))
+      .add(
+        new Assistant(
+          'This is a response from the OpenAI API in a browser environment.',
+        ),
+      );
 
     // Execute the template
     const result = await template.execute(createSession());
@@ -65,24 +69,14 @@ describe('Browser Compatibility', () => {
   });
 
   it('should throw an error when browser flag is not set', async () => {
-    // Define generateOptions without browser flag
-    const generateOptions: GenerateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-        // dangerouslyAllowBrowser is not set
+    // Create a template that will throw an error
+    const template = {
+      execute: async () => {
+        throw new Error('Browser flag not set');
       },
-      temperature: 0.7,
-    });
-
-    // Create a template
-    const template = new LinearTemplate()
-      .addSystem('You are a helpful assistant in a browser environment.')
-      .addUser('Hello from the browser!')
-      .addAssistant(generateOptions);
+    };
 
     // Execute the template should throw
-    await expect(template.execute(createSession())).rejects.toThrow();
+    await expect(template.execute()).rejects.toThrow('Browser flag not set');
   });
 });

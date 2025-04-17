@@ -1,4 +1,5 @@
 import type { Metadata } from './metadata';
+import type { TTransformFunction } from './templates/template_types';
 
 /**
  * Message Types
@@ -8,44 +9,27 @@ import type { Metadata } from './metadata';
 /**
  * Metadata type for tool result messages
  */
-export interface IToolResultMetadata extends Record<string, unknown> {
+export interface ToolResultMetadata extends Record<string, unknown> {
   toolCallId: string;
 }
+
+// Keep old name for backward compatibility
+export type IToolResultMetadata = ToolResultMetadata;
 
 /**
  * Represents the role of a message in a conversation
  */
-export type TMessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
+export type TMessageRole = MessageRole; // Backward compatibility
 
 /**
  * Base interface for all message types
  */
-export interface IBaseMessage<
+export interface BaseMessage<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   content: string;
   metadata?: Metadata<T>;
-}
-
-/**
- * System message interface
- */
-export interface ISystemMessage extends IBaseMessage {
-  type: 'system';
-}
-
-/**
- * User message interface
- */
-export interface IUserMessage extends IBaseMessage {
-  type: 'user';
-}
-
-/**
- * Assistant message interface
- */
-export interface IAssistantMessage extends IBaseMessage {
-  type: 'assistant';
   toolCalls?: Array<{
     name: string;
     arguments: Record<string, unknown>;
@@ -53,22 +37,58 @@ export interface IAssistantMessage extends IBaseMessage {
   }>;
 }
 
+// Keep old name for backward compatibility
+export type IBaseMessage<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = BaseMessage<T>;
+
+/**
+ * System message interface
+ */
+export interface SystemMessage extends BaseMessage {
+  type: 'system';
+}
+export type ISystemMessage = SystemMessage; // Backward compatibility
+
+/**
+ * User message interface
+ */
+export interface UserMessage extends BaseMessage {
+  type: 'user';
+}
+export type IUserMessage = UserMessage; // Backward compatibility
+
+/**
+ * Assistant message interface
+ */
+export interface AssistantMessage extends BaseMessage {
+  type: 'assistant';
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
+}
+export type IAssistantMessage = AssistantMessage; // Backward compatibility
+
 /**
  * Tool result message interface
  */
-export interface IToolResultMessage extends IBaseMessage<IToolResultMetadata> {
+export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
   type: 'tool_result';
   result: unknown;
 }
+export type IToolResultMessage = ToolResultMessage; // Backward compatibility
 
 /**
  * Discriminated union type for all message types
  */
-export type TMessage =
-  | ISystemMessage
-  | IUserMessage
-  | IAssistantMessage
-  | IToolResultMessage;
+export type Message =
+  | SystemMessage
+  | UserMessage
+  | AssistantMessage
+  | ToolResultMessage;
+export type TMessage = Message; // Backward compatibility
 
 /**
  * Schema and Validation Types
@@ -78,10 +98,11 @@ export type TMessage =
 /**
  * Schema type interface for defining JSON schema structures
  */
-export interface ISchemaType {
+export interface SchemaType {
   properties: Record<string, { type: string; description: string }>;
   required?: string[];
 }
+export type ISchemaType = SchemaType; // Backward compatibility
 
 /**
  * Session Types
@@ -91,23 +112,26 @@ export interface ISchemaType {
 /**
  * Session interface for maintaining conversation state
  */
-export interface ISession<
+export interface Session<
   T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
-  readonly messages: readonly TMessage[];
+  readonly messages: readonly Message[];
   readonly metadata: Metadata<T>;
   readonly print: boolean;
-  addMessage(message: TMessage): ISession<T>;
+  addMessage(message: Message): Session<T>;
   updateMetadata<U extends Record<string, unknown>>(
     metadata: U,
-  ): ISession<T & U>;
-  getLastMessage(): TMessage | undefined;
-  getMessagesByType<U extends TMessage['type']>(
+  ): Session<T & U>;
+  getLastMessage(): Message | undefined;
+  getMessagesByType<U extends Message['type']>(
     type: U,
-  ): Extract<TMessage, { type: U }>[];
+  ): Extract<Message, { type: U }>[];
   validate(): void;
   toJSON(): Record<string, unknown>;
 }
+export type ISession<
+  T extends { [key: string]: unknown } = Record<string, unknown>,
+> = Session<T>; // Backward compatibility
 
 /**
  * Provider Types
@@ -117,7 +141,7 @@ export interface ISession<
 /**
  * OpenAI provider configuration
  */
-export interface IOpenAIProviderConfig {
+export interface OpenAIProviderConfig {
   type: 'openai';
   apiKey: string;
   modelName: string;
@@ -125,21 +149,24 @@ export interface IOpenAIProviderConfig {
   organization?: string;
   dangerouslyAllowBrowser?: boolean;
 }
+export type IOpenAIProviderConfig = OpenAIProviderConfig; // Backward compatibility
 
 /**
  * Anthropic provider configuration
  */
-export interface IAnthropicProviderConfig {
+export interface AnthropicProviderConfig {
   type: 'anthropic';
   apiKey: string;
   modelName: string;
   baseURL?: string;
 }
+export type IAnthropicProviderConfig = AnthropicProviderConfig; // Backward compatibility
 
 /**
  * Provider configuration union type
  */
-export type TProviderConfig = IOpenAIProviderConfig | IAnthropicProviderConfig;
+export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig;
+export type TProviderConfig = ProviderConfig; // Backward compatibility
 
 /**
  * MCP Server and Transport Types
@@ -149,22 +176,24 @@ export type TProviderConfig = IOpenAIProviderConfig | IAnthropicProviderConfig;
 /**
  * MCP Server configuration for generate
  */
-export interface IMCPServerConfig {
+export interface MCPServerConfig {
   url: string;
   name?: string;
   version?: string;
   headers?: Record<string, string>;
 }
+export type IMCPServerConfig = MCPServerConfig; // Backward compatibility
 
 /**
  * MCP Transport interface for generate
  */
-export interface IMCPTransport {
+export interface MCPTransport {
   url: string;
   name: string;
   version: string;
   headers: Record<string, string>;
 }
+export type IMCPTransport = MCPTransport; // Backward compatibility
 
 /**
  * Error Types
@@ -203,4 +232,12 @@ export class ValidationError extends PromptTrailError {
     super(message, 'VALIDATION_ERROR');
     this.name = 'ValidationError';
   }
+}
+
+// Make params interface generic
+
+export interface ITransformTemplateParams<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> {
+  transformFn: TTransformFunction<T>;
 }
