@@ -15,5 +15,5 @@ export { Subroutine as Subroutine } from './subroutine';
 // Export factory methods
 export { TemplateFactory } from './factory';
 
-// Alias Sequence as Agent for backward compatibility
+// Alias Sequence as Agent for user convenience
 export { Sequence as Agent } from './sequence';

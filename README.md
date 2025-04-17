@@ -39,13 +39,15 @@ yarn add github:combinatrix-ai/PromptTrail.ts
 ```typescript
 import {
   Agent,
+  System,
+  User,
+  Assistant,
   createSession,
   createGenerateOptions,
-  type GenerateOptions,
 } from '@prompttrail/core';
 
 // Define generateOptions for OpenAI
-const generateOptions = createGenerateOptions({
+const openAIgenerateOptions = createGenerateOptions({
   provider: {
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY,
@@ -58,7 +60,7 @@ const generateOptions = createGenerateOptions({
 const chat = new Agent()
   .addSystem("I'm a helpful assistant.")
   .addUser("What's TypeScript?")
-  .addAssistant({ generateOptions: generateOptions });
+  .addAssistant(openAIgenerateOptions);
 
 // Execute the template
 const session = await chat.execute(
@@ -129,21 +131,23 @@ This approach provides compile-time guarantees, excellent IDE support, and helps
 Templates are the core building blocks for creating conversation flows:
 
 ```typescript
+import { Agent, System, User, Assistant, CLISource, createSession } from '@prompttrail/core';
+
 // Create a personalized chat with metadata interpolation
 interface UserInfo {
   name: string;
   language: string;
 }
 
-const techSupportFlow = new Agent()
+const techSupportFlow = new Agent<UserInfo>()
   // Build template with fluent API
   .addSystem("You're a helpful programming assistant.")
   // Interpolate from metadata
-  .addAssistant('Hi ${name}, ready to dive into ${language}?')
+  .addAssistant('Hello, ${name}! Ready to dive into ${language}?')
   // Get input from user
-  .addUser({ inputSource: new CLIInputSource() })
-  // Generate response using your custom generation logic
-  .addAssistant({ generateOptions: generateOptions });
+  .addUser(new CLISource('Enter your question: '))
+  // Generate response using your custom generation options
+  .addAssistant(openAIgenerateOptions);
 
 const session = await techSupportFlow.execute(
   // Pass metadata into the session
@@ -158,7 +162,7 @@ const session = await techSupportFlow.execute(
 
 // Console Output:
 //     System: You're a helpful programming assistant.
-//     Assistant: Hi Alice, ready to dive into TypeScript?
+//     Assistant: Hello, Alice! Ready to dive into TypeScript?
 //     User: What's tricky about type inference?
 //     Assistant: Alice, one tricky part of type inference is when unions are involved—TypeScript can lose precision. Want me to walk you through an example?
 ```
@@ -168,15 +172,18 @@ const session = await techSupportFlow.execute(
 You can build complex control flow easily with code.
 
 ```typescript
-const quiz = new Agent()
+import { Sequence, System, User, Assistant, Loop, Conditional, Subroutine, createSession } from '@prompttrail/core';
+
+const quiz = new Sequence()
+  // Agent is an alias of Sequence. This is a simple linearly conversation flow
   .addSystem("I'm your TypeScript quiz master!")
   // Start quiz loop
   .addLoop(
-    new LoopTemplate()
+    new Sequence()
       .addUser('Ready for a question?')
-      .addAssistant({ generateOptions: generateOptions })
+      .addAssistant(openAIgenerateOptions)
       .addUser('What is generics in TypeScript?')
-      .addAssistant({ generateOptions: generateOptions })
+      .addAssistant(openAIgenerateOptions)
       .addUser('Another question? (yes/no)')
       // If user answer `no`, quit the loop
       .setExitCondition(
@@ -185,23 +192,22 @@ const quiz = new Agent()
           false,
       ),
   )
-  // If the user said `no` in the first round only
-  .addIf({
-    condition: (session) => {
-      const messages = session.getMessages();
+  // Add conditional logic based on session state
+  .addIf(
+    (session) => {
+      const messages = Array.from(session.messages);
       const anotherQuestionCount = messages.filter((msg) =>
         msg.content.toLowerCase().includes('another question?'),
       ).length;
       return anotherQuestionCount === 1;
     },
-    // Create child subroutine like function call
-    thenTemplate: new Subroutine({
-      // Note: Agent is alias of Sequence
-      template: new Sequence()
+    // If condition is true, execute this template
+    new Subroutine(
+      new Sequence()
         .addSystem("Hmm, don't you like answering quizzes?")
         .addUser('Then you give *me* a TypeScript quiz!')
         .addAssistant({ generateOptions: generateOptions }),
-      // Decid which information to passed to child template and merge to parent
+      // Decide which information to passed to child template and merge to parent
       initWith: (parent) => parent.clone(),
       squashWith: (parent, child) => parent.merge(child),
     }),
@@ -210,7 +216,6 @@ const quiz = new Agent()
 
 const session = await quiz.execute(
   createSession({
-    metadata: {},
     print: true,
   }),
 );
@@ -218,13 +223,15 @@ const session = await quiz.execute(
 
 ### 🤖 Model Configuration
 
-PromptTrail uses a unified approach to model configuration through `generateOptions`, which is passed to the `generateText` function. This approach is inspired by [Vercel's AI SDK](https://github.com/vercel/ai), a popular unified LLM framework.
+PromptTrail uses a unified approach to model configuration through `generateOptions`, which can be created with the `createGenerateOptions` function and passed to templates.
 
 Configure models with provider-specific options:
 
 ```typescript
+import { createGenerateOptions } from '@prompttrail/core';
+
 // OpenAI configuration
-const openaiOptions: GenerateOptions = {
+const openAIgenerateOptions = createGenerateOptions({
   provider: {
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY,
@@ -232,20 +239,20 @@ const openaiOptions: GenerateOptions = {
   },
   temperature: 0.7,
   maxTokens: 1000,
-};
+});
 
 // Anthropic configuration
-const anthropicOptions: GenerateOptions = {
+const anthropicGenerateOptions = createGenerateOptions({
   provider: {
     type: 'anthropic',
     apiKey: process.env.ANTHROPIC_API_KEY,
     modelName: 'claude-3-5-haiku-latest',
   },
   temperature: 0.5,
-};
+});
 
 // Anthropic with MCP integration
-const anthropicMcpOptions: GenerateOptions = {
+const anthropicMcpOptions = createGenerateOptions({
   provider: {
     type: 'anthropic',
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -267,6 +274,8 @@ const anthropicMcpOptions: GenerateOptions = {
 Manage conversation state with immutable sessions and in-place templating:
 
 ```typescript
+import { createSession, createMetadata } from '@prompttrail/core';
+
 // Create a session with metadata for templating
 const session = createSession({
   metadata: {
@@ -279,7 +288,7 @@ const session = createSession({
 });
 
 // Templates use ${variable} syntax for direct interpolation
-const template = new Agent()
+const template = new Sequence()
   .addSystem("I'll use ${tone} language to explain ${topics[0]}")
   .addAssistant('Let me explain ${topics[0]} in ${language}')
   .addUser('Can you also cover ${topics[1]}?');
@@ -301,7 +310,6 @@ const newSession = updatedSession.updateMetadata({
 
 // Serialize/deserialize
 const json = newSession.toJSON();
-const restored = Session.fromJSON(json);
 ```
 
 ### 🌊 Streaming Responses
@@ -309,8 +317,10 @@ const restored = Session.fromJSON(json);
 Process model responses in real-time:
 
 ```typescript
+import { generateTextStream } from '@prompttrail/core';
+
 // Stream responses chunk by chunk
-for await (const chunk of generateTextStream(session, generateOptions)) {
+for await (const chunk of generateTextStream(session, openAIgenerateOptions)) {
   process.stdout.write(chunk.content);
 }
 ```
@@ -325,18 +335,7 @@ import {
   createSession,
   extractMarkdown,
   extractPattern,
-  type GenerateOptions,
 } from '@prompttrail/core';
-
-// Define generateOptions for OpenAI
-const generateOptions: GenerateOptions = {
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-};
 
 // Create a template that extracts structured data from responses
 const codeTemplate = new Sequence()
@@ -346,17 +345,17 @@ const codeTemplate = new Sequence()
   .addUser(
     'Write a function to calculate the factorial of a number with explanation.',
   )
-  .addAssistant({ generateOptions })
+  .addAssistant(openAIgenerateOptions)
   // Extract markdown headings and code blocks
-  .addTransformer(
-    extractMarkdown({
+  .addTransform((session) => {
+    return extractMarkdown({
       headingMap: {
         Explanation: 'explanation',
         'Usage Example': 'usageExample',
       },
       codeBlockMap: { typescript: 'code' },
-    }),
-  );
+    }).transform(session);
+  });
 
 // Execute the template
 const session = await codeTemplate.execute(createSession());
@@ -368,8 +367,8 @@ console.log('Explanation:', session.metadata.get('explanation'));
 // You can also extract data using regex patterns
 const dataTemplate = new Sequence()
   .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
-  .addTransformer(
-    extractPattern([
+  .addTransform((session) => {
+    return extractPattern([
       {
         pattern: /IP ([\d\.]+)/,
         key: 'ipAddress',
@@ -379,8 +378,8 @@ const dataTemplate = new Sequence()
         key: 'uptime',
         transform: (value) => parseFloat(value) / 100,
       },
-    ]),
-  );
+    ]).transform(session);
+  });
 
 const dataSession = await dataTemplate.execute(createSession());
 console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
@@ -395,61 +394,50 @@ Validate and ensure quality of both user input and LLM responses with a unified 
 import {
   Sequence,
   createSession,
-  createGenerateOptions,
   RegexMatchValidator,
   KeywordValidator,
   LengthValidator,
   AllValidator,
-  AnyValidator,
   JsonValidator,
+  CustomValidator,
 } from '@prompttrail/core';
 
 // Create validators to ensure responses meet criteria
-const validators = [
-  // Ensure response is a single word with only letters
-  new RegexMatchValidator({
-    regex: /^[A-Za-z]+$/,
-    description: 'Response must be a single word with only letters',
-  }),
+const singleWordValidator = new RegexMatchValidator({
+  regex: /^[A-Za-z]+$/,
+  description: 'Response must be a single word with only letters',
+});
 
-  // Ensure response is between 3 and 10 characters
-  new LengthValidator({
-    min: 3,
-    max: 10,
-    description: 'Response must be between 3 and 10 characters',
-  }),
+// Length validator
+const lengthValidator = new LengthValidator({
+  min: 3,
+  max: 10,
+  description: 'Response must be between 3 and 10 characters',
+});
 
-  // Ensure response doesn't contain inappropriate words
-  new KeywordValidator({
-    keywords: ['inappropriate', 'offensive'],
-    mode: 'exclude',
-    description: 'Response must not be inappropriate',
-  }),
-];
+// Keyword validator
+const appropriateValidator = new KeywordValidator({
+  keywords: ['inappropriate', 'offensive'],
+  mode: 'exclude',
+  description: 'Response must not be inappropriate',
+});
 
 // Combine all validators with AND logic
-const combinedValidator = new AllValidator(validators);
-
-// Define generateOptions for OpenAI
-const generateOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-});
+const combinedValidator = new AllValidator(
+  [singleWordValidator, lengthValidator, appropriateValidator],
+  {
+    description: 'Combined validation for pet names',
+    maxAttempts: 3,
+    raiseErrorAfterMaxAttempts: true,
+  }
+);
 
 // Create a template that asks for a pet name with validation
 const petNameTemplate = new Sequence()
   .addSystem('You are a helpful assistant that suggests pet names.')
   .addUser('Suggest a name for a pet cat.')
-  // Add assistant with validator directly
-  .addAssistant({
-    generateOptions,
-    validator: combinedValidator,
-    maxAttempts: 3,
-  });
+  // Add assistant with validator
+  .addAssistant('Whiskers', combinedValidator);
 
 // Execute the template
 const session = await petNameTemplate.execute(createSession());
@@ -457,41 +445,34 @@ const session = await petNameTemplate.execute(createSession());
 // Get the final response
 console.log('Pet name:', session.getLastMessage()?.content);
 
-// You can also use other validator types:
-// JSON validation
-const jsonValidator = new JsonValidator({
-  description: 'Response must be valid JSON',
-});
-
-// Regex no-match validation
-const noNumbersValidator = new RegexNoMatchValidator({
-  regex: /\d+/,
-  description: 'Response must not contain numbers',
-});
-
-// OR logic with AnyValidator
-const anyValidator = new AnyValidator(
-  [
-    new RegexMatchValidator({ regex: /^[A-Z]/ }),
-    new RegexMatchValidator({ regex: /!$/ }),
-  ],
-  {
-    description:
-      'Response must either start with a capital letter OR end with an exclamation mark',
+// You can also use a custom validator with your own validation logic
+const customValidator = new CustomValidator(
+  (content, context) => {
+    // Custom validation logic
+    const wordCount = content.split(/\s+/).filter(Boolean).length;
+    return wordCount <= 5
+      ? { isValid: true }
+      : {
+          isValid: false,
+          instruction: `Your answer must be 5 words or less (current: ${wordCount} words)`,
+        };
   },
+  {
+    description: 'Please provide a short answer (max 5 words)',
+    maxAttempts: 3,
+    raiseErrorAfterMaxAttempts: true,
+  }
 );
 
-// Use validators with InputSource for user input validation
+// Add a user input with validation
 const userInputTemplate = new Sequence()
   .addSystem('You are a helpful assistant.')
-  .addUser({
-    inputSource: new CLIInputSource(),
-    validate: async (input) => {
-      // Custom validation logic for user input
-      return input.length > 0 && !input.includes('bad word');
-    },
+  .addUser(new CLISource('Enter your response (5 words or less): '), {
+    validator: customValidator,
+    maxAttempts: 3,
+    raiseError: true,
   })
-  .addAssistant({ generateOptions });
+  .addAssistant(openAIgenerateOptions);
 ```
 
 ### 🧩 Schema Validation
@@ -502,58 +483,37 @@ Force LLMs to produce structured outputs using schemas:
 import {
   Sequence,
   createSession,
-  defineSchema,
-  createStringProperty,
-  createNumberProperty,
-  createBooleanProperty,
-  type GenerateOptions,
+  SchemaSource,
+  createGenerateOptions,
 } from '@prompttrail/core';
 import { z } from 'zod';
 
-// Option 1: Using PromptTrail's native schema format
-const productSchema = defineSchema({
-  properties: {
-    name: createStringProperty('The name of the product'),
-    price: createNumberProperty('The price of the product in USD'),
-    inStock: createBooleanProperty('Whether the product is in stock'),
-    description: createStringProperty('A short description of the product'),
-  },
-  required: ['name', 'price', 'inStock'],
+// Define a schema using Zod
+const productSchema = z.object({
+  name: z.string().describe('The name of the product'),
+  price: z.number().describe('The price of the product in USD'),
+  inStock: z.boolean().describe('Whether the product is in stock'),
+  description: z.string().describe('A short description of the product'),
 });
 
-// Option 2: Using Zod schemas (more powerful validation)
-const userSchema = z.object({
-  username: z.string().min(3).max(20).describe('Username (3-20 characters)'),
-  email: z.string().email().describe('Valid email address'),
-  age: z.number().int().min(18).max(120).describe('Age (must be 18 or older)'),
-  roles: z.array(z.enum(['admin', 'user', 'moderator'])).describe('User roles'),
-  settings: z
-    .object({
-      darkMode: z.boolean().describe('Dark mode preference'),
-      notifications: z.boolean().describe('Notification preference'),
-    })
-    .describe('User settings'),
-});
-
-// Define generateOptions for Anthropic
-const generateOptions: GenerateOptions = {
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-    modelName: 'claude-3-5-haiku-latest',
-  },
-  temperature: 0.7,
-};
+// Create a SchemaSource with the schema
+const productSchemaSource = new SchemaSource(
+  openAIgenerateOptions,
+  productSchema,
+  {
+    functionName: 'extractProduct',
+    maxAttempts: 3,
+    raiseError: true,
+  }
+);
 
 // Create a template with schema validation
 const template = new Sequence()
   .addSystem('Extract product information from the text.')
   .addUser(
-    'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock.',
-  );
-
-// Add schema validation (works with both native schemas and Zod schemas)
-await template.addSchema(productSchema, { generateOptions, maxAttempts: 3 });
+    'The new iPhone 15 Pro costs $999 and comes with a titanium frame. It is currently in stock.'
+  )
+  .addAssistant(productSchemaSource);
 
 // Execute the template
 const session = await template.execute(createSession());
@@ -568,22 +528,22 @@ console.log(`Product: ${product.name} - $${product.price}`);
 console.log(`In Stock: ${product.inStock ? 'Yes' : 'No'}`);
 ```
 
-This feature is inspired by [Zod-GPT](https://github.com/dzhng/zod-gpt) but has been reimplemented and enhanced for PromptTrail with TypeScript-first design.
-
 ### 🛠️ Tool Integration
 
 Extend LLM capabilities with function calling:
 
 ```typescript
+import { Sequence, createSession, tool } from '@prompttrail/core';
+import { z } from 'zod';
+
 // Define a weather forecast tool
-const weather_forecast = new tool({
+const weatherTool = tool({
   description: 'Get weather information',
   parameters: z.object({
     location: z.string().describe('Location to get weather information for'),
   }),
   execute: async (input: { location: string }) => {
     const location = input.location;
-    // const _weatherCondition = '72°F and Thunderstorms';
     const forecast = [
       'Today: Thunderstorms',
       'Tomorrow: Cloudy',
@@ -598,23 +558,18 @@ const weather_forecast = new tool({
   },
 });
 
-// Define generateOptions with tools
-const generateOptions: GenerateOptions = {
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-  tools: [weather_forecast],
-};
+// Add the tool to generateOptions
+const toolEnhancedOptions = openAIgenerateOptions.clone()
+  .addTool('weather', weatherTool)
+  .setToolChoice('auto');
 
 const weatherTemplate = new Sequence()
   .addSystem("I'm a weather assistant.")
   .addUser("What's the weather like in New York?")
-  .addAssistant({ generateOptions });
+  .addAssistant(toolEnhancedOptions);
 
-await weatherTemplate.execute(createSession());
+const session = await weatherTemplate.execute(createSession());
+console.log(session.getLastMessage()?.content);
 ```
 
 ### 🔌 MCP Support
@@ -623,7 +578,7 @@ PromptTrail provides comprehensive support for Anthropic's Model Context Protoco
 
 ```typescript
 import {
-  generateText, // ai-sdk wrapper
+  generateText,
   createGenerateOptions,
   createSession,
 } from '@prompttrail/core';
@@ -658,17 +613,13 @@ const response = await generateText(session, options);
 console.log(response.content);
 ```
 
-This implementation leverages the Vercel AI SDK's experimental MCP client to provide seamless integration with MCP servers. The `addMCPServer` method allows you to easily add and configure multiple MCP servers for enhanced model capabilities.
-
-MCP tools are automatically discovered and made available to the model, enabling it to access external data sources and APIs without additional coding.
-
 ## 🌐 Browser Support
 
 PromptTrail works in browser environments with a simple configuration flag:
 
 ```typescript
 // Browser-compatible configuration
-const generateOptions: GenerateOptions = {
+const browserOptions = createGenerateOptions({
   provider: {
     type: 'openai',
     apiKey: 'YOUR_API_KEY', // In production, fetch from your backend
@@ -676,10 +627,14 @@ const generateOptions: GenerateOptions = {
     dangerouslyAllowBrowser: true, // Required for browser usage
   },
   temperature: 0.7,
-};
-```
+});
 
-For a complete React implementation, check out our [React Chat Example](examples/react-chat).
+// Use with templates as normal
+const browserTemplate = new Sequence()
+  .addSystem('You are a helpful assistant.')
+  .addUser('Hello!')
+  .addAssistant(browserOptions);
+```
 
 ## 👥 Contributing
 

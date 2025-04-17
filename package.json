@@ -15,7 +15,8 @@
     "lint:check": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm run lint:check && pnpm run format:check"
+    "check": "pnpm run lint:check && pnpm run format:check",
+    "context": "bun run context.ts packages/core/ md ts | tee context.txt"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
