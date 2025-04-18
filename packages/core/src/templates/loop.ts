@@ -1,7 +1,7 @@
 import type { Session } from '../types';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
-import { addFactoryMethods } from './composite_base';
+import { addFactoryMethods, ICompositeTemplateFactoryMethods } from './composite_base';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
@@ -9,7 +9,7 @@ import { addFactoryMethods } from './composite_base';
  */
 export class Loop<
   T extends Record<string, unknown> = Record<string, unknown>,
-> extends CompositeTemplateBase<T, T> {
+> extends CompositeTemplateBase<T, T> implements ICompositeTemplateFactoryMethods<Loop<T>> {
   /**
    * Creates a new Loop template.
    * @param options - Configuration options for the loop
@@ -69,4 +69,23 @@ export class Loop<
     this.maxIterations = maxIterations;
     return this;
   }
+
+  // Declare the factory methods to satisfy TypeScript
+  addSystem!: (content: string | import('../content_source').Source<string>) => this;
+  addUser!: (content: string | import('../content_source').Source<string>) => this;
+  addAssistant!: (content: string | import('../content_source').Source<import('../content_source').ModelOutput> | import('../generate_options').GenerateOptions) => this;
+  addTransform!: (transformFn: import('./template_types').TTransformFunction<any>) => this;
+  addIf!: (
+    condition: (session: Session) => boolean,
+    thenTemplate: Template<any, any>,
+    elseTemplate?: Template<any, any>,
+  ) => this;
+  addLoop!: (
+    bodyTemplate: Template<any, any>,
+    exitCondition: (session: Session) => boolean,
+  ) => this;
+  addSubroutine!: (
+    templateOrTemplates: Template<any, any> | Template<any, any>[],
+    options?: import('./template_types').ISubroutineTemplateOptions<any, any>,
+  ) => this;
 }

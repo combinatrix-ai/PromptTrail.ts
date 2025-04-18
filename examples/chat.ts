@@ -1,9 +1,7 @@
 import {
   Sequence,
-  Loop,
   User,
   Assistant,
-  System,
   createSession,
   createGenerateOptions,
   CLISource,
@@ -25,32 +23,26 @@ async function main() {
     temperature: 0.7,
   });
 
-  // Create a template to get user input via the CLI source
-  const userTemplate = new User(userCliSource);
 
   // Create the main conversation flow using a Sequence
   const template = new Sequence()
-    .add(
-      new System(
-        'You are a helpful AI assistant. Be concise and friendly in your responses.',
-      ),
+    .addSystem(
+        'You are a helpful AI assistant. Be concise and friendly in your responses.'
     )
-    .add(
-      new Loop({
+    .addLoop(
         // The body of the loop is a Sequence containing the user turn and assistant turn
-        bodyTemplate: new Sequence([
-          userTemplate,
+        new Sequence([
+          // User message from the CLI
+          new User(userCliSource),
+          // Assistant message using the OpenAI model
           new Assistant(generateOptions),
         ]),
-        exitCondition: (session) => {
-          const lastUserMessage = session
-            .getMessagesByType('user')
-            .slice(-1)[0];
+        (session) => {
           // Exit the loop if the user types "exit"
-          return lastUserMessage?.content.toLowerCase().trim() === 'exit';
+          return session.getLastMessage()?.content.toLowerCase().trim() === 'exit';
         },
-      }),
-    );
+    )
+  
 
   // Create an initial session, enabling 'print' to log messages to the console
   const session = createSession({ print: true });
