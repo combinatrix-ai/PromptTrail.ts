@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import type { ISession } from '../../../types'; // Import ISession from types
-import { StaticSource, CallbackSource } from '../../../content_source'; // Added CallbackSource
+import {
+  StaticSource,
+  CallbackSource,
+  RandomSource,
+  ListSource,
+} from '../../../content_source'; // Added CallbackSource, RandomSource, ListSource
 import { createGenerateOptions } from '../../../generate_options';
 import { createMetadata } from '../../../metadata';
 import type { Metadata } from '../../../metadata'; // Use type-only import for Metadata
@@ -648,6 +653,75 @@ describe('Default Content Source', () => {
 
       // Final message count should remain unchanged as CallbackSource doesn't modify it
       expect(session.metadata.get('messageCount')).toBeUndefined(); // Or 0 if initialized
+    });
+  });
+
+  describe('RandomSource and ListSource', () => {
+    it('RandomSource should return a random element from the list', async () => {
+      const contentList = ['message1', 'message2', 'message3'];
+      const randomSource = new RandomSource(contentList);
+      const session = createSession();
+      const content = await randomSource.getContent(session);
+      expect(contentList).toContain(content);
+    });
+
+    it('ListSource should return elements sequentially and error when exhausted by default', async () => {
+      const contentList = ['item1', 'item2'];
+      const listSource = new ListSource(contentList);
+      const session = createSession();
+
+      expect(await listSource.getContent(session)).toBe('item1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false);
+
+      expect(await listSource.getContent(session)).toBe('item2');
+      expect(listSource.getIndex()).toBe(2);
+      expect(listSource.atEnd()).toBe(true);
+
+      // Should throw error when called again
+      await expect(listSource.getContent(session)).rejects.toThrow(
+        'No more content in the ListSource.',
+      );
+      expect(listSource.getIndex()).toBe(2); // Index remains at the end
+      expect(listSource.atEnd()).toBe(true);
+    });
+
+    it('ListSource should loop when loop option is true', async () => {
+      const contentList = ['loop1', 'loop2'];
+      const listSource = new ListSource(contentList, { loop: true });
+      const session = createSession();
+
+      expect(await listSource.getContent(session)).toBe('loop1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false); // atEnd is false when looping
+
+      expect(await listSource.getContent(session)).toBe('loop2');
+      expect(listSource.getIndex()).toBe(2);
+      expect(listSource.atEnd()).toBe(false);
+
+      // Should loop back
+      expect(await listSource.getContent(session)).toBe('loop1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false);
+
+      expect(await listSource.getContent(session)).toBe('loop2');
+      expect(listSource.getIndex()).toBe(2);
+    });
+
+    it('ListSource should handle empty list correctly', async () => {
+      const listSourceNoLoop = new ListSource([]);
+      const listSourceLoop = new ListSource([], { loop: true });
+      const session = createSession();
+
+      await expect(listSourceNoLoop.getContent(session)).rejects.toThrow(
+        'No more content in the ListSource.',
+      );
+      expect(listSourceNoLoop.atEnd()).toBe(true);
+
+      await expect(listSourceLoop.getContent(session)).rejects.toThrow(
+        'ListSource is empty.', // Error message when looping an empty list
+      );
+      expect(listSourceLoop.atEnd()).toBe(false); // atEnd is always false when looping
     });
   });
 });

@@ -37,21 +37,6 @@ export interface ValidationOptions {
 }
 
 /**
- * Custom error for validation failures
- */
-export class ValidationError extends Error {
-  constructor(
-    message: string,
-    public result?: ValidationResult,
-  ) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
-
-// --- Refactored Content Sources ---
-
-/**
  * Base class for all content sources (Renamed from ContentSource)
  */
 export abstract class Source<T = unknown> {
@@ -177,6 +162,88 @@ export class StaticListSource extends TextSource {
 
   async atEnd(): Promise<boolean> {
     return this.index >= this.contentList.length;
+  }
+}
+
+/**
+ * Content source that returns a random element from a predefined list
+ */
+export class RandomSource extends TextSource {
+  constructor(
+    private contentList: string[],
+    options?: ValidationOptions,
+  ) {
+    super(options);
+  }
+
+  async getContent(session: ISession): Promise<string> {
+    const randomIndex = Math.floor(Math.random() * this.contentList.length);
+    return this.contentList[randomIndex];
+  }
+}
+
+/**
+ * Content source that returns elements from a predefined list sequentially.
+ * By default, it throws an error when the list is exhausted.
+ * If `loop` is set to true in options, it restarts from the beginning.
+ */
+export class ListSource extends TextSource {
+  private index: number = 0;
+  private loop: boolean;
+
+  constructor(
+    private contentList: string[],
+    options?: ValidationOptions & { loop?: boolean },
+  ) {
+    super(options);
+    this.loop = options?.loop ?? false;
+  }
+
+  async getContent(session: ISession): Promise<string> {
+    if (this.index < this.contentList.length) {
+      const content = this.contentList[this.index++];
+      // Apply validation if a validator exists
+      const validationResult = await this.validateContent(content, session);
+      if (!validationResult.isValid && this.raiseError) {
+        const errorMessage = `Validation failed for item at index ${this.index - 1}: ${validationResult.instruction || ''}`;
+        throw new ValidationError(errorMessage, validationResult);
+      }
+      // Return content if valid or if raiseError is false
+      return content;
+    } else if (this.loop) {
+      this.index = 0; // Reset index to loop
+      if (this.index < this.contentList.length) {
+        // Check if list is not empty
+        const content = this.contentList[this.index++];
+        // Apply validation if a validator exists
+        const validationResult = await this.validateContent(content, session);
+        if (!validationResult.isValid && this.raiseError) {
+          const errorMessage = `Validation failed for item at index ${this.index - 1} (looping): ${validationResult.instruction || ''}`;
+          throw new ValidationError(errorMessage, validationResult);
+        }
+        // Return content if valid or if raiseError is false
+        return content;
+      } else {
+        // Handle empty list case during loop reset
+        throw new Error('ListSource is empty.');
+      }
+    } else {
+      throw new Error('No more content in the ListSource.');
+    }
+  }
+
+  /**
+   * Gets the current index.
+   */
+  getIndex(): number {
+    return this.index;
+  }
+
+  /**
+   * Checks if the source is at the end of the list (and not looping).
+   */
+  atEnd(): boolean {
+    return !this.loop && this.index >= this.contentList.length;
   }
 }
 
