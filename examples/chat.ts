@@ -23,26 +23,26 @@ async function main() {
     temperature: 0.7,
   });
 
-
   // Create the main conversation flow using a Sequence
   const template = new Sequence()
     .addSystem(
-        'You are a helpful AI assistant. Be concise and friendly in your responses.'
+      'You are a helpful AI assistant. Be concise and friendly in your responses.',
     )
     .addLoop(
-        // The body of the loop is a Sequence containing the user turn and assistant turn
-        new Sequence([
-          // User message from the CLI
-          new User(userCliSource),
-          // Assistant message using the OpenAI model
-          new Assistant(generateOptions),
-        ]),
-        (session) => {
-          // Exit the loop if the user types "exit"
-          return session.getLastMessage()?.content.toLowerCase().trim() === 'exit';
-        },
-    )
-  
+      // The body of the loop is a Sequence containing the user turn and assistant turn
+      new Sequence([
+        // User message from the CLI
+        new User(userCliSource),
+        // Assistant message using the OpenAI model
+        new Assistant(generateOptions),
+      ]),
+      (session) => {
+        // Exit the loop if the user types "exit"
+        return (
+          session.getLastMessage()?.content.toLowerCase().trim() === 'exit'
+        );
+      },
+    );
 
   // Create an initial session, enabling 'print' to log messages to the console
   const session = createSession({ print: true });

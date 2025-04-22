@@ -1,15 +1,19 @@
 import type { Session } from '../types';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
-import { addFactoryMethods, ICompositeTemplateFactoryMethods } from './composite_base';
+import {
+  addFactoryMethods,
+  ICompositeTemplateFactoryMethods,
+} from './composite_base';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
  * @template T - Type of the session metadata
  */
-export class Loop<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> extends CompositeTemplateBase<T, T> implements ICompositeTemplateFactoryMethods<Loop<T>> {
+export class Loop<T extends Record<string, unknown> = Record<string, unknown>>
+  extends CompositeTemplateBase<T, T>
+  implements ICompositeTemplateFactoryMethods<Loop<T>>
+{
   /**
    * Creates a new Loop template.
    * @param options - Configuration options for the loop
@@ -71,10 +75,23 @@ export class Loop<
   }
 
   // Declare the factory methods to satisfy TypeScript
-  addSystem!: (content: string | import('../content_source').Source<string>) => this;
-  addUser!: (content: string | import('../content_source').Source<string>) => this;
-  addAssistant!: (content: string | import('../content_source').Source<import('../content_source').ModelOutput> | import('../generate_options').GenerateOptions) => this;
-  addTransform!: (transformFn: import('./template_types').TTransformFunction<any>) => this;
+  addSystem!: (
+    content: string | import('../content_source').Source<string>,
+  ) => this;
+  addUser!: (
+    content: string | import('../content_source').Source<string>,
+  ) => this;
+  addAssistant!: (
+    content:
+      | string
+      | import('../content_source').Source<
+          import('../content_source').ModelOutput
+        >
+      | import('../generate_options').GenerateOptions,
+  ) => this;
+  addTransform!: (
+    transformFn: import('./template_types').TTransformFunction<any>,
+  ) => this;
   addIf!: (
     condition: (session: Session) => boolean,
     thenTemplate: Template<any, any>,

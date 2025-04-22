@@ -2,7 +2,10 @@ import { createSession } from '../session';
 import type { ISession, Message, Session } from '../types';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
-import { addFactoryMethods, ICompositeTemplateFactoryMethods } from './composite_base';
+import {
+  addFactoryMethods,
+  ICompositeTemplateFactoryMethods,
+} from './composite_base';
 import type { ISubroutineTemplateOptions } from './template_types';
 
 /**
@@ -16,9 +19,12 @@ import type { ISubroutineTemplateOptions } from './template_types';
  * @template S - Type of the subroutine session metadata (Record<string, unknown>).
  */
 export class Subroutine<
-  P extends Record<string, unknown> = Record<string, unknown>,
-  S extends Record<string, unknown> = Record<string, unknown>,
-> extends CompositeTemplateBase<P, P> implements ICompositeTemplateFactoryMethods<Subroutine<P, S>> {
+    P extends Record<string, unknown> = Record<string, unknown>,
+    S extends Record<string, unknown> = Record<string, unknown>,
+  >
+  extends CompositeTemplateBase<P, P>
+  implements ICompositeTemplateFactoryMethods<Subroutine<P, S>>
+{
   public readonly id?: string;
   private readonly retainMessages: boolean;
   private readonly isolatedContext: boolean;
@@ -147,10 +153,23 @@ export class Subroutine<
   }
 
   // Declare the factory methods to satisfy TypeScript
-  addSystem!: (content: string | import('../content_source').Source<string>) => this;
-  addUser!: (content: string | import('../content_source').Source<string>) => this;
-  addAssistant!: (content: string | import('../content_source').Source<import('../content_source').ModelOutput> | import('../generate_options').GenerateOptions) => this;
-  addTransform!: (transformFn: import('./template_types').TTransformFunction<any>) => this;
+  addSystem!: (
+    content: string | import('../content_source').Source<string>,
+  ) => this;
+  addUser!: (
+    content: string | import('../content_source').Source<string>,
+  ) => this;
+  addAssistant!: (
+    content:
+      | string
+      | import('../content_source').Source<
+          import('../content_source').ModelOutput
+        >
+      | import('../generate_options').GenerateOptions,
+  ) => this;
+  addTransform!: (
+    transformFn: import('./template_types').TTransformFunction<any>,
+  ) => this;
   addIf!: (
     condition: (session: Session) => boolean,
     thenTemplate: Template<any, any>,
