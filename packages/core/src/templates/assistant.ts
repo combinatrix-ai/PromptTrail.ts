@@ -1,5 +1,6 @@
-import { createMetadata } from '../metadata';
-import type { Session, AssistantMessage } from '../types';
+import { createContext } from '../context';
+import type { Session } from '../types';
+import type { AssistantMessage } from '../message';
 import { BaseTemplate } from './base';
 import { Source, ModelOutput, ValidationOptions } from '../content_source';
 import type { IValidator } from '../validators/base';
@@ -120,16 +121,16 @@ export class Assistant extends BaseTemplate<any, any> {
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          metadata: createMetadata(),
+          metadata: createContext(),
         };
         let updatedSession = validSession.addMessage(message);
         if (currentOutput.metadata) {
-          updatedSession = updatedSession.updateMetadata(
+          updatedSession = updatedSession.updateContext(
             currentOutput.metadata as any,
           );
         }
         if (currentOutput.structuredOutput) {
-          updatedSession = updatedSession.updateMetadata({
+          updatedSession = updatedSession.updateContext({
             structured_output: currentOutput.structuredOutput,
           } as any);
         }
@@ -166,20 +167,20 @@ export class Assistant extends BaseTemplate<any, any> {
     // This happens if the last attempt failed and raiseError was false.
     if (!this.raiseError && lastError && lastOutput) {
       // Construct session from the last recorded output (which failed validation)
-      const lastMessage: AssistantMessage = {
+      const lasMessage: AssistantMessage = {
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        metadata: createMetadata(),
+        metadata: createContext(),
       };
-      let lastAttemptSession = validSession.addMessage(lastMessage);
+      let lastAttemptSession = validSession.addMessage(lasMessage);
       if (lastOutput.metadata) {
-        lastAttemptSession = lastAttemptSession.updateMetadata(
+        lastAttemptSession = lastAttemptSession.updateContext(
           lastOutput.metadata as any,
         );
       }
       if (lastOutput.structuredOutput) {
-        lastAttemptSession = lastAttemptSession.updateMetadata({
+        lastAttemptSession = lastAttemptSession.updateContext({
           structured_output: lastOutput.structuredOutput,
         } as any);
       }

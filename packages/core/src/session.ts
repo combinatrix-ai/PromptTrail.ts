@@ -1,6 +1,6 @@
-import type { TMessage } from './types';
-import type { Metadata } from './metadata';
-import { createMetadata } from './metadata';
+import type { Message } from './message';
+import type { Context } from './context';
+import { createContext } from './context';
 import type { ISession } from './types';
 import { ValidationError } from './types';
 
@@ -14,15 +14,15 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   implements ISession<T>
 {
   constructor(
-    public readonly messages: readonly TMessage[] = [],
-    public readonly metadata: Metadata<T> = createMetadata<T>(),
+    public readonly messages: readonly Message[] = [],
+    public readonly context: Context<T> = createContext<T>(),
     public readonly print: boolean = false,
   ) {}
 
   /**
    * Create a new session with additional message
    */
-  addMessage(message: TMessage): ISession<T> {
+  addMessage(message: Message): ISession<T> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -38,7 +38,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     }
     return new _SessionImpl<T>(
       [...this.messages, message],
-      this.metadata.clone(),
+      this.context.clone(),
       this.print,
     );
   }
@@ -46,12 +46,12 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new session with updated metadata
    */
-  updateMetadata<U extends Record<string, unknown>>(
-    metadata: U,
+  updateContext<U extends Record<string, unknown>>(
+    context: U,
   ): ISession<T & U> {
     return new _SessionImpl<T & U>(
       this.messages,
-      this.metadata.merge(metadata),
+      this.context.merge(context),
       this.print,
     );
   }
@@ -59,18 +59,18 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Get the last message in the session
    */
-  getLastMessage(): TMessage | undefined {
+  getLastMessage(): Message | undefined {
     return this.messages[this.messages.length - 1];
   }
 
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends TMessage['type']>(
+  getMessagesByType<U extends Message['type']>(
     type: U,
-  ): Extract<TMessage, { type: U }>[] {
+  ): Extract<Message, { type: U }>[] {
     return this.messages.filter(
-      (msg): msg is Extract<TMessage, { type: U }> => msg.type === type,
+      (msg): msg is Extract<Message, { type: U }> => msg.type === type,
     );
   }
 
@@ -104,7 +104,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      metadata: this.metadata.toJSON(),
+      context: this.context.toJSON(),
       print: this.print,
     };
   }
@@ -129,8 +129,8 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     }
 
     return createSession<U>({
-      messages: json.messages as TMessage[],
-      metadata: json.metadata as U,
+      messages: json.messages as Message[],
+      context: json.context as U,
       print: json.print as boolean,
     });
   }
@@ -141,15 +141,15 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
  */
 export function createSession<T extends Record<string, unknown>>(
   options: {
-    messages?: TMessage[];
-    metadata?: T;
+    messages?: Message[];
+    context?: T;
     print?: boolean;
   } = {},
 ): ISession<T> {
   return new _SessionImpl<T>(
     options.messages,
-    options.metadata
-      ? createMetadata<T>({ initial: options.metadata })
+    options.context
+      ? createContext<T>({ initial: options.context })
       : undefined,
     options.print ?? false,
   );

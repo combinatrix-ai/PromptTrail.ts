@@ -3,7 +3,7 @@ import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import type { Session } from '../../../types'; // Import Session type from types.ts
 import { createGenerateOptions } from '../../../generate_options';
-import { createMetadata } from '../../../metadata';
+import { createContext } from '../../../context';
 import { generateText } from '../../../generate'; // Import the actual function name
 import { expect_messages } from '../../utils';
 import { Sequence } from '../../../templates/sequence';
@@ -22,7 +22,7 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
   });
 
@@ -280,7 +280,7 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'I am the assistant response',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
 
     const options = createGenerateOptions({
@@ -327,7 +327,7 @@ describe('Sequence Template', () => {
         const nameMatch = message.match(/my name is (\w+)/i);
         const name = nameMatch ? nameMatch[1] : 'unknown';
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({ userName: name }) as unknown as Session<
+        return session.updateContext({ userName: name }) as unknown as Session<
           Record<string, unknown>
         >;
       })
@@ -343,7 +343,7 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Nice to meet you, Alice' },
     ]);
 
-    expect(session.metadata.get('userName')).toBe('Alice');
+    expect(session.context.get('userName')).toBe('Alice');
   });
 
   it('should execute an empty sequence without errors', async () => {
@@ -360,7 +360,7 @@ describe('Sequence Template', () => {
       .addUser('First message')
       .addTransform((session) => {
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({ counter: 1 }) as unknown as Session<
+        return session.updateContext({ counter: 1 }) as unknown as Session<
           Record<string, unknown>
         >;
       });
@@ -369,9 +369,9 @@ describe('Sequence Template', () => {
       .addUser('Second message')
       .addTransform((session) => {
         // Ensure counter is treated as a number
-        const counter = Number(session.metadata.get('counter') || 0);
+        const counter = Number(session.context.get('counter') || 0);
         // Cast the result to satisfy TTransformFunction type
-        return session.updateMetadata({
+        return session.updateContext({
           counter: counter + 1,
         }) as unknown as Session<Record<string, unknown>>;
       });
@@ -392,6 +392,6 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Counter value: 2' }, // Interpolated value
     ]);
 
-    expect(session.metadata.get('counter')).toBe(2);
+    expect(session.context.get('counter')).toBe(2);
   });
 });

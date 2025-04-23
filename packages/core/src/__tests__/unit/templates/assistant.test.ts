@@ -4,7 +4,7 @@ import { createSession } from '../../../session';
 import { StaticSource } from '../../../content_source';
 import type { ModelOutput } from '../../../content_source'; // Use "import type"
 import { createGenerateOptions } from '../../../generate_options';
-import { createMetadata } from '../../../metadata';
+import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
@@ -40,7 +40,7 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Generated content',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
 
     // Create GenerateOptions
@@ -83,7 +83,7 @@ describe('AssistantTemplate', () => {
 
   it('should support interpolation in static content', async () => {
     const session = createSession();
-    session.metadata.set('username', 'Alice');
+    session.context.set('username', 'Alice');
     const template = new Assistant('Hello, ${username}!');
     const result = await template.execute(session);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
@@ -154,7 +154,7 @@ describe('AssistantTemplate', () => {
           id: 'tool-123',
         },
       ],
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
 
     const weatherTool = createWeatherTool();
@@ -219,7 +219,7 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is invalid',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
 
     // Create a custom validator

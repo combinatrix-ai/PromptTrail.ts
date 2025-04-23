@@ -150,9 +150,7 @@ export class CodingAgent {
       new Agent().addLoop(
         new Agent().addUser(userCliSource).addAssistant(this.generateOptions),
         (session) => {
-          const lastUserMessage = session
-            .getMessagesByType('user')
-            .slice(-1)[0];
+          const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
           return lastUserMessage?.content.toLowerCase().trim() === 'exit';
         },
       ),

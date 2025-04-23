@@ -10,7 +10,7 @@ import {
   Sequence, // Import Sequence directly
 } from '../../../templates'; // Check path and export in index.ts
 import { createSession } from '../../../session';
-import { createMetadata } from '../../../metadata';
+import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
 import {
   createGenerateOptions,
@@ -59,7 +59,7 @@ describe('Nested Templates', () => {
       return {
         type: 'assistant',
         content: response,
-        metadata: createMetadata(),
+        metadata: createContext(),
       };
     });
   });
@@ -141,8 +141,8 @@ describe('Nested Templates', () => {
 
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('username', 'Alice');
-    session.metadata.set('topic', 'TypeScript');
+    session.context.set('username', 'Alice');
+    session.context.set('topic', 'TypeScript');
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped
@@ -179,7 +179,7 @@ describe('Nested Templates', () => {
 
     // Create a session with a condition flag
     const session = createSession();
-    session.metadata.set('condition', true);
+    session.context.set('condition', true);
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
@@ -188,7 +188,7 @@ describe('Nested Templates', () => {
       .add(
         new Conditional({
           // Use add()
-          condition: (session) => Boolean(session.metadata.get('condition')),
+          condition: (session) => Boolean(session.context.get('condition')),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
             .add(new Assistant(generateOptions)) // Removed comma
@@ -198,8 +198,8 @@ describe('Nested Templates', () => {
                 // Use add()
                 condition: (session) => {
                   // Check if the last message contains a specific text
-                  const lastMessage = session.getLastMessage();
-                  return lastMessage?.content.includes('Response A') ?? false;
+                  const lasMessage = session.getLastMessage();
+                  return lasMessage?.content.includes('Response A') ?? false;
                 },
                 thenTemplate: new User(
                   'Follow-up when response contains "Response A"',
@@ -236,7 +236,7 @@ describe('Nested Templates', () => {
 
     // Now test with condition = false
     const session2 = createSession();
-    session2.metadata.set('condition', false);
+    session2.context.set('condition', false);
 
     const result2 = await template.execute(session2);
     const messages2 = Array.from(result2.messages);

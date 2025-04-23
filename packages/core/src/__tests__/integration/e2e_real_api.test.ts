@@ -21,7 +21,7 @@ import {
   TemplateFactory,
   Subroutine, // Add SubroutineTemplate import
 } from '../../templates';
-import { createMetadata } from '../../metadata';
+import { createContext } from '../../context';
 import { createGenerateOptions } from '../../generate_options';
 import { StaticListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';
@@ -111,38 +111,38 @@ describe('End-to-End Workflows with Real APIs', () => {
     consoleSpy.mockRestore();
   });
 
-  it('should handle metadata correctly', async () => {
+  it('should handle context correctly', async () => {
     // createMetadata accepts interface
     interface UserMetadata extends Record<string, string> {
       username: string;
     }
     const initialMetadata: UserMetadata = { username: 'Alice' };
     // Keep the instance if needed elsewhere, maybe rename for clarity
-    const metadataInstance = createMetadata<UserMetadata>({
+    const metadataInstance = createContext<UserMetadata>({
       initial: initialMetadata,
     });
     // Specify the generic type for Sequence
     const template = new Sequence<UserMetadata>()
       .add(new System('You are a helpful assistant.'))
-      // Interpolating metadata into the assistant message
+      // Interpolating context into the assistant message
       // Use ${username} for template interpolation instead of {username}
       .add(new Assistant('Hello, ${username}!'))
       .add(new User('My name is not Alice, it is Bob.'))
-      // Update metadata with the last message
+      // Update context with the last message
       .addTransform((session) => {
         // Change name Alice to Bob
-        session.metadata.set('username', 'Bob');
+        session.context.set('username', 'Bob');
         return session;
       });
     // Pass the raw initialMetadata object to createSession
     const session = await template.execute(
-      createSession<UserMetadata>({ metadata: initialMetadata }),
+      createSession<UserMetadata>({ context: initialMetadata }),
     );
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'assistant', 'user']);
     expect(messages[1].content).toContain('Hello, Alice!');
-    expect(session.metadata.get('username')).toBe('Bob');
+    expect(session.context.get('username')).toBe('Bob');
   });
 
   it('should execute agent and sequence', async () => {
@@ -162,11 +162,11 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new User('123456789'))
       .add(new Assistant(openAIgenerateOptions));
     const agentSession = await agent.execute(createSession());
-    const agentMessages = Array.from(agentSession.messages);
-    expect(agentMessages).toHaveLength(3);
-    expect_types(agentMessages, ['system', 'user', 'assistant']);
-    expect(agentMessages[2].content).toBeDefined();
-    expect(agentMessages[2].content).toContain('123456789');
+    const agenMessages = Array.from(agentSession.messages);
+    expect(agenMessages).toHaveLength(3);
+    expect_types(agenMessages, ['system', 'user', 'assistant']);
+    expect(agenMessages[2].content).toBeDefined();
+    expect(agenMessages[2].content).toContain('123456789');
   });
 
   it('should UserTemplate handle InputSource', async () => {
@@ -189,8 +189,8 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new Assistant(openAIgenerateOptions))
       .addIf(
         (session) => {
-          const lastMessage = session.getLastMessage();
-          return lastMessage!.content.toLowerCase().includes('yes');
+          const lasMessage = session.getLastMessage();
+          return lasMessage!.content.toLowerCase().includes('yes');
         },
         new User('You said YES'),
         new User('You did not say YES'),
@@ -209,8 +209,8 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new Assistant(openAIgenerateOptions))
       .addIf(
         (session) => {
-          const lastMessage = session.getLastMessage();
-          return lastMessage!.content.toLowerCase().includes('yes');
+          const lasMessage = session.getLastMessage();
+          return lasMessage!.content.toLowerCase().includes('yes');
         },
         new User('You said YES'),
         new User('You did not say YES'),
@@ -233,12 +233,12 @@ describe('End-to-End Workflows with Real APIs', () => {
           // Added type annotation for session
           // Get count, default to 0 if undefined
           const currentCount =
-            (session.metadata.get('count') as number | undefined) ?? 0;
-          session.metadata.set('count', currentCount + 1);
+            (session.context.get('count') as number | undefined) ?? 0;
+          session.context.set('count', currentCount + 1);
           // Exit condition: stop when count reaches 3
           // Re-fetch the count after setting it
           const updatedCount =
-            (session.metadata.get('count') as number | undefined) ?? 0;
+            (session.context.get('count') as number | undefined) ?? 0;
           return updatedCount >= 3;
         },
       );
@@ -257,11 +257,11 @@ describe('End-to-End Workflows with Real APIs', () => {
     ): boolean => {
       // Get count, default to 0 if undefined
       const currentCount =
-        (session.metadata.get('count') as number | undefined) ?? 0;
-      session.metadata.set('count', currentCount + 1);
+        (session.context.get('count') as number | undefined) ?? 0;
+      session.context.set('count', currentCount + 1);
       // Exit condition: stop when count reaches 3
       const updatedCount =
-        (session.metadata.get('count') as number | undefined) ?? 0;
+        (session.context.get('count') as number | undefined) ?? 0;
       return updatedCount >= 3;
     };
 
@@ -271,9 +271,9 @@ describe('End-to-End Workflows with Real APIs', () => {
       bodyTemplate: loopBodyTemplate,
       exitCondition: loopExitCondition,
     });
-    // Execute the loop, starting metadata count at 0
+    // Execute the loop, starting context count at 0
     const session2 = await using_loop.execute(
-      createSession({ metadata: { count: 0 } }),
+      createSession({ context: { count: 0 } }),
     );
     const messages2 = Array.from(session2.messages);
     // The loop will execute twice (count 0->1, 1->2) before the exit condition is true (2>=3 is false)
@@ -291,8 +291,8 @@ describe('End-to-End Workflows with Real APIs', () => {
       .addAssistant(openAIgenerateOptions)
       .addIf(
         (session) => {
-          const lastMessage = session.getLastMessage();
-          return lastMessage!.content.toLowerCase().includes('123456789');
+          const lasMessage = session.getLastMessage();
+          return lasMessage!.content.toLowerCase().includes('123456789');
         },
         new User('YES'),
         new User('NO'),
@@ -315,10 +315,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       .addIf(
         (session: Session) => {
           // Add type annotation
-          const lastMessage = session.getLastMessage();
-          // Safely check lastMessage and its content
+          const lasMessage = session.getLastMessage();
+          // Safely check lasMessage and its content
           return (
-            lastMessage?.content?.toLowerCase().includes('123456789') ?? false
+            lasMessage?.content?.toLowerCase().includes('123456789') ?? false
           );
         },
         // Template to execute if condition is true
@@ -330,10 +330,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       session: Session<{ count: number }>,
     ): boolean => {
       const currentCount =
-        (session.metadata.get('count') as number | undefined) ?? 0;
-      session.metadata.set('count', currentCount + 1);
+        (session.context.get('count') as number | undefined) ?? 0;
+      session.context.set('count', currentCount + 1);
       const updatedCount =
-        (session.metadata.get('count') as number | undefined) ?? 0;
+        (session.context.get('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
       return updatedCount >= 2;
     };
@@ -344,9 +344,9 @@ describe('End-to-End Workflows with Real APIs', () => {
       exitCondition: loopExitCondition,
     });
 
-    // Execute the loop, starting metadata count at 0
+    // Execute the loop, starting context count at 0
     const session2 = await loop.execute(
-      createSession({ metadata: { count: 0 } }),
+      createSession({ context: { count: 0 } }),
     );
     const messages2 = Array.from(session2.messages);
 
@@ -368,8 +368,8 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages2[3].type).toBe('user');
     expect(messages2[3].content).toContain('Condition MET');
 
-    // Check final metadata count
-    expect(session2.metadata.get('count')).toBe(2);
+    // Check final context count
+    expect(session2.context.get('count')).toBe(2);
 
     // Removed misplaced commented code
   });
@@ -425,7 +425,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       expect(messages[2].toolCalls[0].name).toBe('weather');
     }
 
-    const toolResults = session.metadata.get('toolResults');
+    const toolResults = session.context.get('toolResults');
     if (toolResults) {
       expect(Array.isArray(toolResults)).toBe(true);
     }
@@ -447,10 +447,10 @@ describe('End-to-End Workflows with Real APIs', () => {
             .add(new Assistant(openAIgenerateOptions))
             .add(new User(continueResponses)),
           exitCondition: (session) => {
-            const lastMessage = session.getLastMessage();
+            const lasMessage = session.getLastMessage();
             return (
-              lastMessage?.type === 'user' &&
-              lastMessage.content.toLowerCase().includes('no')
+              lasMessage?.type === 'user' &&
+              lasMessage.content.toLowerCase().includes('no')
             );
           },
         }),

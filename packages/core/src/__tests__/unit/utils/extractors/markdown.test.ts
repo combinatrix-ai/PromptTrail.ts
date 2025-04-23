@@ -39,14 +39,14 @@ This is the conclusion.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
-    // Check that the metadata was updated correctly
-    expect(transformedSession.metadata.get('summary')).toBe(
+    // Check that the context was updated correctly
+    expect(transformedSession.context.get('summary')).toBe(
       'This is a summary of the content.',
     );
-    expect(transformedSession.metadata.get('details')).toBe(
+    expect(transformedSession.context.get('details')).toBe(
       'These are the details of the content.',
     );
-    expect(transformedSession.metadata.get('conclusion')).toBe(
+    expect(transformedSession.context.get('conclusion')).toBe(
       'This is the conclusion.',
     );
   });
@@ -92,11 +92,11 @@ def factorial(n):
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
-    // Check that the metadata was updated correctly
-    expect(transformedSession.metadata.get('tsCode')).toBe(
+    // Check that the context was updated correctly
+    expect(transformedSession.context.get('tsCode')).toBe(
       'function factorial(n: number): number {\n  if (n <= 1) return 1;\n  return n * factorial(n - 1);\n}',
     );
-    expect(transformedSession.metadata.get('pyCode')).toBe(
+    expect(transformedSession.context.get('pyCode')).toBe(
       'def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n - 1)',
     );
   });
@@ -146,16 +146,16 @@ console.log(factorial(5)); // 120
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformedSession = transformer.transform(session) as any;
 
-    // Check that the metadata was updated correctly
-    expect(transformedSession.metadata.get('explanation')).toContain(
+    // Check that the context was updated correctly
+    expect(transformedSession.context.get('explanation')).toContain(
       'The factorial function is a mathematical function',
     );
-    expect(transformedSession.metadata.get('usage')).toContain(
+    expect(transformedSession.context.get('usage')).toContain(
       "Here's how you can use the factorial function:",
     );
 
     // For code blocks, it should extract the last matching code block
-    expect(transformedSession.metadata.get('code')).toBe(
+    expect(transformedSession.context.get('code')).toBe(
       'console.log(factorial(5)); // 120',
     );
   });
@@ -204,13 +204,13 @@ const assistantCode = 'assistant';
     const userTransformedSession = userTransformer.transform(session) as any;
 
     // Check that only user content was extracted
-    expect(userTransformedSession.metadata.get('userHeading')).toBe(
+    expect(userTransformedSession.context.get('userHeading')).toBe(
       'User content',
     );
     expect(
-      userTransformedSession.metadata.get('assistantHeading'),
+      userTransformedSession.context.get('assistantHeading'),
     ).toBeUndefined();
-    expect(userTransformedSession.metadata.get('code')).toBe(
+    expect(userTransformedSession.context.get('code')).toBe(
       "const userCode = 'user';",
     );
 
@@ -235,12 +235,12 @@ const assistantCode = 'assistant';
 
     // Check that only assistant content was extracted
     expect(
-      assistantTransformedSession.metadata.get('userHeading'),
+      assistantTransformedSession.context.get('userHeading'),
     ).toBeUndefined();
-    expect(assistantTransformedSession.metadata.get('assistantHeading')).toBe(
+    expect(assistantTransformedSession.context.get('assistantHeading')).toBe(
       'Assistant content',
     );
-    expect(assistantTransformedSession.metadata.get('code')).toBe(
+    expect(assistantTransformedSession.context.get('code')).toBe(
       "const assistantCode = 'assistant';",
     );
   });

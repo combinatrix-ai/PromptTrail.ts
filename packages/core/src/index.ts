@@ -2,6 +2,7 @@
  * Core types
  */
 export * from './types';
+export * from './context';
 export * from './metadata';
 export { createSession } from './session';
 export * from './templates';

@@ -1,5 +1,6 @@
-import { createMetadata } from '../metadata';
-import type { Session, UserMessage } from '../types';
+import { createContext } from '../context';
+import type { Session } from '../types';
+import type { UserMessage } from '../message';
 import { BaseTemplate } from './base';
 import type { Source } from '../content_source';
 
@@ -24,7 +25,7 @@ export class User extends BaseTemplate<any, any> {
     const message: UserMessage = {
       type: 'user',
       content,
-      metadata: createMetadata(),
+      metadata: {},
     };
     return validSession.addMessage(message);
   }

@@ -9,8 +9,8 @@ import {
   ListSource,
 } from '../../../content_source'; // Added CallbackSource, RandomSource, ListSource
 import { createGenerateOptions } from '../../../generate_options';
-import { createMetadata } from '../../../metadata';
-import type { Metadata } from '../../../metadata'; // Use type-only import for Metadata
+import { createContext } from '../../../context';
+import type { Context } from '../../../context'; // Use type-only import for Metadata
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/sequence';
 import { User } from '../../../templates/user';
@@ -31,7 +31,7 @@ describe('Default Content Source', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Response from LLM',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
   });
 
@@ -596,7 +596,7 @@ describe('Default Content Source', () => {
 
     it('should allow default sources to be dynamically determined', async () => {
       // Create a function that generates content based on the session state
-      const dynamicContentFn = (metadata: Metadata) => {
+      const dynamicContentFn = (metadata: Context) => {
         // Accept Metadata instead of ISession
         const count = metadata.get('messageCount') || 0; // Use metadata directly
         // Provide default for count before adding
@@ -609,12 +609,12 @@ describe('Default Content Source', () => {
       // Wrap the dynamic logic in a CallbackSource
       // CallbackSource expects context object { metadata? } not full session
       const dynamicSource = new CallbackSource(
-        async (context: { metadata?: Metadata }) => {
+        async (context: { metadata?: Context }) => {
           // Expect Metadata type
           // Pass the context to dynamicContentFn if it needs it, or just metadata
           // Assuming dynamicContentFn needs metadata, let's adjust its signature too if needed
           // For now, let's assume dynamicContentFn can work with just the context object
-          const metadataToPass = context.metadata ?? createMetadata(); // Handle undefined metadata
+          const metadataToPass = context.metadata ?? createContext(); // Handle undefined metadata
           const content = dynamicContentFn(metadataToPass); // Pass potentially created metadata
           // Update the message count - This should not happen inside the source callback.
           // The source's job is to provide content based on context.
@@ -652,7 +652,7 @@ describe('Default Content Source', () => {
       expect(messages[3].content).toBe('Static assistant reply'); // Assistant 2
 
       // Final message count should remain unchanged as CallbackSource doesn't modify it
-      expect(session.metadata.get('messageCount')).toBeUndefined(); // Or 0 if initialized
+      expect(session.context.get('messageCount')).toBeUndefined(); // Or 0 if initialized
     });
   });
 

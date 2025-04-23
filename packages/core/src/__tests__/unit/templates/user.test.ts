@@ -63,7 +63,7 @@ describe('UserTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('query', 'weather');
+    session.context.set('query', 'weather');
 
     // Create a UserTemplate with interpolated text
     const template = new User('What is the ${query} like today?');
@@ -78,7 +78,7 @@ describe('UserTemplate', () => {
   it('should support interpolation in content source', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('query', 'weather');
+    session.context.set('query', 'weather');
 
     const template = new User(
       new StaticSource('What is the ${query} like today?'),
@@ -120,8 +120,8 @@ describe('UserTemplate', () => {
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('Callback user input');
 
-    // Verify the callback was called with the session metadata
-    expect(callback).toHaveBeenCalledWith({ metadata: expect.anything() });
+    // Verify the callback was called with the session context
+    expect(callback).toHaveBeenCalledWith({ context: expect.anything() });
   });
 
   it('should validate content with a custom validator', async () => {

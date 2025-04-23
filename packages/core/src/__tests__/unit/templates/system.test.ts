@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSession } from '../../../session';
 import { CallbackSource, StaticSource } from '../../../content_source';
-import { createMetadata } from '../../../metadata';
+import { createContext } from '../../../context';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
 import { System } from '../../../templates/system';
@@ -51,8 +51,8 @@ describe('SystemTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('role', 'coding assistant');
-    session.metadata.set('rules', 'be helpful and clear');
+    session.context.set('role', 'coding assistant');
+    session.context.set('rules', 'be helpful and clear');
 
     // Create a SystemTemplate with interpolated text
     const template = new System('You are a ${role}. Always ${rules}.');
@@ -66,8 +66,8 @@ describe('SystemTemplate', () => {
 
   it('should work with CallbackSource', async () => {
     // Create a callback function that uses context
-    const callback = vi.fn(({ metadata }) => {
-      const role = metadata?.get('role') || 'assistant';
+    const callback = vi.fn(({ context }) => {
+      const role = context?.get('role') || 'assistant';
       return Promise.resolve(`You are a ${role}. Be helpful and informative.`);
     });
 
@@ -79,7 +79,7 @@ describe('SystemTemplate', () => {
 
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('role', 'financial expert');
+    session.context.set('role', 'financial expert');
 
     // Execute the template and verify the result
     const result = await template.execute(session);
@@ -88,8 +88,8 @@ describe('SystemTemplate', () => {
       'You are a financial expert. Be helpful and informative.',
     );
 
-    // Verify the callback was called with the session metadata
-    expect(callback).toHaveBeenCalledWith({ metadata: expect.anything() });
+    // Verify the callback was called with the session context
+    expect(callback).toHaveBeenCalledWith({ context: expect.anything() });
   });
 
   it('should validate content with a custom validator', async () => {
@@ -216,7 +216,7 @@ describe('SystemTemplate', () => {
     session = session.addMessage({
       type: 'user',
       content: 'Hello',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
 
     // Create a SystemTemplate

@@ -1,16 +1,16 @@
-import type { Metadata } from '../metadata';
+import type { Context } from '../context';
 
 /**
  * Type guard for Metadata interface
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isMetadata(value: unknown): value is Metadata<any> {
+function isMetadata(value: unknown): value is Context<any> {
   return (
     value !== null &&
     typeof value === 'object' &&
     'get' in value &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    typeof (value as Metadata<any>).get === 'function'
+    typeof (value as Context<any>).get === 'function'
   );
 }
 
@@ -29,7 +29,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function interpolateTemplate<T extends Record<string, unknown>>(
   template: string,
-  metadata: Metadata<T>,
+  metadata: Context<T>,
 ): string {
   return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
     const keys = path.split('.');

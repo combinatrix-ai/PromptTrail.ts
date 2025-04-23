@@ -1,5 +1,5 @@
 import type { ISession } from '../types';
-import type { TMessageRole } from '../types';
+import type { MessageRole } from '../message';
 import {
   createTransformer,
   type SessionTransformer,
@@ -12,7 +12,7 @@ export interface MarkdownExtractorOptions<T extends Record<string, unknown>> {
   /**
    * Message types to extract from (default: ['assistant'])
    */
-  messageTypes?: TMessageRole[];
+  messageTypes?: MessageRole[];
 
   /**
    * Map of markdown headings to metadata keys
@@ -44,7 +44,7 @@ export interface MarkdownExtractorOptions<T extends Record<string, unknown>> {
  *
  * // Or apply directly to a session
  * const updatedSession = await transformer.transform(session);
- * console.log(updatedSession.metadata.get('code'));
+ * console.log(updatedSession.context.get('code'));
  * ```
  */
 export function extractMarkdown<T extends Record<string, unknown>>(
@@ -62,7 +62,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
     // Process each message
     for (const message of session.messages) {
       // Only process messages of the specified types
-      if (messageTypes.includes(message.type as TMessageRole)) {
+      if (messageTypes.includes(message.type as MessageRole)) {
         // Extract headings and their content
         if (options.headingMap) {
           const headingPattern =
@@ -98,7 +98,7 @@ export function extractMarkdown<T extends Record<string, unknown>>(
     }
 
     // Update the session with all extracted data at once
-    const updatedSession = session.updateMetadata(extractedData as T);
+    const updatedSession = session.updateContext(extractedData as T);
 
     // Return the updated session
     return updatedSession as ISession<Record<string, unknown> & T>;

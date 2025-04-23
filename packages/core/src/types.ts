@@ -1,94 +1,6 @@
-import type { Metadata } from './metadata';
+import type { Context } from './context';
+import type { Message } from './message';
 import type { TTransformFunction } from './templates/template_types';
-
-/**
- * Message Types
- * --------------------------------------------------------------------
- */
-
-/**
- * Metadata type for tool result messages
- */
-export interface ToolResultMetadata extends Record<string, unknown> {
-  toolCallId: string;
-}
-
-// Keep old name for backward compatibility
-export type IToolResultMetadata = ToolResultMetadata;
-
-/**
- * Represents the role of a message in a conversation
- */
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
-export type TMessageRole = MessageRole; // Backward compatibility
-
-/**
- * Base interface for all message types
- */
-export interface BaseMessage<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> {
-  content: string;
-  metadata?: Metadata<T>;
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
-}
-
-// Keep old name for backward compatibility
-export type IBaseMessage<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> = BaseMessage<T>;
-
-/**
- * System message interface
- */
-export interface SystemMessage extends BaseMessage {
-  type: 'system';
-}
-export type ISystemMessage = SystemMessage; // Backward compatibility
-
-/**
- * User message interface
- */
-export interface UserMessage extends BaseMessage {
-  type: 'user';
-}
-export type IUserMessage = UserMessage; // Backward compatibility
-
-/**
- * Assistant message interface
- */
-export interface AssistantMessage extends BaseMessage {
-  type: 'assistant';
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
-}
-export type IAssistantMessage = AssistantMessage; // Backward compatibility
-
-/**
- * Tool result message interface
- */
-export interface ToolResultMessage extends BaseMessage<ToolResultMetadata> {
-  type: 'tool_result';
-  result: unknown;
-}
-export type IToolResultMessage = ToolResultMessage; // Backward compatibility
-
-/**
- * Discriminated union type for all message types
- */
-export type Message =
-  | SystemMessage
-  | UserMessage
-  | AssistantMessage
-  | ToolResultMessage;
-export type TMessage = Message; // Backward compatibility
 
 /**
  * Schema and Validation Types
@@ -116,19 +28,19 @@ export interface Session<
   T extends { [key: string]: unknown } = Record<string, unknown>,
 > {
   readonly messages: readonly Message[];
-  readonly metadata: Metadata<T>;
+  readonly context: Context<T>;
   readonly print: boolean;
   addMessage(message: Message): Session<T>;
-  updateMetadata<U extends Record<string, unknown>>(
-    metadata: U,
-  ): Session<T & U>;
+  updateContext<U extends Record<string, unknown>>(context: U): Session<T & U>;
   getLastMessage(): Message | undefined;
   getMessagesByType<U extends Message['type']>(
     type: U,
   ): Extract<Message, { type: U }>[];
   validate(): void;
   toJSON(): Record<string, unknown>;
+  toString(): string;
 }
+
 export type ISession<
   T extends { [key: string]: unknown } = Record<string, unknown>,
 > = Session<T>; // Backward compatibility
@@ -177,23 +89,10 @@ export type TProviderConfig = ProviderConfig; // Backward compatibility
  * MCP Server configuration for generate
  */
 export interface MCPServerConfig {
-  url: string;
-  name?: string;
-  version?: string;
-  headers?: Record<string, string>;
+  type: 'mcp';
+  serverName: string;
+  toolName: string;
 }
-export type IMCPServerConfig = MCPServerConfig; // Backward compatibility
-
-/**
- * MCP Transport interface for generate
- */
-export interface MCPTransport {
-  url: string;
-  name: string;
-  version: string;
-  headers: Record<string, string>;
-}
-export type IMCPTransport = MCPTransport; // Backward compatibility
 
 /**
  * Error Types
@@ -201,43 +100,261 @@ export type IMCPTransport = MCPTransport; // Backward compatibility
  */
 
 /**
- * Base error class for PromptTrail errors
+ * Base error class for all PromptTrail errors
  */
 export class PromptTrailError extends Error {
-  /**
-   * Creates a new PromptTrail error
-   *
-   * @param message - Error message
-   * @param code - Error code
-   */
-  constructor(
-    message: string,
-    public readonly code: string,
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = 'PromptTrailError';
   }
 }
 
 /**
- * Error class for validation errors
+ * Error thrown when validation fails
  */
 export class ValidationError extends PromptTrailError {
-  /**
-   * Creates a new validation error
-   *
-   * @param message - Error message
-   */
   constructor(message: string) {
-    super(message, 'VALIDATION_ERROR');
+    super(message);
     this.name = 'ValidationError';
   }
 }
 
-// Make params interface generic
+/**
+ * Error thrown when a template is invalid
+ */
+export class TemplateError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TemplateError';
+  }
+}
 
-export interface ITransformTemplateParams<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> {
-  transformFn: TTransformFunction<T>;
+/**
+ * Error thrown when a provider is invalid
+ */
+export class ProviderError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderError';
+  }
+}
+
+/**
+ * Error thrown when a schema is invalid
+ */
+export class SchemaError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaError';
+  }
+}
+
+/**
+ * Error thrown when a content source is invalid
+ */
+export class ContentSourceError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContentSourceError';
+  }
+}
+
+/**
+ * Error thrown when a transform function is invalid
+ */
+export class TransformError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransformError';
+  }
+}
+
+/**
+ * Error thrown when a validator is invalid
+ */
+export class ValidatorError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidatorError';
+  }
+}
+
+/**
+ * Error thrown when a message is invalid
+ */
+export class MessageError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageError';
+  }
+}
+
+/**
+ * Error thrown when a session is invalid
+ */
+export class SessionError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionError';
+  }
+}
+
+/**
+ * Error thrown when a template is not found
+ */
+export class TemplateNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TemplateNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a provider is not found
+ */
+export class ProviderNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a schema is not found
+ */
+export class SchemaNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a content source is not found
+ */
+export class ContentSourceNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContentSourceNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a transform function is not found
+ */
+export class TransformNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransformNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a validator is not found
+ */
+export class ValidatorNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidatorNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a message is not found
+ */
+export class MessageNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a session is not found
+ */
+export class SessionNotFoundError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionNotFoundError';
+  }
+}
+
+/**
+ * Error thrown when a template is already registered
+ */
+export class TemplateAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TemplateAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a provider is already registered
+ */
+export class ProviderAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a schema is already registered
+ */
+export class SchemaAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a content source is already registered
+ */
+export class ContentSourceAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContentSourceAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a transform function is already registered
+ */
+export class TransformAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransformAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a validator is already registered
+ */
+export class ValidatorAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidatorAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a message is already registered
+ */
+export class MessageAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageAlreadyRegisteredError';
+  }
+}
+
+/**
+ * Error thrown when a session is already registered
+ */
+export class SessionAlreadyRegisteredError extends PromptTrailError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionAlreadyRegisteredError';
+  }
 }

@@ -1,5 +1,6 @@
 import { createSession } from '../session';
-import type { ISession, Message, Session } from '../types';
+import type { ISession, Session } from '../types';
+import type { Message } from '../message';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
 import {
@@ -58,9 +59,9 @@ export class Subroutine<
 
         // Default: Clone parent session messages and metadata
         const clonedMetadataObject =
-          parentSession.metadata.toObject() as unknown as S;
+          parentSession.context.toObject() as unknown as S;
         let clonedSession = createSession<S>({
-          metadata: clonedMetadataObject,
+          context: clonedMetadataObject,
         });
 
         // Add messages immutably
@@ -82,14 +83,14 @@ export class Subroutine<
       ): ISession<P> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
-        let finalMetadata = parentSession.metadata.toObject();
+        let finalMetadata = parentSession.context.toObject();
 
         if (this.retainMessages) {
           // Append messages from the subroutine session that were added after
           // the messages potentially copied from the parent
-          const parentMessageSet = new Set(parentSession.messages);
+          const parenMessageSet = new Set(parentSession.messages);
           const newMessages = subroutineSession.messages.filter(
-            (msg) => !parentMessageSet.has(msg),
+            (msg) => !parenMessageSet.has(msg),
           );
           finalMessages = [...finalMessages, ...newMessages];
         }
@@ -98,12 +99,12 @@ export class Subroutine<
           // Merge metadata only if not isolated
           finalMetadata = {
             ...finalMetadata,
-            ...subroutineSession.metadata.toObject(),
+            ...subroutineSession.context.toObject(),
           };
         }
 
         // Create a new session with the merged state
-        let mergedSession = createSession<P>({ metadata: finalMetadata as P });
+        let mergedSession = createSession<P>({ context: finalMetadata as P });
 
         // Add messages one by one
         finalMessages.forEach((msg: Message) => {

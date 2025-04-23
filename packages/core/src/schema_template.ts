@@ -1,5 +1,6 @@
-import type { ISession, TMessage } from './types';
-import { createMetadata } from './metadata';
+import type { ISession } from './types';
+import type { Message } from './message';
+import { createContext } from './context';
 import { z } from 'zod';
 
 /**
@@ -65,7 +66,7 @@ export class SchemaTemplate<
 
     const aiMessages =
       messages.length > 0
-        ? messages.map((msg: TMessage) => {
+        ? messages.map((msg: Message) => {
             if (msg.type === 'system') {
               return { role: 'system' as const, content: msg.content };
             } else if (msg.type === 'user') {
@@ -120,11 +121,11 @@ export class SchemaTemplate<
         const resultSession = await session.addMessage({
           type: 'assistant',
           content: JSON.stringify(experimental_output, null, 2),
-          metadata: createMetadata(),
+          metadata: createContext(),
         });
 
         if (this.functionName && result.response) {
-          let toolCalls = session.metadata.get('toolCalls');
+          let toolCalls = session.context.get('toolCalls');
 
           if (!toolCalls && result.response.body) {
             const responseBody = result.response.body as Record<
@@ -184,7 +185,7 @@ export class SchemaTemplate<
               }
 
               if (args) {
-                return resultSession.updateMetadata({
+                return resultSession.updateContext({
                   structured_output: args,
                 }) as unknown as ISession<TOutput>;
               }
@@ -192,7 +193,7 @@ export class SchemaTemplate<
           }
         }
 
-        return resultSession.updateMetadata({
+        return resultSession.updateContext({
           structured_output: experimental_output,
         }) as unknown as ISession<TOutput>;
       } catch (error) {

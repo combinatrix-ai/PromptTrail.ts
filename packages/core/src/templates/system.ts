@@ -1,5 +1,6 @@
-import { createMetadata } from '../metadata';
-import type { Session, SystemMessage } from '../types';
+import { createContext } from '../context';
+import type { Session } from '../types';
+import type { SystemMessage } from '../message';
 import { BaseTemplate } from './base';
 import type { Source } from '../content_source';
 
@@ -24,7 +25,7 @@ export class System extends BaseTemplate<any, any> {
     const message: SystemMessage = {
       type: 'system',
       content,
-      metadata: createMetadata(),
+      metadata: createContext(),
     };
     return validSession.addMessage(message);
   }

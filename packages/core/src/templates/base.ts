@@ -61,7 +61,7 @@ export abstract class BaseTemplate<
           async getContent(session: Session): Promise<ModelOutput> {
             const interpolatedContent = interpolateTemplate(
               input,
-              session.metadata,
+              session.context,
             );
             return { content: interpolatedContent };
           },

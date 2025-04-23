@@ -5,13 +5,9 @@ import {
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import type {
-  TMessage,
-  ISession,
-  TProviderConfig,
-  IMCPServerConfig,
-} from './types';
-import { createMetadata } from './metadata';
+import type { ISession, TProviderConfig, IMCPServerConfig } from './types';
+import type { Message } from './message';
+import { createContext } from './context';
 import type { GenerateOptions } from './generate_options';
 
 /**
@@ -189,7 +185,7 @@ export async function generateText(
   });
 
   // Create metadata for the response
-  const metadata = createMetadata();
+  const metadata = createContext();
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
@@ -258,7 +254,7 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
+        metadata: createContext(),
       };
     } else if (chunk.type === 'tool-call') {
       // Add tool calls directly to the message
@@ -271,7 +267,7 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
+        metadata: createContext(),
         toolCalls: [toolCall],
       };
     }

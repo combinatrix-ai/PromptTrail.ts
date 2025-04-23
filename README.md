@@ -12,7 +12,7 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 - 🔌 [**Multi-Provider**](#-model-configuration) - Works with OpenAI, Anthropic (with MCP support), and extensible for more
 - 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
 - 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
-- 📊 [**Structured Data Extraction**](#-session-to-metadata-conversion) - Extract and transform data from LLM outputs
+- 📊 [**Structured Data Extraction**](#-session-to-context-conversion) - Extract and transform data from LLM outputs
 - 🛡️ [**Validation**](#%EF%B8%8F-validation) - Validate both user input and LLM responses
 - 🧪 [**Structured Output**](#-schema-validation) - Force LLMs to produce structured outputs using schemas
 - 🛠️ [**Tool Integration**](#%EF%B8%8F-tool-integration) - First-class support for function calling
@@ -92,7 +92,7 @@ While many LLM libraries are built around Python, PromptTrail takes a different 
 PromptTrail is built from the ground up with TypeScript, embracing modern type system features:
 
 ```typescript
-// Type inference for session metadata
+// Type inference for session context
 interface UserContext {
   name: string;
   preferences: {
@@ -101,9 +101,9 @@ interface UserContext {
   };
 }
 
-// Type-safe session with inferred metadata types
+// Type-safe session with inferred context types
 const session = createSession<UserContext>({
-  metadata: {
+  context: {
     name: 'Alice',
     preferences: {
       theme: 'dark',
@@ -112,15 +112,15 @@ const session = createSession<UserContext>({
   },
 });
 
-// Type-safe metadata access with autocomplete
-const userName = session.metadata.get('name'); // Type: string
-const theme = session.metadata.get('preferences').theme; // Type: 'light' | 'dark'
+// Type-safe context access with autocomplete
+const userName = session.context.get('name'); // Type: string
+const theme = session.context.get('preferences').theme; // Type: 'light' | 'dark'
 
 // Immutable updates return new instances with preserved types
-const updatedSession = session.updateMetadata({
+const updatedSession = session.updateContext({
   lastActive: new Date(),
 });
-// updatedSession.metadata.get('lastActive') is now available with correct type
+// updatedSession.context.get('lastActive') is now available with correct type
 ```
 
 PromptTrail's immutable architecture ensures predictable state management:
@@ -147,7 +147,7 @@ let openAIgenerateOptions = createGenerateOptions({
   temperature: 0.7,
 });
 
-// Create a personalized chat with metadata interpolation
+// Create a personalized chat with context interpolation
 interface UserInfo {
   name: string;
   language: string;
@@ -156,7 +156,7 @@ interface UserInfo {
 const techSupportFlow = new Agent<UserInfo>()
   // Build template with fluent API
   .addSystem("You're a helpful programming assistant.")
-  // Interpolate from metadata
+  // Interpolate from context
   .addAssistant(`Hello, \${name}! Ready to dive into \${language}?`)
   // Get input from user - Replace CLISource with a simple User message
   .addUser("What's tricky about type inference?")
@@ -164,9 +164,9 @@ const techSupportFlow = new Agent<UserInfo>()
   .addAssistant(openAIgenerateOptions);
 
 const session = await techSupportFlow.execute(
-  // Pass metadata into the session
+  // Pass context into the session
   createSession<UserInfo>({
-    metadata: {
+    context: {
       name: 'Alice',
       language: 'TypeScript',
     },
@@ -230,9 +230,9 @@ const quiz = new Sequence()
     {
       // initWith: pass the whole conversation
       initWith: (parent) => {
-        // Create a new session with the same messages and metadata
+        // Create a new session with the same messages and context
         let clonedSession = createSession({
-          metadata: parent.metadata.toObject(),
+          context: parent.context.toObject(),
         });
 
         // Add all messages from parent session
@@ -314,9 +314,9 @@ const anthropicMcpOptions = createGenerateOptions({
 Manage conversation state with immutable sessions and in-place templating:
 
 ```typescript
-// Create a session with metadata for templating
+// Create a session with context for templating
 const session = createSession({
-  metadata: {
+  context: {
     userId: 'user-123',
     language: 'TypeScript',
     tone: 'professional',
@@ -341,8 +341,8 @@ const updatedSession = session.addMessage({
 const lastMessage = updatedSession.getLastMessage();
 const userMessages = updatedSession.getMessagesByType('user');
 
-// Update metadata (returns new session)
-const newSession = updatedSession.updateMetadata({
+// Update context (returns new session)
+const newSession = updatedSession.updateContext({
   tone: 'casual',
 });
 
@@ -370,7 +370,7 @@ for await (const chunk of generateTextStream(session, openAIgenerateOptions)) {
 console.log('\n--- End of Stream ---');
 ```
 
-### 📊 Session-to-Metadata Conversion
+### 📊 Session-to-Context Conversion
 
 Extract structured data from LLM outputs:
 
@@ -399,8 +399,8 @@ const codeTemplate = new Sequence()
 const session = await codeTemplate.execute(createSession());
 
 // Access the extracted data
-console.log('Code:', session.metadata.get('code'));
-console.log('Explanation:', session.metadata.get('explanation'));
+console.log('Code:', session.context.get('code'));
+console.log('Explanation:', session.context.get('explanation'));
 
 // You can also extract data using regex patterns
 const dataTemplate = new Sequence()
@@ -420,8 +420,8 @@ const dataTemplate = new Sequence()
   });
 
 const dataSession = await dataTemplate.execute(createSession());
-console.log('IP:', dataSession.metadata.get('ipAddress')); // "192.168.1.100"
-console.log('Uptime:', dataSession.metadata.get('uptime')); // 0.9999
+console.log('IP:', dataSession.context.get('ipAddress')); // "192.168.1.100"
+console.log('Uptime:', dataSession.context.get('uptime')); // 0.9999
 ````
 
 ### 🛡️ Validation
@@ -537,8 +537,8 @@ const template = new Sequence()
 // Execute the template
 const session = await template.execute(createSession());
 
-// Get the structured output from the session metadata
-const product = session.metadata.get('structured_output');
+// Get the structured output from the session context
+const product = session.context.get('structured_output');
 console.log(product);
 // Output: { name: 'iPhone 15 Pro', price: 999, inStock: true, description: 'Smartphone with a titanium frame' }
 

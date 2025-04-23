@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
 import { StaticListSource } from '../../../content_source';
-import { createMetadata } from '../../../metadata';
+import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/sequence';
 import { Loop } from '../../../templates/loop';
@@ -22,7 +22,7 @@ describe('Loop Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
   });
 
@@ -313,15 +313,15 @@ describe('Loop Template', () => {
         .addTransform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
-            (session.metadata.get('counter') as number | undefined) ?? 0;
+            (session.context.get('counter') as number | undefined) ?? 0;
           // Increment the counter
-          return session.updateMetadata({ counter: counter + 1 });
+          return session.updateContext({ counter: counter + 1 });
         }),
       exitCondition: (session: Session) => {
         // Exit when counter reaches 3
         // Get counter, default to 0, ensure it's a number before comparing
         return (
-          ((session.metadata.get('counter') as number | undefined) ?? 0) >= 3
+          ((session.context.get('counter') as number | undefined) ?? 0) >= 3
         );
       },
     });
@@ -337,7 +337,7 @@ describe('Loop Template', () => {
     expect(messages[2].content).toBe('Adding to counter');
 
     // Verify the final counter value
-    expect(session.metadata.get('counter')).toBe(3);
+    expect(session.context.get('counter')).toBe(3);
   });
 
   it('should support if statements inside loop templates', async () => {

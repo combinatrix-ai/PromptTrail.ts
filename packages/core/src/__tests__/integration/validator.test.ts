@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
-import { createMetadata } from '../../metadata';
+import { createContext } from '../../context';
 import { type ISession } from '../../types';
 
 vi.mock('../../generate');
@@ -31,7 +31,7 @@ describe('AssistantTemplate with Validator', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is a test response',
-      metadata: createMetadata(),
+      metadata: createContext(),
     });
   });
 
@@ -50,7 +50,7 @@ describe('AssistantTemplate with Validator', () => {
       return {
         type: 'assistant',
         content: `Response attempt ${attempts}`,
-        metadata: createMetadata(),
+        metadata: createContext(),
       };
     });
 

@@ -61,7 +61,7 @@ describe('SchemaTemplate API Integration', () => {
 
       const resultSession = await template.execute(session);
 
-      const output = resultSession.metadata.get('structured_output');
+      const output = resultSession.context.get('structured_output');
 
       expect(output).toBeDefined();
       if (output) {
@@ -91,7 +91,7 @@ describe('SchemaTemplate API Integration', () => {
 
       const resultSession = await template.execute(session);
 
-      const output = resultSession.metadata.get('structured_output');
+      const output = resultSession.context.get('structured_output');
 
       expect(output).toBeDefined();
       if (output) {
@@ -119,7 +119,7 @@ describe('SchemaTemplate API Integration', () => {
 
     const resultSession = await template.execute(session);
 
-    const output = resultSession.metadata.get('structured_output');
+    const output = resultSession.context.get('structured_output');
 
     expect(output).toBeDefined();
     if (output) {
@@ -145,7 +145,7 @@ describe('SchemaTemplate API Integration', () => {
 
     const resultSession = await template.execute(session);
 
-    const output = resultSession.metadata.get('structured_output');
+    const output = resultSession.context.get('structured_output');
 
     expect(output).toBeDefined();
     if (output) {

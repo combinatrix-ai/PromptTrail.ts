@@ -1,7 +1,7 @@
 /**
  * Metadata interface for type-safe key-value storage
  */
-export interface Metadata<
+export interface Context<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   get<K extends keyof T>(key: K): T[K] | undefined;
@@ -12,26 +12,26 @@ export interface Metadata<
   keys(): IterableIterator<keyof T>;
   values(): IterableIterator<T[keyof T]>;
   entries(): IterableIterator<[keyof T, T[keyof T]]>;
-  clone(): Metadata<T>;
+  clone(): Context<T>;
   toObject(): T;
   toJSON(): T;
   toString(): string;
   forEach(callback: (value: T[keyof T], key: keyof T) => void): void;
   readonly size: number;
   merge<U extends Record<string, unknown>>(
-    other: Metadata<U> | U,
-  ): Metadata<T & U>;
+    other: Context<U> | U,
+  ): Context<T & U>;
   mergeNew<U extends Record<string, unknown>>(
-    other: Metadata<U> | U,
-  ): Metadata<T & U>;
+    other: Context<U> | U,
+  ): Context<T & U>;
   [Symbol.iterator](): Iterator<[keyof T, T[keyof T]]>;
 }
 
 /**
  * Internal implementation of Metadata interface
  */
-class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
-  implements Metadata<T>
+class _ContextImpl<T extends Record<string, unknown> = Record<string, unknown>>
+  implements Context<T>
 {
   private data: Map<string, unknown>;
 
@@ -104,8 +104,8 @@ class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new Metadata instance with the same data
    */
-  clone(): Metadata<T> {
-    const newMetadata = new _MetadataImpl<T>();
+  clone(): Context<T> {
+    const newMetadata = new _ContextImpl<T>();
     for (const [key, value] of this.entries()) {
       newMetadata.set(key, this.cloneValue(value));
     }
@@ -157,9 +157,9 @@ class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
    * Merge another metadata instance or object into this one
    */
   merge<U extends Record<string, unknown>>(
-    other: Metadata<U> | U,
-  ): Metadata<T & U> {
-    const newMetadata = new _MetadataImpl<T & U>();
+    other: Context<U> | U,
+  ): Context<T & U> {
+    const newMetadata = new _ContextImpl<T & U>();
 
     // Copy current data
     for (const [key, value] of this.entries()) {
@@ -186,8 +186,8 @@ class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
    * Create a new metadata instance by merging this one with another
    */
   mergeNew<U extends Record<string, unknown>>(
-    other: Metadata<U> | U,
-  ): Metadata<T & U> {
+    other: Context<U> | U,
+  ): Context<T & U> {
     return this.merge(other);
   }
 
@@ -219,10 +219,10 @@ class _MetadataImpl<T extends Record<string, unknown> = Record<string, unknown>>
 /**
  * Create a new metadata instance with type inference
  */
-export function createMetadata<T extends Record<string, unknown>>(
+export function createContext<T extends Record<string, unknown>>(
   options: {
     initial?: T;
   } = {},
-): Metadata<T> {
-  return new _MetadataImpl<T>(options);
+): Context<T> {
+  return new _ContextImpl<T>(options);
 }
