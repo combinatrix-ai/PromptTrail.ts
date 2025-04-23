@@ -1,4 +1,4 @@
-import type { Session } from '../types';
+import type { Session } from '../session';
 import { createSession } from '../session';
 import { Source, StaticSource, LlmSource } from '../content_source';
 import type { ModelOutput } from '../content_source';

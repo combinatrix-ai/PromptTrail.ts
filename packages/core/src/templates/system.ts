@@ -1,5 +1,5 @@
 import { createContext } from '../context';
-import type { Session } from '../types';
+import type { Session } from '../session';
 import type { SystemMessage } from '../message';
 import { BaseTemplate } from './base';
 import type { Source } from '../content_source';

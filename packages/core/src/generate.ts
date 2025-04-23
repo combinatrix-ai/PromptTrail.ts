@@ -2,18 +2,24 @@ import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
   experimental_createMCPClient,
+  LanguageModelV1,
+  ToolSet,
 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import type { ISession, TProviderConfig, IMCPServerConfig } from './types';
+import type { Session } from './session';
 import type { Message } from './message';
 import { createContext } from './context';
-import type { GenerateOptions } from './generate_options';
+import type {
+  GenerateOptions,
+  MCPServerConfig,
+  ProviderConfig,
+} from './generate_options';
 
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: ISession): Array<{
+function convertSessionToAiSdkMessages(session: Session): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -86,7 +92,7 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
 /**
  * Create a provider based on configuration
  */
-function createProvider(config: TProviderConfig): unknown {
+function createProvider(config: ProviderConfig): unknown {
   const options: Record<string, unknown> = {};
   if (config.type === 'openai') {
     if (config.baseURL) {
@@ -121,7 +127,7 @@ function createProvider(config: TProviderConfig): unknown {
 /**
  * Initialize MCP client
  */
-async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
+async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
   try {
     const transport = {
       url: config.url,
@@ -146,9 +152,9 @@ async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText(
-  session: ISession,
+  session: Session,
   options: GenerateOptions,
-): Promise<TMessage> {
+): Promise<Message> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -173,13 +179,13 @@ export async function generateText(
 
   // Generate text using AI SDK
   const result = await aiSdkGenerateText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as unknown, // TODO: Fix this assertion
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -226,9 +232,9 @@ export async function generateText(
  * Generate text stream using AI SDK
  */
 export async function* generateTextStream(
-  session: ISession,
+  session: Session,
   options: GenerateOptions, // Fixed type to match generateText
-): AsyncGenerator<TMessage, void, unknown> {
+): AsyncGenerator<Message, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -237,13 +243,13 @@ export async function* generateTextStream(
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools, // Use tools directly from options
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });

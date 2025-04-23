@@ -5,7 +5,7 @@ import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
 import { User } from '../../../templates/user';
 import { Conditional } from '../../../templates/conditional';
-import type { Session } from '../../../types';
+import type { Session } from '../../../session';
 import { Sequence } from '../../../templates/sequence';
 
 // Mock the generate module

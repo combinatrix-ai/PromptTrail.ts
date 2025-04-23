@@ -1,22 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
-import type { ISession } from '../../../types'; // Import ISession from types
 import {
   StaticSource,
   CallbackSource,
   RandomSource,
   ListSource,
-} from '../../../content_source'; // Added CallbackSource, RandomSource, ListSource
+} from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
 import { createContext } from '../../../context';
-import type { Context } from '../../../context'; // Use type-only import for Metadata
+import type { Context } from '../../../context';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/sequence';
 import { User } from '../../../templates/user';
 import { Loop } from '../../../templates/loop';
-import { Subroutine } from '../../../templates/subroutine'; // Added import
-// Removed duplicate imports
+import { Subroutine } from '../../../templates/subroutine';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -597,7 +595,7 @@ describe('Default Content Source', () => {
     it('should allow default sources to be dynamically determined', async () => {
       // Create a function that generates content based on the session state
       const dynamicContentFn = (metadata: Context) => {
-        // Accept Metadata instead of ISession
+        // Accept Metadata instead of Session
         const count = metadata.get('messageCount') || 0; // Use metadata directly
         // Provide default for count before adding
         // Explicitly cast count to number | undefined before using ??

@@ -1,4 +1,4 @@
-import type { ISession } from './types';
+import type { Session } from './session';
 import type { Message } from './message';
 import { createContext } from './context';
 import { z } from 'zod';
@@ -55,7 +55,7 @@ export class SchemaTemplate<
 
   // Remove methods not present in BaseTemplate
 
-  async execute(session: ISession<TInput>): Promise<ISession<TOutput>> {
+  async execute(session: Session<TInput>): Promise<Session<TOutput>> {
     // Access the renamed generateOptions property
     if (!this.generateOptions) {
       throw new Error('No generateOptions provided for SchemaTemplate');
@@ -187,7 +187,7 @@ export class SchemaTemplate<
               if (args) {
                 return resultSession.updateContext({
                   structured_output: args,
-                }) as unknown as ISession<TOutput>;
+                }) as unknown as Session<TOutput>;
               }
             }
           }
@@ -195,7 +195,7 @@ export class SchemaTemplate<
 
         return resultSession.updateContext({
           structured_output: experimental_output,
-        }) as unknown as ISession<TOutput>;
+        }) as unknown as Session<TOutput>;
       } catch (error) {
         lastError = error as Error;
         console.error(
@@ -217,4 +217,16 @@ export class SchemaTemplate<
       `Failed to generate structured output after ${this.maxAttempts} attempts`,
     );
   }
+}
+/**
+ * Schema and Validation Types
+ * --------------------------------------------------------------------
+ */
+/**
+ * Schema type interface for defining JSON schema structures
+ */
+
+export interface SchemaType {
+  properties: Record<string, { type: string; description: string }>;
+  required?: string[];
 }

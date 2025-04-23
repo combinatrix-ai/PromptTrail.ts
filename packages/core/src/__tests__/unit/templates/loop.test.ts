@@ -6,7 +6,7 @@ import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/sequence';
 import { Loop } from '../../../templates/loop';
 import { User } from '../../../templates/user';
-import type { Session } from '../../../types';
+import type { Session } from '../../../session';
 import { System } from '../../../templates/system';
 
 // Mock the generate module

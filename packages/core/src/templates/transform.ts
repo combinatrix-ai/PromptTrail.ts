@@ -1,4 +1,4 @@
-import type { Session } from '../types';
+import type { Session } from '../session';
 import { BaseTemplate } from './base';
 import { ITransformTemplateParams } from './template_types';
 import type { TTransformFunction } from './template_types';

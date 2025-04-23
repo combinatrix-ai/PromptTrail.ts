@@ -1,4 +1,4 @@
-import type { Session } from '../types';
+import type { Session } from '../session';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
 import {

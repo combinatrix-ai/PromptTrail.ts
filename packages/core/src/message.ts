@@ -8,7 +8,7 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 /**
  * Base interface for all message types
  */
-export interface BaseMessage<
+export interface Message<
   T extends Record<string, unknown> = Record<string, unknown>,
 > {
   content: string;
@@ -18,35 +18,26 @@ export interface BaseMessage<
     arguments: Record<string, unknown>;
     id: string;
   }>;
+  type: MessageRole;
 }
 
 /**
  * System message interface
  */
-export interface SystemMessage extends BaseMessage {
+export interface SystemMessage extends Message {
   type: 'system';
 }
 
 /**
  * User message interface
  */
-export interface UserMessage extends BaseMessage {
+export interface UserMessage extends Message {
   type: 'user';
 }
 
 /**
  * Assistant message interface
  */
-export interface AssistantMessage extends BaseMessage {
+export interface AssistantMessage extends Message {
   type: 'assistant';
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
 }
-
-/**
- * Discriminated union type for all message types
- */
-export type Message = SystemMessage | UserMessage | AssistantMessage;

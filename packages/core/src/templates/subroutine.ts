@@ -1,5 +1,5 @@
 import { createSession } from '../session';
-import type { ISession, Session } from '../types';
+import type { Session } from '../session';
 import type { Message } from '../message';
 import type { Template } from './base';
 import { CompositeTemplateBase } from './base';
@@ -51,7 +51,7 @@ export class Subroutine<
       this.initFunction = options.initWith;
     } else {
       // Default init function
-      this.initFunction = (parentSession: ISession<P>): ISession<S> => {
+      this.initFunction = (parentSession: Session<P>): Session<S> => {
         if (this.isolatedContext) {
           // Create a completely new, empty session for isolated context
           return createSession<S>();
@@ -78,9 +78,9 @@ export class Subroutine<
     } else {
       // Default squash function
       this.squashFunction = (
-        parentSession: ISession<P>,
-        subroutineSession: ISession<S>,
-      ): ISession<P> => {
+        parentSession: Session<P>,
+        subroutineSession: Session<S>,
+      ): Session<P> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
         let finalMetadata = parentSession.context.toObject();
@@ -133,7 +133,7 @@ export class Subroutine<
    * @param fn Function to initialize the subroutine session from the parent session
    * @returns This instance for method chaining
    */
-  initWith(fn: (parentSession: ISession<P>) => ISession<S>): this {
+  initWith(fn: (parentSession: Session<P>) => Session<S>): this {
     this.initFunction = fn;
     return this;
   }
@@ -145,9 +145,9 @@ export class Subroutine<
    */
   squashWith(
     fn: (
-      parentSession: ISession<P>,
-      subroutineSession: ISession<S>,
-    ) => ISession<P>,
+      parentSession: Session<P>,
+      subroutineSession: Session<S>,
+    ) => Session<P>,
   ): this {
     this.squashFunction = fn;
     return this;

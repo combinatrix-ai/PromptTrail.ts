@@ -13,7 +13,7 @@ import {
   Assistant,
 } from '../../../templates';
 import { TemplateFactory } from '../../../templates/factory';
-import type { ISession, Session } from '../../../types';
+import type { Session } from '../../../session';
 import type { Context } from '../../../context';
 
 // Mock the generate module
@@ -64,10 +64,10 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser('Extract information')
         .addAssistant('Information extracted')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           return session.updateContext({
             extractedData: { name: 'Alice', age: 30 },
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
     );
 
@@ -133,7 +133,7 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser(
           new (class extends Source<string> {
-            async getContent(session: ISession<any>) {
+            async getContent(session: Session<any>) {
               return `Hello, ${(session.context as Context<any>).get('userName')}!`;
             }
           })(),
@@ -178,7 +178,7 @@ describe('SubroutineTemplate', () => {
             },
           }),
         )
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           const lasMessage = session.getLastMessage();
           const content = lasMessage?.content || '';
           const tempMatch = content.match(/(\d+)°C/);
@@ -193,7 +193,7 @@ describe('SubroutineTemplate', () => {
               temperature,
               condition: weatherCondition,
             },
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
     );
 
@@ -218,10 +218,10 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser('Inner subroutine question')
         .addAssistant('Inner subroutine answer')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           return session.updateContext({
             inner: 'completed',
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
     );
 
@@ -231,10 +231,10 @@ describe('SubroutineTemplate', () => {
         .addUser('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
         .addUser('Outer subroutine end')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           return session.updateContext({
             outer: 'completed',
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
     );
 
@@ -255,7 +255,7 @@ describe('SubroutineTemplate', () => {
   });
 
   it('should support isolatedContext mode', async () => {
-    // Use ISession<any> for parent to allow checking dynamic keys later if needed
+    // Use Session<any> for parent to allow checking dynamic keys later if needed
     const parentSession = createSession<any>().updateContext({
       parentData: 'visible',
     });
@@ -264,14 +264,14 @@ describe('SubroutineTemplate', () => {
     const isolatedSubroutine = new Subroutine<any, any>(
       new Sequence()
         .addUser('Testing isolated context')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           // Try to access parent context (should be undefined due to isolated context)
           const parentData = session.context.get('parentData');
           // Set new context in the isolated context
           return session.updateContext({
             isolatedData: 'not visible to parent',
             parentDataVisible: parentData !== undefined, // This will be false
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
       { isolatedContext: true },
     );
@@ -301,14 +301,14 @@ describe('SubroutineTemplate', () => {
     const sharedSubroutine = new Subroutine<any, any>(
       new Sequence()
         .addUser('Testing shared context')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           // Try to access parent context (should be visible via default initWith)
           const parentData = session.context.get('parentData');
           // Set new context in the shared context
           return session.updateContext({
             sharedData: 'visible to parent',
             parentDataVisible: parentData !== undefined, // This will be true
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
     );
 
@@ -333,7 +333,7 @@ describe('SubroutineTemplate', () => {
     // Create a custom session initializer function (initWith)
     const customInitWith = vi
       .fn()
-      .mockImplementation((parentSession: ISession<any>) => {
+      .mockImplementation((parentSession: Session<any>) => {
         // Create a new session, selectively copying context
         const newSession = createSession<any>();
         const userName = parentSession.context.get('userName');
@@ -355,7 +355,7 @@ describe('SubroutineTemplate', () => {
     const subroutine = new Subroutine<any, any>(
       new Sequence().addUser(
         new (class extends Source<string> {
-          async getContent(session: ISession<any>) {
+          async getContent(session: Session<any>) {
             const userName = (session.context as Context<any>).get('userName');
             const customInit = (session.context as Context<any>).get(
               'customInit',
@@ -406,61 +406,59 @@ describe('SubroutineTemplate', () => {
     // Create a custom merger function (squashWith)
     const customSquashWith = vi
       .fn()
-      .mockImplementation(
-        (parent: ISession<any>, subroutine: ISession<any>) => {
-          // Start with a clone of the parent's context object
-          const mergedMetadataObject = { ...parent.context.toObject() };
+      .mockImplementation((parent: Session<any>, subroutine: Session<any>) => {
+        // Start with a clone of the parent's context object
+        const mergedMetadataObject = { ...parent.context.toObject() };
 
-          const subroutineMeta = subroutine.context.toObject();
+        const subroutineMeta = subroutine.context.toObject();
 
-          // Deep merge 'user' object
-          if (subroutineMeta.user && typeof subroutineMeta.user === 'object') {
-            const currentUser = mergedMetadataObject.user || {};
-            // Ensure name from parent is kept if not overwritten by subroutine
-            mergedMetadataObject.user = {
-              ...currentUser,
-              ...subroutineMeta.user,
-            };
+        // Deep merge 'user' object
+        if (subroutineMeta.user && typeof subroutineMeta.user === 'object') {
+          const currentUser = mergedMetadataObject.user || {};
+          // Ensure name from parent is kept if not overwritten by subroutine
+          mergedMetadataObject.user = {
+            ...currentUser,
+            ...subroutineMeta.user,
+          };
+        }
+
+        // Simple overwrite for 'preferences'
+        if (subroutineMeta.preferences) {
+          mergedMetadataObject.preferences = subroutineMeta.preferences;
+        }
+
+        // Add/overwrite any other keys from subroutine
+        for (const key in subroutineMeta) {
+          if (
+            key !== 'user' &&
+            key !== 'preferences' &&
+            subroutineMeta.hasOwnProperty(key)
+          ) {
+            mergedMetadataObject[key] = subroutineMeta[key];
           }
+        }
 
-          // Simple overwrite for 'preferences'
-          if (subroutineMeta.preferences) {
-            mergedMetadataObject.preferences = subroutineMeta.preferences;
-          }
+        // Create final session - use merged context object
+        let finalSession = createSession({ context: mergedMetadataObject });
+        // Add parent messages (as per this test's custom logic)
+        parent.messages.forEach(
+          (msg) => (finalSession = finalSession.addMessage(msg)),
+        );
 
-          // Add/overwrite any other keys from subroutine
-          for (const key in subroutineMeta) {
-            if (
-              key !== 'user' &&
-              key !== 'preferences' &&
-              subroutineMeta.hasOwnProperty(key)
-            ) {
-              mergedMetadataObject[key] = subroutineMeta[key];
-            }
-          }
-
-          // Create final session - use merged context object
-          let finalSession = createSession({ context: mergedMetadataObject });
-          // Add parent messages (as per this test's custom logic)
-          parent.messages.forEach(
-            (msg) => (finalSession = finalSession.addMessage(msg)),
-          );
-
-          return finalSession;
-        },
-      );
+        return finalSession;
+      });
 
     // Create a subroutine with the custom squashWith function
     const subroutine = new Subroutine<any, any>(
       new Sequence()
         .addUser('Updating user profile')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           // This context will be processed by squashWith
           return session.updateContext({
             user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
             preferences: { notifications: true }, // Overwrite preferences
             status: 'updated', // Add new key
-          }) as ISession<any>;
+          }) as Session<any>;
         }),
       { squashWith: customSquashWith },
     );
@@ -537,8 +535,8 @@ describe('SubroutineTemplate', () => {
     const innerSubroutine = new Subroutine()
       .addUser('Inner subroutine question')
       .addAssistant('Inner subroutine answer')
-      .addTransform((session: ISession<any>) => {
-        return session.updateContext({ inner: 'completed' }) as ISession<any>;
+      .addTransform((session: Session<any>) => {
+        return session.updateContext({ inner: 'completed' }) as Session<any>;
       });
 
     // Create an outer subroutine that includes the inner one via method chaining
@@ -546,8 +544,8 @@ describe('SubroutineTemplate', () => {
       .addUser('Outer subroutine start')
       .add(innerSubroutine) // Nest the subroutine
       .addUser('Outer subroutine end')
-      .addTransform((session: ISession<any>) => {
-        return session.updateContext({ outer: 'completed' }) as ISession<any>;
+      .addTransform((session: Session<any>) => {
+        return session.updateContext({ outer: 'completed' }) as Session<any>;
       });
 
     // Execute the nested subroutines
@@ -604,7 +602,7 @@ describe('SubroutineTemplate', () => {
     const loopSubroutine = new Subroutine(
       new Sequence()
         .addUser('Message from loop subroutine')
-        .addTransform((session: ISession<any>) => {
+        .addTransform((session: Session<any>) => {
           const currentCount = (session.context.get('count') as number) || 0;
           return session.updateContext({
             count: currentCount + 1,
@@ -620,7 +618,7 @@ describe('SubroutineTemplate', () => {
 
     // Execute the loop, starting context count at 0
     const session = await loopTemplate.execute(
-      createSession({ context: { count: 0 } }) as unknown as ISession<
+      createSession({ context: { count: 0 } }) as unknown as Session<
         Record<string, unknown>
       >,
     );

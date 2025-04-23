@@ -1,4 +1,4 @@
-import type { Session } from '../types';
+import type { Session } from '../session';
 import type { Template } from './base';
 import type { Source, ModelOutput } from '../content_source';
 import type { GenerateOptions } from '../generate_options';

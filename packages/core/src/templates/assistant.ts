@@ -1,5 +1,5 @@
 import { createContext } from '../context';
-import type { Session } from '../types';
+import type { Session } from '../session';
 import type { AssistantMessage } from '../message';
 import { BaseTemplate } from './base';
 import { Source, ModelOutput, ValidationOptions } from '../content_source';

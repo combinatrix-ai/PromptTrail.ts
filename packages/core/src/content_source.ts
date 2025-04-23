@@ -1,5 +1,5 @@
-import { ValidationError } from './types';
-import type { ISession } from './types';
+import { ValidationError } from './errors';
+import type { Session } from './session';
 import type {
   IValidator,
   TValidationResult as ValidationResult,
@@ -56,7 +56,7 @@ export abstract class Source<T = unknown> {
    * @param session Session context for content generation
    * @returns Promise resolving to content of type T
    */
-  abstract getContent(session: ISession): Promise<T>; // TODO: Rename ISession to Session
+  abstract getContent(session: Session): Promise<T>; // TODO: Rename Session to Session
 
   /**
    * Validates the given content once using the assigned validator.
@@ -64,7 +64,7 @@ export abstract class Source<T = unknown> {
    */
   protected async validateContent(
     content: string,
-    session: ISession, // TODO: Rename ISession to Session
+    session: Session, // TODO: Rename Session to Session
   ): Promise<ValidationResult> {
     if (!this.validator) {
       return { isValid: true }; // No validator means content is considered valid
@@ -117,8 +117,8 @@ export class StaticSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session): Promise<string> {
+    // TODO: Rename Session to Session
     const interpolatedContent = interpolateTemplate(
       this.content,
       session.context,
@@ -149,7 +149,7 @@ export class StaticListSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
+  async getContent(session: Session): Promise<string> {
     if (this.index < this.contentList.length) {
       return this.contentList[this.index++];
     } else {
@@ -177,7 +177,7 @@ export class RandomSource extends TextSource {
     super(options);
   }
 
-  async getContent(session: ISession): Promise<string> {
+  async getContent(session: Session): Promise<string> {
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
   }
@@ -200,7 +200,7 @@ export class ListSource extends TextSource {
     this.loop = options?.loop ?? false;
   }
 
-  async getContent(session: ISession): Promise<string> {
+  async getContent(session: Session): Promise<string> {
     if (this.index < this.contentList.length) {
       const content = this.contentList[this.index++];
       // Apply validation if a validator exists
@@ -261,8 +261,8 @@ export class CLISource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session): Promise<string> {
+    // TODO: Rename Session to Session
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -324,8 +324,8 @@ export class CallbackSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session): Promise<string> {
+    // TODO: Rename Session to Session
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
     let currentInput = '';
@@ -389,8 +389,8 @@ export class LlmSource extends ModelSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<ModelOutput> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session): Promise<ModelOutput> {
+    // TODO: Rename Session to Session
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
 
@@ -499,8 +499,8 @@ export class SchemaSource<
     // but ideally, it should use a dedicated validator.
   }
 
-  async getContent(session: ISession): Promise<ModelOutput> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session): Promise<ModelOutput> {
+    // TODO: Rename Session to Session
     const schemaFunction = {
       name: this.options.functionName || 'generateStructuredOutput',
       description: 'Generate structured output according to schema',

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
 import { createContext } from '../../context';
-import { type ISession } from '../../types';
+import { type Session } from '../../session';
 
 vi.mock('../../generate');
 
@@ -57,7 +57,7 @@ describe('AssistantTemplate with Validator', () => {
     const conditionalValidator: IValidator = {
       validate: async (
         content,
-        _context: ISession,
+        _context: Session,
       ): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }

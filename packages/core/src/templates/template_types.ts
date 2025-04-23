@@ -1,4 +1,4 @@
-import type { Session } from '../types';
+import type { Session } from '../session';
 
 /**
  * Type definition for transform functions
@@ -18,8 +18,8 @@ export interface ISubroutineTemplateOptions<
    * A function to initialize the session for the subroutine based on the parent session.
    * Defaults to cloning the parent session's messages and metadata.
    * If `isolatedContext` is true, this function is ignored and a new empty session is created.
-   * @param parentSession The parent session (ISession<P>).
-   * @returns The initial session for the subroutine (ISession<S>).
+   * @param parentSession The parent session (Session<P>).
+   * @returns The initial session for the subroutine (Session<S>).
    */
   initWith?: (parentSession: Session<P>) => Session<S>;
 
@@ -28,9 +28,9 @@ export interface ISubroutineTemplateOptions<
    * Defaults to merging messages (if `retainMessages` is true) and metadata.
    * If `isolatedContext` is true, this function is ignored for metadata merging,
    * and messages are only merged if `retainMessages` is explicitly true.
-   * @param parentSession The original parent session (ISession<P>).
-   * @param subroutineSession The final session after the subroutine execution (ISession<S>).
-   * @returns The merged session (ISession<P>).
+   * @param parentSession The original parent session (Session<P>).
+   * @param subroutineSession The final session after the subroutine execution (Session<S>).
+   * @returns The merged session (Session<P>).
    */
   squashWith?: (
     parentSession: Session<P>,

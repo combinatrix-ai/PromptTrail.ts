@@ -1,7 +1,7 @@
 /**
  * Schema validators for structured data validation
  */
-import { type ISchemaType } from '../types';
+import { type SchemaType } from '../schema_template';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**
@@ -59,7 +59,7 @@ export class JsonValidator extends BaseValidator {
 /**
  * Validator that checks if content matches a specified schema
  */
-export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
+export class SchemaValidator<T extends SchemaType> extends BaseValidator {
   private schema: T;
 
   constructor(options: { schema: T; description?: string }) {
@@ -93,7 +93,7 @@ export class SchemaValidator<T extends ISchemaType> extends BaseValidator {
   }
 
   private validateSchema(
-    schema: ISchemaType,
+    schema: SchemaType,
     value: Record<string, unknown>,
   ): string[] {
     const errors: string[] = [];

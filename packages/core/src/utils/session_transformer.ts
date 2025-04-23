@@ -1,4 +1,4 @@
-import type { ISession } from '../types';
+import type { Session } from '../session';
 
 /**
  * Session transformer interface for transforming sessions
@@ -8,8 +8,8 @@ export interface SessionTransformer<
   TOutput extends Record<string, unknown> = TInput,
 > {
   transform(
-    session: ISession<TInput>,
-  ): Promise<ISession<TOutput>> | ISession<TOutput>;
+    session: Session<TInput>,
+  ): Promise<Session<TOutput>> | Session<TOutput>;
 }
 
 /**
@@ -18,9 +18,7 @@ export interface SessionTransformer<
 export type SessionTransformerFn<
   TInput extends Record<string, unknown> = Record<string, unknown>,
   TOutput extends Record<string, unknown> = TInput,
-> = (
-  session: ISession<TInput>,
-) => Promise<ISession<TOutput>> | ISession<TOutput>;
+> = (session: Session<TInput>) => Promise<Session<TOutput>> | Session<TOutput>;
 
 /**
  * Create a transformer from a function

@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createSession } from '../../session';
-import type { ISession as Session } from '../../types'; // Use "import type"
+import type { Session } from '../../session';
 import {
   Sequence,
   Loop,
@@ -19,7 +19,7 @@ import {
   Assistant,
   Agent,
   TemplateFactory,
-  Subroutine, // Add SubroutineTemplate import
+  Subroutine,
 } from '../../templates';
 import { createContext } from '../../context';
 import { createGenerateOptions } from '../../generate_options';

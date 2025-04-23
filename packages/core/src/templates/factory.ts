@@ -10,7 +10,7 @@ import { Loop } from './loop';
 import { Sequence } from './sequence';
 import { Subroutine } from './subroutine';
 import { Transform } from './transform';
-import type { Session } from '../types';
+import type { Session } from '../session';
 import type {
   TTransformFunction,
   ISubroutineTemplateOptions,

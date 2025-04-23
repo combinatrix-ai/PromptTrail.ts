@@ -1,4 +1,4 @@
-import type { ISession } from '../types';
+import type { Session } from '../session';
 import type { MessageRole } from '../message';
 import {
   createTransformer,
@@ -101,6 +101,6 @@ export function extractMarkdown<T extends Record<string, unknown>>(
     const updatedSession = session.updateContext(extractedData as T);
 
     // Return the updated session
-    return updatedSession as ISession<Record<string, unknown> & T>;
+    return updatedSession as Session<Record<string, unknown> & T>;
   });
 }

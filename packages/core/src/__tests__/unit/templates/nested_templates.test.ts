@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  // Sequence as LinearTemplate, // Remove alias
   Loop,
   System,
   User,
-  Assistant, // Ensure AssistantTemplate is imported
-  // SubroutineTemplate, // Keep import commented out as tests are skipped
+  Assistant,
   Conditional,
-  Sequence, // Import Sequence directly
-} from '../../../templates'; // Check path and export in index.ts
+  Sequence,
+} from '../../../templates';
 import { createSession } from '../../../session';
 import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
@@ -16,7 +14,7 @@ import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../../generate_options';
-import type { ISession } from '../../../types';
+import type { Session } from '../../../session';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {
@@ -84,7 +82,7 @@ describe('Nested Templates', () => {
         .add(new Assistant(generateOptions)) // Removed comma
         .add(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
-      exitCondition: (session: ISession) => {
+      exitCondition: (session: Session) => {
         // Exit after one iteration
         const messages = Array.from(session.messages);
         return messages.length >= 5; // System + First Q&A + Second Q&A

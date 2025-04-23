@@ -1,28 +1,37 @@
 import type { Message } from './message';
-import type { Context } from './context';
-import { createContext } from './context';
-import type { ISession } from './types';
-import { ValidationError } from './types';
+// Removed duplicate imports
+import { createContext, type Context } from './context'; // Import type alongside value
+import { ValidationError } from './errors';
 
-/**
- * Immutable session implementation
- */
+// Helper to check if an object looks like a Context instance
+function isContext<T extends Record<string, unknown>>(
+  obj: any,
+): obj is Context<T> {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    typeof obj.get === 'function' &&
+    typeof obj.set === 'function' &&
+    typeof obj.clone === 'function' // Add other checks if needed
+  );
+}
+
 /**
  * Internal session implementation
  */
 class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
-  implements ISession<T>
+  implements Session<T>
 {
   constructor(
     public readonly messages: readonly Message[] = [],
-    public readonly context: Context<T> = createContext<T>(),
+    public readonly context: Context<T>, // Removed default value here, set in createSession
     public readonly print: boolean = false,
   ) {}
 
   /**
    * Create a new session with additional message
    */
-  addMessage(message: Message): ISession<T> {
+  addMessage(message: Message): Session<T> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -46,9 +55,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new session with updated metadata
    */
-  updateContext<U extends Record<string, unknown>>(
-    context: U,
-  ): ISession<T & U> {
+  updateContext<U extends Record<string, unknown>>(context: U): Session<T & U> {
     return new _SessionImpl<T & U>(
       this.messages,
       this.context.merge(context),
@@ -121,7 +128,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
    */
   static fromJSON<U extends Record<string, unknown>>(
     json: Record<string, unknown>,
-  ): ISession<U> {
+  ): Session<U> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -142,15 +149,48 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
 export function createSession<T extends Record<string, unknown>>(
   options: {
     messages?: Message[];
-    context?: T;
+    context?: T | Context<T>; // Allow T or Context<T>
     print?: boolean;
   } = {},
-): ISession<T> {
+): Session<T> {
+  let sessionContext: Context<T>;
+
+  if (options.context) {
+    if (isContext<T>(options.context)) {
+      // If it's already a Context object, clone it
+      sessionContext = options.context.clone();
+    } else {
+      // If it's a plain object T, create a new Context from it
+      sessionContext = createContext<T>({ initial: options.context });
+    }
+  } else {
+    // If no context is provided, create an empty one
+    sessionContext = createContext<T>();
+  }
+
   return new _SessionImpl<T>(
-    options.messages,
-    options.context
-      ? createContext<T>({ initial: options.context })
-      : undefined,
+    options.messages ?? [], // Ensure messages is always an array
+    sessionContext,
     options.print ?? false,
   );
+}
+
+/**
+ * Session interface for maintaining conversation state
+ */
+export interface Session<
+  T extends { [key: string]: unknown } = Record<string, unknown>,
+> {
+  readonly messages: readonly Message[];
+  readonly context: Context<T>;
+  readonly print: boolean;
+  addMessage(message: Message): Session<T>;
+  updateContext<U extends Record<string, unknown>>(context: U): Session<T & U>;
+  getLastMessage(): Message | undefined;
+  getMessagesByType<U extends Message['type']>(
+    type: U,
+  ): Extract<Message, { type: U }>[];
+  validate(): void;
+  toJSON(): Record<string, unknown>;
+  toString(): string;
 }

@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
-import type { Session } from '../../../types'; // Import Session type from types.ts
+import type { Session } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
 import { createContext } from '../../../context';
-import { generateText } from '../../../generate'; // Import the actual function name
+import { generateText } from '../../../generate';
 import { expect_messages } from '../../utils';
 import { Sequence } from '../../../templates/sequence';
 import { System } from '../../../templates/system';
 import { User } from '../../../templates/user';
-// import { count } from 'console'; // Removed unused import
 
 // Mock the generate module directly. Vitest replaces the actual generateText export with a mock.
 vi.mock('../../../generate');

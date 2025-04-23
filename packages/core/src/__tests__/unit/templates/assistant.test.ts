@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/assistant';
 import { createSession } from '../../../session';
 import { StaticSource } from '../../../content_source';
-import type { ModelOutput } from '../../../content_source'; // Use "import type"
 import { createGenerateOptions } from '../../../generate_options';
 import { createContext } from '../../../context';
 import { generateText } from '../../../generate';
