@@ -233,40 +233,39 @@ describe('End-to-End Workflows with Real APIs', () => {
         new Sequence<CounterContext>()
         .addAssistant('Loop iteration')
         .addTransform(
-          (session: Session<CounterContext>) => {
+          (session: Session<any>) => {
             const currentCount = session.getContextValue('count') || 0;
-            session.setContextValue('count', currentCount + 1);
-            return session;
-          }, 
+            return session.setContextValue('count', currentCount + 1);
+          },
         ),
-        (session: Session<CounterContext>) => {
-          return (session.getContextValue('count') || 0) >= 3;
+        (session: Session<any>) => {
+          console.log('Exit condition check', session.getContextValue('count'));
+          return (session.getContextValue('count') as number) >= 3;
         },
       );
     const session = await template.execute(createSession());
     const messages = Array.from(session.messages);
-    // The loop will execute twice (count 0->1, 1->2) before the exit condition is true (2>=3 is false)
-    // So we expect 1 user message + 2 assistant messages = 3 messages
-    expect(messages).toHaveLength(3);
+    // The loop will execute three times (count 0, 1, 2) before the exit condition is true (count 3)
+    // So we expect 1 user message + 3 assistant messages = 4 messages
+    expect(messages).toHaveLength(4);
 
     // Define the body template for the loop
-    const loopBodyTemplate = new User('Loop message 123456789');
+    const loopBodyTemplate = new Sequence<{ count: number }>()
+      .add(new User('Loop message 123456789'))
+      .addTransform((session: Session<{ count: number }>) => {
+        const currentCount = (session.getContextValue('count') as number | undefined) ?? 0;
+        return session.setContextValue('count', currentCount + 1);
+      });
 
-    // Define the exit condition function
+    // Define the exit condition function (pure check)
     const loopExitCondition = (
       session: Session<{ count: number }>,
     ): boolean => {
-      // Get count, default to 0 if undefined
-      const currentCount =
-        (session.getContextValue('count') as number | undefined) ?? 0;
-      session.setContextValue('count', currentCount + 1);
-      // Exit condition: stop when count reaches 3
       const updatedCount =
         (session.getContextValue('count') as number | undefined) ?? 0;
       return updatedCount >= 3;
     };
 
-    // Instantiate LoopTemplate correctly
     // Instantiate LoopTemplate correctly using options object and specify generic type
     const using_loop = new Loop<{ count: number }>({
       bodyTemplate: loopBodyTemplate,
@@ -277,9 +276,9 @@ describe('End-to-End Workflows with Real APIs', () => {
       createSession({ context: { count: 0 } }),
     );
     const messages2 = Array.from(session2.messages);
-    // The loop will execute twice (count 0->1, 1->2) before the exit condition is true (2>=3 is false)
-    // So we expect 2 user messages
-    expect(messages2).toHaveLength(2);
+    // The loop will execute three times (count 0,1,2) before the exit condition is true (3>=3)
+    // So we expect 3 user messages
+    expect(messages2).toHaveLength(3);
   });
 
   it('should templates with linear child templates (sequence, loop) have addXXX methods', async () => {
@@ -327,21 +326,28 @@ describe('End-to-End Workflows with Real APIs', () => {
       );
 
     // Define the exit condition for the loop
+    // Add a transform to increment count in the loop body
+    const loopBodySequenceWithTransform = loopBodySequence.addTransform(
+      (session: Session<{ count: number }>) => {
+        const currentCount = (session.getContextValue('count') as number | undefined) ?? 0;
+        return session.setContextValue('count', currentCount + 1);
+      }
+    );
+
+    // Define the exit condition for the loop (pure check)
     const loopExitCondition = (
       session: Session<{ count: number }>,
     ): boolean => {
-      const currentCount =
-        (session.getContextValue('count') as number | undefined) ?? 0;
-      session.setContextValue('count', currentCount + 1);
       const updatedCount =
         (session.getContextValue('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
+      // There are two items in the static list, so exit after two iterations
       return updatedCount >= 2;
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
     const loop = new Loop<{ count: number }>({
-      bodyTemplate: loopBodySequence,
+      bodyTemplate: loopBodySequenceWithTransform,
       exitCondition: loopExitCondition,
     });
 
@@ -351,15 +357,18 @@ describe('End-to-End Workflows with Real APIs', () => {
     );
     const messages2 = Array.from(session2.messages);
 
-    // The actual behavior of the loop is different from the expected behavior in the comments.
-    // The loop only executes once before the exit condition becomes true.
+    // The loop will execute twice (count 0, 1) before the exit condition is true (2>=2)
     // Expected messages:
     // 1. System
     // 2. User (123456789)
     // 3. Assistant (Response to 123)
     // 4. User (Condition MET...)
-    // Total: 4 messages
-    expect(messages2).toHaveLength(4);
+    // 5. System
+    // 6. User (987654321)
+    // 7. Assistant (Response to 987)
+    // Total: 7 messages
+    // The loop will execute twice, so expect 7 messages as described in the comments above
+    expect(messages2).toHaveLength(7);
 
     // Check specific message contents
     expect(messages2[0].type).toBe('system');
