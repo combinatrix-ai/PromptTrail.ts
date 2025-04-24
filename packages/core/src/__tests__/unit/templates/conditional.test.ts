@@ -260,7 +260,8 @@ describe('If Template', () => {
 
     // Create a nested if template structure
     const innerIfTemplate = new Conditional({
-      condition: (session) => session.getContextValue('isAuthenticated') === true,
+      condition: (session) =>
+        session.getContextValue('isAuthenticated') === true,
       thenTemplate: new User('User is authenticated'),
       elseTemplate: new User('User is not authenticated'),
     });
@@ -362,7 +363,8 @@ describe('If Template', () => {
 
     // Create a complex if-else chain using nested IFs to simulate a switch statement
     const messageTypeHandler = new Conditional({
-      condition: (session) => session.getContextValue('messageType') === 'greeting',
+      condition: (session) =>
+        session.getContextValue('messageType') === 'greeting',
       thenTemplate: greetingTemplate,
       elseTemplate: new Conditional({
         condition: (session) =>

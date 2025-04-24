@@ -83,8 +83,14 @@ describe('UserTemplate', () => {
     const session = createSession();
     console.log('Before setting context value (content source):', session);
     const updatedSession = session.setContextValue('query', 'weather');
-    console.log('After setting context value (content source):', updatedSession);
-    console.log('Original session after setting context value (content source):', session);
+    console.log(
+      'After setting context value (content source):',
+      updatedSession,
+    );
+    console.log(
+      'Original session after setting context value (content source):',
+      session,
+    );
 
     const template = new User(
       new StaticSource('What is the ${query} like today?'),

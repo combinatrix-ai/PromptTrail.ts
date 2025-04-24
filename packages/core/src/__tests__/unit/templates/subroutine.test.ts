@@ -285,14 +285,10 @@ describe('SubroutineTemplate', () => {
     expect(messages[0].content).toBe('Testing isolated context');
 
     // The isolatedData should NOT be available in the result due to isolated context
-    expect(
-      resultSession.getContextValue('isolatedData'),
-    ).toBeUndefined();
+    expect(resultSession.getContextValue('isolatedData')).toBeUndefined();
 
     // The parentDataVisible context (set inside isolated context) should also NOT be merged back
-    expect(
-      resultSession.getContextValue('parentDataVisible'),
-    ).toBeUndefined();
+    expect(resultSession.getContextValue('parentDataVisible')).toBeUndefined();
 
     // Parent context should remain unchanged
     expect(resultSession.getContextValue('parentData')).toBe('visible');
@@ -316,14 +312,12 @@ describe('SubroutineTemplate', () => {
     const sharedResultSession = await sharedSubroutine.execute(parentSession);
 
     // The sharedData should be available in the result (merged by default squashWith)
-    expect(
-      sharedResultSession.getContextValue('sharedData'),
-    ).toBe('visible to parent');
+    expect(sharedResultSession.getContextValue('sharedData')).toBe(
+      'visible to parent',
+    );
 
     // The parentDataVisible should be true and merged back
-    expect(
-      sharedResultSession.getContextValue('parentDataVisible'),
-    ).toBe(true);
+    expect(sharedResultSession.getContextValue('parentDataVisible')).toBe(true);
 
     // Parent context should still be there
     expect(sharedResultSession.getContextValue('parentData')).toBe('visible');
@@ -338,8 +332,8 @@ describe('SubroutineTemplate', () => {
         return createSession<any>({
           context: {
             userName: parentSession.getContextValue('userName'),
-            customInit: true
-          }
+            customInit: true,
+          },
         });
       });
 
@@ -379,9 +373,7 @@ describe('SubroutineTemplate', () => {
     );
     // Verify context reflects custom init and default merge
     expect(resultSession.getContextValue('userName')).toBe('Charlie'); // From parent via initWith
-    expect(resultSession.getContextValue('customInit')).toBe(
-      true,
-    );
+    expect(resultSession.getContextValue('customInit')).toBe(true);
     expect(resultSession.getContextValue('sensitiveData')).toBe(
       'should not be copied',
     );
@@ -473,9 +465,7 @@ describe('SubroutineTemplate', () => {
     const preferences = resultSession.getContextValue('preferences');
     expect(preferences).toEqual({ notifications: true }); // Overwritten
 
-    expect(resultSession.getContextValue('status')).toBe(
-      'updated',
-    );
+    expect(resultSession.getContextValue('status')).toBe('updated');
   });
 
   // New functionality tests for list of templates and method chaining
@@ -596,7 +586,8 @@ describe('SubroutineTemplate', () => {
       new Sequence()
         .addUser('Message from loop subroutine')
         .addTransform((session: Session<any>) => {
-          const currentCount = (session.getContextValue('count') as number) || 0;
+          const currentCount =
+            (session.getContextValue('count') as number) || 0;
           return session.updateContext({
             count: currentCount + 1,
           });

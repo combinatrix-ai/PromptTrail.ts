@@ -8,7 +8,7 @@
  * manually by a human developer.
  */
 
-import { describe, it, expect, vi, } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createSession } from '../../session';
 import type { Session } from '../../session';
 import {
@@ -231,13 +231,11 @@ describe('End-to-End Workflows with Real APIs', () => {
       // Use addLoop with a body template and the exit condition
       .addLoop(
         new Sequence<CounterContext>()
-        .addAssistant('Loop iteration')
-        .addTransform(
-          (session: Session<any>) => {
+          .addAssistant('Loop iteration')
+          .addTransform((session: Session<any>) => {
             const currentCount = session.getContextValue('count') || 0;
             return session.setContextValue('count', currentCount + 1);
-          },
-        ),
+          }),
         (session: Session<any>) => {
           console.log('Exit condition check', session.getContextValue('count'));
           return (session.getContextValue('count') as number) >= 3;
@@ -253,7 +251,8 @@ describe('End-to-End Workflows with Real APIs', () => {
     const loopBodyTemplate = new Sequence<{ count: number }>()
       .add(new User('Loop message 123456789'))
       .addTransform((session: Session<{ count: number }>) => {
-        const currentCount = (session.getContextValue('count') as number | undefined) ?? 0;
+        const currentCount =
+          (session.getContextValue('count') as number | undefined) ?? 0;
         return session.setContextValue('count', currentCount + 1);
       });
 
@@ -329,9 +328,10 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Add a transform to increment count in the loop body
     const loopBodySequenceWithTransform = loopBodySequence.addTransform(
       (session: Session<{ count: number }>) => {
-        const currentCount = (session.getContextValue('count') as number | undefined) ?? 0;
+        const currentCount =
+          (session.getContextValue('count') as number | undefined) ?? 0;
         return session.setContextValue('count', currentCount + 1);
-      }
+      },
     );
 
     // Define the exit condition for the loop (pure check)

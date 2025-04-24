@@ -119,10 +119,7 @@ export class StaticSource extends TextSource {
 
   async getContent(session: Session): Promise<string> {
     // TODO: Rename Session to Session
-    const interpolatedContent = interpolateTemplate(
-      this.content,
-      session,
-    );
+    const interpolatedContent = interpolateTemplate(this.content, session);
     // Use shared validation logic (single attempt)
     const validationResult = await this.validateContent(
       interpolatedContent,

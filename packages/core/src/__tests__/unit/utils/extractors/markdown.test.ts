@@ -37,7 +37,7 @@ This is the conclusion.
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = await transformer.transform(session) ;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly
     expect(transformedSession.getContextValue('summary')).toBe(
@@ -90,7 +90,7 @@ def factorial(n):
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = await transformer.transform(session) ;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly
     expect(transformedSession.getContextValue('tsCode')).toBe(
@@ -144,7 +144,7 @@ console.log(factorial(5)); // 120
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = await transformer.transform(session) ;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly
     expect(transformedSession.getContextValue('explanation')).toContain(
@@ -201,7 +201,7 @@ const assistantCode = 'assistant';
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userTransformedSession = await userTransformer.transform(session) ;
+    const userTransformedSession = await userTransformer.transform(session);
 
     // Check that only user content was extracted
     expect(userTransformedSession.getContextValue('userHeading')).toBe(
@@ -231,15 +231,15 @@ const assistantCode = 'assistant';
     const assistantTransformedSession = assistantTransformer.transform(
       session,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ) ;
+    );
 
     // Check that only assistant content was extracted
     expect(
       assistantTransformedSession.getContextValue('userHeading'),
     ).toBeUndefined();
-    expect(assistantTransformedSession.getContextValue('assistantHeading')).toBe(
-      'Assistant content',
-    );
+    expect(
+      assistantTransformedSession.getContextValue('assistantHeading'),
+    ).toBe('Assistant content');
     expect(assistantTransformedSession.getContextValue('code')).toBe(
       "const assistantCode = 'assistant';",
     );

@@ -33,7 +33,7 @@ export function interpolateTemplate<T extends Record<string, unknown>>(
 ): string {
   console.log('Interpolating template:', template);
   console.log('Session/Context:', session);
-  
+
   if ('context' in session && session.context) {
     // If it's a Session object, use its context
     console.log('Using session.context');

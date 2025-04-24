@@ -1,7 +1,9 @@
 /**
  * Context type for type-safe key-value storage
  */
-export type Context<T extends Record<string, unknown> = Record<string, unknown>> = T;
+export type Context<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = T;
 
 /**
  * Create a new context object with type inference

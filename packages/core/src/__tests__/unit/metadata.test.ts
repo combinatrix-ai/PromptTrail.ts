@@ -42,10 +42,10 @@ describe('Metadata', () => {
   it('should create a new object instance', () => {
     const original = { name: 'test' };
     const metadata = createMetadata(original);
-    
+
     // Verify it's a new object
     expect(metadata).not.toBe(original);
-    
+
     // Modify the original, metadata should not change
     original.name = 'changed';
     expect(metadata.name).toBe('test');
@@ -57,13 +57,13 @@ describe('Metadata', () => {
       age: number;
       isAdmin: boolean;
     };
-    
+
     const metadata = createMetadata<UserMetadata>({
       name: 'John',
       age: 30,
       isAdmin: true,
     });
-    
+
     expect(metadata.name).toBe('John');
     expect(metadata.age).toBe(30);
     expect(metadata.isAdmin).toBe(true);

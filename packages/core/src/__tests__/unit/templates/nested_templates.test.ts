@@ -140,7 +140,10 @@ describe('Nested Templates', () => {
     // Create a session with metadata
     const session = createSession();
     const sessionWithUsername = session.setContextValue('username', 'Alice');
-    const sessionWithBoth = sessionWithUsername.setContextValue('topic', 'TypeScript');
+    const sessionWithBoth = sessionWithUsername.setContextValue(
+      'topic',
+      'TypeScript',
+    );
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped

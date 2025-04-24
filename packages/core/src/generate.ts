@@ -69,8 +69,7 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
       // Store tool results to process later
       toolResults.push({
         content: msg.content,
-        toolCallId:
-          (msg.metadata?.toolCallId as string) || crypto.randomUUID(),
+        toolCallId: (msg.metadata?.toolCallId as string) || crypto.randomUUID(),
       });
     }
   }

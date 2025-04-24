@@ -64,7 +64,9 @@ Average response time: 120ms
 
     // Check that the context was updated correctly with the transformed value
     expect(transformedSession.getContextValue('errorCount')).toBe(42);
-    expect(typeof transformedSession.getContextValue('errorCount')).toBe('number');
+    expect(typeof transformedSession.getContextValue('errorCount')).toBe(
+      'number',
+    );
   });
 
   it('should extract multiple patterns', async () => {
@@ -112,7 +114,9 @@ Server Information:
     expect(transformedSession.getContextValue('hostname')).toBe(
       'server-01.example.com',
     );
-    expect(transformedSession.getContextValue('ipAddress')).toBe('192.168.1.100');
+    expect(transformedSession.getContextValue('ipAddress')).toBe(
+      '192.168.1.100',
+    );
     expect(transformedSession.getContextValue('status')).toBe('Running');
     // Use toBeCloseTo for floating point comparisons to avoid precision issues
     expect(transformedSession.getContextValue('uptime')).toBeCloseTo(0.9999, 4);
@@ -184,9 +188,8 @@ This message doesn't contain the pattern we're looking for.
 
     // Apply the transformer
 
-    const assistantTransformedSession = await assistantTransformer.transform(
-      session,
-    );
+    const assistantTransformedSession =
+      await assistantTransformer.transform(session);
 
     // Check that only assistant content was extracted
     expect(assistantTransformedSession.getContextValue('apiKey')).toBe(
@@ -194,27 +197,28 @@ This message doesn't contain the pattern we're looking for.
     );
   });
 
-  it('should use the full match if no capture group is provided', () => async () => {
-    // Create a session with a message containing a pattern
-    const session = createSession({
-      messages: [
-        {
-          type: 'assistant',
-          content: 'The error code is E12345',
-        },
-      ],
+  it('should use the full match if no capture group is provided', () =>
+    async () => {
+      // Create a session with a message containing a pattern
+      const session = createSession({
+        messages: [
+          {
+            type: 'assistant',
+            content: 'The error code is E12345',
+          },
+        ],
+      });
+
+      // Extract using a pattern without capture groups
+      const transformer = extractPattern({
+        pattern: /E\d{5}/,
+        key: 'errorCode',
+      });
+
+      // Apply the transformer
+      const transformedSession = await transformer.transform(session);
+
+      // Check that the full match was used
+      expect(transformedSession.getContextValue('errorCode')).toBe('E12345');
     });
-
-    // Extract using a pattern without capture groups
-    const transformer = extractPattern({
-      pattern: /E\d{5}/,
-      key: 'errorCode',
-    });
-
-    // Apply the transformer
-    const transformedSession = await transformer.transform(session);
-
-    // Check that the full match was used
-    expect(transformedSession.getContextValue('errorCode')).toBe('E12345');
-  });
 });

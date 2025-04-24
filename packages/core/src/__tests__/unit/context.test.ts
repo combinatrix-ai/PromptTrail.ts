@@ -44,10 +44,10 @@ describe('Context', () => {
   it('should create a new object instance', () => {
     const original = { name: 'test' };
     const context = createContext({ initial: original });
-    
+
     // Verify it's a new object
     expect(context).not.toBe(original);
-    
+
     // Modify the original, context should not change
     original.name = 'changed';
     expect(context.name).toBe('test');
@@ -59,7 +59,7 @@ describe('Context', () => {
       age: number;
       isAdmin: boolean;
     };
-    
+
     const context = createContext<UserContext>({
       initial: {
         name: 'John',
@@ -67,7 +67,7 @@ describe('Context', () => {
         isAdmin: true,
       },
     });
-    
+
     expect(context.name).toBe('John');
     expect(context.age).toBe(30);
     expect(context.isAdmin).toBe(true);

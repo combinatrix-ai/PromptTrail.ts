@@ -52,7 +52,10 @@ describe('SystemTemplate', () => {
     // Create a session with metadata
     const session = createSession();
     const sessionWithRole = session.setContextValue('role', 'coding assistant');
-    const sessionWithBoth = sessionWithRole.setContextValue('rules', 'be helpful and clear');
+    const sessionWithBoth = sessionWithRole.setContextValue(
+      'rules',
+      'be helpful and clear',
+    );
 
     // Create a SystemTemplate with interpolated text
     const template = new System('You are a ${role}. Always ${rules}.');

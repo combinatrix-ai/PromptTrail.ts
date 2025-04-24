@@ -62,11 +62,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   setContextValue<K extends keyof T>(key: K, value: T[K]): Session<T> {
     const newContext = { ...this.context };
     newContext[key] = value;
-    return new _SessionImpl<T>(
-      this.messages,
-      newContext,
-      this.print,
-    );
+    return new _SessionImpl<T>(this.messages, newContext, this.print);
   }
 
   /**
@@ -96,9 +92,10 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   getMessagesByType<U extends Message['type']>(
     type: U,
   ): Extract<Message, { type: U }>[] {
-    return this.messages.filter(
-      (msg) => msg.type === type,
-    ) as Extract<Message, { type: U }>[];
+    return this.messages.filter((msg) => msg.type === type) as Extract<
+      Message,
+      { type: U }
+    >[];
   }
 
   /**
@@ -173,9 +170,9 @@ export function createSession<T extends Record<string, unknown>>(
     print?: boolean;
   } = {},
 ): Session<T> {
-  const sessionContext: Context<T> = options.context 
-    ? { ...options.context } 
-    : {} as Context<T>;
+  const sessionContext: Context<T> = options.context
+    ? { ...options.context }
+    : ({} as Context<T>);
 
   return new _SessionImpl<T>(
     options.messages ?? [],
