@@ -113,8 +113,8 @@ const session = createSession<UserContext>({
 });
 
 // Type-safe context access with autocomplete
-const userName = session.context.get('name'); // Type: string
-const theme = session.context.get('preferences').theme; // Type: 'light' | 'dark'
+const userName = session.context.name; // Type: string
+const theme = session.context.preferences.theme; // Type: 'light' | 'dark'
 
 // Immutable updates return new instances with preserved types
 const updatedSession = session.updateContext({
@@ -232,7 +232,7 @@ const quiz = new Sequence()
       initWith: (parent) => {
         // Create a new session with the same messages and context
         let clonedSession = createSession({
-          context: parent.context.toObject(),
+          context: parent.context,
         });
 
         // Add all messages from parent session
@@ -399,8 +399,8 @@ const codeTemplate = new Sequence()
 const session = await codeTemplate.execute(createSession());
 
 // Access the extracted data
-console.log('Code:', session.context.get('code'));
-console.log('Explanation:', session.context.get('explanation'));
+console.log('Code:', session.context.code);
+console.log('Explanation:', session.context.explanation);
 
 // You can also extract data using regex patterns
 const dataTemplate = new Sequence()
@@ -420,8 +420,8 @@ const dataTemplate = new Sequence()
   });
 
 const dataSession = await dataTemplate.execute(createSession());
-console.log('IP:', dataSession.context.get('ipAddress')); // "192.168.1.100"
-console.log('Uptime:', dataSession.context.get('uptime')); // 0.9999
+console.log('IP:', dataSession.context.ipAddress); // "192.168.1.100"
+console.log('Uptime:', dataSession.context.uptime); // 0.9999
 ````
 
 ### 🛡️ Validation
@@ -538,7 +538,7 @@ const template = new Sequence()
 const session = await template.execute(createSession());
 
 // Get the structured output from the session context
-const product = session.context.get('structured_output');
+const product = session.context.structured_output;
 console.log(product);
 // Output: { name: 'iPhone 15 Pro', price: 999, inStock: true, description: 'Smartphone with a titanium frame' }
 

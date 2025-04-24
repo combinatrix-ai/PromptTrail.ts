@@ -89,37 +89,43 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
 }
 
 /**
- * Create a provider based on configuration
+ * Create a provider based on the full GenerateOptions
  */
-function createProvider(config: ProviderConfig): unknown {
-  const options: Record<string, unknown> = {};
-  if (config.type === 'openai') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+function createProvider(options: GenerateOptions): unknown {
+  const providerConfig = options.provider;
+  const sdkProviderOptions: Record<string, unknown> = {}; // Options specifically for createOpenAI/createAnthropic
+
+  if (providerConfig.type === 'openai') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
     }
-    if (config.organization) {
-      options.organization = config.organization;
+    if (providerConfig.organization) {
+      sdkProviderOptions.organization = providerConfig.organization;
     }
-
-    options.apiKey = config.apiKey;
-
-    const openai = createOpenAI(options);
-
-    return openai(config.modelName);
-  } else if (config.type === 'anthropic') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
     }
 
-    options.apiKey = config.apiKey;
+    const openai = createOpenAI(sdkProviderOptions);
+    return openai(providerConfig.modelName);
+  } else if (providerConfig.type === 'anthropic') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
+    }
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set (Anthropic might support this too)
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
+    }
 
-    const anthropic = createAnthropic(options);
-
-    return anthropic(config.modelName, options);
+    const anthropic = createAnthropic(sdkProviderOptions);
+    return anthropic(providerConfig.modelName);
   }
 
   throw new Error(
-    `Unsupported provider type: ${(config as { type: string }).type}`,
+    `Unsupported provider type: ${(providerConfig as { type: string }).type}`, // Fix typo: use providerConfig
   );
 }
 
@@ -128,16 +134,18 @@ function createProvider(config: ProviderConfig): unknown {
  */
 async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
   try {
+    // Add 'type: 'mcp'' based on MCPServerConfig definition
     const transport = {
-      type: 'http', // Add the required type property
+      type: 'mcp' as const, // Use 'mcp' literal type
       url: config.url,
       name: config.name || 'prompttrail-mcp-client',
       version: config.version || '1.0.0',
       headers: config.headers || {},
     };
 
+    // Cast transport to 'any' to bypass potential type definition issues in ai-sdk
     const mcpClient = await experimental_createMCPClient({
-      transport,
+      transport: transport as any,
     });
 
     return mcpClient;
@@ -159,7 +167,7 @@ export async function generateText(
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
+  const provider = createProvider(options); // Pass the full options object
 
   // Handle MCP tools if configured
   const mcpClients = [];
@@ -187,6 +195,8 @@ export async function generateText(
     topK: options.topK,
     tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
+    // Pass the initialized MCP clients to the AI SDK
+    ...(mcpClients.length > 0 && { mcpClients }),
     ...options.sdkOptions,
   });
 
@@ -239,7 +249,7 @@ export async function* generateTextStream(
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
+  const provider = createProvider(options); // Pass the full options object
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({
