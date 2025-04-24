@@ -1,61 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { createContext } from '../../context';
+import { createMetadata, type Metadata } from '../../metadata';
 
 describe('Metadata', () => {
   it('should create empty metadata', () => {
-    const metadata = createContext();
-    expect(metadata.size).toBe(0);
+    const metadata = createMetadata();
+    expect(Object.keys(metadata).length).toBe(0);
   });
 
   it('should create metadata with initial data', () => {
     const initial = { name: 'test', value: 123 };
-    const metadata = createContext({ initial });
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('value')).toBe(123);
-  });
-
-  it('should set and get values', () => {
-    const metadata = createContext<{ name: string; count: number }>();
-    metadata.set('name', 'test');
-    metadata.set('count', 42);
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('count')).toBe(42);
-  });
-
-  it('should clone metadata', () => {
-    const metadata = createContext({
-      initial: { name: 'test', obj: { nested: true } },
-    });
-    const cloned = metadata.clone();
-
-    expect(cloned.get('name')).toBe('test');
-    expect(cloned.get('obj')).toEqual({ nested: true });
-
-    // Verify deep clone
-    const obj = cloned.get('obj') as { nested: boolean };
-    obj.nested = false;
-    expect(metadata.get('obj')).toEqual({ nested: true });
-  });
-
-  it('should merge metadata', () => {
-    const metadata1 = createContext({ initial: { a: 1, b: 2 } });
-    const metadata2 = createContext({ initial: { b: 3, c: 4 } });
-
-    const merged = metadata1.merge(metadata2);
-    expect(merged.toObject()).toEqual({ a: 1, b: 3, c: 4 });
-  });
-
-  it('should convert to JSON', () => {
-    const data = { name: 'test', value: 123 };
-    const metadata = createContext({ initial: data });
-    expect(metadata.toJSON()).toEqual(data);
-  });
-
-  it('should support iteration', () => {
-    const data = { a: 1, b: 2, c: 3 };
-    const metadata = createContext({ initial: data });
-    const entries = Array.from(metadata);
-    expect(entries).toEqual(Object.entries(data));
+    const metadata = createMetadata(initial);
+    expect(metadata.name).toBe('test');
+    expect(metadata.value).toBe(123);
   });
 
   it('should handle nested objects', () => {
@@ -67,21 +23,49 @@ describe('Metadata', () => {
         },
       },
     };
-    const metadata = createContext({ initial: data });
-    expect(metadata.get('user')).toEqual(data.user);
+    const metadata = createMetadata(data);
+    expect(metadata.user).toEqual(data.user);
   });
 
   it('should create metadata with type inference', () => {
-    const metadata = createContext({
-      initial: {
-        name: 'test',
-        count: 42,
-        settings: { enabled: true },
-      },
+    const metadata = createMetadata({
+      name: 'test',
+      count: 42,
+      settings: { enabled: true },
     });
 
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('count')).toBe(42);
-    expect(metadata.get('settings')).toEqual({ enabled: true });
+    expect(metadata.name).toBe('test');
+    expect(metadata.count).toBe(42);
+    expect(metadata.settings).toEqual({ enabled: true });
+  });
+
+  it('should create a new object instance', () => {
+    const original = { name: 'test' };
+    const metadata = createMetadata(original);
+    
+    // Verify it's a new object
+    expect(metadata).not.toBe(original);
+    
+    // Modify the original, metadata should not change
+    original.name = 'changed';
+    expect(metadata.name).toBe('test');
+  });
+
+  it('should work with type annotations', () => {
+    type UserMetadata = {
+      name: string;
+      age: number;
+      isAdmin: boolean;
+    };
+    
+    const metadata = createMetadata<UserMetadata>({
+      name: 'John',
+      age: 30,
+      isAdmin: true,
+    });
+    
+    expect(metadata.name).toBe('John');
+    expect(metadata.age).toBe(30);
+    expect(metadata.isAdmin).toBe(true);
   });
 });

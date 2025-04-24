@@ -3,7 +3,7 @@ import { createSession } from '../../../../session';
 import { extractPattern } from '../../../../utils/pattern_extractor';
 
 describe('Pattern Extractor', () => {
-  it('should extract content using regex patterns', () => {
+  it('should extract content using regex patterns', async () => {
     // Create a session with a message containing patterns to extract
     const session = createSession({
       messages: [
@@ -27,16 +27,15 @@ Rate Limit: 100 requests per minute
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly
-    expect(transformedSession.context.get('apiEndpoint')).toBe(
+    expect(transformedSession.getContextValue('apiEndpoint')).toBe(
       'https://api.example.com/v1/users',
     );
   });
 
-  it('should apply transformation functions', () => {
+  it('should apply transformation functions', () => async () => {
     // Create a session with a message containing numeric data
     const session = createSession({
       messages: [
@@ -61,15 +60,14 @@ Average response time: 120ms
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly with the transformed value
-    expect(transformedSession.context.get('errorCount')).toBe(42);
-    expect(typeof transformedSession.context.get('errorCount')).toBe('number');
+    expect(transformedSession.getContextValue('errorCount')).toBe(42);
+    expect(typeof transformedSession.getContextValue('errorCount')).toBe('number');
   });
 
-  it('should extract multiple patterns', () => {
+  it('should extract multiple patterns', async () => {
     // Create a session with a message containing multiple patterns
     const session = createSession({
       messages: [
@@ -108,20 +106,19 @@ Server Information:
     ]);
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the context was updated correctly
-    expect(transformedSession.context.get('hostname')).toBe(
+    expect(transformedSession.getContextValue('hostname')).toBe(
       'server-01.example.com',
     );
-    expect(transformedSession.context.get('ipAddress')).toBe('192.168.1.100');
-    expect(transformedSession.context.get('status')).toBe('Running');
+    expect(transformedSession.getContextValue('ipAddress')).toBe('192.168.1.100');
+    expect(transformedSession.getContextValue('status')).toBe('Running');
     // Use toBeCloseTo for floating point comparisons to avoid precision issues
-    expect(transformedSession.context.get('uptime')).toBeCloseTo(0.9999, 4);
+    expect(transformedSession.getContextValue('uptime')).toBeCloseTo(0.9999, 4);
   });
 
-  it('should use default values when no match is found', () => {
+  it('should use default values when no match is found', () => async () => {
     // Create a session with a message that doesn't contain the pattern
     const session = createSession({
       messages: [
@@ -142,14 +139,13 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the default value was used
-    expect(transformedSession.context.get('apiKey')).toBe('no-key-found');
+    expect(transformedSession.getContextValue('apiKey')).toBe('no-key-found');
   });
 
-  it('should filter by message type', () => {
+  it('should filter by message type', () => async () => {
     // Create a session with multiple message types
     const session = createSession({
       messages: [
@@ -172,11 +168,10 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userTransformedSession = userTransformer.transform(session) as any;
+    const userTransformedSession = await userTransformer.transform(session);
 
     // Check that only user content was extracted
-    expect(userTransformedSession.context.get('apiKey')).toBe(
+    expect(userTransformedSession.getContextValue('apiKey')).toBe(
       'user-api-key-123',
     );
 
@@ -189,18 +184,17 @@ This message doesn't contain the pattern we're looking for.
 
     // Apply the transformer
 
-    const assistantTransformedSession = assistantTransformer.transform(
+    const assistantTransformedSession = await assistantTransformer.transform(
       session,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ) as any;
+    );
 
     // Check that only assistant content was extracted
-    expect(assistantTransformedSession.context.get('apiKey')).toBe(
+    expect(assistantTransformedSession.getContextValue('apiKey')).toBe(
       'assistant-api-key-456',
     );
   });
 
-  it('should use the full match if no capture group is provided', () => {
+  it('should use the full match if no capture group is provided', () => async () => {
     // Create a session with a message containing a pattern
     const session = createSession({
       messages: [
@@ -218,10 +212,9 @@ This message doesn't contain the pattern we're looking for.
     });
 
     // Apply the transformer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session);
 
     // Check that the full match was used
-    expect(transformedSession.context.get('errorCode')).toBe('E12345');
+    expect(transformedSession.getContextValue('errorCode')).toBe('E12345');
   });
 });

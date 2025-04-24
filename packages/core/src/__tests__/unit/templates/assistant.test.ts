@@ -82,9 +82,9 @@ describe('AssistantTemplate', () => {
 
   it('should support interpolation in static content', async () => {
     const session = createSession();
-    session.context.set('username', 'Alice');
+    const updatedSession = session.setContextValue('username', 'Alice');
     const template = new Assistant('Hello, ${username}!');
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
   });
 

@@ -1,4 +1,3 @@
-import { createContext } from '../context';
 import type { Session } from '../session';
 import type { UserMessage } from '../message';
 import { BaseTemplate } from './base';

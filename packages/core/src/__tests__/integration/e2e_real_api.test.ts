@@ -8,7 +8,7 @@
  * manually by a human developer.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, } from 'vitest';
 import { createSession } from '../../session';
 import type { Session } from '../../session';
 import {
@@ -21,7 +21,7 @@ import {
   TemplateFactory,
   Subroutine,
 } from '../../templates';
-import { createContext } from '../../context';
+import { createContext, type Context } from '../../context';
 import { createGenerateOptions } from '../../generate_options';
 import { StaticListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';
@@ -131,8 +131,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       // Update context with the last message
       .addTransform((session) => {
         // Change name Alice to Bob
-        session.context.set('username', 'Bob');
-        return session;
+        return session.setContextValue('username', 'Bob');
       });
     // Pass the raw initialMetadata object to createSession
     const session = await template.execute(
@@ -142,7 +141,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'assistant', 'user']);
     expect(messages[1].content).toContain('Hello, Alice!');
-    expect(session.context.get('username')).toBe('Bob');
+    expect(session.getContextValue('username')).toBe('Bob');
   });
 
   it('should execute agent and sequence', async () => {
@@ -224,22 +223,24 @@ describe('End-to-End Workflows with Real APIs', () => {
   });
 
   it('should loop if LoopTemplate is used or Seuqnce().loopIf() is used', async () => {
-    const template = new Sequence()
+    interface CounterContext extends Context {
+      count: number;
+    }
+    const template = new Sequence<CounterContext>()
       .add(new User('123456789'))
       // Use addLoop with a body template and the exit condition
       .addLoop(
-        TemplateFactory.assistant('Loop iteration'), // Added body template
-        (session: Session) => {
-          // Added type annotation for session
-          // Get count, default to 0 if undefined
-          const currentCount =
-            (session.context.get('count') as number | undefined) ?? 0;
-          session.context.set('count', currentCount + 1);
-          // Exit condition: stop when count reaches 3
-          // Re-fetch the count after setting it
-          const updatedCount =
-            (session.context.get('count') as number | undefined) ?? 0;
-          return updatedCount >= 3;
+        new Sequence<CounterContext>()
+        .addAssistant('Loop iteration')
+        .addTransform(
+          (session: Session<CounterContext>) => {
+            const currentCount = session.getContextValue('count') || 0;
+            session.setContextValue('count', currentCount + 1);
+            return session;
+          }, 
+        ),
+        (session: Session<CounterContext>) => {
+          return (session.getContextValue('count') || 0) >= 3;
         },
       );
     const session = await template.execute(createSession());
@@ -257,11 +258,11 @@ describe('End-to-End Workflows with Real APIs', () => {
     ): boolean => {
       // Get count, default to 0 if undefined
       const currentCount =
-        (session.context.get('count') as number | undefined) ?? 0;
-      session.context.set('count', currentCount + 1);
+        (session.getContextValue('count') as number | undefined) ?? 0;
+      session.setContextValue('count', currentCount + 1);
       // Exit condition: stop when count reaches 3
       const updatedCount =
-        (session.context.get('count') as number | undefined) ?? 0;
+        (session.getContextValue('count') as number | undefined) ?? 0;
       return updatedCount >= 3;
     };
 
@@ -330,10 +331,10 @@ describe('End-to-End Workflows with Real APIs', () => {
       session: Session<{ count: number }>,
     ): boolean => {
       const currentCount =
-        (session.context.get('count') as number | undefined) ?? 0;
-      session.context.set('count', currentCount + 1);
+        (session.getContextValue('count') as number | undefined) ?? 0;
+      session.setContextValue('count', currentCount + 1);
       const updatedCount =
-        (session.context.get('count') as number | undefined) ?? 0;
+        (session.getContextValue('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
       return updatedCount >= 2;
     };
@@ -369,7 +370,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages2[3].content).toContain('Condition MET');
 
     // Check final context count
-    expect(session2.context.get('count')).toBe(2);
+    expect(session2.getContextValue('count')).toBe(2);
 
     // Removed misplaced commented code
   });
@@ -425,7 +426,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       expect(messages[2].toolCalls[0].name).toBe('weather');
     }
 
-    const toolResults = session.context.get('toolResults');
+    const toolResults = session.getContextValue('toolResults');
     if (toolResults) {
       expect(Array.isArray(toolResults)).toBe(true);
     }

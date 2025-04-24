@@ -121,7 +121,7 @@ export class StaticSource extends TextSource {
     // TODO: Rename Session to Session
     const interpolatedContent = interpolateTemplate(
       this.content,
-      session.context,
+      session,
     );
     // Use shared validation logic (single attempt)
     const validationResult = await this.validateContent(
@@ -424,7 +424,7 @@ export class LlmSource extends ModelSource {
         return {
           content: responseContent,
           toolCalls: response.toolCalls,
-          metadata: response.metadata?.toObject(),
+          metadata: response.metadata,
         };
       }
 
@@ -443,7 +443,7 @@ export class LlmSource extends ModelSource {
           return {
             content: responseContent,
             toolCalls: response.toolCalls,
-            metadata: response.metadata?.toObject(),
+            metadata: response.metadata,
           };
         }
       } else {
@@ -566,7 +566,7 @@ export class SchemaSource<
                 content: responseContent,
                 toolCalls: lastResponse.toolCalls,
                 structuredOutput: result.data,
-                metadata: lastResponse.metadata?.toObject(),
+                metadata: lastResponse.metadata,
               };
             } else {
               lastError = new Error(
@@ -585,7 +585,7 @@ export class SchemaSource<
                 return {
                   content: responseContent,
                   toolCalls: lastResponse.toolCalls,
-                  metadata: lastResponse.metadata?.toObject(),
+                  metadata: lastResponse.metadata,
                 };
               }
               console.log(
@@ -615,7 +615,7 @@ export class SchemaSource<
           return {
             content: responseContent,
             toolCalls: lastResponse?.toolCalls,
-            metadata: lastResponse?.metadata?.toObject(),
+            metadata: lastResponse?.metadata,
           };
         }
         console.log(`Retrying generation due to missing schema tool call...`);
@@ -642,7 +642,7 @@ export class SchemaSource<
               return {
                 content: lastResponse.content ?? '',
                 toolCalls: lastResponse.toolCalls,
-                metadata: lastResponse.metadata?.toObject(),
+                metadata: lastResponse.metadata,
               };
             } else {
               return { content: '' }; // Return empty if no response was generated

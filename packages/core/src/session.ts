@@ -1,20 +1,6 @@
 import type { Message } from './message';
-// Removed duplicate imports
-import { createContext, type Context } from './context'; // Import type alongside value
+import { createContext, type Context } from './context';
 import { ValidationError } from './errors';
-
-// Helper to check if an object looks like a Context instance
-function isContext<T extends Record<string, unknown>>(
-  obj: any,
-): obj is Context<T> {
-  return (
-    obj !== null &&
-    typeof obj === 'object' &&
-    typeof obj.get === 'function' &&
-    typeof obj.set === 'function' &&
-    typeof obj.clone === 'function' // Add other checks if needed
-  );
-}
 
 /**
  * Internal session implementation
@@ -24,7 +10,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
 {
   constructor(
     public readonly messages: readonly Message[] = [],
-    public readonly context: Context<T>, // Removed default value here, set in createSession
+    public readonly context: Context<T>,
     public readonly print: boolean = false,
   ) {}
 
@@ -47,7 +33,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     }
     return new _SessionImpl<T>(
       [...this.messages, message],
-      this.context.clone(),
+      { ...this.context }, // Create a shallow copy of the context
       this.print,
     );
   }
@@ -58,9 +44,43 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   updateContext<U extends Record<string, unknown>>(context: U): Session<T & U> {
     return new _SessionImpl<T & U>(
       this.messages,
-      this.context.merge(context),
+      { ...this.context, ...context },
       this.print,
     );
+  }
+
+  /**
+   * Get a value from the context
+   */
+  getContextValue<K extends keyof T>(key: K): T[K] | undefined {
+    return this.context[key];
+  }
+
+  /**
+   * Set a value in the context
+   */
+  setContextValue<K extends keyof T>(key: K, value: T[K]): Session<T> {
+    const newContext = { ...this.context };
+    newContext[key] = value;
+    return new _SessionImpl<T>(
+      this.messages,
+      newContext,
+      this.print,
+    );
+  }
+
+  /**
+   * Get the size of the context
+   */
+  get contextSize(): number {
+    return Object.keys(this.context).length;
+  }
+
+  /**
+   * Get a copy of the context as a plain object
+   */
+  getContextObject(): T {
+    return { ...this.context };
   }
 
   /**
@@ -77,8 +97,8 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
     type: U,
   ): Extract<Message, { type: U }>[] {
     return this.messages.filter(
-      (msg): msg is Extract<Message, { type: U }> => msg.type === type,
-    );
+      (msg) => msg.type === type,
+    ) as Extract<Message, { type: U }>[];
   }
 
   /**
@@ -111,7 +131,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      context: this.context.toJSON(),
+      context: this.context,
       print: this.print,
     };
   }
@@ -149,27 +169,16 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
 export function createSession<T extends Record<string, unknown>>(
   options: {
     messages?: Message[];
-    context?: T | Context<T>; // Allow T or Context<T>
+    context?: T;
     print?: boolean;
   } = {},
 ): Session<T> {
-  let sessionContext: Context<T>;
-
-  if (options.context) {
-    if (isContext<T>(options.context)) {
-      // If it's already a Context object, clone it
-      sessionContext = options.context.clone();
-    } else {
-      // If it's a plain object T, create a new Context from it
-      sessionContext = createContext<T>({ initial: options.context });
-    }
-  } else {
-    // If no context is provided, create an empty one
-    sessionContext = createContext<T>();
-  }
+  const sessionContext: Context<T> = options.context 
+    ? { ...options.context } 
+    : {} as Context<T>;
 
   return new _SessionImpl<T>(
-    options.messages ?? [], // Ensure messages is always an array
+    options.messages ?? [],
     sessionContext,
     options.print ?? false,
   );
@@ -186,6 +195,10 @@ export interface Session<
   readonly print: boolean;
   addMessage(message: Message): Session<T>;
   updateContext<U extends Record<string, unknown>>(context: U): Session<T & U>;
+  getContextValue<K extends keyof T>(key: K): T[K] | undefined;
+  setContextValue<K extends keyof T>(key: K, value: T[K]): Session<T>;
+  readonly contextSize: number;
+  getContextObject(): T;
   getLastMessage(): Message | undefined;
   getMessagesByType<U extends Message['type']>(
     type: U,

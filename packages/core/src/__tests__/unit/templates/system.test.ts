@@ -51,14 +51,14 @@ describe('SystemTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.context.set('role', 'coding assistant');
-    session.context.set('rules', 'be helpful and clear');
+    const sessionWithRole = session.setContextValue('role', 'coding assistant');
+    const sessionWithBoth = sessionWithRole.setContextValue('rules', 'be helpful and clear');
 
     // Create a SystemTemplate with interpolated text
     const template = new System('You are a ${role}. Always ${rules}.');
 
     // Execute the template and verify the result
-    const result = await template.execute(session);
+    const result = await template.execute(sessionWithBoth);
     expect(result.getLastMessage()?.content).toBe(
       'You are a coding assistant. Always be helpful and clear.',
     );
@@ -67,7 +67,7 @@ describe('SystemTemplate', () => {
   it('should work with CallbackSource', async () => {
     // Create a callback function that uses context
     const callback = vi.fn(({ context }) => {
-      const role = context?.get('role') || 'assistant';
+      const role = context?.role || 'assistant';
       return Promise.resolve(`You are a ${role}. Be helpful and informative.`);
     });
 
@@ -79,10 +79,10 @@ describe('SystemTemplate', () => {
 
     // Create a session with metadata
     const session = createSession();
-    session.context.set('role', 'financial expert');
+    const updatedSession = session.setContextValue('role', 'financial expert');
 
     // Execute the template and verify the result
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()!.type).toBe('system');
     expect(result.getLastMessage()!.content).toBe(
       'You are a financial expert. Be helpful and informative.',

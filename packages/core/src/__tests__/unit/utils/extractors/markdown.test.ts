@@ -4,7 +4,7 @@ import { extractMarkdown } from '../../../../utils/markdown_extractor';
 import { createMessage } from '../../../utils';
 
 describe('Markdown Extractor', () => {
-  it('should extract markdown headings', () => {
+  it('should extract markdown headings', () => async () => {
     // Create a session with a message containing markdown headings
     const session = createSession({
       messages: [
@@ -37,21 +37,21 @@ This is the conclusion.
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session) ;
 
     // Check that the context was updated correctly
-    expect(transformedSession.context.get('summary')).toBe(
+    expect(transformedSession.getContextValue('summary')).toBe(
       'This is a summary of the content.',
     );
-    expect(transformedSession.context.get('details')).toBe(
+    expect(transformedSession.getContextValue('details')).toBe(
       'These are the details of the content.',
     );
-    expect(transformedSession.context.get('conclusion')).toBe(
+    expect(transformedSession.getContextValue('conclusion')).toBe(
       'This is the conclusion.',
     );
   });
 
-  it('should extract code blocks', () => {
+  it('should extract code blocks', () => async () => {
     // Create a session with a message containing code blocks
     const session = createSession({
       messages: [
@@ -90,18 +90,18 @@ def factorial(n):
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session) ;
 
     // Check that the context was updated correctly
-    expect(transformedSession.context.get('tsCode')).toBe(
+    expect(transformedSession.getContextValue('tsCode')).toBe(
       'function factorial(n: number): number {\n  if (n <= 1) return 1;\n  return n * factorial(n - 1);\n}',
     );
-    expect(transformedSession.context.get('pyCode')).toBe(
+    expect(transformedSession.getContextValue('pyCode')).toBe(
       'def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n - 1)',
     );
   });
 
-  it('should extract both headings and code blocks', () => {
+  it('should extract both headings and code blocks', () => async () => {
     // Create a session with a message containing both headings and code blocks
     const session = createSession({
       messages: [
@@ -144,23 +144,23 @@ console.log(factorial(5)); // 120
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformedSession = transformer.transform(session) as any;
+    const transformedSession = await transformer.transform(session) ;
 
     // Check that the context was updated correctly
-    expect(transformedSession.context.get('explanation')).toContain(
+    expect(transformedSession.getContextValue('explanation')).toContain(
       'The factorial function is a mathematical function',
     );
-    expect(transformedSession.context.get('usage')).toContain(
+    expect(transformedSession.getContextValue('usage')).toContain(
       "Here's how you can use the factorial function:",
     );
 
     // For code blocks, it should extract the last matching code block
-    expect(transformedSession.context.get('code')).toBe(
+    expect(transformedSession.getContextValue('code')).toBe(
       'console.log(factorial(5)); // 120',
     );
   });
 
-  it('should filter by message type', () => {
+  it('should filter by message type', () => async () => {
     // Create a session with multiple message types
     const session = createSession({
       messages: [
@@ -201,16 +201,16 @@ const assistantCode = 'assistant';
 
     // Apply the transformer
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userTransformedSession = userTransformer.transform(session) as any;
+    const userTransformedSession = await userTransformer.transform(session) ;
 
     // Check that only user content was extracted
-    expect(userTransformedSession.context.get('userHeading')).toBe(
+    expect(userTransformedSession.getContextValue('userHeading')).toBe(
       'User content',
     );
     expect(
-      userTransformedSession.context.get('assistantHeading'),
+      userTransformedSession.getContextValue('assistantHeading'),
     ).toBeUndefined();
-    expect(userTransformedSession.context.get('code')).toBe(
+    expect(userTransformedSession.getContextValue('code')).toBe(
       "const userCode = 'user';",
     );
 
@@ -231,16 +231,16 @@ const assistantCode = 'assistant';
     const assistantTransformedSession = assistantTransformer.transform(
       session,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ) as any;
+    ) ;
 
     // Check that only assistant content was extracted
     expect(
-      assistantTransformedSession.context.get('userHeading'),
+      assistantTransformedSession.getContextValue('userHeading'),
     ).toBeUndefined();
-    expect(assistantTransformedSession.context.get('assistantHeading')).toBe(
+    expect(assistantTransformedSession.getContextValue('assistantHeading')).toBe(
       'Assistant content',
     );
-    expect(assistantTransformedSession.context.get('code')).toBe(
+    expect(assistantTransformedSession.getContextValue('code')).toBe(
       "const assistantCode = 'assistant';",
     );
   });

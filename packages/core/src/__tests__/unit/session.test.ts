@@ -34,7 +34,7 @@ describe('Session', () => {
   it('should create empty session', () => {
     const session = createSession();
     expect(session.messages).toHaveLength(0);
-    expect(session.context.size).toBe(0);
+    expect(session.contextSize).toBe(0);
   });
 
   it('should create session with initial messages', () => {
@@ -68,10 +68,10 @@ describe('Session', () => {
     });
     const newSession = session.updateContext({ added: 'value' });
 
-    expect(session.context.get('initial')).toBe(true);
-    expect(session.context.get('added')).toBeUndefined();
-    expect(newSession.context.get('initial')).toBe(true);
-    expect(newSession.context.get('added')).toBe('value');
+    expect(session.getContextValue('initial')).toBe(true);
+    expect(session.getContextValue('added')).toBeUndefined();
+    expect(newSession.getContextValue('initial')).toBe(true);
+    expect(newSession.getContextValue('added')).toBe('value');
   });
 
   it('should get messages by type', () => {
@@ -144,7 +144,7 @@ describe('Session', () => {
 
     const session = createSession(data);
     expect(session.messages).toEqual(data.messages);
-    expect(session.context.toObject()).toEqual(data.context);
+    expect(session.getContextObject()).toEqual(data.context);
   });
 
   it('should create session with type inference', () => {
@@ -161,24 +161,24 @@ describe('Session', () => {
     };
 
     const session = createSession({ context: metadata });
-    expect(session.context.get('userId')).toBe(123);
-    expect(session.context.get('settings')).toEqual({ theme: 'dark' });
+    expect(session.getContextValue('userId')).toBe(123);
+    expect(session.getContextValue('settings')).toEqual({ theme: 'dark' });
   });
 
   it('should handle optional parameters', () => {
     const session1 = createSession();
     expect(session1.messages).toHaveLength(0);
-    expect(session1.context.size).toBe(0);
+    expect(session1.contextSize).toBe(0);
     expect(session1.print).toBe(false);
 
     const session2 = createSession({ messages: [createUserMessage('Test')] });
     expect(session2.messages).toHaveLength(1);
-    expect(session2.context.size).toBe(0);
+    expect(session2.contextSize).toBe(0);
     expect(session2.print).toBe(false);
 
     const session3 = createSession({ context: { test: true } });
     expect(session3.messages).toHaveLength(0);
-    expect(session3.context.get('test')).toBe(true);
+    expect(session3.getContextValue('test')).toBe(true);
     expect(session3.print).toBe(false);
   });
 

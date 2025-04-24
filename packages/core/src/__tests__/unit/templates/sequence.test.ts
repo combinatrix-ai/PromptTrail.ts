@@ -342,7 +342,7 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Nice to meet you, Alice' },
     ]);
 
-    expect(session.context.get('userName')).toBe('Alice');
+    expect(session.getContextValue('userName')).toBe('Alice');
   });
 
   it('should execute an empty sequence without errors', async () => {
@@ -368,7 +368,7 @@ describe('Sequence Template', () => {
       .addUser('Second message')
       .addTransform((session) => {
         // Ensure counter is treated as a number
-        const counter = Number(session.context.get('counter') || 0);
+        const counter = Number(session.getContextValue('counter') || 0);
         // Cast the result to satisfy TTransformFunction type
         return session.updateContext({
           counter: counter + 1,
@@ -391,6 +391,6 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Counter value: 2' }, // Interpolated value
     ]);
 
-    expect(session.context.get('counter')).toBe(2);
+    expect(session.getContextValue('counter')).toBe(2);
   });
 });

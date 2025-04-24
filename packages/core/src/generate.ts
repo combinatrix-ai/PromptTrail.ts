@@ -70,7 +70,7 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
       toolResults.push({
         content: msg.content,
         toolCallId:
-          (msg.metadata?.get('toolCallId') as string) || crypto.randomUUID(),
+          (msg.metadata?.toolCallId as string) || crypto.randomUUID(),
       });
     }
   }
@@ -130,6 +130,7 @@ function createProvider(config: ProviderConfig): unknown {
 async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
   try {
     const transport = {
+      type: 'http', // Add the required type property
       url: config.url,
       name: config.name || 'prompttrail-mcp-client',
       version: config.version || '1.0.0',

@@ -63,13 +63,16 @@ describe('UserTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.context.set('query', 'weather');
+    console.log('Before setting context value:', session);
+    const updatedSession = session.setContextValue('query', 'weather');
+    console.log('After setting context value:', updatedSession);
+    console.log('Original session after setting context value:', session);
 
     // Create a UserTemplate with interpolated text
     const template = new User('What is the ${query} like today?');
 
     // Execute the template and verify the result
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );
@@ -78,13 +81,16 @@ describe('UserTemplate', () => {
   it('should support interpolation in content source', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.context.set('query', 'weather');
+    console.log('Before setting context value (content source):', session);
+    const updatedSession = session.setContextValue('query', 'weather');
+    console.log('After setting context value (content source):', updatedSession);
+    console.log('Original session after setting context value (content source):', session);
 
     const template = new User(
       new StaticSource('What is the ${query} like today?'),
     );
 
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );

@@ -59,7 +59,7 @@ export class Subroutine<
 
         // Default: Clone parent session messages and metadata
         const clonedMetadataObject =
-          parentSession.context.toObject() as unknown as S;
+          parentSession.getContextObject() as unknown as S;
         let clonedSession = createSession<S>({
           context: clonedMetadataObject,
         });
@@ -83,7 +83,7 @@ export class Subroutine<
       ): Session<P> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
-        let finalMetadata = parentSession.context.toObject();
+        let finalMetadata = parentSession.getContextObject();
 
         if (this.retainMessages) {
           // Append messages from the subroutine session that were added after
@@ -99,7 +99,7 @@ export class Subroutine<
           // Merge metadata only if not isolated
           finalMetadata = {
             ...finalMetadata,
-            ...subroutineSession.context.toObject(),
+            ...subroutineSession.getContextObject(),
           };
         }
 

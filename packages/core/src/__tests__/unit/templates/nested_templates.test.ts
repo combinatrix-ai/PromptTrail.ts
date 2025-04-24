@@ -139,8 +139,8 @@ describe('Nested Templates', () => {
 
     // Create a session with metadata
     const session = createSession();
-    session.context.set('username', 'Alice');
-    session.context.set('topic', 'TypeScript');
+    const sessionWithUsername = session.setContextValue('username', 'Alice');
+    const sessionWithBoth = sessionWithUsername.setContextValue('topic', 'TypeScript');
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped
@@ -154,7 +154,7 @@ describe('Nested Templates', () => {
     ]);
 
     // Execute the template
-    const result = await template.execute(session);
+    const result = await template.execute(sessionWithBoth);
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);
@@ -177,7 +177,7 @@ describe('Nested Templates', () => {
 
     // Create a session with a condition flag
     const session = createSession();
-    session.context.set('condition', true);
+    const updatedSession = session.setContextValue('condition', true);
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
@@ -186,7 +186,7 @@ describe('Nested Templates', () => {
       .add(
         new Conditional({
           // Use add()
-          condition: (session) => Boolean(session.context.get('condition')),
+          condition: (session) => Boolean(session.getContextValue('condition')),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
             .add(new Assistant(generateOptions)) // Removed comma
@@ -212,7 +212,7 @@ describe('Nested Templates', () => {
       ); // Close outer addIf
 
     // Execute the template
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);
@@ -234,9 +234,9 @@ describe('Nested Templates', () => {
 
     // Now test with condition = false
     const session2 = createSession();
-    session2.context.set('condition', false);
+    const updatedSession2 = session2.setContextValue('condition', false);
 
-    const result2 = await template.execute(session2);
+    const result2 = await template.execute(updatedSession2);
     const messages2 = Array.from(result2.messages);
 
     // Check the number of messages
