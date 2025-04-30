@@ -1,10 +1,13 @@
-import { createContext } from '../context';
-import type { Session } from '../session';
-import type { SystemMessage } from '../message';
-import { BaseTemplate } from './base';
-import type { Source } from '../content_source';
+import { Context, createMetadata, Metadata } from '../../taggedRecord';
+import type { Session } from '../../session';
+import type { SystemMessage } from '../../message';
+import { BaseTemplate } from '../base';
+import type { Source } from '../../content_source';
 
-export class System extends BaseTemplate<any, any> {
+export class System<
+  TMetadata extends Metadata,
+  TContext extends Context,
+> extends BaseTemplate<TMetadata, TContext> {
   constructor(contentOrSource: string | Source<string>) {
     super();
     this.contentSource = this.initializeContentSource(
@@ -13,7 +16,9 @@ export class System extends BaseTemplate<any, any> {
     );
   }
 
-  async execute(session?: Session): Promise<Session> {
+  async execute(
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const validSession = this.ensureSession(session);
     if (!this.contentSource)
       throw new Error('Content source required for SystemTemplate');
@@ -22,10 +27,10 @@ export class System extends BaseTemplate<any, any> {
     if (typeof content !== 'string')
       throw new Error('Expected string content from SystemTemplate source');
 
-    const message: SystemMessage = {
+    const message: SystemMessage<TMetadata> = {
       type: 'system',
       content,
-      metadata: createContext(),
+      metadata: createMetadata<TMetadata>(),
     };
     return validSession.addMessage(message);
   }

@@ -9,7 +9,12 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { Session } from './session';
 import type { Message } from './message';
-import { createContext } from './context';
+import {
+  Context,
+  createContext,
+  createMetadata,
+  Metadata,
+} from './taggedRecord';
 import type {
   GenerateOptions,
   MCPServerConfig,
@@ -19,7 +24,9 @@ import type {
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: Session): Array<{
+export function convertSessionToAiSdkMessages(
+  session: Session<any, any>,
+): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -91,7 +98,7 @@ function convertSessionToAiSdkMessages(session: Session): Array<{
 /**
  * Create a provider based on the full GenerateOptions
  */
-function createProvider(options: GenerateOptions): unknown {
+export function createProvider(options: GenerateOptions): LanguageModelV1 {
   const providerConfig = options.provider;
   const sdkProviderOptions: Record<string, unknown> = {}; // Options specifically for createOpenAI/createAnthropic
 
@@ -159,10 +166,13 @@ async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText(
-  session: Session,
+export async function generateText<
+  TContext extends Context,
+  TMetadata extends Metadata,
+>(
+  session: Session<TContext, TMetadata>,
   options: GenerateOptions,
-): Promise<Message> {
+): Promise<Message<TMetadata>> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -201,7 +211,7 @@ export async function generateText(
   });
 
   // Create metadata for the response
-  const metadata = createContext();
+  const metadata = createMetadata<TMetadata>();
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
@@ -241,10 +251,13 @@ export async function generateText(
 /**
  * Generate text stream using AI SDK
  */
-export async function* generateTextStream(
-  session: Session,
+export async function* generateTextStream<
+  TContext extends Context,
+  TMetadata extends Metadata,
+>(
+  session: Session<TContext, TMetadata>,
   options: GenerateOptions, // Fixed type to match generateText
-): AsyncGenerator<Message, void, unknown> {
+): AsyncGenerator<Message<TMetadata>, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 

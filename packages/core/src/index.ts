@@ -1,11 +1,10 @@
 export { tool } from 'ai';
-export * from './context';
-export * from './metadata';
 export { createSession } from './session';
 export * from './templates';
 export * from './content_source';
 export { createGenerateOptions, GenerateOptions } from './generate_options';
 export * from './utils';
-export * from './schema_template';
+export * from './templates/primitives/structured';
 export * from './validators';
 export * from './generate';
+export * from './taggedRecord';

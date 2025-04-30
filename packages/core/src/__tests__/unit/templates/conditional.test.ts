@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/assistant';
+import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
-import { createContext } from '../../../context';
+import { createContext } from '../../../taggedRecord';
 import { generateText } from '../../../generate';
-import { User } from '../../../templates/user';
-import { Conditional } from '../../../templates/conditional';
+import { User } from '../../../templates/primitives/user';
+import { Conditional } from '../../../templates/primitives/conditional';
 import type { Session } from '../../../session';
-import { Sequence } from '../../../templates/sequence';
+import { Sequence } from '../../../templates/composite/sequence';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

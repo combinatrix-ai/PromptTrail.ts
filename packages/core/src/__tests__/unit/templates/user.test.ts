@@ -6,7 +6,7 @@ import {
   StaticSource,
 } from '../../../content_source';
 import { CustomValidator } from '../../../validators/custom';
-import { User } from '../../../templates/user';
+import { User } from '../../../templates/primitives/user';
 
 // Mock the readline module
 vi.mock('node:readline/promises', () => {

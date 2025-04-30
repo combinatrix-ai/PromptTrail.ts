@@ -1,18 +1,22 @@
 import type { Session } from '../session';
+import { Context, Metadata } from '../taggedRecord';
 
 /**
  * Type definition for transform functions
  */
 export type TTransformFunction<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> = (session: Session<T>) => Session<any> | Promise<Session<any>>;
+  TMetadata extends Metadata,
+  TContext extends Context,
+> = (
+  session: Session<TContext, TMetadata>,
+) => Session<TContext, TMetadata> | Promise<Session<TContext, TMetadata>>;
 
 /**
  * Options for configuring the SubroutineTemplate.
  */
 export interface ISubroutineTemplateOptions<
-  P extends Record<string, unknown> = Record<string, unknown>,
-  S extends Record<string, unknown> = Record<string, unknown>,
+  TMetadata extends Metadata,
+  TContext extends Context,
 > {
   /**
    * A function to initialize the session for the subroutine based on the parent session.
@@ -21,7 +25,9 @@ export interface ISubroutineTemplateOptions<
    * @param parentSession The parent session (Session<P>).
    * @returns The initial session for the subroutine (Session<S>).
    */
-  initWith?: (parentSession: Session<P>) => Session<S>;
+  initWith?: (
+    parentSession: Session<TContext, TMetadata>,
+  ) => Session<TContext, TMetadata>;
 
   /**
    * A function to merge the final session of the subroutine back into the parent session.
@@ -33,9 +39,9 @@ export interface ISubroutineTemplateOptions<
    * @returns The merged session (Session<P>).
    */
   squashWith?: (
-    parentSession: Session<P>,
-    subroutineSession: Session<S>,
-  ) => Session<P>;
+    parentSession: Session<TContext, TMetadata>,
+    subroutineSession: Session<TContext, TMetadata>,
+  ) => Session<TContext, TMetadata>;
 
   /**
    * If true, messages generated within the subroutine are retained in the final merged session.
@@ -61,7 +67,8 @@ export interface ISubroutineTemplateOptions<
 // Make params interface generic
 
 export interface ITransformTemplateParams<
-  T extends Record<string, unknown> = Record<string, unknown>,
+  TMetadata extends Metadata,
+  TContext extends Context,
 > {
-  transformFn: TTransformFunction<T>;
+  transformFn: TTransformFunction<TMetadata, TContext>;
 }

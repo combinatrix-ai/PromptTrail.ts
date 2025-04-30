@@ -2,7 +2,7 @@ import type { Message } from '../message';
 import type { MessageRole } from '../message';
 
 import { tool } from 'ai';
-import { createMetadata } from '../metadata';
+import { createMetadata, Metadata } from '../taggedRecord';
 import { expect } from 'vitest';
 import { z } from 'zod';
 
@@ -37,7 +37,7 @@ export function createWeatherTool() {
  * Test function for message types
  */
 export function expect_types(
-  messages: Message[],
+  messages: Message<Metadata>[],
   expectedtypes: MessageRole[],
 ) {
   expect(messages.length).toBe(expectedtypes.length);
@@ -49,7 +49,7 @@ export function expect_types(
 /**
  * Test function for message content
  */
-export function expect_content(messages: Message[], expectedContent: string[]) {
+export function expect_content(messages: Message<Metadata>[], expectedContent: string[]) {
   expect(messages.length).toBe(expectedContent.length);
   messages.forEach((message, index) => {
     expect(message.content).toBe(expectedContent[index]);
@@ -60,8 +60,8 @@ export function expect_content(messages: Message[], expectedContent: string[]) {
  * Test function for both types and content
  */
 export function expect_messages(
-  messages: Message[],
-  expectedMessages: Message[],
+  messages: Message<Metadata>[],
+  expectedMessages: Message<Metadata>[],
 ) {
   expect(messages.length).toBe(expectedMessages.length);
   messages.forEach((message, index) => {
@@ -76,10 +76,10 @@ export function expect_messages(
 export function createMessage(
   type: 'system' | 'user' | 'assistant',
   content: string,
-): Message {
+): Message<Metadata> {
   return {
     type,
     content,
-    metadata: createMetadata(),
+    metadata: createMetadata<Metadata>(),
   };
 }

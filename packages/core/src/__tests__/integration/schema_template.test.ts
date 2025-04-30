@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createSession } from '../../session';
-import { SchemaTemplate } from '../../schema_template';
+import { Structured } from '../../templates/primitives/structured';
 import { createGenerateOptions, GenerateOptions } from '../../generate_options';
 import { z } from 'zod';
 
@@ -47,7 +47,7 @@ describe('SchemaTemplate API Integration', () => {
   (hasOpenAIKey ? it : it.skip)(
     'should generate structured data with OpenAI and native schema',
     async () => {
-      const template = new SchemaTemplate({
+      const template = new Structured({
         generateOptions: openaiOptions,
         schema: productSchema,
         maxAttempts: 2, // Test the retry logic with a smaller number of attempts
@@ -77,7 +77,7 @@ describe('SchemaTemplate API Integration', () => {
   (hasOpenAIKey ? it : it.skip)(
     'should generate structured data with OpenAI and Zod schema',
     async () => {
-      const template = new SchemaTemplate({
+      const template = new Structured({
         generateOptions: openaiOptions,
         schema: zodProductSchema,
         maxAttempts: 2,
@@ -105,7 +105,7 @@ describe('SchemaTemplate API Integration', () => {
   );
 
   it.skip('should generate structured data with Anthropic and native schema', async () => {
-    const template = new SchemaTemplate({
+    const template = new Structured({
       generateOptions: anthropicOptions,
       schema: productSchema,
       maxAttempts: 2,
@@ -131,7 +131,7 @@ describe('SchemaTemplate API Integration', () => {
   }, 30000);
 
   it.skip('should generate structured data with Anthropic and Zod schema', async () => {
-    const template = new SchemaTemplate({
+    const template = new Structured({
       generateOptions: anthropicOptions,
       schema: zodProductSchema,
       maxAttempts: 2,
@@ -168,7 +168,7 @@ describe('SchemaTemplate API Integration', () => {
         ),
     });
 
-    const template = new SchemaTemplate({
+    const template = new Structured({
       generateOptions: openaiOptions,
       schema: invalidSchema,
       maxAttempts: 2, // Set a small number to make the test faster

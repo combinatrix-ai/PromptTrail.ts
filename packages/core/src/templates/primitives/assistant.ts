@@ -1,12 +1,15 @@
-import { createContext } from '../context';
-import type { Session } from '../session';
-import type { AssistantMessage } from '../message';
-import { BaseTemplate } from './base';
-import { Source, ModelOutput, ValidationOptions } from '../content_source';
-import type { IValidator } from '../validators/base';
-import { GenerateOptions } from '../generate_options';
+import { createMetadata, Metadata, Context } from '../../taggedRecord';
+import type { Session } from '../../session';
+import type { AssistantMessage } from '../../message';
+import { BaseTemplate } from '../base';
+import { Source, ModelOutput, ValidationOptions } from '../../content_source';
+import type { IValidator } from '../../validators/base';
+import { GenerateOptions } from '../../generate_options';
 
-export class Assistant extends BaseTemplate<any, any> {
+export class Assistant<
+  TMetadata extends Metadata,
+  TContext extends Context,
+> extends BaseTemplate<TMetadata, TContext> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;
@@ -45,7 +48,9 @@ export class Assistant extends BaseTemplate<any, any> {
     }
   }
 
-  async execute(session?: Session): Promise<Session> {
+  async execute(
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const validSession = this.ensureSession(session);
     if (!this.contentSource)
       throw new Error('Content source required for AssistantTemplate');
@@ -61,7 +66,6 @@ export class Assistant extends BaseTemplate<any, any> {
 
       try {
         // 1. Get Content
-        console.log(`[Debug] Attempt ${attempts}: Starting...`); // DEBUG
         const rawOutput = await this.contentSource.getContent(validSession);
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
@@ -86,7 +90,6 @@ export class Assistant extends BaseTemplate<any, any> {
             'Invalid content source output for AssistantTemplate',
           );
         }
-        console.log(`[Debug] Attempt ${attempts}: Raw Output =`, rawOutput); // DEBUG
 
         // Store the output of this attempt
         currentOutput = {
@@ -117,24 +120,16 @@ export class Assistant extends BaseTemplate<any, any> {
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately
-        const message: AssistantMessage = {
+        const message: AssistantMessage<TMetadata> = {
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          metadata: createContext(),
+          metadata: createMetadata<TMetadata>(
+            currentOutput.metadata as TMetadata,
+          ),
+          structuredContent: currentOutput.structuredOutput,
         };
-        let updatedSession = validSession.addMessage(message);
-        if (currentOutput.metadata) {
-          updatedSession = updatedSession.updateContext(
-            currentOutput.metadata as any,
-          );
-        }
-        if (currentOutput.structuredOutput) {
-          updatedSession = updatedSession.updateContext({
-            structured_output: currentOutput.structuredOutput,
-          } as any);
-        }
-        return updatedSession; // Exit loop and function on success
+        return validSession.addMessage(message);
       } catch (error) {
         // 4. Handle Error (Validation or other error during try block)
         currentError = error as Error;
@@ -167,23 +162,14 @@ export class Assistant extends BaseTemplate<any, any> {
     // This happens if the last attempt failed and raiseError was false.
     if (!this.raiseError && lastError && lastOutput) {
       // Construct session from the last recorded output (which failed validation)
-      const lasMessage: AssistantMessage = {
+      const lastMessage: AssistantMessage<TMetadata> = {
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        metadata: createContext(),
+        metadata: createMetadata<TMetadata>(lastOutput.metadata as TMetadata),
+        structuredContent: lastOutput.structuredOutput,
       };
-      let lastAttemptSession = validSession.addMessage(lasMessage);
-      if (lastOutput.metadata) {
-        lastAttemptSession = lastAttemptSession.updateContext(
-          lastOutput.metadata as any,
-        );
-      }
-      if (lastOutput.structuredOutput) {
-        lastAttemptSession = lastAttemptSession.updateContext({
-          structured_output: lastOutput.structuredOutput,
-        } as any);
-      }
+      let lastAttemptSession = validSession.addMessage(lastMessage);
       return lastAttemptSession; // Resolve with the session containing the last (failed) output
     }
 

@@ -8,7 +8,7 @@ import {
   Sequence,
 } from '../../../templates';
 import { createSession } from '../../../session';
-import { createContext } from '../../../context';
+import { createContext } from '../../../taggedRecord';
 import { generateText } from '../../../generate';
 import {
   createGenerateOptions,

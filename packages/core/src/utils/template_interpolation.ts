@@ -1,11 +1,10 @@
-import type { Context } from '../context';
+import type { Context, Metadata } from '../taggedRecord';
 import type { Session } from '../session';
 
 /**
  * Type guard for Session interface
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isSession(value: unknown): value is Session<any> {
+function isSession(value: unknown): value is Session<any, any> {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -27,9 +26,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<T extends Record<string, unknown>>(
+export function interpolateTemplate<TContext extends Context, TMetadata extends Metadata>(
   template: string,
-  session: Session<T> | Context<T>,
+  session: Session<TContext, TMetadata> | Context | Record<string, unknown>,
 ): string {
   console.log('Interpolating template:', template);
   console.log('Session/Context:', session);

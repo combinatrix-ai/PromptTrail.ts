@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/assistant';
+import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
 import {
   StaticSource,
@@ -8,13 +8,13 @@ import {
   ListSource,
 } from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../context';
+import { createContext } from '../../../taggedRecord';
 import type { Context } from '../../../context';
 import { generateText } from '../../../generate';
-import { Sequence } from '../../../templates/sequence';
-import { User } from '../../../templates/user';
-import { Loop } from '../../../templates/loop';
-import { Subroutine } from '../../../templates/subroutine';
+import { Sequence } from '../../../templates/composite/sequence';
+import { User } from '../../../templates/primitives/user';
+import { Loop } from '../../../templates/composite/loop';
+import { Subroutine } from '../../../templates/composite/subroutine';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

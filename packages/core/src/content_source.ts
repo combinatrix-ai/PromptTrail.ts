@@ -4,7 +4,7 @@ import type {
   IValidator,
   TValidationResult as ValidationResult,
 } from './validators/base'; // TODO: Rename IValidator to Validator, Use TValidationResult
-import type { Context } from './context';
+import type { Context } from './taggedRecord';
 import { interpolateTemplate } from './utils/template_interpolation';
 import * as readline from 'node:readline/promises';
 import { generateText } from './generate';
@@ -32,7 +32,7 @@ export interface ModelOutput {
  * Options for validation behavior
  */
 export interface ValidationOptions {
-  validator?: IValidator; // TODO: Rename IValidator to Validator
+  validator?: IValidator;
   maxAttempts?: number;
   raiseError?: boolean;
 }
@@ -41,7 +41,7 @@ export interface ValidationOptions {
  * Base class for all content sources (Renamed from ContentSource)
  */
 export abstract class Source<T = unknown> {
-  protected validator?: IValidator; // TODO: Rename IValidator to Validator
+  protected validator?: IValidator;
   protected maxAttempts: number;
   protected raiseError: boolean;
 
@@ -56,7 +56,7 @@ export abstract class Source<T = unknown> {
    * @param session Session context for content generation
    * @returns Promise resolving to content of type T
    */
-  abstract getContent(session: Session): Promise<T>; // TODO: Rename Session to Session
+  abstract getContent(session: Session<any, any>): Promise<T>;
 
   /**
    * Validates the given content once using the assigned validator.
@@ -64,7 +64,7 @@ export abstract class Source<T = unknown> {
    */
   protected async validateContent(
     content: string,
-    session: Session, // TODO: Rename Session to Session
+    session: Session<any, any>,
   ): Promise<ValidationResult> {
     if (!this.validator) {
       return { isValid: true }; // No validator means content is considered valid
@@ -86,7 +86,6 @@ export abstract class Source<T = unknown> {
    * @returns The validator or undefined if no validator is set
    */
   getValidator(): IValidator | undefined {
-    // TODO: Rename IValidator to Validator
     return this.validator;
   }
 }
@@ -117,8 +116,7 @@ export class StaticSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: Session): Promise<string> {
-    // TODO: Rename Session to Session
+  async getContent(session: Session<any, any>): Promise<string> {
     const interpolatedContent = interpolateTemplate(this.content, session);
     // Use shared validation logic (single attempt)
     const validationResult = await this.validateContent(
@@ -146,7 +144,7 @@ export class StaticListSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: Session): Promise<string> {
+  async getContent(session: Session<any, any>): Promise<string> {
     if (this.index < this.contentList.length) {
       return this.contentList[this.index++];
     } else {
@@ -174,7 +172,7 @@ export class RandomSource extends TextSource {
     super(options);
   }
 
-  async getContent(session: Session): Promise<string> {
+  async getContent(session: Session<any, any>): Promise<string> {
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
   }
@@ -197,7 +195,7 @@ export class ListSource extends TextSource {
     this.loop = options?.loop ?? false;
   }
 
-  async getContent(session: Session): Promise<string> {
+  async getContent(session: Session<any, any>): Promise<string> {
     if (this.index < this.contentList.length) {
       const content = this.contentList[this.index++];
       // Apply validation if a validator exists
@@ -258,8 +256,7 @@ export class CLISource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: Session): Promise<string> {
-    // TODO: Rename Session to Session
+  async getContent(session: Session<any, any>): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -321,8 +318,7 @@ export class CallbackSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: Session): Promise<string> {
-    // TODO: Rename Session to Session
+  async getContent(session: Session<any, any>): Promise<string> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
     let currentInput = '';
@@ -386,8 +382,7 @@ export class LlmSource extends ModelSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: Session): Promise<ModelOutput> {
-    // TODO: Rename Session to Session
+  async getContent(session: Session<any, any>): Promise<ModelOutput> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
 
@@ -496,8 +491,7 @@ export class SchemaSource<
     // but ideally, it should use a dedicated validator.
   }
 
-  async getContent(session: Session): Promise<ModelOutput> {
-    // TODO: Rename Session to Session
+  async getContent(session: Session<any, any>): Promise<ModelOutput> {
     const schemaFunction = {
       name: this.options.functionName || 'generateStructuredOutput',
       description: 'Generate structured output according to schema',

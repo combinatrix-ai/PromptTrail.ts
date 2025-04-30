@@ -1,13 +1,10 @@
-import { createSession } from '../session';
-import type { Session } from '../session';
-import type { Message } from '../message';
-import type { Template } from './base';
-import { CompositeTemplateBase } from './base';
-import {
-  addFactoryMethods,
-  ICompositeTemplateFactoryMethods,
-} from './composite_base';
-import type { ISubroutineTemplateOptions } from './template_types';
+import { createSession } from '../../session';
+import type { Session } from '../../session';
+import type { Message } from '../../message';
+import type { Template } from '../base';
+import { CompositeTemplateBase } from './composite_base';
+import type { ISubroutineTemplateOptions } from '../template_types';
+import { Context, Metadata } from '../../taggedRecord';
 
 /**
  * A template that executes a list of templates (the subroutine) within a potentially
@@ -16,16 +13,21 @@ import type { ISubroutineTemplateOptions } from './template_types';
  * This allows encapsulating complex logic, controlling context visibility, and
  * managing how results are integrated back into the main conversation flow.
  *
- * @template P - Type of the parent session metadata (Record<string, unknown>).
- * @template S - Type of the subroutine session metadata (Record<string, unknown>).
+ * @template TMetadata - Type of the session metadata.
+ * @template TContext - Type of the session context.
+ * @extends CompositeTemplateBase<TMetadata, TContext>
+ * @class
+ * @public
+ * @remarks
+ * This class allows for the creation and execution of a subroutine of templates,
+ * enabling complex template compositions with customizable context management.
+ * It provides options for retaining messages, isolating context, and defining
+ * initialization and squashing functions for the subroutine execution.
  */
 export class Subroutine<
-    P extends Record<string, unknown> = Record<string, unknown>,
-    S extends Record<string, unknown> = Record<string, unknown>,
-  >
-  extends CompositeTemplateBase<P, P>
-  implements ICompositeTemplateFactoryMethods<Subroutine<P, S>>
-{
+  TMetadata extends Metadata,
+  TContext extends Context,
+> extends CompositeTemplateBase<TMetadata, TContext> {
   public readonly id?: string;
   private readonly retainMessages: boolean;
   private readonly isolatedContext: boolean;
@@ -36,8 +38,10 @@ export class Subroutine<
    * @param options Configuration options for the subroutine execution and context management.
    */
   constructor(
-    templateOrTemplates?: Template<S, S> | Template<any, any>[],
-    options?: ISubroutineTemplateOptions<P, S>,
+    templateOrTemplates?:
+      | Template<TMetadata, TContext>
+      | Template<TMetadata, TContext>[],
+    options?: ISubroutineTemplateOptions<TMetadata, TContext>,
   ) {
     super();
 
@@ -51,21 +55,23 @@ export class Subroutine<
       this.initFunction = options.initWith;
     } else {
       // Default init function
-      this.initFunction = (parentSession: Session<P>): Session<S> => {
+      this.initFunction = (
+        parentSession: Session<TContext, TMetadata>,
+      ): Session<TContext, TMetadata> => {
         if (this.isolatedContext) {
           // Create a completely new, empty session for isolated context
-          return createSession<S>();
+          return createSession<TContext, TMetadata>({});
         }
 
         // Default: Clone parent session messages and metadata
         const clonedMetadataObject =
-          parentSession.getContextObject() as unknown as S;
-        let clonedSession = createSession<S>({
+          parentSession.getContextObject() as unknown as TMetadata;
+        let clonedSession = createSession<TContext, TMetadata>({
           context: clonedMetadataObject,
         });
 
         // Add messages immutably
-        parentSession.messages.forEach((msg: Message) => {
+        parentSession.messages.forEach((msg: Message<TMetadata>) => {
           clonedSession = clonedSession.addMessage(msg);
         });
 
@@ -78,9 +84,9 @@ export class Subroutine<
     } else {
       // Default squash function
       this.squashFunction = (
-        parentSession: Session<P>,
-        subroutineSession: Session<S>,
-      ): Session<P> => {
+        parentSession: Session<TContext, TMetadata>,
+        subroutineSession: Session<TContext, TMetadata>,
+      ): Session<TContext, TMetadata> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
         let finalMetadata = parentSession.getContextObject();
@@ -104,10 +110,12 @@ export class Subroutine<
         }
 
         // Create a new session with the merged state
-        let mergedSession = createSession<P>({ context: finalMetadata as P });
+        let mergedSession = createSession<TContext, TMetadata>({
+          context: finalMetadata as TContext,
+        });
 
         // Add messages one by one
-        finalMessages.forEach((msg: Message) => {
+        finalMessages.forEach((msg: Message<TMetadata>) => {
           mergedSession = mergedSession.addMessage(msg);
         });
 
@@ -124,8 +132,7 @@ export class Subroutine<
       }
     }
 
-    // Add factory methods
-    return addFactoryMethods(this);
+    return this;
   }
 
   /**
@@ -133,7 +140,11 @@ export class Subroutine<
    * @param fn Function to initialize the subroutine session from the parent session
    * @returns This instance for method chaining
    */
-  initWith(fn: (parentSession: Session<P>) => Session<S>): this {
+  initWith(
+    fn: (
+      parentSession: Session<TContext, TMetadata>,
+    ) => Session<TContext, TMetadata>,
+  ): this {
     this.initFunction = fn;
     return this;
   }
@@ -145,43 +156,11 @@ export class Subroutine<
    */
   squashWith(
     fn: (
-      parentSession: Session<P>,
-      subroutineSession: Session<S>,
-    ) => Session<P>,
+      parentSession: Session<TContext, TMetadata>,
+      subroutineSession: Session<TContext, TMetadata>,
+    ) => Session<TContext, TMetadata>,
   ): this {
     this.squashFunction = fn;
     return this;
   }
-
-  // Declare the factory methods to satisfy TypeScript
-  addSystem!: (
-    content: string | import('../content_source').Source<string>,
-  ) => this;
-  addUser!: (
-    content: string | import('../content_source').Source<string>,
-  ) => this;
-  addAssistant!: (
-    content:
-      | string
-      | import('../content_source').Source<
-          import('../content_source').ModelOutput
-        >
-      | import('../generate_options').GenerateOptions,
-  ) => this;
-  addTransform!: (
-    transformFn: import('./template_types').TTransformFunction<any>,
-  ) => this;
-  addIf!: (
-    condition: (session: Session) => boolean,
-    thenTemplate: Template<any, any>,
-    elseTemplate?: Template<any, any>,
-  ) => this;
-  addLoop!: (
-    bodyTemplate: Template<any, any>,
-    exitCondition: (session: Session) => boolean,
-  ) => this;
-  addSubroutine!: (
-    templateOrTemplates: Template<any, any> | Template<any, any>[],
-    options?: import('./template_types').ISubroutineTemplateOptions<any, any>,
-  ) => this;
 }

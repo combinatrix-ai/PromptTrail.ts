@@ -1,7 +1,7 @@
 /**
  * Schema validators for structured data validation
  */
-import { type SchemaType } from '../schema_template';
+import { type SchemaType } from '../templates/primitives/structured';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**

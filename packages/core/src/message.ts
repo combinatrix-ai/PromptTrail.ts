@@ -1,4 +1,4 @@
-import type { Metadata } from './metadata';
+import type { Metadata } from './taggedRecord';
 
 /**
  * Represents the role of a message in a conversation
@@ -8,11 +8,10 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 /**
  * Base interface for all message types
  */
-export interface BaseMessage<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> {
+export interface BaseMessage<TMetadata extends Metadata> {
   content: string;
-  metadata?: Metadata<T>;
+  metadata?: TMetadata;
+  structuredContent?: Record<string, unknown>;
   toolCalls?: Array<{
     name: string;
     arguments: Record<string, unknown>;
@@ -30,36 +29,40 @@ export interface BaseMessage<
 /**
  * System message interface
  */
-export interface SystemMessage extends BaseMessage {
+export interface SystemMessage<TMetadata extends Metadata>
+  extends BaseMessage<TMetadata> {
   type: 'system';
 }
 
 /**
  * User message interface
  */
-export interface UserMessage extends BaseMessage {
+export interface UserMessage<TMetadata extends Metadata>
+  extends BaseMessage<TMetadata> {
   type: 'user';
 }
 
 /**
  * Assistant message interface
  */
-export interface AssistantMessage extends BaseMessage {
+export interface AssistantMessage<TMetadata extends Metadata>
+  extends BaseMessage<TMetadata> {
   type: 'assistant';
 }
 
 /**
  * Tool result message interface
  */
-export interface ToolResultMessage extends BaseMessage {
+export interface ToolResultMessage<TMetadata extends Metadata>
+  extends BaseMessage<TMetadata> {
   type: 'tool_result';
 }
 
 /**
  * Message interface that can be any of the above types
  */
-export type Message =
-  | SystemMessage
-  | UserMessage
-  | AssistantMessage
-  | ToolResultMessage;
+export type Message<TMetadata extends Metadata> =
+  | SystemMessage<TMetadata>
+  | UserMessage<TMetadata>
+  | AssistantMessage<TMetadata>
+  | ToolResultMessage<TMetadata>;

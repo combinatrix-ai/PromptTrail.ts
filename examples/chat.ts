@@ -5,6 +5,7 @@ import {
   createSession,
   createGenerateOptions,
   CLISource,
+  Agent,
 } from '../packages/core/src/index';
 
 const apiKey = process.env.OPENAI_API_KEY!;
@@ -23,8 +24,8 @@ async function main() {
     temperature: 0.7,
   });
 
-  // Create the main conversation flow using a Sequence
-  const template = new Sequence()
+  // Create the main conversation flow using an Agent
+  const template = new Agent()
     .addSystem(
       'You are a helpful AI assistant. Be concise and friendly in your responses.',
     )
