@@ -25,5 +25,3 @@
     });
     return session.setContextValue('username', 'Bob');
 - Tests are redundant and useless
-- Context object should have \_type or not?
-  - Context should be class? Not should be plain object?

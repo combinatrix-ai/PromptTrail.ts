@@ -1,4 +1,4 @@
-import { createMetadata, Metadata, Context } from '../../tagged_record';
+import { Metadata, Context } from '../../tagged_record';
 import type { Session } from '../../session';
 import type { AssistantMessage } from '../../message';
 import { TemplateBase } from '../base';
@@ -121,7 +121,7 @@ export class Assistant<
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          metadata: createMetadata<TMetadata>(
+          metadata: Metadata.create<TMetadata>(
             currentOutput.metadata as TMetadata,
           ),
           structuredContent: currentOutput.structuredOutput,
@@ -163,7 +163,7 @@ export class Assistant<
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        metadata: createMetadata<TMetadata>(lastOutput.metadata as TMetadata),
+        metadata: Metadata.create<TMetadata>(lastOutput.metadata as TMetadata),
         structuredContent: lastOutput.structuredOutput,
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);

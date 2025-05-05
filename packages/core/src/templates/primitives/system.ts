@@ -1,4 +1,4 @@
-import { Context, createMetadata, Metadata } from '../../tagged_record';
+import { Context, Metadata } from '../../tagged_record';
 import type { Session } from '../../session';
 import type { SystemMessage } from '../../message';
 import { TemplateBase } from '../base';
@@ -30,7 +30,7 @@ export class System<
     const message: SystemMessage<TMetadata> = {
       type: 'system',
       content,
-      metadata: createMetadata<TMetadata>(),
+      metadata: undefined,
     };
     return validSession.addMessage(message);
   }

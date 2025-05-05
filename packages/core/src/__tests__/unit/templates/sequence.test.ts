@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
-import type { Session } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { expect_messages } from '../../utils';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -22,7 +20,7 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 
@@ -82,7 +80,7 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'I am the assistant response',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     const options = createGenerateOptions({

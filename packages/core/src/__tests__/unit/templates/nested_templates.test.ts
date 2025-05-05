@@ -8,7 +8,6 @@ import {
   Sequence,
 } from '../../../templates';
 import { createSession } from '../../../session';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import {
   createGenerateOptions,
@@ -57,7 +56,7 @@ describe('Nested Templates', () => {
       return {
         type: 'assistant',
         content: response,
-        metadata: createContext(),
+        metadata: undefined,
       };
     });
   });

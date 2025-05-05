@@ -9,12 +9,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { Session } from './session';
 import type { Message } from './message';
-import {
-  Context,
-  createContext,
-  createMetadata,
-  Metadata,
-} from './tagged_record';
+import { Context, Metadata } from './tagged_record';
 import type {
   GenerateOptions,
   MCPServerConfig,
@@ -210,9 +205,6 @@ export async function generateText<
     ...options.sdkOptions,
   });
 
-  // Create metadata for the response
-  const metadata = createMetadata<TMetadata>();
-
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
     const formattedToolCalls = result.toolCalls.map(
@@ -236,7 +228,7 @@ export async function generateText<
     return {
       type: 'assistant',
       content: content,
-      metadata,
+      metadata: undefined,
       toolCalls: formattedToolCalls,
     };
   }
@@ -244,7 +236,7 @@ export async function generateText<
   return {
     type: 'assistant',
     content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
-    metadata,
+    metadata: undefined,
   };
 }
 
@@ -283,7 +275,7 @@ export async function* generateTextStream<
       yield {
         type: 'assistant',
         content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createContext(),
+        metadata: undefined,
       };
     } else if (chunk.type === 'tool-call') {
       // Add tool calls directly to the message
@@ -296,7 +288,7 @@ export async function* generateTextStream<
       yield {
         type: 'assistant',
         content: ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createContext(),
+        metadata: undefined,
         toolCalls: [toolCall],
       };
     }

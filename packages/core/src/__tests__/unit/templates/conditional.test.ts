@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { User } from '../../../templates/primitives/user';
 import { Conditional } from '../../../templates/primitives/conditional';
 import type { Session } from '../../../session';
-import { Sequence } from '../../../templates/composite/sequence';
 import { Agent } from '../../../templates';
 
 // Mock the generate module
@@ -22,7 +20,7 @@ describe('If Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 
@@ -94,7 +92,7 @@ describe('If Template', () => {
     const initialSession = createSession().addMessage({
       type: 'system',
       content: 'Initial message',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Execute the template and verify the result
@@ -154,7 +152,7 @@ describe('If Template', () => {
     const session = createSession().addMessage({
       type: 'user',
       content: 'Hello, how are you?',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Create a condition that checks if the last message contains a greeting
@@ -188,7 +186,7 @@ describe('If Template', () => {
     const questionSession = createSession().addMessage({
       type: 'user',
       content: 'What is the weather today?',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Execute the template with the question

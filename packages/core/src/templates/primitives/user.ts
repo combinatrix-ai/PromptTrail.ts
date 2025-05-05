@@ -2,7 +2,7 @@ import type { Session } from '../../session';
 import type { UserMessage } from '../../message';
 import { TemplateBase } from '../base';
 import type { Source } from '../../content_source';
-import { Context, createMetadata, Metadata } from '../../tagged_record';
+import { Context, Metadata } from '../../tagged_record';
 
 export class User<
   TMetadata extends Metadata = Metadata,
@@ -30,7 +30,7 @@ export class User<
     const message: UserMessage<TMetadata> = {
       type: 'user',
       content,
-      metadata: createMetadata<TMetadata>(),
+      metadata: undefined,
     };
     return validSession.addMessage(message);
   }

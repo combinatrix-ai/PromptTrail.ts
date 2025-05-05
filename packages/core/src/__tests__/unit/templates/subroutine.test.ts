@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
-import {
-  createContext,
-  type Context,
-  type Metadata,
-} from '../../../tagged_record';
+import { Context, Metadata } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Source } from '../../../content_source';
 import {
@@ -33,7 +29,7 @@ describe('SubroutineTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 
@@ -170,7 +166,7 @@ describe('SubroutineTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'The weather in Tokyo is 25°C and sunny.',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Create a subroutine with a transformer *inside* the Sequence

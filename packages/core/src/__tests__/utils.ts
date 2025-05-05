@@ -2,7 +2,7 @@ import type { Message } from '../message';
 import type { MessageRole } from '../message';
 
 import { tool } from 'ai';
-import { Context, createMetadata, Metadata } from '../tagged_record';
+import { Context, Metadata } from '../tagged_record';
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { Composite } from '@core/templates';
@@ -84,7 +84,7 @@ export function createMessage(
   return {
     type,
     content,
-    metadata: createMetadata<Metadata>(),
+    metadata: Metadata.create({}),
   };
 }
 

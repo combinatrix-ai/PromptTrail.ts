@@ -1,6 +1,5 @@
 import type { Message } from './message';
-import { createContext } from './tagged_record';
-import { type Context } from './tagged_record';
+import { Context } from './tagged_record';
 import { ValidationError } from './errors';
 import { Metadata } from './tagged_record';
 /**
@@ -83,7 +82,7 @@ export class Session<
    * Get the size of the context
    */
   get contextSize(): number {
-    return Object.keys(this.context).length - 1; // Exclude _type
+    return Object.keys(this.context).length;
   }
 
   /**
@@ -213,11 +212,7 @@ export function createSession<
 }): Session<Context<C>, M> {
   options = options ?? {};
   const raw = options.context as any;
-  const ctx: Context<C> =
-    raw && (raw as any)._type === 'context'
-      ? (raw as Context<C>)
-      : createContext<C>(raw as C | undefined);
-
+  const ctx: Context<C> = Context.is(raw) ? raw : Context.create(raw ?? {});
   return new Session<Context<C>, M>(
     options.messages ?? [],
     ctx,

@@ -1,19 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
-import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
-import { Source } from '../../../content_source';
-import {
-  Subroutine,
-  Sequence,
-  Loop,
-  System,
-  User,
-  Assistant,
-  Agent,
-} from '../../../templates';
-import type { Session } from '../../../session';
+import { User, Assistant, Agent } from '../../../templates';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -28,7 +16,7 @@ describe('Agent', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 

@@ -3,13 +3,10 @@ import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
 import {
   StaticSource,
-  CallbackSource,
   RandomSource,
   ListSource,
 } from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../tagged_record';
-import type { Context } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/composite/sequence';
 import { User } from '../../../templates/primitives/user';
@@ -29,7 +26,7 @@ describe('Default Content Source', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Response from LLM',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 

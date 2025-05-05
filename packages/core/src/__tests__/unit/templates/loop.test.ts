@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
 import { ListSource } from '../../../content_source';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/composite/sequence';
 import { Loop } from '../../../templates/composite/loop';
@@ -23,7 +22,7 @@ describe('Loop Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 

@@ -22,12 +22,7 @@ import {
   Transform,
   Conditional,
 } from '../../templates';
-import {
-  createContext,
-  updateMetadata,
-  type Context,
-  type Metadata,
-} from '../../tagged_record';
+import { Context, Metadata } from '../../tagged_record';
 import { createGenerateOptions } from '../../generate_options';
 import { ListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';
@@ -127,7 +122,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     interface MessageMetadata extends Metadata {
       timestamp?: Date;
     }
-    const initialContext: UserContext = createContext({
+    const initialContext: UserContext = Context.create({
       username: 'Alice',
     });
     const date = new Date();
@@ -142,11 +137,10 @@ describe('End-to-End Workflows with Real APIs', () => {
           createSession({
             context: session.context,
             messages: session.messages.map((message) => {
-              message.metadata = updateMetadata(
-                message.metadata,
-                'timestamp',
-                date,
-              );
+              message.metadata = Metadata.create({
+                ...message.metadata,
+                timestamp: date,
+              });
               return message;
             }),
             print: session.print,

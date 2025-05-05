@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSession } from '../../../session';
 import { CallbackSource, StaticSource } from '../../../content_source';
-import { createContext } from '../../../tagged_record';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
 import { System } from '../../../templates/primitives/system';
@@ -219,7 +218,7 @@ describe('SystemTemplate', () => {
     session = session.addMessage({
       type: 'user',
       content: 'Hello',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Create a SystemTemplate

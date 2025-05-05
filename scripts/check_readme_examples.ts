@@ -196,7 +196,7 @@ runAllExamples().catch(error => {
       const finalCode = `// Example ${i + 1} from README.md
 import { 
   Agent, System, User, Assistant, Sequence, Loop, Conditional, Subroutine,
-  createSession, createGenerateOptions, createMetadata, generateText, generateTextStream,
+  createSession, createGenerateOptions, generateText, generateTextStream,
   extractMarkdown, extractPattern, RegexMatchValidator, KeywordValidator,
   LengthValidator, AllValidator, JsonValidator, CustomValidator, SchemaSource,
   tool, z, openAIgenerateOptions, ListSource

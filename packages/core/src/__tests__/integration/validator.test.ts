@@ -31,7 +31,7 @@ describe('AssistantTemplate with Validator', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is a test response',
-      metadata: createContext(),
+      metadata: undefined,
     });
   });
 

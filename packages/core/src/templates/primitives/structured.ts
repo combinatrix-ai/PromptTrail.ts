@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Context, createMetadata, Metadata } from '../../tagged_record';
+import { Context, Metadata } from '../../tagged_record';
 import { TemplateBase } from '../base';
 import { GenerateOptions } from '../../generate_options';
 import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
@@ -76,7 +76,7 @@ export class Structured<
           type: 'assistant',
           content: JSON.stringify(parsedOutput.data, null, 2),
           structuredContent: parsedOutput.data,
-          metadata: createMetadata<TMetadata>(),
+          metadata: undefined,
         });
       } catch (error) {
         console.error(

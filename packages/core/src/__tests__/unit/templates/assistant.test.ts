@@ -3,7 +3,6 @@ import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
 import { StaticSource } from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
@@ -39,7 +38,7 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Generated content',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Create GenerateOptions
@@ -153,7 +152,7 @@ describe('AssistantTemplate', () => {
           id: 'tool-123',
         },
       ],
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     const weatherTool = createWeatherTool();
@@ -218,7 +217,7 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is invalid',
-      metadata: createContext(),
+      metadata: undefined,
     });
 
     // Create a custom validator
