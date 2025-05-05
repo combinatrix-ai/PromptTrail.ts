@@ -4,7 +4,7 @@ import type { Message } from '../../message';
 import type { Template } from '../base';
 import { Composite } from './composite';
 import type { ISubroutineTemplateOptions } from '../template_types';
-import { Context, Metadata } from '../../taggedRecord';
+import { Context, Metadata } from '../../tagged_record';
 
 /**
  * A template that executes a list of templates (the subroutine) within a potentially

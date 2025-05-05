@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Source } from '../../../content_source';
 import {

@@ -14,7 +14,7 @@ import {
   createContext,
   createMetadata,
   Metadata,
-} from './taggedRecord';
+} from './tagged_record';
 import type {
   GenerateOptions,
   MCPServerConfig,

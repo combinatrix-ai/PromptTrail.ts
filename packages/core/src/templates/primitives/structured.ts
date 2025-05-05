@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Context, createMetadata, Metadata } from '../../taggedRecord';
+import { Context, createMetadata, Metadata } from '../../tagged_record';
 import { TemplateBase } from '../base';
 import { GenerateOptions } from '../../generate_options';
 import { convertSessionToAiSdkMessages, createProvider } from '../../generate';

@@ -1,7 +1,7 @@
 import type { Session } from '../../session';
 import { TemplateBase, type Template } from '../base';
 import type { Source } from '../../content_source';
-import { Context, Metadata } from '../../taggedRecord';
+import { Context, Metadata } from '../../tagged_record';
 import { User } from '../primitives/user';
 import { Assistant } from '../primitives/assistant';
 import { Fluent } from './chainable';

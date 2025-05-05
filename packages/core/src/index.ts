@@ -7,4 +7,4 @@ export * from './utils';
 export * from './templates/primitives/structured';
 export * from './validators';
 export * from './generate';
-export * from './taggedRecord';
+export * from './tagged_record';

@@ -1,4 +1,4 @@
-import type { Metadata } from './taggedRecord';
+import type { Metadata } from './tagged_record';
 
 /**
  * Represents the role of a message in a conversation

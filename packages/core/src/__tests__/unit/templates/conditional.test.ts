@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
-import { createContext } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { User } from '../../../templates/primitives/user';
 import { Conditional } from '../../../templates/primitives/conditional';

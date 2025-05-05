@@ -27,7 +27,7 @@ import {
   updateMetadata,
   type Context,
   type Metadata,
-} from '../../taggedRecord';
+} from '../../tagged_record';
 import { createGenerateOptions } from '../../generate_options';
 import { ListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';

@@ -4,7 +4,7 @@ import type {
   IValidator,
   TValidationResult as ValidationResult,
 } from './validators/base'; // TODO: Rename IValidator to Validator, Use TValidationResult
-import type { Context } from './taggedRecord';
+import type { Context } from './tagged_record';
 import { interpolateTemplate } from './utils/template_interpolation';
 import * as readline from 'node:readline/promises';
 import { generateText } from './generate';

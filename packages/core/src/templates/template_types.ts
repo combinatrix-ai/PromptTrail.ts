@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import { Context, Metadata } from '../taggedRecord';
+import { Context, Metadata } from '../tagged_record';
 
 /**
  * Type definition for transform functions

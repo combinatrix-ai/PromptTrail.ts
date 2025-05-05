@@ -6,7 +6,7 @@ import { System } from './primitives/system';
 import { User } from './primitives/user';
 import { Assistant } from './primitives/assistant';
 import type { Session } from '../session';
-import { Metadata, Context } from '../taggedRecord';
+import { Metadata, Context } from '../tagged_record';
 import { ISubroutineTemplateOptions } from './template_types';
 import { Conditional } from './primitives/conditional';
 import { Transform } from './primitives/transform';

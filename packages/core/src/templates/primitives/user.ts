@@ -2,7 +2,7 @@ import type { Session } from '../../session';
 import type { UserMessage } from '../../message';
 import { TemplateBase } from '../base';
 import type { Source } from '../../content_source';
-import { Context, createMetadata, Metadata } from '../../taggedRecord';
+import { Context, createMetadata, Metadata } from '../../tagged_record';
 
 export class User<
   TMetadata extends Metadata = Metadata,

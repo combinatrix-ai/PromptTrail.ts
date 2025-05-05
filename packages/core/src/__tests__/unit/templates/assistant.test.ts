@@ -3,7 +3,7 @@ import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
 import { StaticSource } from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';

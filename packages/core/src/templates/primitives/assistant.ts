@@ -1,4 +1,4 @@
-import { createMetadata, Metadata, Context } from '../../taggedRecord';
+import { createMetadata, Metadata, Context } from '../../tagged_record';
 import type { Session } from '../../session';
 import type { AssistantMessage } from '../../message';
 import { TemplateBase } from '../base';

@@ -3,7 +3,7 @@ import { Assistant } from '../../../templates/primitives/assistant';
 import { createSession } from '../../../session';
 import type { Session } from '../../../session';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { expect_messages } from '../../utils';
 import { Sequence } from '../../../templates/composite/sequence';

@@ -4,8 +4,8 @@ import { Source, StaticSource, LlmSource } from '../content_source';
 import type { ModelOutput } from '../content_source';
 import { GenerateOptions } from '../generate_options';
 import { interpolateTemplate } from '../utils/template_interpolation';
-import { Metadata } from '../taggedRecord';
-import { Context } from '../taggedRecord';
+import { Metadata } from '../tagged_record';
+import { Context } from '../tagged_record';
 
 /**
  * Core template interface

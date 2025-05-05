@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
 import { ListSource } from '../../../content_source';
-import { createContext } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/composite/sequence';
 import { Loop } from '../../../templates/composite/loop';

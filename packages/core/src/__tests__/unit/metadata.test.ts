@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMetadata, type Metadata } from '../../taggedRecord';
+import { createMetadata, type Metadata } from '../../tagged_record';
 
 describe('Metadata', () => {
   it('should create empty metadata', () => {

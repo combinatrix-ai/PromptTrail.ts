@@ -5,7 +5,7 @@ import {
   createContext,
   type Context,
   type Metadata,
-} from '../../../taggedRecord';
+} from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Source } from '../../../content_source';
 import {

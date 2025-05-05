@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createContext } from '../../taggedRecord';
+import { createContext } from '../../tagged_record';
 
 describe('Context', () => {
   it('should create empty context', () => {

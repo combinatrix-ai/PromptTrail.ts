@@ -1,7 +1,7 @@
 import type { Session } from '../../session';
 import { TemplateBase } from '../base';
 import type { TransformFn } from '../template_types';
-import { Metadata, Context } from '../../taggedRecord';
+import { Metadata, Context } from '../../tagged_record';
 
 /**
  * A template that applies a transformation function to the session.

@@ -8,8 +8,8 @@ import {
   ListSource,
 } from '../../../content_source';
 import { createGenerateOptions } from '../../../generate_options';
-import { createContext } from '../../../taggedRecord';
-import type { Context } from '../../../taggedRecord';
+import { createContext } from '../../../tagged_record';
+import type { Context } from '../../../tagged_record';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/composite/sequence';
 import { User } from '../../../templates/primitives/user';

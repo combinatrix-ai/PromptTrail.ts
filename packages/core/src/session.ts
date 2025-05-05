@@ -1,8 +1,8 @@
 import type { Message } from './message';
-import { createContext } from './taggedRecord';
-import { type Context } from './taggedRecord';
+import { createContext } from './tagged_record';
+import { type Context } from './tagged_record';
 import { ValidationError } from './errors';
-import { Metadata } from './taggedRecord';
+import { Metadata } from './tagged_record';
 /**
  * Internal session implementation
  */

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import type { Message } from '../../message';
 
-import { createMetadata } from '../../taggedRecord';
+import { createMetadata } from '../../tagged_record';
 
 function createUserMessage(content: string): Message {
   return {
