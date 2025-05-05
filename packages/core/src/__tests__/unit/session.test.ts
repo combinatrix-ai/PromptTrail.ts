@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createSession } from '../../session';
 import type { Message } from '../../message';
 
-import { createMetadata } from '../../../taggedRecord';
+import { createMetadata } from '../../taggedRecord';
 
 function createUserMessage(content: string): Message {
   return {
@@ -66,7 +66,7 @@ describe('Session', () => {
     const session = createSession<TestMetadata>({
       context: { initial: true },
     });
-    const newSession = session.updateContext({ added: 'value' });
+    const newSession = session.setContextValues({ added: 'value' });
 
     expect(session.getContextValue('initial')).toBe(true);
     expect(session.getContextValue('added')).toBeUndefined();
@@ -131,7 +131,7 @@ describe('Session', () => {
     const json = session.toJSON();
     expect(json).toEqual({
       messages,
-      context,
+      context: { ...context, _type: 'context' },
       print: false,
     });
   });
@@ -144,7 +144,10 @@ describe('Session', () => {
 
     const session = createSession(data);
     expect(session.messages).toEqual(data.messages);
-    expect(session.getContextObject()).toEqual(data.context);
+    expect(session.getContextObject()).toEqual({
+      ...data.context,
+      _type: 'context',
+    });
   });
 
   it('should create session with type inference', () => {
@@ -191,7 +194,7 @@ describe('Session', () => {
     const session = createSession({ print: true });
     const newSession = session
       .addMessage(createUserMessage('Test'))
-      .updateContext({ test: true });
+      .setContextValues({ test: true });
 
     expect(session.print).toBe(true);
     expect(newSession.print).toBe(true);

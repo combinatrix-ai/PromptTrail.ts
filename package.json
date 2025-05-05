@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm run lint:check && pnpm run format:check",
-    "context": "bun run context.ts packages/core/ md ts | tee context.txt"
+    "context": "bun run to_context.ts packages/core/ md ts | tee context.txt",
+    "pad": "bun run ./scratchapd.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",

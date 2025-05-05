@@ -43,14 +43,7 @@ yarn add github:combinatrix-ai/PromptTrail.ts
 
 ```typescript
 // Usually all imports are from @prompttrail/core
-import {
-  Agent,
-  System,
-  User,
-  Assistant,
-  createSession,
-  createGenerateOptions,
-} from '@prompttrail/core';
+import { Agent, createSession, createGenerateOptions } from '@prompttrail/core';
 
 // Define generateOptions for OpenAI
 let openAIgenerateOptions = createGenerateOptions({
@@ -85,6 +78,33 @@ console.log('last message:', session.getLastMessage()?.content);
 
 ## 📘 Usage
 
+### Core Concepts
+
+- **Session**: Represents a conversation with `context` and `messages`.
+  - **Context**: A structured object that holds the latest state of the conversation. It can be used for interpolation in templates or storing data. E.g. storing user information. `{userId: 'user-123', userName: 'Alice'}`
+  - **Messages**: The conversation history, including system, user, and assistant messages. `[{type: 'system', content: '...'}, {type: 'user', content: '...'}, {type: 'assistant', content: '...'}]`
+    - **Metadata**: Each message can have metadata to store additional information. `{type: 'user', content: '...', metadata: {timestamp: Date.now()}}`
+- **Template**: A reusable conversation flow that can be executed with different sessions.
+
+```typescript
+// Example of a simple template execution
+const simpleTemplate = new Agent()
+  .addSystem('Welcome to the conversation!')
+  .addUser('Tell me about TypeScript.')
+  .addAssistant(
+    'TypeScript is a typed superset of JavaScript that compiles to plain JavaScript.',
+  );
+const session = await simpleTemplate.execute(
+  createSession({
+    context: {
+      userId: 'user-123',
+      language: 'TypeScript',
+    },
+    print: true,
+  }),
+);
+```
+
 ### 🔒 TypeScript-First Design
 
 While many LLM libraries are built around Python, PromptTrail takes a different approach by embracing TypeScript. This choice provides significant advantages for developers building production applications, offering strong typing, better IDE support, and a more robust development experience.
@@ -115,12 +135,6 @@ const session = createSession<UserContext>({
 // Type-safe context access with autocomplete
 const userName = session.context.name; // Type: string
 const theme = session.context.preferences.theme; // Type: 'light' | 'dark'
-
-// Immutable updates return new instances with preserved types
-const updatedSession = session.updateContext({
-  lastActive: new Date(),
-});
-// updatedSession.context.get('lastActive') is now available with correct type
 ```
 
 PromptTrail's immutable architecture ensures predictable state management:
@@ -342,7 +356,7 @@ const lastMessage = updatedSession.getLastMessage();
 const userMessages = updatedSession.getMessagesByType('user');
 
 // Update context (returns new session)
-const newSession = updatedSession.updateContext({
+const newSession = updatedSession.setContextValues({
   tone: 'casual',
 });
 

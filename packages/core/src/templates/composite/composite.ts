@@ -1,25 +1,22 @@
 import type { Session } from '../../session';
-import { BaseTemplate, type Template } from '../base';
-import type { Source, ModelOutput } from '../../content_source';
-import type { GenerateOptions } from '../../generate_options';
-import type {
-  TTransformFunction,
-  ISubroutineTemplateOptions,
-} from '../template_types';
+import { TemplateBase, type Template } from '../base';
+import type { Source } from '../../content_source';
 import { Context, Metadata } from '../../taggedRecord';
 import { User } from '../primitives/user';
 import { Assistant } from '../primitives/assistant';
+import { Fluent } from './chainable';
 
 /**
  * Base class for composite templates (Sequence, Loop, Subroutine)
  * Provides common functionality and a unified execution model
  */
-
-export abstract class CompositeTemplateBase<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<TMetadata, TContext> {
-  // Common properties - protected so derived classes can access them
+export abstract class Composite<
+    TMetadata extends Metadata = Metadata,
+    TContext extends Context = Context,
+  >
+  extends TemplateBase<TMetadata, TContext>
+  implements Fluent<TMetadata, TContext>
+{
   protected templates: Template<any, any>[] = [];
   protected initFunction?: (
     session: Session<TContext, TMetadata>,
@@ -33,7 +30,11 @@ export abstract class CompositeTemplateBase<
   protected defaultUserContentSource?: Source<any>;
   protected defaultAssistantContentSource?: Source<any>;
 
-  // Common template management method
+  setMaxIterations(maxIterations: number): this {
+    this.maxIterations = maxIterations;
+    return this;
+  }
+
   add(template: Template<TMetadata, TContext>): this {
     this.templates.push(template);
     return this;
@@ -45,7 +46,7 @@ export abstract class CompositeTemplateBase<
   ensureTemplateHasContentSource(
     template: Template<TMetadata, TContext>,
   ): Template<TMetadata, TContext> {
-    if (template instanceof CompositeTemplateBase) {
+    if (template instanceof Composite) {
       // Pass default content sources to child CompositeTemplates
       if (template.defaultAssistantContentSource) {
         this.defaultAssistantContentSource =
@@ -71,7 +72,6 @@ export abstract class CompositeTemplateBase<
     return template;
   }
 
-  // Factory methods will be added by the factory module
   // Unified execute implementation
   async execute(
     session?: Session<TContext, TMetadata>,
@@ -98,44 +98,28 @@ export abstract class CompositeTemplateBase<
       // Loop execution
       let iterations = 0;
 
-      // Check if the loopCondition is a function
-      if (typeof this.loopCondition !== 'function') {
-        // If no exit condition is provided, execute once and warn
-        if (this.constructor.name === 'Loop') {
-          console.warn(
-            'LoopTemplate executed without an exit condition. Executing once.',
-          );
-        }
+      // Execute the loop until the exit condition is met or max iterations reached
+      while (
+        iterations < this.maxIterations &&
+        this.loopCondition(currentSession)
+      ) {
         for (let template of this.templates) {
           template = this.ensureTemplateHasContentSource(template);
           currentSession = await template.execute(currentSession);
         }
-      } else {
-        // Execute the loop until the exit condition is met or max iterations reached
-        while (
-          iterations < this.maxIterations &&
-          !this.loopCondition(currentSession)
-        ) {
-          for (let template of this.templates) {
-            template = this.ensureTemplateHasContentSource(template);
-            currentSession = await template.execute(currentSession);
-          }
-          iterations++;
-        }
+        iterations++;
+      }
 
-        if (iterations >= this.maxIterations) {
-          if (this.constructor.name === 'Loop') {
-            console.warn(
-              `LoopTemplate reached maximum iterations (${this.maxIterations}). Exiting.`,
-            );
-          } else {
-            console.warn(
-              `Loop reached maximum iterations (${this.maxIterations}). Exiting.`,
-            );
-          }
-        }
+      if (iterations >= this.maxIterations) {
+        console.warn(
+          `LoopTemplate reached maximum iterations (${this.maxIterations}). Exiting.`,
+        );
       }
     } else {
+      // If this instance is a Loop, warn if no loop condition is provided
+      if (this.constructor.name === 'Loop') {
+        console.warn('LoopTemplate executed without an loopIf condition.');
+      }
       // Simple sequence execution
       for (let template of this.templates) {
         template = this.ensureTemplateHasContentSource(template);
@@ -148,32 +132,4 @@ export abstract class CompositeTemplateBase<
       ? this.squashFunction(originalSession, currentSession)
       : currentSession;
   }
-}
-
-/**
- * Interface for factory methods that can be added to CompositeTemplateBase
- */
-export interface ICompositeTemplateFactoryMethods<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> {
-  addSystem(content: string | Source<string>): this;
-  addUser(content: string | Source<string>): this;
-  addAssistant(content: string | Source<ModelOutput> | GenerateOptions): this;
-  addTransform(transformFn: TTransformFunction<TMetadata, TContext>): this;
-  addIf(
-    condition: (session: Session<TContext, TMetadata>) => boolean,
-    thenTemplate: Template<TMetadata, TContext>,
-    elseTemplate?: Template<TMetadata, TContext>,
-  ): this;
-  addLoop(
-    bodyTemplate: Template<TMetadata, TContext>,
-    exitCondition: (session: Session<TContext, TMetadata>) => boolean,
-  ): this;
-  addSubroutine(
-    templateOrTemplates:
-      | Template<TMetadata, TContext>
-      | Template<TMetadata, TContext>[],
-    options?: ISubroutineTemplateOptions<TMetadata, TContext>,
-  ): this;
 }

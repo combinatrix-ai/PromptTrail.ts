@@ -61,7 +61,7 @@ describe('SchemaTemplate API Integration', () => {
 
       const resultSession = await template.execute(session);
 
-      const output = resultSession.getContextValue('structured_output');
+      const output = resultSession.getLastMessage()?.structuredContent;
 
       expect(output).toBeDefined();
       if (output) {
@@ -91,7 +91,7 @@ describe('SchemaTemplate API Integration', () => {
 
       const resultSession = await template.execute(session);
 
-      const output = resultSession.getContextValue('structured_output');
+      const output = resultSession.getLastMessage()?.structuredContent;
 
       expect(output).toBeDefined();
       if (output) {

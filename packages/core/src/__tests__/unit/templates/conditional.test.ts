@@ -7,6 +7,7 @@ import { User } from '../../../templates/primitives/user';
 import { Conditional } from '../../../templates/primitives/conditional';
 import type { Session } from '../../../session';
 import { Sequence } from '../../../templates/composite/sequence';
+import { Agent } from '../../../templates';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -206,11 +207,11 @@ describe('If Template', () => {
     const condition = () => true;
 
     // Create complex nested templates for both branches
-    const thenTemplate = new Sequence()
+    const thenTemplate = new Agent()
       .addSystem('System message in then branch')
       .addUser('User message in then branch');
 
-    const elseTemplate = new Sequence()
+    const elseTemplate = new Agent()
       .addSystem('System message in else branch')
       .addUser('User message in else branch');
 
@@ -268,7 +269,7 @@ describe('If Template', () => {
 
     const outerIfTemplate = new Conditional({
       condition: (session) => session.getContextValue('userRole') === 'admin',
-      thenTemplate: new Sequence()
+      thenTemplate: new Agent()
         .addUser('Admin role detected')
         .add(innerIfTemplate),
       elseTemplate: new User('Not an admin'),
@@ -308,17 +309,17 @@ describe('If Template', () => {
     const condition = () => true;
 
     // Create then template that updates metadata
-    const thenTemplate = new Sequence()
+    const thenTemplate = new Agent()
       .addUser('Setting context in then branch')
       .addTransform((session) => {
-        return session.updateContext({ branchTaken: 'then' });
+        return session.setContextValues({ branchTaken: 'then' });
       });
 
     // Create else template that updates metadata differently
-    const elseTemplate = new Sequence()
+    const elseTemplate = new Agent()
       .addUser('Setting context in else branch')
       .addTransform((session) => {
-        return session.updateContext({ branchTaken: 'else' });
+        return session.setContextValues({ branchTaken: 'else' });
       });
 
     // Create an if template

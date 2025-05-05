@@ -1,12 +1,12 @@
 import type { Session } from '../../session';
 import { Context, Metadata } from '../../taggedRecord';
-import { BaseTemplate } from '../base';
+import { TemplateBase } from '../base';
 import type { Template } from '../base';
 
 export class Conditional<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<any, any> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends TemplateBase<any, any> {
   private condition: (session: Session<TContext, TMetadata>) => boolean;
   private thenTemplate: Template<TMetadata, TContext>;
   private elseTemplate?: Template<TMetadata, TContext>;

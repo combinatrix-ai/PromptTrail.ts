@@ -1,7 +1,6 @@
 import type { Session } from '../../session';
-import { BaseTemplate } from '../base';
-import { ITransformTemplateParams } from '../template_types';
-import type { TTransformFunction } from '../template_types';
+import { TemplateBase } from '../base';
+import type { TransformFn } from '../template_types';
 import { Metadata, Context } from '../../taggedRecord';
 
 /**
@@ -10,22 +9,29 @@ import { Metadata, Context } from '../../taggedRecord';
  */
 // Make TransformTemplate generic
 export class Transform<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<TMetadata, TContext> {
-  private transformFn: TTransformFunction<TMetadata, TContext>;
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends TemplateBase<TMetadata, TContext> {
+  private transformFn: TransformFn<TMetadata, TContext>;
 
   // Update constructor signature
   constructor(
-    params:
-      | ITransformTemplateParams<TMetadata, TContext>
-      | TTransformFunction<TMetadata, TContext>,
+    fn: TransformFn<TMetadata, TContext> | TransformFn<TMetadata, TContext>[],
   ) {
     super();
-    if (typeof params === 'function') {
-      this.transformFn = params;
+    // Higher-order function
+    if (Array.isArray(fn)) {
+      this.transformFn = async (session: Session<TContext, TMetadata>) => {
+        let updatedSession = session;
+        for (const f of fn) {
+          updatedSession = await f(updatedSession);
+        }
+        return updatedSession;
+      };
+    } else if (typeof fn === 'function') {
+      this.transformFn = fn;
     } else {
-      this.transformFn = params.transformFn;
+      throw new Error('Invalid transform function');
     }
   }
 

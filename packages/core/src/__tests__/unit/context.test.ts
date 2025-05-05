@@ -1,15 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { createContext, type Context } from '../../taggedRecord';
+import { createContext } from '../../taggedRecord';
 
 describe('Context', () => {
   it('should create empty context', () => {
     const context = createContext();
-    expect(Object.keys(context).length).toBe(0);
+    // context = {_type: 'context'};
+    expect(Object.keys(context).length).toBe(1);
+    expect(context._type).toBe('context');
   });
 
   it('should create context with initial data', () => {
     const initial = { name: 'test', value: 123 };
-    const context = createContext({ initial });
+    const context = createContext(initial);
     expect(context.name).toBe('test');
     expect(context.value).toBe(123);
   });
@@ -23,17 +25,15 @@ describe('Context', () => {
         },
       },
     };
-    const context = createContext({ initial: data });
+    const context = createContext(data);
     expect(context.user).toEqual(data.user);
   });
 
   it('should create context with type inference', () => {
     const context = createContext({
-      initial: {
-        name: 'test',
-        count: 42,
-        settings: { enabled: true },
-      },
+      name: 'test',
+      count: 42,
+      settings: { enabled: true },
     });
 
     expect(context.name).toBe('test');
@@ -43,7 +43,7 @@ describe('Context', () => {
 
   it('should create a new object instance', () => {
     const original = { name: 'test' };
-    const context = createContext({ initial: original });
+    const context = createContext(original);
 
     // Verify it's a new object
     expect(context).not.toBe(original);
@@ -61,11 +61,9 @@ describe('Context', () => {
     };
 
     const context = createContext<UserContext>({
-      initial: {
-        name: 'John',
-        age: 30,
-        isAdmin: true,
-      },
+      name: 'John',
+      age: 30,
+      isAdmin: true,
     });
 
     expect(context.name).toBe('John');

@@ -13,8 +13,8 @@ import { Context } from '../taggedRecord';
  * TContext: Session context type, must extend Record<string, unknown>
  */
 export interface Template<
-  TMetadata extends Metadata,
-  TContext extends Context,
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
 > {
   execute(
     session?: Session<TContext, TMetadata>,
@@ -24,9 +24,9 @@ export interface Template<
 /**
  * Base template class with composition methods
  */
-export abstract class BaseTemplate<
-  TMetadata extends Metadata,
-  TContext extends Context,
+export abstract class TemplateBase<
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
 > implements Template<TMetadata, TContext>
 {
   protected contentSource?: Source<unknown>;

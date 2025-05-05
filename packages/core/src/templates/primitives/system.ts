@@ -1,13 +1,13 @@
 import { Context, createMetadata, Metadata } from '../../taggedRecord';
 import type { Session } from '../../session';
 import type { SystemMessage } from '../../message';
-import { BaseTemplate } from '../base';
+import { TemplateBase } from '../base';
 import type { Source } from '../../content_source';
 
 export class System<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends TemplateBase<TMetadata, TContext> {
   constructor(contentOrSource: string | Source<string>) {
     super();
     this.contentSource = this.initializeContentSource(

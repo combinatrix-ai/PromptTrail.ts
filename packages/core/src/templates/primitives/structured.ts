@@ -1,6 +1,6 @@
 import type { Session } from '../../session';
 import { Context, createMetadata, Metadata } from '../../taggedRecord';
-import { BaseTemplate } from '../base';
+import { TemplateBase } from '../base';
 import { GenerateOptions } from '../../generate_options';
 import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
 
@@ -21,13 +21,12 @@ import { generateText, Output } from 'ai';
  * the expected structure using Zod schemas.
  */
 export class Structured<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends TemplateBase<TMetadata, TContext> {
   private generateOptions: GenerateOptions;
   private schema: z.ZodType;
   private maxAttempts: number;
-  private functionName?: string;
 
   constructor(options: {
     generateOptions: GenerateOptions;
@@ -39,7 +38,6 @@ export class Structured<
     this.generateOptions = options.generateOptions;
     this.schema = options.schema;
     this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
-    this.functionName = options.functionName || 'structured_output';
   }
 
   async execute(

@@ -18,13 +18,22 @@ import {
   User,
   Assistant,
   Agent,
-  TemplateFactory,
   Subroutine,
+  Transform,
+  Conditional,
 } from '../../templates';
-import { createContext, type Context } from '../../context';
+import {
+  createContext,
+  updateMetadata,
+  type Context,
+  type Metadata,
+} from '../../taggedRecord';
 import { createGenerateOptions } from '../../generate_options';
-import { StaticListSource, StaticSource } from '../../content_source';
+import { ListSource, StaticSource } from '../../content_source';
 import { createWeatherTool, expect_types } from '../utils';
+import type { Message } from '../../message';
+
+// Set up debug evnironment variable to set maxIterations
 
 /**
  * End-to-End tests with real API calls
@@ -111,37 +120,55 @@ describe('End-to-End Workflows with Real APIs', () => {
     consoleSpy.mockRestore();
   });
 
-  it('should handle context correctly', async () => {
-    // createMetadata accepts interface
-    interface UserMetadata extends Record<string, string> {
+  it('should handle context and metadata correctly', async () => {
+    interface UserContext extends Context {
       username: string;
     }
-    const initialMetadata: UserMetadata = { username: 'Alice' };
-    // Keep the instance if needed elsewhere, maybe rename for clarity
-    const metadataInstance = createContext<UserMetadata>({
-      initial: initialMetadata,
+    interface MessageMetadata extends Metadata {
+      timestamp?: Date;
+    }
+    const initialContext: UserContext = createContext({
+      username: 'Alice',
     });
-    // Specify the generic type for Sequence
-    const template = new Sequence<UserMetadata>()
+    const date = new Date();
+    const template = new Sequence<MessageMetadata, UserContext>()
       .add(new System('You are a helpful assistant.'))
-      // Interpolating context into the assistant message
-      // Use ${username} for template interpolation instead of {username}
       .add(new Assistant('Hello, ${username}!'))
       .add(new User('My name is not Alice, it is Bob.'))
       // Update context with the last message
-      .addTransform((session) => {
-        // Change name Alice to Bob
-        return session.setContextValue('username', 'Bob');
-      });
-    // Pass the raw initialMetadata object to createSession
+      .add(
+        new Transform((session) => {
+          // TODO: Making new Session is too difficult
+          createSession({
+            context: session.context,
+            messages: session.messages.map((message) => {
+              message.metadata = updateMetadata(
+                message.metadata,
+                'timestamp',
+                date,
+              );
+              return message;
+            }),
+            print: session.print,
+          });
+          return session.setContextValue('username', 'Bob');
+        }),
+      );
+    // Pass the raw initialContext object to createSession
     const session = await template.execute(
-      createSession<UserMetadata>({ context: initialMetadata }),
+      createSession<UserContext>({ context: initialContext }),
     );
-    const messages = Array.from(session.messages);
+    console.log(session.toString());
+    const messages = Array.from(session.messages) as Message<MessageMetadata>[];
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'assistant', 'user']);
     expect(messages[1].content).toContain('Hello, Alice!');
     expect(session.getContextValue('username')).toBe('Bob');
+    expect(
+      messages
+        .map((message) => message.metadata?.timestamp === date)
+        .every((value) => value === true),
+    ).toBe(true);
   });
 
   it('should execute agent and sequence', async () => {
@@ -161,14 +188,14 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new User('123456789'))
       .add(new Assistant(openAIgenerateOptions));
     const agentSession = await agent.execute(createSession());
-    const agenMessages = Array.from(agentSession.messages);
+    const agenMessages = Array.from(agentSession.messages) as Message[];
     expect(agenMessages).toHaveLength(3);
     expect_types(agenMessages, ['system', 'user', 'assistant']);
     expect(agenMessages[2].content).toBeDefined();
     expect(agenMessages[2].content).toContain('123456789');
   });
 
-  it('should UserTemplate handle InputSource', async () => {
+  it('should handle UserTemplate with InputSource', async () => {
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User(new StaticSource('123456789')))
@@ -182,17 +209,20 @@ describe('End-to-End Workflows with Real APIs', () => {
   });
 
   it('should execute a if template', async () => {
+    // thenTemplate
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('YES'))
       .add(new Assistant(openAIgenerateOptions))
-      .addIf(
-        (session) => {
-          const lasMessage = session.getLastMessage();
-          return lasMessage!.content.toLowerCase().includes('yes');
-        },
-        new User('You said YES'),
-        new User('You did not say YES'),
+      .add(
+        new Conditional({
+          condition: (session) => {
+            const lastMessage = session.getLastMessage();
+            return lastMessage!.content.toLowerCase().includes('yes');
+          },
+          thenTemplate: new User('You said YES'),
+          elseTemplate: new User('You did not say YES'),
+        }),
       );
 
     const session = await template.execute(createSession());
@@ -202,17 +232,20 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[3].content).toBeDefined();
     expect(messages[3].content).toContain('You said YES');
 
+    // elseTemplate
     const template2 = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('NO'))
       .add(new Assistant(openAIgenerateOptions))
-      .addIf(
-        (session) => {
-          const lasMessage = session.getLastMessage();
-          return lasMessage!.content.toLowerCase().includes('yes');
-        },
-        new User('You said YES'),
-        new User('You did not say YES'),
+      .add(
+        new Conditional({
+          condition: (session) => {
+            const lasMessage = session.getLastMessage();
+            return lasMessage!.content.toLowerCase().includes('yes');
+          },
+          thenTemplate: new User('You said YES'),
+          elseTemplate: new User('You did not say YES'),
+        }),
       );
     const session2 = await template2.execute(createSession());
     const messages2 = Array.from(session2.messages);
@@ -222,76 +255,62 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages2[3].content).toContain('You did not say YES');
   });
 
-  it('should loop if LoopTemplate is used or Seuqnce().loopIf() is used', async () => {
-    interface CounterContext extends Context {
-      count: number;
-    }
-    const template = new Sequence<CounterContext>()
-      .add(new User('123456789'))
-      // Use addLoop with a body template and the exit condition
-      .addLoop(
-        new Sequence<CounterContext>()
-          .addAssistant('Loop iteration')
-          .addTransform((session: Session<any>) => {
-            const currentCount = session.getContextValue('count') || 0;
-            return session.setContextValue('count', currentCount + 1);
-          }),
-        (session: Session<any>) => {
-          console.log('Exit condition check', session.getContextValue('count'));
-          return (session.getContextValue('count') as number) >= 3;
-        },
-      );
+  it('should loop using LoopTemplate', async () => {
+    // Exit loop if 3 messages are in session whose content is "123456789"
+    const template = new Sequence()
+      .add(
+        new Sequence().add(new User('123456789')).loopIf((session) => {
+          const messages = Array.from(session.messages);
+          return (
+            messages.filter((message) => message.content === '123456789')
+              .length < 3
+          );
+        }),
+      )
+      .add(new Assistant('Loop ended'));
+
     const session = await template.execute(createSession());
     const messages = Array.from(session.messages);
-    // The loop will execute three times (count 0, 1, 2) before the exit condition is true (count 3)
-    // So we expect 1 user message + 3 assistant messages = 4 messages
     expect(messages).toHaveLength(4);
-
-    // Define the body template for the loop
-    const loopBodyTemplate = new Sequence<{ count: number }>()
-      .add(new User('Loop message 123456789'))
-      .addTransform((session: Session<{ count: number }>) => {
-        const currentCount =
-          (session.getContextValue('count') as number | undefined) ?? 0;
-        return session.setContextValue('count', currentCount + 1);
-      });
-
-    // Define the exit condition function (pure check)
-    const loopExitCondition = (
-      session: Session<{ count: number }>,
-    ): boolean => {
-      const updatedCount =
-        (session.getContextValue('count') as number | undefined) ?? 0;
-      return updatedCount >= 3;
-    };
-
-    // Instantiate LoopTemplate correctly using options object and specify generic type
-    const using_loop = new Loop<{ count: number }>({
-      bodyTemplate: loopBodyTemplate,
-      exitCondition: loopExitCondition,
-    });
-    // Execute the loop, starting context count at 0
-    const session2 = await using_loop.execute(
-      createSession({ context: { count: 0 } }),
-    );
-    const messages2 = Array.from(session2.messages);
-    // The loop will execute three times (count 0,1,2) before the exit condition is true (3>=3)
-    // So we expect 3 user messages
-    expect(messages2).toHaveLength(3);
+    expect_types(messages, ['user', 'user', 'user', 'assistant']);
+    expect(messages[0].content).toBe('123456789');
+    expect(messages[1].content).toBe('123456789');
+    expect(messages[2].content).toBe('123456789');
+    expect(messages[3].content).toBe('Loop ended');
   });
 
-  it('should templates with linear child templates (sequence, loop) have addXXX methods', async () => {
+  it('should loop using Sequence().loopIf() is used', async () => {
+    const template = new Sequence()
+      .add(
+        new Sequence()
+          .add(new User('123456789'))
+          .loopIf((session: Session<any, any>) => {
+            return session.messages.length < 3;
+          }),
+      )
+      .add(new Assistant('Loop ended'));
+    const session = await template.execute(createSession());
+    const messages = Array.from(session.messages);
+    expect(messages).toHaveLength(4);
+    expect_types(messages, ['user', 'user', 'user', 'assistant']);
+    expect(messages[0].content).toBe('123456789');
+    expect(messages[1].content).toBe('123456789');
+    expect(messages[2].content).toBe('123456789');
+    expect(messages[3].content).toBe('Loop ended');
+  });
+
+  it('should Agent have addXXXX methods', async () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
     // Each have addSystem, addUser, addAssistant, addIf
-    const sequence = new Sequence()
+    const sequence = new Agent()
       .addSystem('This is automated API testing. Repeat what user says.')
       .addUser('123456789')
       .addAssistant(openAIgenerateOptions)
-      .addIf(
+      .addConditional(
         (session) => {
-          const lasMessage = session.getLastMessage();
-          return lasMessage!.content.toLowerCase().includes('123456789');
+          const lastMessage = session.getLastMessage();
+          return lastMessage!.content.toLowerCase().includes('123456789');
         },
         new User('YES'),
         new User('NO'),
@@ -304,30 +323,26 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[3].content).toContain('YES');
 
     // Define the source for user content within the loop
-    const userContentSource = new StaticListSource(['123456789', '987654321']);
+    const userContentSource = new ListSource(['123456789', '987654321']);
 
-    // Define the body of the loop as a Sequence
-    const loopBodySequence = new Sequence()
+    // Define the body of the loop as a Agent
+    const loopBodySequence = new Agent<Context<{ count: number }>>()
       .addSystem('This is automated API testing. Repeat what user says.')
       .addUser(userContentSource)
       .addAssistant(openAIgenerateOptions)
-      .addIf(
-        (session: Session) => {
-          // Add type annotation
-          const lasMessage = session.getLastMessage();
-          // Safely check lasMessage and its content
-          return (
-            lasMessage?.content?.toLowerCase().includes('123456789') ?? false
-          );
-        },
-        // Template to execute if condition is true
-        TemplateFactory.user('Condition MET: User said 123456789'),
-      );
+      .addConditional((session: Session) => {
+        // Add type annotation
+        const lastMessage = session.getLastMessage();
+        // Safely check lastMessage and its content
+        return (
+          lastMessage?.content?.toLowerCase().includes('123456789') ?? false
+        );
+      }, new User('Condition MET: User said 123456789'));
 
     // Define the exit condition for the loop
     // Add a transform to increment count in the loop body
     const loopBodySequenceWithTransform = loopBodySequence.addTransform(
-      (session: Session<{ count: number }>) => {
+      (session: Session<Context<{ count: number }>>) => {
         const currentCount =
           (session.getContextValue('count') as number | undefined) ?? 0;
         return session.setContextValue('count', currentCount + 1);
@@ -336,19 +351,19 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Define the exit condition for the loop (pure check)
     const loopExitCondition = (
-      session: Session<{ count: number }>,
+      session: Session<Context<{ count: number }>>,
     ): boolean => {
       const updatedCount =
         (session.getContextValue('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
       // There are two items in the static list, so exit after two iterations
-      return updatedCount >= 2;
+      return updatedCount < 2;
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
-    const loop = new Loop<{ count: number }>({
+    const loop = new Loop<any, Context<{ count: number }>>({
       bodyTemplate: loopBodySequenceWithTransform,
-      exitCondition: loopExitCondition,
+      loopIf: loopExitCondition,
     });
 
     // Execute the loop, starting context count at 0
@@ -444,9 +459,7 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with a loop and user input', async () => {
     // Use StaticSource instead of CLISource to avoid waiting for user input
     // Only one response: "no" to exit the loop immediately
-    const continueResponses = new StaticSource(
-      'Should we continue? (yes/no): no',
-    );
+    const continueResponses = new ListSource(['Yes', 'No']);
 
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))
@@ -456,11 +469,13 @@ describe('End-to-End Workflows with Real APIs', () => {
             .add(new User(new StaticSource('What is your name?')))
             .add(new Assistant(openAIgenerateOptions))
             .add(new User(continueResponses)),
-          exitCondition: (session) => {
-            const lasMessage = session.getLastMessage();
+          loopIf: (session) => {
+            // User(continueResponses) is the last message
+            const lastMessage = session.getLastMessage();
             return (
-              lasMessage?.type === 'user' &&
-              lasMessage.content.toLowerCase().includes('no')
+              lastMessage?.type === 'system' ||
+              (lastMessage?.type === 'user' &&
+                lastMessage.content.toLowerCase().includes('yes'))
             );
           },
         }),
@@ -469,15 +484,18 @@ describe('End-to-End Workflows with Real APIs', () => {
     const session = await template.execute(createSession());
 
     const messages = Array.from(session.messages);
-    // The actual behavior is that the loop only executes once:
-    // 1. System
-    // 2. User (What is your name?)
-    // 3. Assistant (response)
-    // 4. User (Should we continue? no) - exit loop
-    expect(messages).toHaveLength(4);
-    expect_types(messages, ['system', 'user', 'assistant', 'user']);
-
+    expect(messages).toHaveLength(7);
+    expect_types(messages, [
+      'system',
+      'user',
+      'assistant',
+      'user',
+      'user',
+      'assistant',
+      'user',
+    ]);
     expect(messages[1].content).toBe('What is your name?');
-    expect(messages[3].content).toBe('Should we continue? (yes/no): no');
+    expect(messages[3].content).toBe('Yes');
+    expect(messages[6].content).toBe('No');
   });
 });

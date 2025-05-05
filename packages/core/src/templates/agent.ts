@@ -8,16 +8,12 @@ import { Assistant } from './primitives/assistant';
 import type { Session } from '../session';
 import { Metadata, Context } from '../taggedRecord';
 import { ISubroutineTemplateOptions } from './template_types';
-
-type ChainableTemplate<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> = Template<TMetadata, TContext> & {
-  add(t: Template<TMetadata, TContext>): any;
-  execute(
-    s?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>>;
-};
+import { Conditional } from './primitives/conditional';
+import { Transform } from './primitives/transform';
+import { GenerateOptions } from '../generate_options';
+import { ModelOutput, Source, ValidationOptions } from '../content_source';
+import { IValidator } from '../validators';
+import { Fluent } from './composite/chainable';
 
 /**
  * Agent class for building and executing templates
@@ -47,30 +43,61 @@ type ChainableTemplate<
  *   .addLoop(userInput => userInput !== 'exit', userInputTemplate)
  *   .addSubroutine(subroutineTemplate);
  */
-export class Agent<TM extends Metadata = Metadata, TC extends Context = Context>
-  implements Template<TM, TC>
+export class Agent<TC extends Context = Context, TM extends Metadata = Metadata>
+  implements Template<TM, TC>, Fluent<TM, TC>
 {
-  constructor(
-    private readonly root: ChainableTemplate<TM, TC> = new Sequence<TM, TC>(),
-  ) {}
+  constructor(private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>()) {}
 
   /** fluent helpers -------------------------------------------------- */
+
+  add(t: Template<TM, TC>) {
+    this.root.add(t);
+    return this;
+  }
 
   addSystem(content: string) {
     this.root.add(new System(content));
     return this;
   }
-  addUser(content: string) {
-    this.root.add(new User(content));
-    return this;
-  }
-  addAssistant(content: string) {
-    this.root.add(new Assistant(content));
+  addUser(contentOrSource?: string | Source<string>) {
+    this.root.add(new User(contentOrSource));
     return this;
   }
 
-  addLoop(body: Template<TM, TC>, exit: (s: Session<TC, TM>) => boolean) {
-    this.root.add(new Loop({ bodyTemplate: body, exitCondition: exit }));
+  addAssistant(
+    contentOrSource?:
+      | string
+      | Source<ModelOutput>
+      | GenerateOptions
+      | Record<string, any>,
+    validatorOrOptions?: IValidator | ValidationOptions,
+  ) {
+    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
+    return this;
+  }
+
+  addConditional(
+    condition: (s: Session<TC, TM>) => boolean,
+    thenTemplate: Template<TM, TC>,
+    elseTemplate?: Template<TM, TC>,
+  ) {
+    this.root.add(
+      new Conditional({
+        condition: condition,
+        thenTemplate: thenTemplate,
+        elseTemplate: elseTemplate,
+      }),
+    );
+    return this;
+  }
+
+  addTransform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
+    this.root.add(new Transform(transform));
+    return this;
+  }
+
+  addLoop(body: Template<TM, TC>, loopIf: (s: Session<TC, TM>) => boolean) {
+    this.root.add(new Loop({ bodyTemplate: body, loopIf: loopIf }));
     return this;
   }
 

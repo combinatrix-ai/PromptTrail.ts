@@ -1,7 +1,7 @@
 // Export core template interfaces and base classes
 export type { Template } from './base';
-export { BaseTemplate } from './base';
-export { CompositeTemplateBase } from './composite/composite_base';
+export { TemplateBase } from './base';
+export { Composite } from './composite/composite';
 
 // Export concrete template implementations
 export { System } from './primitives/system';

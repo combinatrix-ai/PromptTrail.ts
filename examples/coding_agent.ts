@@ -34,6 +34,7 @@ const shellCommandTool = tool({
   }),
   execute: async (input: z.infer<z.ZodObject<{ command: z.ZodString }>>) => {
     try {
+      console.log(`[Debug] Executing command: ${input.command}`);
       const { stdout, stderr } = await execAsync(input.command);
       return { stdout, stderr };
     } catch (error: unknown) {
@@ -52,6 +53,11 @@ const readFileTool = tool({
   execute: async (input: z.infer<z.ZodObject<{ path: z.ZodString }>>) => {
     try {
       const content = await readFile(input.path, 'utf-8');
+      console.log(
+        `[Debug] Read content from ${input.path}:`,
+        content.substring(0, 10),
+        '...',
+      );
       return { content };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -71,6 +77,11 @@ const writeFileTool = tool({
     input: z.infer<z.ZodObject<{ path: z.ZodString; content: z.ZodString }>>,
   ) => {
     try {
+      console.log(
+        `[Debug] Writing content to ${input.path}:`,
+        input.content.substring(0, 10),
+        '...',
+      );
       await writeFile(input.path, input.content, 'utf-8');
       return { success: true };
     } catch (error: unknown) {
@@ -140,7 +151,8 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = new Agent().add(new System(systemPrompt)).addIf(
+    const agent = new Agent().add(new System(systemPrompt)).addConditional(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
       // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
       new Agent()
@@ -153,7 +165,7 @@ export class CodingAgent {
           const lastUserMessage = session
             .getMessagesByType('user')
             .slice(-1)[0];
-          return lastUserMessage?.content.toLowerCase().trim() === 'exit';
+          return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
         },
       ),
     );

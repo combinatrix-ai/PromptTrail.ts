@@ -8,7 +8,7 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 /**
  * Base interface for all message types
  */
-export interface BaseMessage<TMetadata extends Metadata> {
+export interface BaseMessage<TMetadata extends Metadata = Metadata> {
   content: string;
   metadata?: TMetadata;
   structuredContent?: Record<string, unknown>;
@@ -29,7 +29,7 @@ export interface BaseMessage<TMetadata extends Metadata> {
 /**
  * System message interface
  */
-export interface SystemMessage<TMetadata extends Metadata>
+export interface SystemMessage<TMetadata extends Metadata = Metadata>
   extends BaseMessage<TMetadata> {
   type: 'system';
 }
@@ -37,7 +37,7 @@ export interface SystemMessage<TMetadata extends Metadata>
 /**
  * User message interface
  */
-export interface UserMessage<TMetadata extends Metadata>
+export interface UserMessage<TMetadata extends Metadata = Metadata>
   extends BaseMessage<TMetadata> {
   type: 'user';
 }
@@ -45,7 +45,7 @@ export interface UserMessage<TMetadata extends Metadata>
 /**
  * Assistant message interface
  */
-export interface AssistantMessage<TMetadata extends Metadata>
+export interface AssistantMessage<TMetadata extends Metadata = Metadata>
   extends BaseMessage<TMetadata> {
   type: 'assistant';
 }
@@ -53,7 +53,7 @@ export interface AssistantMessage<TMetadata extends Metadata>
 /**
  * Tool result message interface
  */
-export interface ToolResultMessage<TMetadata extends Metadata>
+export interface ToolResultMessage<TMetadata extends Metadata = Metadata>
   extends BaseMessage<TMetadata> {
   type: 'tool_result';
 }
@@ -61,7 +61,7 @@ export interface ToolResultMessage<TMetadata extends Metadata>
 /**
  * Message interface that can be any of the above types
  */
-export type Message<TMetadata extends Metadata> =
+export type Message<TMetadata extends Metadata = Metadata> =
   | SystemMessage<TMetadata>
   | UserMessage<TMetadata>
   | AssistantMessage<TMetadata>

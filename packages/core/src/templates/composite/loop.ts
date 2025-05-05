@@ -1,7 +1,7 @@
 import type { Session } from '../../session';
 import { Context, Metadata } from '../../taggedRecord';
 import type { Template } from '../base';
-import { CompositeTemplateBase } from './composite_base';
+import { Composite } from './composite';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
@@ -14,9 +14,9 @@ import { CompositeTemplateBase } from './composite_base';
  * enabling repeated execution until a specified condition is met.
  */
 export class Loop<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends CompositeTemplateBase<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends Composite<TMetadata, TContext> {
   // implements ICompositeTemplateFactoryMethods<TMetadata, TContext>
   /**
    * Creates a new Loop template.
@@ -24,21 +24,20 @@ export class Loop<
    */
   constructor(
     options: {
-      bodyTemplate?: Template<any, any>;
-      exitCondition?: (session: Session<TContext, TMetadata>) => boolean;
+      bodyTemplate?: Template<any, any> | Template<any, any>[];
+      // Do not make loopIf optional, to prevent unwanted infinite loops
+      loopIf?: (session: Session<TContext, TMetadata>) => boolean;
       maxIterations?: number;
     } = {},
   ) {
     super();
-    if (options.bodyTemplate) {
+    if (Array.isArray(options.bodyTemplate)) {
+      this.templates = options.bodyTemplate;
+    } else if (options.bodyTemplate) {
       this.templates = [options.bodyTemplate];
     }
-    if (options.exitCondition) {
-      this.loopCondition = options.exitCondition;
-    } else {
-      // Set loopCondition to a non-function value to trigger the warning
-      this.loopCondition = null as any;
-    }
+    this.loopCondition = options.loopIf;
+
     if (options.maxIterations !== undefined) {
       this.maxIterations = options.maxIterations;
     }
@@ -61,7 +60,7 @@ export class Loop<
   /**
    * Sets the condition that determines when to exit the loop.
    * The loop continues as long as the condition returns false.
-   * @param condition - Function that evaluates the session and returns true when the loop should exit
+   * @param condition - Function that evaluates the session and returns true when the loop should continue
    * @returns This instance for method chaining
    */
   setLoopIf(
@@ -80,39 +79,4 @@ export class Loop<
     this.maxIterations = maxIterations;
     return this;
   }
-
-  // // Declare the factory methods to satisfy TypeScript
-  // addSystem!: (
-  //   content: string | import('../content_source').Source<string>,
-  // ) => this;
-  // addUser!: (
-  //   content: string | import('../content_source').Source<string>,
-  // ) => this;
-  // addAssistant!: (
-  //   content:
-  //     | string
-  //     | import('../content_source').Source<
-  //         import('../content_source').ModelOutput
-  //       >
-  //     | import('../generate_options').GenerateOptions,
-  // ) => this;
-  // addTransform!: (
-  //   transformFn: import('./template_types').TTransformFunction<
-  //     TMetadata,
-  //     TContext
-  //   >,
-  // ) => this;
-  // addIf!: (
-  //   condition: (session: Session<TContext, TMetadata>) => boolean,
-  //   thenTemplate: Template<any, any>,
-  //   elseTemplate?: Template<any, any>,
-  // ) => this;
-  // addLoop!: (
-  //   bodyTemplate: Template<any, any>,
-  //   exitCondition: (session: Session<TContext, TMetadata>) => boolean,
-  // ) => this;
-  // addSubroutine!: (
-  //   templateOrTemplates: Template<any, any> | Template<any, any>[],
-  //   options?: import('./template_types').ISubroutineTemplateOptions<any, any>,
-  // ) => this;
 }

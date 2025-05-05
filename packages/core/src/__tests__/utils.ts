@@ -2,9 +2,10 @@ import type { Message } from '../message';
 import type { MessageRole } from '../message';
 
 import { tool } from 'ai';
-import { createMetadata, Metadata } from '../taggedRecord';
+import { Context, createMetadata, Metadata } from '../taggedRecord';
 import { expect } from 'vitest';
 import { z } from 'zod';
+import { Composite } from '@core/templates';
 
 /**
  * Create a weather tool for testing
@@ -49,7 +50,10 @@ export function expect_types(
 /**
  * Test function for message content
  */
-export function expect_content(messages: Message<Metadata>[], expectedContent: string[]) {
+export function expect_content(
+  messages: Message<Metadata>[],
+  expectedContent: string[],
+) {
   expect(messages.length).toBe(expectedContent.length);
   messages.forEach((message, index) => {
     expect(message.content).toBe(expectedContent[index]);
@@ -82,4 +86,15 @@ export function createMessage(
     content,
     metadata: createMetadata<Metadata>(),
   };
+}
+
+export function limitLoopIterations<
+  TMetadata extends Metadata,
+  TContext extends Context,
+>(
+  template: Composite<TMetadata, TContext>,
+  maxIterations: number = 5,
+): Composite<TMetadata, TContext> {
+  template.setMaxIterations(maxIterations);
+  return template;
 }

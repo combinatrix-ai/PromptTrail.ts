@@ -26,20 +26,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<TContext extends Context, TMetadata extends Metadata>(
+export function interpolateTemplate<
+  TContext extends Context,
+  TMetadata extends Metadata,
+>(
   template: string,
   session: Session<TContext, TMetadata> | Context | Record<string, unknown>,
 ): string {
-  console.log('Interpolating template:', template);
-  console.log('Session/Context:', session);
-
   if ('context' in session && session.context) {
     // If it's a Session object, use its context
-    console.log('Using session.context');
     return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
       const keys = path.split('.');
       let current: unknown = session.context;
-      console.log('Initial current:', current);
 
       // Navigate through nested objects
       for (const key of keys) {
@@ -61,7 +59,6 @@ export function interpolateTemplate<TContext extends Context, TMetadata extends 
     });
   } else {
     // If it's a Context object or something else, use the original approach
-    console.log('Using original approach');
     return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
       const keys = path.split('.');
       let current: unknown = session;

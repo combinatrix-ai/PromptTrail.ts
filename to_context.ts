@@ -58,13 +58,9 @@ function collectFiles(dir: string, relativeToBase = ''): string[] {
     let stat;
     try {
       stat = fs.statSync(absPath);
-    } catch (err: any) {
-      if (err.code === 'ENOENT') {
-        // File was removed or is a broken symlink — skip it
-        continue;
-      } else {
-        throw err;
-      }
+    } catch {
+      console.warn(`Warning: Unable to access '${absPath}'. Skipping.`);
+      continue;
     }
 
     if (stat.isDirectory()) {

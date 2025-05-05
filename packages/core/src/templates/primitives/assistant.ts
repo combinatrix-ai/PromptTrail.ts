@@ -1,15 +1,15 @@
 import { createMetadata, Metadata, Context } from '../../taggedRecord';
 import type { Session } from '../../session';
 import type { AssistantMessage } from '../../message';
-import { BaseTemplate } from '../base';
+import { TemplateBase } from '../base';
 import { Source, ModelOutput, ValidationOptions } from '../../content_source';
 import type { IValidator } from '../../validators/base';
 import { GenerateOptions } from '../../generate_options';
 
 export class Assistant<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends BaseTemplate<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends TemplateBase<TMetadata, TContext> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;
@@ -107,7 +107,6 @@ export class Assistant<
             validSession,
           );
           if (!validationResult.isValid) {
-            console.log(`[Debug] Attempt ${attempts}: Validation FAILED`); // DEBUG
             // Throw specific error based on content type
             throw new Error(
               this.isStaticContent
@@ -115,8 +114,6 @@ export class Assistant<
                 : 'Assistant response validation failed',
             );
           }
-        } else {
-          console.log(`[Debug] Attempt ${attempts}: Validation PASSED`); // DEBUG
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately

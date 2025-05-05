@@ -11,3 +11,8 @@ context.txt
 .vscode
 vscode-extension/
 readme_examples
+vscode-extension.zip
+dogfooding/interactive-agent/
+dogfooding/visualizer/
+scratchpad.ts
+

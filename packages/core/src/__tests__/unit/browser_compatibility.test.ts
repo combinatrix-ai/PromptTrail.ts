@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../session';
 import { Sequence, System, User, Assistant } from '../../templates';
-import { createContext } from '../../context';
+import { createContext } from '../../taggedRecord';
 import type { GenerateOptions } from '../../generate_options';
 
 // Mock modules

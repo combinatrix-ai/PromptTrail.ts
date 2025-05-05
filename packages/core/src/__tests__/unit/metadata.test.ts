@@ -4,7 +4,9 @@ import { createMetadata, type Metadata } from '../../taggedRecord';
 describe('Metadata', () => {
   it('should create empty metadata', () => {
     const metadata = createMetadata();
-    expect(Object.keys(metadata).length).toBe(0);
+    // metadata = {_type: 'metadata'};
+    expect(Object.keys(metadata).length).toBe(1);
+    expect(metadata._type).toBe('metadata');
   });
 
   it('should create metadata with initial data', () => {

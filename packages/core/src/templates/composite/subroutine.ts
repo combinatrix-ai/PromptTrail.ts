@@ -2,7 +2,7 @@ import { createSession } from '../../session';
 import type { Session } from '../../session';
 import type { Message } from '../../message';
 import type { Template } from '../base';
-import { CompositeTemplateBase } from './composite_base';
+import { Composite } from './composite';
 import type { ISubroutineTemplateOptions } from '../template_types';
 import { Context, Metadata } from '../../taggedRecord';
 
@@ -15,7 +15,7 @@ import { Context, Metadata } from '../../taggedRecord';
  *
  * @template TMetadata - Type of the session metadata.
  * @template TContext - Type of the session context.
- * @extends CompositeTemplateBase<TMetadata, TContext>
+ * @extends Composite<TMetadata, TContext>
  * @class
  * @public
  * @remarks
@@ -25,9 +25,9 @@ import { Context, Metadata } from '../../taggedRecord';
  * initialization and squashing functions for the subroutine execution.
  */
 export class Subroutine<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends CompositeTemplateBase<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends Composite<TMetadata, TContext> {
   public readonly id?: string;
   private readonly retainMessages: boolean;
   private readonly isolatedContext: boolean;
@@ -63,11 +63,11 @@ export class Subroutine<
           return createSession<TContext, TMetadata>({});
         }
 
-        // Default: Clone parent session messages and metadata
-        const clonedMetadataObject =
-          parentSession.getContextObject() as unknown as TMetadata;
+        // Default: Clone parent session messages and context
+        const clonedContextObject =
+          parentSession.getContextObject() as unknown as TContext;
         let clonedSession = createSession<TContext, TMetadata>({
-          context: clonedMetadataObject,
+          context: clonedContextObject,
         });
 
         // Add messages immutably

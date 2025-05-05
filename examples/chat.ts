@@ -38,9 +38,12 @@ async function main() {
         new Assistant(generateOptions),
       ]),
       (session) => {
-        // Exit the loop if the user types "exit"
         return (
-          session.getLastMessage()?.content.toLowerCase().trim() === 'exit'
+          session
+            .getMessagesByType('user')
+            .slice(-1)[0]
+            ?.content.toLowerCase()
+            .trim() !== 'exit'
         );
       },
     );

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSession } from '../../../session';
-import { StaticListSource } from '../../../content_source';
+import { ListSource } from '../../../content_source';
 import { createContext } from '../../../taggedRecord';
 import { generateText } from '../../../generate';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -8,6 +8,7 @@ import { Loop } from '../../../templates/composite/loop';
 import { User } from '../../../templates/primitives/user';
 import type { Session } from '../../../session';
 import { System } from '../../../templates/primitives/system';
+import { Agent } from '../../../templates';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -31,9 +32,9 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop condition function
-    const exitCondition = (session: Session) => {
+    const loopIf = (session: Session) => {
       counter++;
-      return counter >= 3; // Exit after 3 iterations
+      return counter < 3; // Exit after 3 iterations
     };
 
     // Create a simple body template that adds a user message
@@ -42,7 +43,7 @@ describe('Loop Template', () => {
     // Create the loop template
     const loopTemplate = new Loop({
       bodyTemplate,
-      exitCondition,
+      loopIf: loopIf,
       maxIterations: 10,
     });
 
@@ -74,9 +75,9 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop condition function
-    const exitCondition = (session: Session) => {
+    const loopIf = (session: Session) => {
       counter++;
-      return counter >= 3; // Exit after 3 iterations
+      return counter < 3; // Exit after 3 iterations
     };
 
     // Create a simple body template that adds a user message
@@ -85,7 +86,7 @@ describe('Loop Template', () => {
     // Create the loop template without body and exit condition
     const loopTemplate = new Loop()
       .setBody(bodyTemplate)
-      .setLoopIf(exitCondition)
+      .setLoopIf(loopIf)
       .setMaxIterations(10);
 
     // Execute the template and verify the result
@@ -100,36 +101,6 @@ describe('Loop Template', () => {
     expect(messages[1].content).toBe('Iteration message');
   });
 
-  it('should support addXXX methods directly on LoopTemplate', async () => {
-    // Create a counter for the loop condition
-    let counter = 0;
-
-    // Create the loop template with addXXX methods
-    const loopTemplate = new Loop()
-      .setLoopIf((session: Session) => {
-        counter++;
-        return counter >= 2; // Exit after 2 iterations
-      })
-      .addSystem('System message')
-      .addUser('User message')
-      .addAssistant('Assistant message');
-
-    // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
-
-    // Should have executed the body template 1 time (exit condition counter >= 2)
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3); // 3 messages × 1 iteration
-
-    // First (and only) iteration
-    expect(messages[0].type).toBe('system');
-    expect(messages[0].content).toBe('System message');
-    expect(messages[1].type).toBe('user');
-    expect(messages[1].content).toBe('User message');
-    expect(messages[2].type).toBe('assistant');
-    expect(messages[2].content).toBe('Assistant message');
-  });
-
   it('should handle a nested loop', async () => {
     // Create counters for the outer and inner loops
     let outerCounter = 0;
@@ -138,9 +109,9 @@ describe('Loop Template', () => {
     // Create the inner loop template
     const innerLoopTemplate = new Loop({
       bodyTemplate: new User('Inner iteration'),
-      exitCondition: (session: Session) => {
-        innerCounter++;
-        return innerCounter % 2 === 0; // Exit after 2 inner iterations for each outer iteration
+      loopIf: (session: Session) => {
+        innerCounter++; // 1, 2, ...
+        return innerCounter % 2 != 0; // 1, 0, 1, 0... Exit after 2 inner iterations for each outer iteration
       },
     });
 
@@ -149,9 +120,9 @@ describe('Loop Template', () => {
       bodyTemplate: new Sequence()
         .add(new User('Outer iteration'))
         .add(innerLoopTemplate),
-      exitCondition: (session: Session) => {
-        outerCounter++;
-        return outerCounter >= 2; // Exit after 2 outer iterations
+      loopIf: (session: Session) => {
+        outerCounter++; // 1, 2, 3...
+        return outerCounter < 2; // Exit after 2 outer iterations
       },
     });
 
@@ -197,7 +168,7 @@ describe('Loop Template', () => {
     // Should have logged a warning about missing exit condition
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'LoopTemplate executed without an exit condition',
+        'LoopTemplate executed without an loopIf condition.',
       ),
     );
 
@@ -205,54 +176,14 @@ describe('Loop Template', () => {
     warnSpy.mockRestore();
   });
 
-  it('should handle addXXX methods', async () => {
-    // Create a counter for the loop condition
-    let counter = 0;
-
-    // Create the loop condition function
-    const exitCondition = (session: Session) => {
-      counter++;
-      return counter >= 2; // Exit after 2 iterations
-    };
-
-    // Define the body template as a Sequence using addXXX methods
-    const bodySequence = new Sequence()
-      .addSystem('System message')
-      .addUser('User message')
-      .addAssistant('Assistant message');
-
-    // Create the loop template correctly
-    const loopTemplate = new Loop({
-      exitCondition,
-      bodyTemplate: bodySequence, // Pass the defined sequence here
-    });
-
-    // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
-
-    // Should have executed the body template 1 time (exit condition counter >= 2)
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3); // 3 messages × 1 iteration
-
-    // First (and only) iteration
-    expect(messages[0].type).toBe('system');
-    expect(messages[0].content).toBe('System message');
-    expect(messages[1].type).toBe('user');
-    expect(messages[1].content).toBe('User message');
-    expect(messages[2].type).toBe('assistant');
-    expect(messages[2].content).toBe('Assistant message');
-
-    // Removed checks for second iteration
-  });
-
   it('should respect maxIterations limit', async () => {
     // Create a condition that would never exit on its own
-    const neverExitCondition = () => false;
+    const alwaysLoopCondition = () => true;
 
     // Create a loop template with a low maxIterations value
     const loopTemplate = new Loop({
       bodyTemplate: new User('This would loop forever'),
-      exitCondition: neverExitCondition,
+      loopIf: alwaysLoopCondition,
       maxIterations: 5,
     });
 
@@ -268,7 +199,7 @@ describe('Loop Template', () => {
 
     // Should have logged a warning about reaching maxIterations
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('LoopTemplate reached maximum iterations (5)'),
+      expect.stringContaining('reached maximum iterations (5)'),
     );
 
     // Restore console.warn
@@ -279,8 +210,8 @@ describe('Loop Template', () => {
     // Create a list of messages for the StaticListSource
     const messageList = ['First message', 'Second message', 'Third message'];
 
-    // Create a StaticListSource
-    const listSource = new StaticListSource(messageList);
+    // Create a ListSource
+    const listSource = new ListSource(messageList);
 
     // Create a counter for the loop condition
     let counter = 0;
@@ -288,9 +219,9 @@ describe('Loop Template', () => {
     // Create the loop template
     const loopTemplate = new Loop({
       bodyTemplate: new User(listSource),
-      exitCondition: (session: Session) => {
+      loopIf: (session: Session) => {
         counter++;
-        return counter >= 3; // Exit after 3 iterations
+        return counter < 3; // Exit after 3 iterations
       },
     });
 
@@ -308,20 +239,20 @@ describe('Loop Template', () => {
   it('should update and use session metadata in the exit condition', async () => {
     // Create the loop template with a metadata-based exit condition
     const loopTemplate = new Loop({
-      bodyTemplate: new Sequence()
+      bodyTemplate: new Agent()
         .add(new User('Adding to counter'))
         .addTransform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
             (session.getContextValue('counter') as number | undefined) ?? 0;
           // Increment the counter
-          return session.updateContext({ counter: counter + 1 });
+          return session.setContextValues({ counter: counter + 1 });
         }),
-      exitCondition: (session: Session) => {
+      loopIf: (session: Session) => {
         // Exit when counter reaches 3
         // Get counter, default to 0, ensure it's a number before comparing
         return (
-          ((session.getContextValue('counter') as number | undefined) ?? 0) >= 3
+          ((session.getContextValue('counter') as number | undefined) ?? 0) < 3
         );
       },
     });
@@ -346,15 +277,15 @@ describe('Loop Template', () => {
 
     // Create the loop template with a conditional branch
     const loopTemplate = new Loop({
-      bodyTemplate: new Sequence().add(new User('User input')).addIf(
+      bodyTemplate: new Agent().add(new User('User input')).addConditional(
         // Condition based on iteration count
         () => counter % 2 === 0, // True on even iterations
         new System('This is an even iteration'),
         new System('This is an odd iteration'),
       ),
-      exitCondition: () => {
+      loopIf: () => {
         counter++;
-        return counter >= 3; // Exit after 3 iterations
+        return counter < 3; // Continue until 3 iterations
       },
     });
 

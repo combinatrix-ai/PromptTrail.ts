@@ -82,7 +82,7 @@ describe('Nested Templates', () => {
         .add(new Assistant(generateOptions)) // Removed comma
         .add(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
-      exitCondition: (session: Session) => {
+      loopIf: (session: Session) => {
         // Exit after one iteration
         const messages = Array.from(session.messages);
         return messages.length >= 5; // System + First Q&A + Second Q&A

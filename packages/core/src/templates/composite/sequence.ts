@@ -1,12 +1,13 @@
+import { Session } from '../../session';
 import { Context, Metadata } from '../../taggedRecord';
 import type { Template } from '../base';
-import { CompositeTemplateBase } from './composite_base';
+import { Composite } from './composite';
 
 /**
  * A template that executes a sequence of templates in order.
  * @template TMetadata - The metadata type.
  * @template TContext - The context type.
- * @extends CompositeTemplateBase<TMetadata, TContext>
+ * @extends Composite<TMetadata, TContext>
  * @class
  * @public
  * @remarks
@@ -14,9 +15,9 @@ import { CompositeTemplateBase } from './composite_base';
  * enabling complex template compositions.
  */
 export class Sequence<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> extends CompositeTemplateBase<TMetadata, TContext> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends Composite<TMetadata, TContext> {
   /**
    * Creates a new Sequence template.
    * @param templates - Optional array of templates to execute in sequence
@@ -27,6 +28,11 @@ export class Sequence<
       this.templates = [...templates];
     }
 
+    return this;
+  }
+
+  loopIf(condition: (session: Session<TContext, TMetadata>) => boolean): this {
+    this.loopCondition = condition;
     return this;
   }
 }

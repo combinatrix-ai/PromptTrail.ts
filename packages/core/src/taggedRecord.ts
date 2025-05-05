@@ -6,19 +6,12 @@
  */
 
 /**
- * Discriminated helpers – narrow with `_type`
- */
-interface BaseTag<K extends string> {
-  readonly _type: K;
-}
-
-/**
  * Metadata attached to a **message**
  * e.g.   { role: "assistant", hidden: true }
  */
 export type Metadata<
   T extends Record<string, unknown> = Record<string, unknown>,
-> = Readonly<T & BaseTag<'metadata'>>;
+> = Readonly<T & { _type: 'metadata' }>;
 
 /**
  * Context carried by a **session**
@@ -26,36 +19,44 @@ export type Metadata<
  */
 export type Context<
   T extends Record<string, unknown> = Record<string, unknown>,
-> = Readonly<T & BaseTag<'context'>>;
+> = Readonly<T & { _type: 'context' }>;
 
 /**
  * Plain-object constructor for Metadata
  */
-export function createMetadata<T extends Record<string, unknown> = {}>(
-  value?: T,
-): Metadata<T> {
+export function createMetadata<
+  T extends Record<string, unknown> | Metadata = {},
+>(value?: T): Metadata<T> {
   return { ...(value ?? {}), _type: 'metadata' } as Metadata<T>;
 }
 
 /**
  * Plain-object constructor for Context
  */
-export function createContext<T extends Record<string, unknown> = {}>(
+export function createContext<T extends Record<string, unknown> | Context = {}>(
   value?: T,
 ): Context<T> {
   return { ...(value ?? {}), _type: 'context' } as Context<T>;
 }
 
-/**
- * Non-destructive merge that preserves the tag.
- */
-export function withUpdate<
-  T extends Record<string, unknown>,
-  U extends Record<string, unknown>,
-  K extends 'metadata' | 'context',
->(
-  obj: Readonly<T & BaseTag<K>>,
-  patch: U,
-): Readonly<Omit<T, keyof U> & U & BaseTag<K>> {
-  return { ...obj, ...patch };
+export function updateMetadata<T extends Metadata, K extends keyof T>(
+  metadata: T | undefined,
+  key: K,
+  value: T[K],
+): T {
+  if (!metadata) {
+    return createMetadata({ [key]: value } as T);
+  }
+  return { ...metadata, [key]: value } as T;
+}
+
+export function updateContext<T extends Context, K extends keyof T>(
+  context: T | undefined,
+  key: K,
+  value: T[K],
+): T {
+  if (!context) {
+    return createContext({ [key]: value } as T);
+  }
+  return { ...context, [key]: value } as T;
 }

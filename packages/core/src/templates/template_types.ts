@@ -4,7 +4,7 @@ import { Context, Metadata } from '../taggedRecord';
 /**
  * Type definition for transform functions
  */
-export type TTransformFunction<
+export type TransformFn<
   TMetadata extends Metadata,
   TContext extends Context,
 > = (
@@ -63,12 +63,4 @@ export interface ISubroutineTemplateOptions<
    * Optional identifier for the template.
    */
   id?: string;
-}
-// Make params interface generic
-
-export interface ITransformTemplateParams<
-  TMetadata extends Metadata,
-  TContext extends Context,
-> {
-  transformFn: TTransformFunction<TMetadata, TContext>;
 }

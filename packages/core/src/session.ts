@@ -3,20 +3,18 @@ import { createContext } from './taggedRecord';
 import { type Context } from './taggedRecord';
 import { ValidationError } from './errors';
 import { Metadata } from './taggedRecord';
-import { create } from 'domain';
-
 /**
  * Internal session implementation
  */
-class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
-  implements Session<TContext, TMetadata>
-{
+export class Session<
+  TContext extends Context = Context,
+  TMetadata extends Metadata = Metadata,
+> {
   constructor(
     public readonly messages: readonly Message<TMetadata>[] = [],
     public readonly context: TContext,
     public readonly print: boolean = false,
   ) {}
-
   /**
    * Create a new session with additional message
    */
@@ -34,7 +32,7 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
           break;
       }
     }
-    return new _SessionImpl<TContext, TMetadata>(
+    return new Session<TContext, TMetadata>(
       [...this.messages, message],
       { ...this.context }, // Create a shallow copy of the context
       this.print,
@@ -44,8 +42,16 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
   /**
    * Get a value from the context
    */
-  getContextValue<K extends keyof TContext>(key: K): TContext[K] | undefined {
-    return this.context[key];
+  getContextValue<K extends keyof TContext>(key: K): TContext[K] | undefined;
+  getContextValue<K extends keyof TContext>(
+    key: K,
+    defaultValue: TContext[K],
+  ): TContext[K];
+  getContextValue<K extends keyof TContext>(
+    key: K,
+    defaultValue?: TContext[K],
+  ): TContext[K] | undefined {
+    return this.context[key] !== undefined ? this.context[key] : defaultValue;
   }
 
   /**
@@ -57,7 +63,16 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
   ): Session<TContext, TMetadata> {
     const newContext = { ...this.context };
     newContext[key] = value;
-    return new _SessionImpl<TContext, TMetadata>(
+    return new Session<TContext, TMetadata>(
+      this.messages,
+      newContext,
+      this.print,
+    );
+  }
+
+  setContextValues(context: Partial<TContext>): Session<TContext, TMetadata> {
+    const newContext = { ...this.context, ...context };
+    return new Session<TContext, TMetadata>(
       this.messages,
       newContext,
       this.print,
@@ -68,7 +83,7 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
    * Get the size of the context
    */
   get contextSize(): number {
-    return Object.keys(this.context).length;
+    return Object.keys(this.context).length - 1; // Exclude _type
   }
 
   /**
@@ -81,7 +96,7 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
   /**
    * Get the last message in the session
    */
-  getLastMessage(): Message<TContext> | undefined {
+  getLastMessage(): Message<TMetadata> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
@@ -142,9 +157,9 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
   /**
    * Create a new session from a JSON representation
    */
-  static fromJSON<U extends Record<string, unknown>>(
+  static fromJSON<TContext extends Context, TMetadata extends Metadata>(
     json: Record<string, unknown>,
-  ): Session<U, Metadata> {
+  ): Session<TContext, TMetadata> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -157,9 +172,9 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
       );
     }
 
-    return createSession<U>({
+    return createSession<TContext, TMetadata>({
       messages: json.messages as Message<TMetadata>[],
-      context: json.context as U,
+      context: json.context as TContext,
       print: json.print ? (json.print as boolean) : false,
     });
   }
@@ -168,43 +183,44 @@ class _SessionImpl<TContext extends Context, TMetadata extends Metadata>
 /**
  * Create a new session with type inference
  */
-export function createSession<
-  TContext extends Context,
-  TMetadata extends Metadata,
->(
-  options: {
-    messages?: Message<TMetadata>[];
-    context?: TContext | Record<string, unknown>;
-    print?: boolean;
-  } = {},
-): Session<TContext, TMetadata> {
-  return new _SessionImpl<TContext, TMetadata>(
-    options.messages ?? [],
-    options.context ?? createContext<TContext>({}),
-    options.print ? (options.print as boolean) : false,
-  );
-}
 
-/**
- * Session interface for maintaining conversation state
- */
-export interface Session<TContext extends Context, TMetadata extends Metadata> {
-  readonly messages: readonly Message<TMetadata>[];
-  readonly context: TContext;
-  readonly print: boolean;
-  addMessage(message: Message<TMetadata>): Session<TContext, TMetadata>;
-  getContextValue<K extends keyof TContext>(key: K): TContext[K] | undefined;
-  setContextValue<K extends keyof TContext>(
-    key: K,
-    value: TContext[K],
-  ): Session<TContext, TMetadata>;
-  readonly contextSize: number;
-  getContextObject(): TContext;
-  getLastMessage(): Message<TMetadata> | undefined;
-  getMessagesByType<U extends Message<TMetadata>['type']>(
-    type: U,
-  ): Extract<Message<TMetadata>, { type: U }>[];
-  validate(): void;
-  toJSON(): Record<string, unknown>;
-  toString(): string;
+export function createSession<
+  C extends Record<string, unknown> = Record<string, unknown>,
+  M extends Record<string, unknown> = Record<string, unknown>,
+>(options?: {
+  context?: C;
+  messages?: Message<Metadata<M>>[];
+  print?: boolean;
+}): Session<Context<C>, Metadata<M>>;
+export function createSession<
+  TContext extends Context = Context,
+  M extends Record<string, unknown> = Record<string, unknown>,
+>(options?: {
+  context?: TContext;
+  messages?: Message<Metadata<M>>[];
+  print?: boolean;
+}): Session<TContext, Metadata<M>>;
+
+export function createSession<
+  C extends
+    | Record<string, unknown>
+    | Context<Record<string, unknown>> = Context,
+  M extends Metadata = Metadata,
+>(options?: {
+  context?: C;
+  messages?: Message<M>[];
+  print?: boolean;
+}): Session<Context<C>, M> {
+  options = options ?? {};
+  const raw = options.context as any;
+  const ctx: Context<C> =
+    raw && (raw as any)._type === 'context'
+      ? (raw as Context<C>)
+      : createContext<C>(raw as C | undefined);
+
+  return new Session<Context<C>, M>(
+    options.messages ?? [],
+    ctx,
+    options.print ?? false,
+  );
 }

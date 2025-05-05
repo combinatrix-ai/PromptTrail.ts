@@ -133,35 +133,6 @@ export class StaticSource extends TextSource {
 }
 
 /**
- * Static content source that returns the content based on predefined list
- */
-export class StaticListSource extends TextSource {
-  constructor(
-    private contentList: string[],
-    private index: number = 0,
-    options?: ValidationOptions, // Added options
-  ) {
-    super(options); // Pass options to base class
-  }
-
-  async getContent(session: Session<any, any>): Promise<string> {
-    if (this.index < this.contentList.length) {
-      return this.contentList[this.index++];
-    } else {
-      throw new Error('No more content in the StaticListSource');
-    }
-  }
-
-  async getIndex(): Promise<number> {
-    return this.index;
-  }
-
-  async atEnd(): Promise<boolean> {
-    return this.index >= this.contentList.length;
-  }
-}
-
-/**
  * Content source that returns a random element from a predefined list
  */
 export class RandomSource extends TextSource {
