@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/primitives/assistant';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { User } from '../../../templates/primitives/user';
-import { Conditional } from '../../../templates/primitives/conditional';
 import type { Session } from '../../../session';
+import { createSession } from '../../../session';
 import { Agent } from '../../../templates';
+import { Assistant } from '../../../templates/primitives/assistant';
+import { Conditional } from '../../../templates/primitives/conditional';
+import { User } from '../../../templates/primitives/user';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

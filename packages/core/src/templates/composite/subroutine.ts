@@ -1,10 +1,10 @@
-import { createSession } from '../../session';
-import type { Session } from '../../session';
 import type { Message } from '../../message';
-import type { Template } from '../base';
-import { Composite } from './composite';
-import type { ISubroutineTemplateOptions } from '../template_types';
+import type { Session } from '../../session';
+import { createSession } from '../../session';
 import { Context, Metadata } from '../../tagged_record';
+import type { Template } from '../base';
+import type { ISubroutineTemplateOptions } from '../template_types';
+import { Composite } from './composite';
 
 /**
  * A template that executes a list of templates (the subroutine) within a potentially

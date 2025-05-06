@@ -1,15 +1,15 @@
+import * as readline from 'node:readline/promises';
+import { z } from 'zod';
 import { ValidationError } from './errors';
+import { generateText } from './generate';
+import type { GenerateOptions } from './generate_options';
 import type { Session } from './session';
+import type { Context } from './tagged_record';
+import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
   TValidationResult as ValidationResult,
 } from './validators/base'; // TODO: Rename IValidator to Validator, Use TValidationResult
-import type { Context } from './tagged_record';
-import { interpolateTemplate } from './utils/template_interpolation';
-import * as readline from 'node:readline/promises';
-import { generateText } from './generate';
-import type { GenerateOptions } from './generate_options';
-import { z } from 'zod';
 
 // --- Temporary Definitions (Move to appropriate files later) ---
 

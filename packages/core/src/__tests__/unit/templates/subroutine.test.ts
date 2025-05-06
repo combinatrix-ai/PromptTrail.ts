@@ -1,20 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
-import { createGenerateOptions } from '../../../generate_options';
-import { Context, Metadata } from '../../../tagged_record';
-import { generateText } from '../../../generate';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Source } from '../../../content_source';
-import {
-  Subroutine,
-  Sequence,
-  Loop,
-  System,
-  User,
-  Assistant,
-  Agent,
-  Transform,
-} from '../../../templates';
+import { generateText } from '../../../generate';
+import { createGenerateOptions } from '../../../generate_options';
 import type { Session } from '../../../session';
+import { createSession } from '../../../session';
+import { Context, Metadata } from '../../../tagged_record';
+import {
+  Agent,
+  Assistant,
+  Loop,
+  Subroutine,
+  System,
+  Transform,
+  User,
+} from '../../../templates';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

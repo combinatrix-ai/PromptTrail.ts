@@ -1,11 +1,10 @@
+import type { ModelOutput } from '../content_source';
+import { LlmSource, Source, StaticSource } from '../content_source';
+import { GenerateOptions } from '../generate_options';
 import type { Session } from '../session';
 import { createSession } from '../session';
-import { Source, StaticSource, LlmSource } from '../content_source';
-import type { ModelOutput } from '../content_source';
-import { GenerateOptions } from '../generate_options';
+import { Context, Metadata } from '../tagged_record';
 import { interpolateTemplate } from '../utils/template_interpolation';
-import { Metadata } from '../tagged_record';
-import { Context } from '../tagged_record';
 
 /**
  * Core template interface

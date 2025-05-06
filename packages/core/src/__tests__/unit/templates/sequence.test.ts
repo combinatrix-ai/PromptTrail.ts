@@ -1,13 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/primitives/assistant';
-import { createSession } from '../../../session';
-import { createGenerateOptions } from '../../../generate_options';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { expect_messages } from '../../utils';
+import { createGenerateOptions } from '../../../generate_options';
+import { createSession } from '../../../session';
+import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';
+import { Assistant } from '../../../templates/primitives/assistant';
 import { System } from '../../../templates/primitives/system';
 import { User } from '../../../templates/primitives/user';
-import { Transform } from '../../../templates';
+import { expect_messages } from '../../utils';
 
 // Mock the generate module directly. Vitest replaces the actual generateText export with a mock.
 vi.mock('../../../generate');

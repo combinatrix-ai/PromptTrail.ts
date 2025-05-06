@@ -7,12 +7,12 @@
 
 // Import PromptTrail core components
 import {
-  createSession,
-  createGenerateOptions,
-  type GenerateOptions,
   Agent,
-  System,
   CLISource,
+  createGenerateOptions,
+  createSession,
+  System,
+  type GenerateOptions,
 } from '../packages/core/src/index.js';
 
 // Import tool definitions from ai SDK
@@ -21,8 +21,8 @@ import { z } from 'zod';
 
 // Node.js modules for file and command operations
 import { exec } from 'child_process';
-import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
+import { promisify } from 'util';
 // Convert exec to promise-based for async/await usage
 const execAsync = promisify(exec);
 

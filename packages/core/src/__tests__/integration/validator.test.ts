@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../session';
-import { type IValidator, type TValidationResult } from '../../validators/base';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSession, type Session } from '../../session';
 import { createContext } from '../../tagged_record';
-import { type Session } from '../../session';
+import { type IValidator, type TValidationResult } from '../../validators/base';
 
 vi.mock('../../generate');
 

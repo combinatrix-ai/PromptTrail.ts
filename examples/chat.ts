@@ -1,11 +1,11 @@
 import {
+  Agent,
+  Assistant,
+  CLISource,
+  createGenerateOptions,
+  createSession,
   Sequence,
   User,
-  Assistant,
-  createSession,
-  createGenerateOptions,
-  CLISource,
-  Agent,
 } from '../packages/core/src/index';
 
 const apiKey = process.env.OPENAI_API_KEY!;

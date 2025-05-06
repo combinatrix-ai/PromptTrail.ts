@@ -1,10 +1,10 @@
-import { Metadata, Context } from '../../tagged_record';
-import type { Session } from '../../session';
-import type { AssistantMessage } from '../../message';
-import { TemplateBase } from '../base';
-import { Source, ModelOutput, ValidationOptions } from '../../content_source';
-import type { IValidator } from '../../validators/base';
+import { ModelOutput, Source, ValidationOptions } from '../../content_source';
 import { GenerateOptions } from '../../generate_options';
+import type { AssistantMessage } from '../../message';
+import type { Session } from '../../session';
+import { Context, Metadata } from '../../tagged_record';
+import type { IValidator } from '../../validators/base';
+import { TemplateBase } from '../base';
 
 export class Assistant<
   TMetadata extends Metadata = Metadata,

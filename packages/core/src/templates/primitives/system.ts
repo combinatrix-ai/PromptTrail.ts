@@ -1,8 +1,8 @@
-import { Context, Metadata } from '../../tagged_record';
-import type { Session } from '../../session';
-import type { SystemMessage } from '../../message';
-import { TemplateBase } from '../base';
 import type { Source } from '../../content_source';
+import type { SystemMessage } from '../../message';
+import type { Session } from '../../session';
+import { Context, Metadata } from '../../tagged_record';
+import { TemplateBase } from '../base';
 
 export class System<
   TMetadata extends Metadata = Metadata,

@@ -1,8 +1,8 @@
+import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
+import { GenerateOptions } from '../../generate_options';
 import type { Session } from '../../session';
 import { Context, Metadata } from '../../tagged_record';
 import { TemplateBase } from '../base';
-import { GenerateOptions } from '../../generate_options';
-import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
 
 /**
  * Import zod for schema building and validation

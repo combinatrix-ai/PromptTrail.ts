@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { User, Assistant, Agent } from '../../../templates';
+import { createSession } from '../../../session';
+import { Agent, Assistant, User } from '../../../templates';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

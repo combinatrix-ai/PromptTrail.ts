@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Metadata, Context } from '../../tagged_record';
+import { Context, Metadata } from '../../tagged_record';
 import type { Template } from '../base';
 
 /**

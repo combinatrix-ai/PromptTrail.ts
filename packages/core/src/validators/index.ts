@@ -3,6 +3,6 @@
  */
 export * from './base';
 export * from './composite';
-export * from './text';
-export * from './schema';
 export * from './custom';
+export * from './schema';
+export * from './text';

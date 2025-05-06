@@ -1,11 +1,9 @@
-import type { Message } from '../message';
-import type { MessageRole } from '../message';
+import type { Message, MessageRole } from '../message';
 
 import { tool } from 'ai';
-import { Context, Metadata } from '../tagged_record';
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { Composite } from '@core/templates';
+import { Metadata } from '../tagged_record';
 
 /**
  * Create a weather tool for testing
@@ -48,19 +46,6 @@ export function expect_types(
 }
 
 /**
- * Test function for message content
- */
-export function expect_content(
-  messages: Message<Metadata>[],
-  expectedContent: string[],
-) {
-  expect(messages.length).toBe(expectedContent.length);
-  messages.forEach((message, index) => {
-    expect(message.content).toBe(expectedContent[index]);
-  });
-}
-
-/**
  * Test function for both types and content
  */
 export function expect_messages(
@@ -72,29 +57,4 @@ export function expect_messages(
     expect(message.type).toBe(expectedMessages[index].type);
     expect(message.content).toBe(expectedMessages[index].content);
   });
-}
-
-/**
- * Create a message with the given type and content
- */
-export function createMessage(
-  type: 'system' | 'user' | 'assistant',
-  content: string,
-): Message<Metadata> {
-  return {
-    type,
-    content,
-    metadata: Metadata.create({}),
-  };
-}
-
-export function limitLoopIterations<
-  TMetadata extends Metadata,
-  TContext extends Context,
->(
-  template: Composite<TMetadata, TContext>,
-  maxIterations: number = 5,
-): Composite<TMetadata, TContext> {
-  template.setMaxIterations(maxIterations);
-  return template;
 }

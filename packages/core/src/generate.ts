@@ -1,3 +1,5 @@
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
@@ -5,16 +7,10 @@ import {
   LanguageModelV1,
   ToolSet,
 } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import type { Session } from './session';
+import type { GenerateOptions, MCPServerConfig } from './generate_options';
 import type { Message } from './message';
+import type { Session } from './session';
 import { Context, Metadata } from './tagged_record';
-import type {
-  GenerateOptions,
-  MCPServerConfig,
-  ProviderConfig,
-} from './generate_options';
 
 /**
  * Convert Session to AI SDK compatible format

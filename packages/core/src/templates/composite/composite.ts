@@ -1,9 +1,9 @@
-import type { Session } from '../../session';
-import { TemplateBase, type Template } from '../base';
 import type { Source } from '../../content_source';
+import type { Session } from '../../session';
 import { Context, Metadata } from '../../tagged_record';
-import { User } from '../primitives/user';
+import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
+import { User } from '../primitives/user';
 import { Fluent } from './chainable';
 
 /**

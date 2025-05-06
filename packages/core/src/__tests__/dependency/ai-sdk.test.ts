@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
-import { tool, generateText, generateObject, streamText, Output } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { generateObject, generateText, Output, streamText, tool } from 'ai';
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 // These tests demonstrate the core APIs of Vercel's AI SDK
 // They serve as working documentation of how to use the AI SDK directly

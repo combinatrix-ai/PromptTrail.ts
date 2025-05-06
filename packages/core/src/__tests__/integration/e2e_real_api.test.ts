@@ -8,25 +8,25 @@
  * manually by a human developer.
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { createSession } from '../../session';
-import type { Session } from '../../session';
-import {
-  Sequence,
-  Loop,
-  System,
-  User,
-  Assistant,
-  Agent,
-  Subroutine,
-  Transform,
-  Conditional,
-} from '../../templates';
-import { Context, Metadata } from '../../tagged_record';
-import { createGenerateOptions } from '../../generate_options';
+import { describe, expect, it, vi } from 'vitest';
 import { ListSource, StaticSource } from '../../content_source';
-import { createWeatherTool, expect_types } from '../utils';
+import { createGenerateOptions } from '../../generate_options';
 import type { Message } from '../../message';
+import type { Session } from '../../session';
+import { createSession } from '../../session';
+import { Context, Metadata } from '../../tagged_record';
+import {
+  Agent,
+  Assistant,
+  Conditional,
+  Loop,
+  Sequence,
+  Subroutine,
+  System,
+  Transform,
+  User,
+} from '../../templates';
+import { createWeatherTool, expect_types } from '../utils';
 
 // Set up debug evnironment variable to set maxIterations
 

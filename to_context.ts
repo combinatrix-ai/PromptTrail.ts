@@ -1,9 +1,9 @@
 #!/usr/bin/env ts-node
 
-import * as fs from 'fs';
-import * as path from 'path';
 import clipboardy from 'clipboardy';
+import * as fs from 'fs';
 import ignore from 'ignore';
+import * as path from 'path';
 
 // Get command-line arguments
 const args = process.argv.slice(2);

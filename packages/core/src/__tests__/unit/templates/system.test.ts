@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { describe, expect, it, vi } from 'vitest';
 import { CallbackSource, StaticSource } from '../../../content_source';
+import { createSession } from '../../../session';
+import { System } from '../../../templates/primitives/system';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
-import { System } from '../../../templates/primitives/system';
 
 describe('SystemTemplate', () => {
   it('should handle ContentSource on constructor', async () => {

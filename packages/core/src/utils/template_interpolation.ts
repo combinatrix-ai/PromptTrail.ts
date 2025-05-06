@@ -1,5 +1,5 @@
-import type { Context, Metadata } from '../tagged_record';
 import type { Session } from '../session';
+import type { Context, Metadata } from '../tagged_record';
 
 /**
  * Type guard for Session interface

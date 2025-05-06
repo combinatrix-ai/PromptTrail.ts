@@ -1,19 +1,19 @@
+import { ModelOutput, Source, ValidationOptions } from '../content_source';
+import { GenerateOptions } from '../generate_options';
+import type { Session } from '../session';
+import { Context, Metadata } from '../tagged_record';
+import { IValidator } from '../validators';
 import type { Template } from './base';
+import { Fluent } from './composite/chainable';
 import { Loop } from './composite/loop';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
-import { System } from './primitives/system';
-import { User } from './primitives/user';
 import { Assistant } from './primitives/assistant';
-import type { Session } from '../session';
-import { Metadata, Context } from '../tagged_record';
-import { ISubroutineTemplateOptions } from './template_types';
 import { Conditional } from './primitives/conditional';
+import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
-import { GenerateOptions } from '../generate_options';
-import { ModelOutput, Source, ValidationOptions } from '../content_source';
-import { IValidator } from '../validators';
-import { Fluent } from './composite/chainable';
+import { User } from './primitives/user';
+import { ISubroutineTemplateOptions } from './template_types';
 
 /**
  * Agent class for building and executing templates

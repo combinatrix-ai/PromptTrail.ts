@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../session';
-import { Sequence, System, User, Assistant } from '../../templates';
-import { createContext } from '../../tagged_record';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GenerateOptions } from '../../generate_options';
+import { createSession } from '../../session';
+import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules
 vi.mock('../../generate');
@@ -27,7 +26,7 @@ describe('Browser Compatibility', () => {
         type: 'assistant',
         content:
           'This is a response from the OpenAI API in a browser environment.',
-        metadata: createContext(),
+        metadata: undefined,
       };
     });
   });

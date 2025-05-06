@@ -1,19 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  Loop,
-  System,
-  User,
-  Assistant,
-  Conditional,
-  Sequence,
-} from '../../../templates';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import {
   createGenerateOptions,
   type GenerateOptions,
 } from '../../../generate_options';
 import type { Session } from '../../../session';
+import { createSession } from '../../../session';
+import {
+  Assistant,
+  Conditional,
+  Loop,
+  Sequence,
+  System,
+  User,
+} from '../../../templates';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {

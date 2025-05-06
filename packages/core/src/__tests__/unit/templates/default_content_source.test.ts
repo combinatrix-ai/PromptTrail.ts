@@ -1,17 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/primitives/assistant';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  StaticSource,
-  RandomSource,
   ListSource,
+  RandomSource,
+  StaticSource,
 } from '../../../content_source';
-import { createGenerateOptions } from '../../../generate_options';
 import { generateText } from '../../../generate';
-import { Sequence } from '../../../templates/composite/sequence';
-import { User } from '../../../templates/primitives/user';
+import { createGenerateOptions } from '../../../generate_options';
+import { createSession } from '../../../session';
 import { Loop } from '../../../templates/composite/loop';
+import { Sequence } from '../../../templates/composite/sequence';
 import { Subroutine } from '../../../templates/composite/subroutine';
+import { Assistant } from '../../../templates/primitives/assistant';
+import { User } from '../../../templates/primitives/user';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

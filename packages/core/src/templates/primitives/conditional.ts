@@ -1,7 +1,7 @@
 import type { Session } from '../../session';
 import { Context, Metadata } from '../../tagged_record';
-import { TemplateBase } from '../base';
 import type { Template } from '../base';
+import { TemplateBase } from '../base';
 
 export class Conditional<
   TMetadata extends Metadata = Metadata,

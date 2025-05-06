@@ -1,6 +1,6 @@
-import { describe, it, expect, expectTypeOf } from 'vitest';
-import { createSession } from '../../session';
+import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
+import { createSession } from '../../session';
 import { Context } from '../../tagged_record';
 
 function createUserMessage(content: string): Message {

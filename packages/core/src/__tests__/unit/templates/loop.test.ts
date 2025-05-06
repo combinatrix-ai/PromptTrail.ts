@@ -1,13 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ListSource } from '../../../content_source';
 import { generateText } from '../../../generate';
-import { Sequence } from '../../../templates/composite/sequence';
-import { Loop } from '../../../templates/composite/loop';
-import { User } from '../../../templates/primitives/user';
 import type { Session } from '../../../session';
-import { System } from '../../../templates/primitives/system';
+import { createSession } from '../../../session';
 import { Agent } from '../../../templates';
+import { Loop } from '../../../templates/composite/loop';
+import { Sequence } from '../../../templates/composite/sequence';
+import { System } from '../../../templates/primitives/system';
+import { User } from '../../../templates/primitives/user';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({

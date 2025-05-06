@@ -1,8 +1,8 @@
-import type { Session } from '../../session';
-import type { UserMessage } from '../../message';
-import { TemplateBase } from '../base';
 import type { Source } from '../../content_source';
+import type { UserMessage } from '../../message';
+import type { Session } from '../../session';
 import { Context, Metadata } from '../../tagged_record';
+import { TemplateBase } from '../base';
 
 export class User<
   TMetadata extends Metadata = Metadata,

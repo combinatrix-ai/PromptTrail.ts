@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/primitives/assistant';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StaticSource } from '../../../content_source';
-import { createGenerateOptions } from '../../../generate_options';
 import { generateText } from '../../../generate';
+import { createGenerateOptions } from '../../../generate_options';
+import { createSession } from '../../../session';
+import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
 
