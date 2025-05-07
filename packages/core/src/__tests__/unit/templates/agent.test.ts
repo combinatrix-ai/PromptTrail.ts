@@ -16,7 +16,6 @@ describe('Agent', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: undefined,
     });
   });
 

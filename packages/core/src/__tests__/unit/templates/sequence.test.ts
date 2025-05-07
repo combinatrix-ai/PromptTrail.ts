@@ -20,7 +20,6 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: undefined,
     });
   });
 
@@ -80,7 +79,6 @@ describe('Sequence Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'I am the assistant response',
-      metadata: undefined,
     });
 
     const options = createGenerateOptions({

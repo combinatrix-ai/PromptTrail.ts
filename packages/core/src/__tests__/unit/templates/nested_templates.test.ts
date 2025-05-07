@@ -56,7 +56,6 @@ describe('Nested Templates', () => {
       return {
         type: 'assistant',
         content: response,
-        metadata: undefined,
       };
     });
   });

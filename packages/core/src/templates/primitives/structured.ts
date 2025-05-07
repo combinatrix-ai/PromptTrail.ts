@@ -76,7 +76,6 @@ export class Structured<
           type: 'assistant',
           content: JSON.stringify(parsedOutput.data, null, 2),
           structuredContent: parsedOutput.data,
-          metadata: undefined,
         });
       } catch (error) {
         console.error(

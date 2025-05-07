@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
+import { Context } from '../../../tagged_record';
 import { Agent } from '../../../templates';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { Conditional } from '../../../templates/primitives/conditional';
@@ -20,7 +21,6 @@ describe('If Template', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: undefined,
     });
   });
 
@@ -92,7 +92,6 @@ describe('If Template', () => {
     const initialSession = createSession().addMessage({
       type: 'system',
       content: 'Initial message',
-      metadata: undefined,
     });
 
     // Execute the template and verify the result
@@ -106,13 +105,21 @@ describe('If Template', () => {
   });
 
   it('should handle complex conditions using session data', async () => {
-    // Create a session with metadata
-    const session = createSession();
-    session.setContextValue('userRole', 'admin');
+    interface SessionContext
+      extends Context<{
+        userRole: string;
+      }> {}
+
+    // Create a session with context
+    const adminSession = createSession({
+      context: Context.create({
+        userRole: 'admin',
+      }),
+    });
 
     // Create a condition that checks metadata
-    const condition = (session: Session) => {
-      return session.getContextValue('userRole') === 'admin';
+    const condition = (s: typeof adminSession) => {
+      return s.context.userRole === 'admin';
     };
 
     // Create then and else templates
@@ -120,23 +127,23 @@ describe('If Template', () => {
     const elseTemplate = new User('Access denied');
 
     // Create an if template
-    const ifTemplate = new Conditional({
+    // TODO: Fix any
+    const ifTemplate = new Conditional<any, any>({
       condition,
       thenTemplate,
       elseTemplate,
     });
 
     // Execute the template and verify the result
-    const resultSession = await ifTemplate.execute(session);
+    const resultSession = await ifTemplate.execute(adminSession);
 
     // Verify the then branch was executed (admin access)
     const messages = Array.from(resultSession.messages);
     expect(messages).toHaveLength(1);
-    expect(messages[0].content).toBe('Access denied');
+    expect(messages[0].content).toBe('Admin access granted');
 
     // Now test with a different role
-    const userSession = createSession();
-    userSession.setContextValue('userRole', 'user');
+    const userSession = createSession().setContextValue('userRole', 'user');
 
     // Execute the template with user role
     const userResultSession = await ifTemplate.execute(userSession);
@@ -152,7 +159,6 @@ describe('If Template', () => {
     const session = createSession().addMessage({
       type: 'user',
       content: 'Hello, how are you?',
-      metadata: undefined,
     });
 
     // Create a condition that checks if the last message contains a greeting
@@ -186,7 +192,6 @@ describe('If Template', () => {
     const questionSession = createSession().addMessage({
       type: 'user',
       content: 'What is the weather today?',
-      metadata: undefined,
     });
 
     // Execute the template with the question

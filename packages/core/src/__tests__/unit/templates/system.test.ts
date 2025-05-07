@@ -218,7 +218,6 @@ describe('SystemTemplate', () => {
     session = session.addMessage({
       type: 'user',
       content: 'Hello',
-      metadata: undefined,
     });
 
     // Create a SystemTemplate

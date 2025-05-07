@@ -26,7 +26,6 @@ describe('Default Content Source', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Response from LLM',
-      metadata: undefined,
     });
   });
 

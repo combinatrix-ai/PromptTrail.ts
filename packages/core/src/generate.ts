@@ -224,7 +224,6 @@ export async function generateText<
     return {
       type: 'assistant',
       content: content,
-      metadata: undefined,
       toolCalls: formattedToolCalls,
     };
   }
@@ -232,7 +231,6 @@ export async function generateText<
   return {
     type: 'assistant',
     content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
-    metadata: undefined,
   };
 }
 
@@ -271,7 +269,6 @@ export async function* generateTextStream<
       yield {
         type: 'assistant',
         content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: undefined,
       };
     } else if (chunk.type === 'tool-call') {
       // Add tool calls directly to the message
@@ -284,7 +281,6 @@ export async function* generateTextStream<
       yield {
         type: 'assistant',
         content: ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: undefined,
         toolCalls: [toolCall],
       };
     }

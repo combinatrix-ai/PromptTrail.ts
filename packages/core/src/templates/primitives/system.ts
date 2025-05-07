@@ -30,7 +30,6 @@ export class System<
     const message: SystemMessage<TMetadata> = {
       type: 'system',
       content,
-      metadata: undefined,
     };
     return validSession.addMessage(message);
   }

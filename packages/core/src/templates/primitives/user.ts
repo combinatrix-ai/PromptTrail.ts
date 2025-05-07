@@ -30,7 +30,6 @@ export class User<
     const message: UserMessage<TMetadata> = {
       type: 'user',
       content,
-      metadata: undefined,
     };
     return validSession.addMessage(message);
   }

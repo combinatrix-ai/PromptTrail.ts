@@ -137,11 +137,14 @@ describe('End-to-End Workflows with Real APIs', () => {
           createSession({
             context: session.context,
             messages: session.messages.map((message) => {
-              message.metadata = Metadata.create({
-                ...message.metadata,
-                timestamp: date,
-              });
-              return message;
+              return {
+                ...message,
+                metadata: Metadata.withValue(
+                  message.metadata!,
+                  'timestamp',
+                  date,
+                ),
+              };
             }),
             print: session.print,
           });
@@ -435,19 +438,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'user', 'assistant']);
 
-    // Check that toolCalls is an array
-    expect(Array.isArray(messages[2].toolCalls)).toBe(true);
-
-    // Check that the tool call is for the weather tool
-    if (messages[2].toolCalls) {
-      expect(messages[2].toolCalls.length).toBeGreaterThan(0);
-      expect(messages[2].toolCalls[0].name).toBe('weather');
-    }
-
-    const toolResults = session.getContextValue('toolResults');
-    if (toolResults) {
-      expect(Array.isArray(toolResults)).toBe(true);
-    }
+    expect(messages[2].toolCalls).toBeDefined();
+    const toolCalls = messages[2].toolCalls!;
+    expect(toolCalls[0].name).toBe('weather');
   });
 
   it('should execute a conversation with a loop and user input', async () => {

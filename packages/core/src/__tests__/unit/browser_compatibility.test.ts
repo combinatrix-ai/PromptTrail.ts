@@ -26,7 +26,6 @@ describe('Browser Compatibility', () => {
         type: 'assistant',
         content:
           'This is a response from the OpenAI API in a browser environment.',
-        metadata: undefined,
       };
     });
   });

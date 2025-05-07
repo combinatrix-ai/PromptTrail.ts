@@ -28,7 +28,6 @@ describe('SubroutineTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
-      metadata: undefined,
     });
   });
 
@@ -165,7 +164,6 @@ describe('SubroutineTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'The weather in Tokyo is 25°C and sunny.',
-      metadata: undefined,
     });
 
     // Create a subroutine with a transformer *inside* the Sequence

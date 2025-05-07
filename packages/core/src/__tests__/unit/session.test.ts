@@ -7,14 +7,12 @@ function createUserMessage(content: string): Message {
   return {
     type: 'user',
     content,
-    metadata: undefined,
   };
 }
 function createSystemMessage(content: string): Message {
   return {
     type: 'system',
     content,
-    metadata: undefined,
   };
 }
 
@@ -25,7 +23,6 @@ function createMessage(
   return {
     type,
     content,
-    metadata: undefined,
   };
 }
 

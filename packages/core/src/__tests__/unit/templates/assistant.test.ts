@@ -38,7 +38,6 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Generated content',
-      metadata: undefined,
     });
 
     // Create GenerateOptions
@@ -152,7 +151,6 @@ describe('AssistantTemplate', () => {
           id: 'tool-123',
         },
       ],
-      metadata: undefined,
     });
 
     const weatherTool = createWeatherTool();
@@ -217,7 +215,6 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is invalid',
-      metadata: undefined,
     });
 
     // Create a custom validator
