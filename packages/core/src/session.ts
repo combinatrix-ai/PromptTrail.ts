@@ -1,28 +1,22 @@
-import type { TMessage } from './types';
-import type { Metadata } from './metadata';
-import { createMetadata } from './metadata';
-import type { ISession } from './types';
-import { ValidationError } from './types';
-
-/**
- * Immutable session implementation
- */
+import { ValidationError } from './errors';
+import type { Message } from './message';
+import { Context, Metadata } from './tagged_record';
 /**
  * Internal session implementation
  */
-class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
-  implements ISession<T>
-{
+export class Session<
+  TContext extends Context = Context,
+  TMetadata extends Metadata = Metadata,
+> {
   constructor(
-    public readonly messages: readonly TMessage[] = [],
-    public readonly metadata: Metadata<T> = createMetadata<T>(),
+    public readonly messages: readonly Message<TMetadata>[] = [],
+    public readonly context: TContext,
     public readonly print: boolean = false,
   ) {}
-
   /**
    * Create a new session with additional message
    */
-  addMessage(message: TMessage): ISession<T> {
+  addMessage(message: Message<TMetadata>): Session<TContext, TMetadata> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -36,42 +30,84 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
           break;
       }
     }
-    return new _SessionImpl<T>(
+    return new Session<TContext, TMetadata>(
       [...this.messages, message],
-      this.metadata.clone(),
+      { ...this.context }, // Create a shallow copy of the context
       this.print,
     );
   }
 
   /**
-   * Create a new session with updated metadata
+   * Get a value from the context
    */
-  updateMetadata<U extends Record<string, unknown>>(
-    metadata: U,
-  ): ISession<T & U> {
-    return new _SessionImpl<T & U>(
+  getContextValue<K extends keyof TContext>(key: K): TContext[K] | undefined;
+  getContextValue<K extends keyof TContext>(
+    key: K,
+    defaultValue: TContext[K],
+  ): TContext[K];
+  getContextValue<K extends keyof TContext>(
+    key: K,
+    defaultValue?: TContext[K],
+  ): TContext[K] | undefined {
+    return this.context[key] !== undefined ? this.context[key] : defaultValue;
+  }
+
+  /**
+   * Set a value in the context
+   */
+  setContextValue<K extends keyof TContext>(
+    key: K,
+    value: TContext[K],
+  ): Session<TContext, TMetadata> {
+    const newContext = { ...this.context };
+    newContext[key] = value;
+    return new Session<TContext, TMetadata>(
       this.messages,
-      this.metadata.merge(metadata),
+      newContext,
       this.print,
     );
+  }
+
+  setContextValues(context: Partial<TContext>): Session<TContext, TMetadata> {
+    const newContext = { ...this.context, ...context };
+    return new Session<TContext, TMetadata>(
+      this.messages,
+      newContext,
+      this.print,
+    );
+  }
+
+  /**
+   * Get the size of the context
+   */
+  get contextSize(): number {
+    return Object.keys(this.context).length;
+  }
+
+  /**
+   * Get a copy of the context as a plain object
+   */
+  getContextObject(): TContext {
+    return { ...this.context };
   }
 
   /**
    * Get the last message in the session
    */
-  getLastMessage(): TMessage | undefined {
+  getLastMessage(): Message<TMetadata> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends TMessage['type']>(
+  getMessagesByType<U extends Message<TMetadata>['type']>(
     type: U,
-  ): Extract<TMessage, { type: U }>[] {
-    return this.messages.filter(
-      (msg): msg is Extract<TMessage, { type: U }> => msg.type === type,
-    );
+  ): Extract<Message<TMetadata>, { type: U }>[] {
+    return this.messages.filter((msg) => msg.type === type) as Extract<
+      Message<TMetadata>,
+      { type: U }
+    >[];
   }
 
   /**
@@ -104,7 +140,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      metadata: this.metadata.toJSON(),
+      context: this.context,
       print: this.print,
     };
   }
@@ -119,19 +155,25 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new session from a JSON representation
    */
-  static fromJSON<U extends Record<string, unknown>>(
+  static fromJSON<TContext extends Context, TMetadata extends Metadata>(
     json: Record<string, unknown>,
-  ): ISession<U> {
+  ): Session<TContext, TMetadata> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
       );
     }
 
-    return createSession<U>({
-      messages: json.messages as TMessage[],
-      metadata: json.metadata as U,
-      print: json.print as boolean,
+    if (json.context && typeof json.context !== 'object') {
+      throw new ValidationError(
+        'Invalid session JSON: context must be an object',
+      );
+    }
+
+    return createSession<TContext, TMetadata>({
+      messages: json.messages as Message<TMetadata>[],
+      context: json.context as TContext,
+      print: json.print ? (json.print as boolean) : false,
     });
   }
 }
@@ -139,18 +181,40 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
 /**
  * Create a new session with type inference
  */
-export function createSession<T extends Record<string, unknown>>(
-  options: {
-    messages?: TMessage[];
-    metadata?: T;
-    print?: boolean;
-  } = {},
-): ISession<T> {
-  return new _SessionImpl<T>(
-    options.messages,
-    options.metadata
-      ? createMetadata<T>({ initial: options.metadata })
-      : undefined,
+
+export function createSession<
+  C extends Record<string, unknown> = Record<string, unknown>,
+  M extends Record<string, unknown> = Record<string, unknown>,
+>(options?: {
+  context?: C;
+  messages?: Message<Metadata<M>>[];
+  print?: boolean;
+}): Session<Context<C>, Metadata<M>>;
+export function createSession<
+  TContext extends Context = Context,
+  M extends Record<string, unknown> = Record<string, unknown>,
+>(options?: {
+  context?: TContext;
+  messages?: Message<Metadata<M>>[];
+  print?: boolean;
+}): Session<TContext, Metadata<M>>;
+
+export function createSession<
+  C extends
+    | Record<string, unknown>
+    | Context<Record<string, unknown>> = Context,
+  M extends Metadata = Metadata,
+>(options?: {
+  context?: C;
+  messages?: Message<M>[];
+  print?: boolean;
+}): Session<Context<C>, M> {
+  options = options ?? {};
+  const raw = options.context as any;
+  const ctx: Context<C> = Context.is(raw) ? raw : Context.create(raw ?? {});
+  return new Session<Context<C>, M>(
+    options.messages ?? [],
+    ctx,
     options.print ?? false,
   );
 }

@@ -1,8 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSession, type Session } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
-import { createMetadata } from '../../metadata';
-import { type ISession } from '../../types';
 
 vi.mock('../../generate');
 
@@ -31,7 +29,6 @@ describe('AssistantTemplate with Validator', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is a test response',
-      metadata: createMetadata(),
     });
   });
 
@@ -50,14 +47,13 @@ describe('AssistantTemplate with Validator', () => {
       return {
         type: 'assistant',
         content: `Response attempt ${attempts}`,
-        metadata: createMetadata(),
       };
     });
 
     const conditionalValidator: IValidator = {
       validate: async (
         content,
-        _context: ISession,
+        _context: Session,
       ): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }

@@ -1,9 +1,10 @@
-import { createSession } from '../session';
-import type { ISession, Message, Session } from '../types';
-import type { Template } from './base';
-import { CompositeTemplateBase } from './base';
-import { addFactoryMethods } from './composite_base';
-import type { ISubroutineTemplateOptions } from './template_types';
+import type { Message } from '../../message';
+import type { Session } from '../../session';
+import { createSession } from '../../session';
+import { Context, Metadata } from '../../tagged_record';
+import type { Template } from '../base';
+import type { ISubroutineTemplateOptions } from '../template_types';
+import { Composite } from './composite';
 
 /**
  * A template that executes a list of templates (the subroutine) within a potentially
@@ -12,13 +13,21 @@ import type { ISubroutineTemplateOptions } from './template_types';
  * This allows encapsulating complex logic, controlling context visibility, and
  * managing how results are integrated back into the main conversation flow.
  *
- * @template P - Type of the parent session metadata (Record<string, unknown>).
- * @template S - Type of the subroutine session metadata (Record<string, unknown>).
+ * @template TMetadata - Type of the session metadata.
+ * @template TContext - Type of the session context.
+ * @extends Composite<TMetadata, TContext>
+ * @class
+ * @public
+ * @remarks
+ * This class allows for the creation and execution of a subroutine of templates,
+ * enabling complex template compositions with customizable context management.
+ * It provides options for retaining messages, isolating context, and defining
+ * initialization and squashing functions for the subroutine execution.
  */
 export class Subroutine<
-  P extends Record<string, unknown> = Record<string, unknown>,
-  S extends Record<string, unknown> = Record<string, unknown>,
-> extends CompositeTemplateBase<P, P> {
+  TMetadata extends Metadata = Metadata,
+  TContext extends Context = Context,
+> extends Composite<TMetadata, TContext> {
   public readonly id?: string;
   private readonly retainMessages: boolean;
   private readonly isolatedContext: boolean;
@@ -29,8 +38,10 @@ export class Subroutine<
    * @param options Configuration options for the subroutine execution and context management.
    */
   constructor(
-    templateOrTemplates?: Template<S, S> | Template<any, any>[],
-    options?: ISubroutineTemplateOptions<P, S>,
+    templateOrTemplates?:
+      | Template<TMetadata, TContext>
+      | Template<TMetadata, TContext>[],
+    options?: ISubroutineTemplateOptions<TMetadata, TContext>,
   ) {
     super();
 
@@ -44,21 +55,23 @@ export class Subroutine<
       this.initFunction = options.initWith;
     } else {
       // Default init function
-      this.initFunction = (parentSession: ISession<P>): ISession<S> => {
+      this.initFunction = (
+        parentSession: Session<TContext, TMetadata>,
+      ): Session<TContext, TMetadata> => {
         if (this.isolatedContext) {
           // Create a completely new, empty session for isolated context
-          return createSession<S>();
+          return createSession<TContext, TMetadata>({});
         }
 
-        // Default: Clone parent session messages and metadata
-        const clonedMetadataObject =
-          parentSession.metadata.toObject() as unknown as S;
-        let clonedSession = createSession<S>({
-          metadata: clonedMetadataObject,
+        // Default: Clone parent session messages and context
+        const clonedContextObject =
+          parentSession.getContextObject() as unknown as TContext;
+        let clonedSession = createSession<TContext, TMetadata>({
+          context: clonedContextObject,
         });
 
         // Add messages immutably
-        parentSession.messages.forEach((msg: Message) => {
+        parentSession.messages.forEach((msg: Message<TMetadata>) => {
           clonedSession = clonedSession.addMessage(msg);
         });
 
@@ -71,19 +84,19 @@ export class Subroutine<
     } else {
       // Default squash function
       this.squashFunction = (
-        parentSession: ISession<P>,
-        subroutineSession: ISession<S>,
-      ): ISession<P> => {
+        parentSession: Session<TContext, TMetadata>,
+        subroutineSession: Session<TContext, TMetadata>,
+      ): Session<TContext, TMetadata> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
-        let finalMetadata = parentSession.metadata.toObject();
+        let finalMetadata = parentSession.getContextObject();
 
         if (this.retainMessages) {
           // Append messages from the subroutine session that were added after
           // the messages potentially copied from the parent
-          const parentMessageSet = new Set(parentSession.messages);
+          const parenMessageSet = new Set(parentSession.messages);
           const newMessages = subroutineSession.messages.filter(
-            (msg) => !parentMessageSet.has(msg),
+            (msg) => !parenMessageSet.has(msg),
           );
           finalMessages = [...finalMessages, ...newMessages];
         }
@@ -92,15 +105,17 @@ export class Subroutine<
           // Merge metadata only if not isolated
           finalMetadata = {
             ...finalMetadata,
-            ...subroutineSession.metadata.toObject(),
+            ...subroutineSession.getContextObject(),
           };
         }
 
         // Create a new session with the merged state
-        let mergedSession = createSession<P>({ metadata: finalMetadata as P });
+        let mergedSession = createSession<TContext, TMetadata>({
+          context: finalMetadata as TContext,
+        });
 
         // Add messages one by one
-        finalMessages.forEach((msg: Message) => {
+        finalMessages.forEach((msg: Message<TMetadata>) => {
           mergedSession = mergedSession.addMessage(msg);
         });
 
@@ -117,8 +132,7 @@ export class Subroutine<
       }
     }
 
-    // Add factory methods
-    return addFactoryMethods(this);
+    return this;
   }
 
   /**
@@ -126,7 +140,11 @@ export class Subroutine<
    * @param fn Function to initialize the subroutine session from the parent session
    * @returns This instance for method chaining
    */
-  initWith(fn: (parentSession: ISession<P>) => ISession<S>): this {
+  initWith(
+    fn: (
+      parentSession: Session<TContext, TMetadata>,
+    ) => Session<TContext, TMetadata>,
+  ): this {
     this.initFunction = fn;
     return this;
   }
@@ -138,9 +156,9 @@ export class Subroutine<
    */
   squashWith(
     fn: (
-      parentSession: ISession<P>,
-      subroutineSession: ISession<S>,
-    ) => ISession<P>,
+      parentSession: Session<TContext, TMetadata>,
+      subroutineSession: Session<TContext, TMetadata>,
+    ) => Session<TContext, TMetadata>,
   ): this {
     this.squashFunction = fn;
     return this;

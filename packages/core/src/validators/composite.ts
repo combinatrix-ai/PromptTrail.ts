@@ -1,7 +1,7 @@
 /**
  * Composite validators that combine multiple validators
  */
-import { type ISession } from '../types';
+import { type Session } from '../session';
 import { BaseValidator, type IValidator, type TValidationResult } from './base';
 
 /**
@@ -27,7 +27,7 @@ export abstract class CompositeValidator
 
   abstract validate(
     content: string,
-    context: ISession,
+    context: Session,
   ): Promise<TValidationResult>;
 
   getDescription(): string {
@@ -45,7 +45,7 @@ export abstract class CompositeValidator
 export class AllValidator extends CompositeValidator {
   async validate(
     content: string,
-    context: ISession,
+    context: Session,
   ): Promise<TValidationResult> {
     const instructions: string[] = [];
     for (const validator of this.validators) {
@@ -71,7 +71,7 @@ export class AllValidator extends CompositeValidator {
 export class AnyValidator extends CompositeValidator {
   async validate(
     content: string,
-    context: ISession,
+    context: Session,
   ): Promise<TValidationResult> {
     const instructions: string[] = [];
     for (const validator of this.validators) {

@@ -69,7 +69,7 @@ declare module '@prompttrail/core' {
   export class LoopTemplate extends Template {
     constructor(options?: {
       templates: Template[];
-      exitCondition: (session: Session) => boolean;
+      loopIf: (session: Session) => boolean;
     });
     addUser(
       optionsOrDescription:
@@ -91,7 +91,7 @@ declare module '@prompttrail/core' {
             content?: string;
           },
     ): this;
-    setExitCondition(condition: (session: Session) => boolean): this;
+    setLoopCondition(condition: (session: Session) => boolean): this;
   }
 
   export class SubroutineTemplate extends Template {

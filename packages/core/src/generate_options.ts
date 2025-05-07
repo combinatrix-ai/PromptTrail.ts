@@ -1,8 +1,6 @@
 /**
  * GenerateOptions with fluent API for adding tools
  */
-import type { IMCPServerConfig } from './types';
-import type { TProviderConfig } from './types';
 
 /**
  * Define a type for tool definitions since it's not exported from ai-sdk
@@ -13,7 +11,7 @@ type ToolDefinition<_T = unknown> = unknown;
  * Class-based implementation of GenerateOptions with fluent tool addition
  */
 export class GenerateOptions {
-  provider: TProviderConfig;
+  provider: ProviderConfig;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
@@ -21,11 +19,11 @@ export class GenerateOptions {
   tools: Record<string, unknown> = {};
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
-  mcpServers?: IMCPServerConfig[];
+  mcpServers?: MCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 
   constructor(options: {
-    provider: TProviderConfig;
+    provider: ProviderConfig;
     temperature?: number;
     maxTokens?: number;
     topP?: number;
@@ -33,7 +31,7 @@ export class GenerateOptions {
     tools?: Record<string, unknown>;
     toolChoice?: 'auto' | 'required' | 'none';
     dangerouslyAllowBrowser?: boolean;
-    mcpServers?: IMCPServerConfig[];
+    mcpServers?: MCPServerConfig[];
     sdkOptions?: Record<string, unknown>;
   }) {
     this.provider = options.provider;
@@ -90,7 +88,7 @@ export class GenerateOptions {
    * @param server The MCP server configuration
    * @returns The updated GenerateOptions instance for chaining
    */
-  addMCPServer(server: IMCPServerConfig): this {
+  addMCPServer(server: MCPServerConfig): this {
     if (!this.mcpServers) {
       this.mcpServers = [];
     }
@@ -138,7 +136,7 @@ export class GenerateOptions {
  * Create a new GenerateOptions instance
  */
 export function createGenerateOptions(options: {
-  provider: TProviderConfig;
+  provider: ProviderConfig;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
@@ -146,8 +144,50 @@ export function createGenerateOptions(options: {
   tools?: Record<string, unknown>;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
-  mcpServers?: IMCPServerConfig[];
+  mcpServers?: MCPServerConfig[];
   sdkOptions?: Record<string, unknown>;
 }): GenerateOptions {
   return new GenerateOptions(options);
+} /**
+ * Provider Types
+ * --------------------------------------------------------------------
+ */
+/**
+ * OpenAI provider configuration
+ */
+export interface OpenAIProviderConfig {
+  type: 'openai';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+  organization?: string;
+  dangerouslyAllowBrowser?: boolean;
+}
+/**
+ * Anthropic provider configuration
+ */
+
+export interface AnthropicProviderConfig {
+  type: 'anthropic';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+}
+/**
+ * Provider configuration union type
+ */
+
+export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig; /**
+
+/**
+ * MCP Server configuration for generate
+ */
+export interface MCPServerConfig {
+  type: 'mcp';
+  serverName: string;
+  toolName: string;
+  url: string;
+  name?: string;
+  version?: string;
+  headers?: Record<string, string>;
 }

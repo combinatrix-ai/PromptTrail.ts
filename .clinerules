@@ -15,14 +15,10 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 ## Build & Test Commands
 
 - Build all packages: `pnpm -r build`
-- To run test, you cannot run pnpm vitest diirectly by the restriction of your environement.
-  - Always create tmpfile and redirect all output to txt and when everything ends, cat it. You cannot get complex stdout / stderr output.
-  - Run all tests: `pnpm test:cline`
-    - This will run `tmpfile="/tmp/vitest_output_$(date +%s%N).log" && pnpm exec vitest --run --watch=false 2>&1 > "$tmpfile"; cat "$tmpfile" && rm "$tmpfile"`
-  - Run single test: `cd packages/core && tmpfile="/tmp/vitest_output_$(date +%s%N).log" && pnpm exec vitest --run --watch=false src/__tests__/filename.test.ts 2>&1 > "$tmpfile"; cat "$tmpfile" && rm "$tmpfile`
+- Run all tests: `pnpm run test`
 - Check types: `pnpm -C packages/core typecheck`
 - Lint code: `pnpm lint` (fix issues) or `pnpm lint:check`
-- Format code: `pnpm format` (fix) or `pnpm format:check`
+- Format code: `pnpm format` (fix issues) or `pnpm format:check`
 - When you run ts files, use `bun path/to/script.ts` instead of `ts-node`. Start from root to correct dependency resolve.
 
 ## Coding Style Guidelines
