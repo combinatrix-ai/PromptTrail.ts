@@ -3,13 +3,12 @@
   "version": "0.0.1",
   "description": "Core package for PromptTrail",
   "main": "dist/index.js",
-  "types": "src/index.d.ts",
+  "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "src/index.d.ts"
+    "dist"
   ],
   "scripts": {
-    "build": "tsup && cp src/index.d.ts dist/",
+    "build": "tsup && tsc --emitDeclarationOnly -p tsconfig.json",
     "test": "vitest --run --watch=false",
     "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
     "test:coverage": "vitest run --coverage",
@@ -34,6 +33,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.18",
+    "@ai-sdk/google": "^1.2.16",
     "@ai-sdk/openai": "^1.2.6",
     "@anthropic-ai/sdk": "^0.36.3",
     "@modelcontextprotocol/sdk": "^1.6.0",

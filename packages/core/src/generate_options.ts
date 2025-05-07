@@ -163,21 +163,32 @@ export interface OpenAIProviderConfig {
   organization?: string;
   dangerouslyAllowBrowser?: boolean;
 }
+
 /**
  * Anthropic provider configuration
  */
-
 export interface AnthropicProviderConfig {
   type: 'anthropic';
   apiKey: string;
   modelName: string;
   baseURL?: string;
 }
+
+/**
+ * Google provider configuration
+ */
+export interface GoogleProviderConfig {
+  type: 'google';
+  apiKey?: string; // Optional, as @ai-sdk/google can use env var
+  modelName: string;
+  baseURL?: string; // For proxies or different endpoints
+  // We can add more Google-specific options like safetySettings later if needed
+}
+
 /**
  * Provider configuration union type
  */
-
-export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig; /**
+export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig | GoogleProviderConfig;
 
 /**
  * MCP Server configuration for generate

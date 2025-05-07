@@ -1,4 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
@@ -120,10 +121,28 @@ export function createProvider(options: GenerateOptions): LanguageModelV1 {
 
     const anthropic = createAnthropic(sdkProviderOptions);
     return anthropic(providerConfig.modelName);
+  } else if (providerConfig.type === 'google') {
+    const googleSdkOptions: { apiKey?: string; baseURL?: string; dangerouslyAllowBrowser?: boolean } = {};
+    if (providerConfig.apiKey) {
+      googleSdkOptions.apiKey = providerConfig.apiKey;
+    }
+    if (providerConfig.baseURL) {
+      googleSdkOptions.baseURL = providerConfig.baseURL;
+    }
+    // Note: Check if @ai-sdk/google's createGoogleGenerativeAI supports dangerouslyAllowBrowser.
+    // The documentation for @ai-sdk/google didn't explicitly list it for createGoogleGenerativeAI.
+    // For now, assuming it might be a common option or handled by the core AI SDK.
+    // If it causes issues, it should be removed for the Google provider.
+    if (options.dangerouslyAllowBrowser) {
+        // googleSdkOptions.dangerouslyAllowBrowser = true; // Temporarily commenting out until confirmed
+    }
+
+    const googleProvider = createGoogleGenerativeAI(googleSdkOptions);
+    return googleProvider(providerConfig.modelName);
   }
 
   throw new Error(
-    `Unsupported provider type: ${(providerConfig as { type: string }).type}`, // Fix typo: use providerConfig
+    `Unsupported provider type: ${(providerConfig as { type: string }).type}`,
   );
 }
 

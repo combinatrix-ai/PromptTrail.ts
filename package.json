@@ -17,7 +17,7 @@
     "format:check": "prettier --check .",
     "check": "pnpm run lint:check && pnpm run format:check",
     "context": "bun run to_context.ts packages/core/ md ts | tee context.txt",
-    "pad": "bun run ./scratchapd.ts"
+    "pad": "bun run scratchpad.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",
