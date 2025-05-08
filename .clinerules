@@ -36,3 +36,4 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 - Use latest models:
   - OpenAI: `gpt-4o-mini`
   - Anthropic: `claude-3-5-haiku-latest`
+- For webapps, use `react`, `next.js`, and `tailwindcss`.
