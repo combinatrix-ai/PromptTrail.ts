@@ -2,14 +2,14 @@ import { ModelOutput, Source, ValidationOptions } from '../../content_source';
 import { GenerateOptions } from '../../generate_options';
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 
 export class Assistant<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends TemplateBase<TMetadata, TContext> {
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends TemplateBase<TAttrs, TVars> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;
@@ -49,8 +49,8 @@ export class Assistant<
   }
 
   async execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
     if (!this.contentSource)
       throw new Error('Content source required for AssistantTemplate');
@@ -69,7 +69,7 @@ export class Assistant<
         const rawOutput = await this.contentSource.getContent(validSession);
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
-        let outputMetadata: ModelOutput['metadata'] | undefined;
+        let outpuTAttrs: ModelOutput['metadata'] | undefined;
         let outputStructured: ModelOutput['structuredOutput'] | undefined;
 
         if (typeof rawOutput === 'string') {
@@ -83,7 +83,7 @@ export class Assistant<
           const modelOutput = rawOutput as ModelOutput;
           outputContent = modelOutput.content;
           outputToolCalls = modelOutput.toolCalls;
-          outputMetadata = modelOutput.metadata;
+          outpuTAttrs = modelOutput.metadata;
           outputStructured = modelOutput.structuredOutput;
         } else {
           throw new Error(
@@ -95,7 +95,7 @@ export class Assistant<
         currentOutput = {
           content: outputContent,
           toolCalls: outputToolCalls,
-          metadata: outputMetadata,
+          metadata: outpuTAttrs,
           structuredOutput: outputStructured,
         };
         lastOutput = currentOutput; // Keep track of the very last output
@@ -117,13 +117,11 @@ export class Assistant<
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately
-        const message: AssistantMessage<TMetadata> = {
+        const message: AssistantMessage<TAttrs> = {
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          metadata: Metadata.create<TMetadata>(
-            currentOutput.metadata as TMetadata,
-          ),
+          attrs: Attrs.create<TAttrs>(currentOutput.metadata as TAttrs),
           structuredContent: currentOutput.structuredOutput,
         };
         return validSession.addMessage(message);
@@ -159,11 +157,11 @@ export class Assistant<
     // This happens if the last attempt failed and raiseError was false.
     if (!this.raiseError && lastError && lastOutput) {
       // Construct session from the last recorded output (which failed validation)
-      const lastMessage: AssistantMessage<TMetadata> = {
+      const lastMessage: AssistantMessage<TAttrs> = {
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        metadata: Metadata.create<TMetadata>(lastOutput.metadata as TMetadata),
+        attrs: Attrs.create<TAttrs>(lastOutput.metadata as TAttrs),
         structuredContent: lastOutput.structuredOutput,
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);

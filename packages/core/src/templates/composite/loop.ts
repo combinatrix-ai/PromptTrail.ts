@@ -1,12 +1,12 @@
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import type { Template } from '../base';
 import { Composite } from './composite';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
- * @template TMetadata - Type of the session metadata.
- * @template TContext - Type of the session context.
+ * @template TAttrs - Type of the session metadata.
+ * @template TVars - Type of the session context.
  * @class
  * @public
  * @remarks
@@ -14,10 +14,10 @@ import { Composite } from './composite';
  * enabling repeated execution until a specified condition is met.
  */
 export class Loop<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends Composite<TMetadata, TContext> {
-  // implements ICompositeTemplateFactoryMethods<TMetadata, TContext>
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends Composite<TAttrs, TVars> {
+  // implements ICompositeTemplateFactoryMethods<TAttrs, TVars>
   /**
    * Creates a new Loop template.
    * @param options - Configuration options for the loop
@@ -26,7 +26,7 @@ export class Loop<
     options: {
       bodyTemplate?: Template<any, any> | Template<any, any>[];
       // Do not make loopIf optional, to prevent unwanted infinite loops
-      loopIf?: (session: Session<TContext, TMetadata>) => boolean;
+      loopIf?: (session: Session<TVars, TAttrs>) => boolean;
       maxIterations?: number;
     } = {},
   ) {
@@ -63,9 +63,7 @@ export class Loop<
    * @param condition - Function that evaluates the session and returns true when the loop should continue
    * @returns This instance for method chaining
    */
-  setLoopIf(
-    condition: (session: Session<TContext, TMetadata>) => boolean,
-  ): this {
+  setLoopIf(condition: (session: Session<TVars, TAttrs>) => boolean): this {
     this.loopCondition = condition;
     return this;
   }

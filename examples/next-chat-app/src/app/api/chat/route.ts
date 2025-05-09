@@ -4,18 +4,18 @@ import { NextResponse } from 'next/server';
 import {
   Agent,
   createSession,
-  Context as PromptTrailContext,
+  Vars as PromptTrailContext,
   Message as PromptTrailMessage,
   System,
 } from '../../../../../../packages/core/src';
 
 // Define a type for our session context data (plain object)
-interface ChatContextData {
+interface ChaTVarsData {
   codeContext: string;
 }
 
 // This is the branded context type that will be used by Session and Agent
-type BrandedChatContext = PromptTrailContext<ChatContextData>;
+type BrandedChaTVars = PromptTrailContext<ChaTVarsData>;
 
 // Ensure the GOOGLE_API_KEY is set in your environment variables
 // The @ai-sdk/google provider defaults to GOOGLE_GENERATIVE_AI_API_KEY,
@@ -33,20 +33,20 @@ export async function POST(req: Request) {
   try {
     const { messages: incomingMessages, codeContext } = await req.json();
 
-    // Let ptSession type be inferred. It will be Session<BrandedChatContext, Metadata<unknown>>
+    // Let ptSession type be inferred. It will be Session<BrandedChaTVars, Metadata<unknown>>
     let ptSession = createSession({
       // Pass plain data type here, let createSession infer and handle branding
       context: { codeContext: codeContext || 'No code context provided.' },
     });
 
-    // Agent should be typed with the BrandedChatContext
+    // Agent should be typed with the BrandedChaTVars
     // The System template will use 'codeContext' from ptSession.context
-    const trail = new Agent<BrandedChatContext>().add(
+    const trail = new Agent<BrandedChaTVars>().add(
       new System(
         'You are a helpful AI assistant that discusses the provided code context. Code context: ${codeContext}',
       ),
     );
-    // The execute method of Agent<BrandedChatContext> will expect/return Session<BrandedChatContext, ...>
+    // The execute method of Agent<BrandedChaTVars> will expect/return Session<BrandedChaTVars, ...>
     console.log('[Chat API] Received codeContext:', codeContext); // Log received context
     ptSession = await trail.execute(ptSession);
 

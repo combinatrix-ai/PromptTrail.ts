@@ -1,4 +1,4 @@
-import type { Metadata } from './tagged_record';
+import type { Attrs } from './tagged_record';
 
 /**
  * Represents the role of a message in a conversation
@@ -8,9 +8,9 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 /**
  * Base interface for all message types
  */
-export interface BaseMessage<TMetadata extends Metadata = Metadata> {
+export interface BaseMessage<TAttrs extends Attrs = Attrs> {
   content: string;
-  metadata?: TMetadata;
+  attrs?: TAttrs;
   structuredContent?: Record<string, unknown>;
   toolCalls?: Array<{
     name: string;
@@ -29,40 +29,40 @@ export interface BaseMessage<TMetadata extends Metadata = Metadata> {
 /**
  * System message interface
  */
-export interface SystemMessage<TMetadata extends Metadata = Metadata>
-  extends BaseMessage<TMetadata> {
+export interface SystemMessage<TAttrs extends Attrs = Attrs>
+  extends BaseMessage<TAttrs> {
   type: 'system';
 }
 
 /**
  * User message interface
  */
-export interface UserMessage<TMetadata extends Metadata = Metadata>
-  extends BaseMessage<TMetadata> {
+export interface UserMessage<TAttrs extends Attrs = Attrs>
+  extends BaseMessage<TAttrs> {
   type: 'user';
 }
 
 /**
  * Assistant message interface
  */
-export interface AssistantMessage<TMetadata extends Metadata = Metadata>
-  extends BaseMessage<TMetadata> {
+export interface AssistantMessage<TAttrs extends Attrs = Attrs>
+  extends BaseMessage<TAttrs> {
   type: 'assistant';
 }
 
 /**
  * Tool result message interface
  */
-export interface ToolResultMessage<TMetadata extends Metadata = Metadata>
-  extends BaseMessage<TMetadata> {
+export interface ToolResultMessage<TAttrs extends Attrs = Attrs>
+  extends BaseMessage<TAttrs> {
   type: 'tool_result';
 }
 
 /**
  * Message interface that can be any of the above types
  */
-export type Message<TMetadata extends Metadata = Metadata> =
-  | SystemMessage<TMetadata>
-  | UserMessage<TMetadata>
-  | AssistantMessage<TMetadata>
-  | ToolResultMessage<TMetadata>;
+export type Message<TAttrs extends Attrs = Attrs> =
+  | SystemMessage<TAttrs>
+  | UserMessage<TAttrs>
+  | AssistantMessage<TAttrs>
+  | ToolResultMessage<TAttrs>;

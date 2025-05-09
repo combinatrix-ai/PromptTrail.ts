@@ -1,7 +1,7 @@
 import type { Message } from '../../message';
 import type { Session } from '../../session';
 import { createSession } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import type { Template } from '../base';
 import type { ISubroutineTemplateOptions } from '../template_types';
 import { Composite } from './composite';
@@ -13,9 +13,9 @@ import { Composite } from './composite';
  * This allows encapsulating complex logic, controlling context visibility, and
  * managing how results are integrated back into the main conversation flow.
  *
- * @template TMetadata - Type of the session metadata.
- * @template TContext - Type of the session context.
- * @extends Composite<TMetadata, TContext>
+ * @template TAttrs - Type of the session metadata.
+ * @template TVars - Type of the session context.
+ * @extends Composite<TAttrs, TVars>
  * @class
  * @public
  * @remarks
@@ -25,9 +25,9 @@ import { Composite } from './composite';
  * initialization and squashing functions for the subroutine execution.
  */
 export class Subroutine<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends Composite<TMetadata, TContext> {
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends Composite<TAttrs, TVars> {
   public readonly id?: string;
   private readonly retainMessages: boolean;
   private readonly isolatedContext: boolean;
@@ -38,10 +38,8 @@ export class Subroutine<
    * @param options Configuration options for the subroutine execution and context management.
    */
   constructor(
-    templateOrTemplates?:
-      | Template<TMetadata, TContext>
-      | Template<TMetadata, TContext>[],
-    options?: ISubroutineTemplateOptions<TMetadata, TContext>,
+    templateOrTemplates?: Template<TAttrs, TVars> | Template<TAttrs, TVars>[],
+    options?: ISubroutineTemplateOptions<TAttrs, TVars>,
   ) {
     super();
 
@@ -56,22 +54,22 @@ export class Subroutine<
     } else {
       // Default init function
       this.initFunction = (
-        parentSession: Session<TContext, TMetadata>,
-      ): Session<TContext, TMetadata> => {
+        parentSession: Session<TVars, TAttrs>,
+      ): Session<TVars, TAttrs> => {
         if (this.isolatedContext) {
           // Create a completely new, empty session for isolated context
-          return createSession<TContext, TMetadata>({});
+          return createSession<TVars, TAttrs>({});
         }
 
         // Default: Clone parent session messages and context
         const clonedContextObject =
-          parentSession.getContextObject() as unknown as TContext;
-        let clonedSession = createSession<TContext, TMetadata>({
+          parentSession.getVarsObject() as unknown as TVars;
+        let clonedSession = createSession<TVars, TAttrs>({
           context: clonedContextObject,
         });
 
         // Add messages immutably
-        parentSession.messages.forEach((msg: Message<TMetadata>) => {
+        parentSession.messages.forEach((msg: Message<TAttrs>) => {
           clonedSession = clonedSession.addMessage(msg);
         });
 
@@ -84,12 +82,12 @@ export class Subroutine<
     } else {
       // Default squash function
       this.squashFunction = (
-        parentSession: Session<TContext, TMetadata>,
-        subroutineSession: Session<TContext, TMetadata>,
-      ): Session<TContext, TMetadata> => {
+        parentSession: Session<TVars, TAttrs>,
+        subroutineSession: Session<TVars, TAttrs>,
+      ): Session<TVars, TAttrs> => {
         // Default merging logic
         let finalMessages = [...parentSession.messages];
-        let finalMetadata = parentSession.getContextObject();
+        let finalMetadata = parentSession.getVarsObject();
 
         if (this.retainMessages) {
           // Append messages from the subroutine session that were added after
@@ -105,17 +103,17 @@ export class Subroutine<
           // Merge metadata only if not isolated
           finalMetadata = {
             ...finalMetadata,
-            ...subroutineSession.getContextObject(),
+            ...subroutineSession.getVarsObject(),
           };
         }
 
         // Create a new session with the merged state
-        let mergedSession = createSession<TContext, TMetadata>({
-          context: finalMetadata as TContext,
+        let mergedSession = createSession<TVars, TAttrs>({
+          context: finalMetadata as TVars,
         });
 
         // Add messages one by one
-        finalMessages.forEach((msg: Message<TMetadata>) => {
+        finalMessages.forEach((msg: Message<TAttrs>) => {
           mergedSession = mergedSession.addMessage(msg);
         });
 
@@ -141,9 +139,7 @@ export class Subroutine<
    * @returns This instance for method chaining
    */
   initWith(
-    fn: (
-      parentSession: Session<TContext, TMetadata>,
-    ) => Session<TContext, TMetadata>,
+    fn: (parentSession: Session<TVars, TAttrs>) => Session<TVars, TAttrs>,
   ): this {
     this.initFunction = fn;
     return this;
@@ -156,9 +152,9 @@ export class Subroutine<
    */
   squashWith(
     fn: (
-      parentSession: Session<TContext, TMetadata>,
-      subroutineSession: Session<TContext, TMetadata>,
-    ) => Session<TContext, TMetadata>,
+      parentSession: Session<TVars, TAttrs>,
+      subroutineSession: Session<TVars, TAttrs>,
+    ) => Session<TVars, TAttrs>,
   ): this {
     this.squashFunction = fn;
     return this;

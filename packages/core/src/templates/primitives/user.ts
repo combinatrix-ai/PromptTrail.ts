@@ -1,13 +1,13 @@
 import type { Source } from '../../content_source';
 import type { UserMessage } from '../../message';
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 
 export class User<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends TemplateBase<TMetadata, TContext> {
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends TemplateBase<TAttrs, TVars> {
   constructor(contentOrSource?: string | Source<string>) {
     super();
     this.contentSource = this.initializeContentSource(
@@ -17,8 +17,8 @@ export class User<
   }
 
   async execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
     if (!this.contentSource)
       throw new Error('Content source required for UserTemplate');
@@ -27,7 +27,7 @@ export class User<
     if (typeof content !== 'string')
       throw new Error('Expected string content from UserTemplate source');
 
-    const message: UserMessage<TMetadata> = {
+    const message: UserMessage<TAttrs> = {
       type: 'user',
       content,
     };

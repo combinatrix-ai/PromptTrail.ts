@@ -4,99 +4,122 @@
  * Also, we cannot do just `export const ctxBrand: unique symbol` because
  * it will disappear on transpilation and we will lose the runtime.
  */
-export const ctxBrand: unique symbol = Symbol('ctxBrand') as any;
-export const metaBrand: unique symbol = Symbol('metaBrand') as any;
+export const varsBrand: unique symbol = Symbol('varsBrand') as any;
+export const attrsBrand: unique symbol = Symbol('attrsBrand') as any;
 
-export type Context<T extends object = {}> = Readonly<T> & {
-  readonly [ctxBrand]: void;
+export type Vars<T extends Record<string, unknown> = {}> = Readonly<T> & {
+  readonly [varsBrand]: void;
 };
 
 /**
- * Context is a tagged record that allows you to create a read-only object
- * with additional properties. It is useful for creating immutable objects
- * with a specific type.
+ * Vars is a tagged record that allows you to create a read-only object
+ * with additional properties for use in a context.
+ * It is useful for storing data from outside the context,
+ * variables to be used in interactions, and other data that needs to be passed around.
  *
- * @param v - The initial value of the context.
+ * @param v - The initial value of the Vars.
  * @returns A read-only object with the specified type.
  */
-export function Context<T extends object = {}>(v: T): Context<T> {
-  return v as Context<T>;
+export function Vars<T extends Record<string, unknown> = {}>(v: T): Vars<T> {
+  return v as Vars<T>;
 }
 
-export namespace Context {
+export namespace Vars {
   /** recommended entry point */
-  export const create = <T extends object>(v: T): Context<T> =>
+  export const create = <T extends Record<string, unknown> = {}>(
+    v: T,
+  ): Vars<T> =>
     ({
       ...v,
       // We have actual ctxBrand key here, but this is a Symbol key
       // and won't appear in JSON.stringify etc.
-      [ctxBrand]: undefined,
-    }) as Context<T>;
+      [varsBrand]: undefined,
+    }) as Vars<T>;
 
-  export const is = (x: unknown): x is Context<any> =>
-    !!x && typeof x === 'object' && ctxBrand in (x as any);
+  export const is = (x: unknown): x is Vars<any> =>
+    !!x && typeof x === 'object' && varsBrand in (x as any);
 
   /** Overwrite existing key in Context */
-  export const withValue = <C extends object, K extends string, V>(
-    ctx: Context<C>,
+  export const withValue = <
+    C extends Record<string, unknown>,
+    K extends string,
+    V,
+  >(
+    ctx: Vars<C>,
     key: K,
     value: V,
-  ): Context<C & { [P in K]: V }> =>
-    Context.merge(ctx, { [key]: value } as { [P in K]: V });
+  ): Vars<C & { [P in K]: V }> =>
+    Vars.patch(ctx, { [key]: value } as { [P in K]: V });
 
   /**
-   * Merge multiple fields into the existing Context.
+   * Merge multiple fields into the existing Context as a patch.
    * Can create a new type with additional fields.
    */
-  export const merge = <C extends object, U extends object>(
-    ctx: Context<C>,
+  export const patch = <
+    C extends Record<string, unknown>,
+    U extends Record<string, unknown>,
+  >(
+    ctx: Vars<C>,
     patch: U,
-  ): Context<C & U> => Context({ ...ctx, ...patch });
+  ): Vars<C & U> => Vars({ ...ctx, ...patch });
 }
 
-export type Metadata<T extends object = {}> = Readonly<T> & {
-  readonly [metaBrand]: void;
+export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T> & {
+  readonly [attrsBrand]: void;
 };
 
 /**
- * Metadata is a tagged record that allows you to create a read-only object
- * with additional properties. It is useful for creating immutable objects
- * with a specific type.
+ * Attrs is a tagged record that allows you to create a read-only object
+ * with additional properties in messages.
+ * It is useful for storing information about the message, such as the role, hidden flag etc.
  *
  * @param v - The initial value of the metadata.
  * @returns A read-only object with the specified type.
  */
-export function Metadata<T extends object = {}>(v: T): Metadata<T> {
-  return v as Metadata<T>;
+export function Attrs<T extends Record<string, unknown> = {}>(v: T): Attrs<T> {
+  return v as Attrs<T>;
 }
 
-export namespace Metadata {
+export namespace Attrs {
   /** recommended entry point */
-  export const create = <T extends object>(v: T): Metadata<T> =>
+  export const create = <T extends Record<string, unknown> = {}>(
+    v: T,
+  ): Attrs<T> =>
     ({
       ...v,
       // We have actual metaBrand key here, but this is a Symbol key
       // and won't appear in JSON.stringify etc.
-      [metaBrand]: undefined,
-    }) as Metadata<T>;
+      [attrsBrand]: undefined,
+    }) as Attrs<T>;
 
-  export const is = (x: unknown): x is Metadata<any> =>
-    !!x && typeof x === 'object' && metaBrand in (x as any);
+  export const is = (x: unknown): x is Attrs<any> =>
+    !!x && typeof x === 'object' && attrsBrand in (x as any);
 
   /** Overwrite existing key in Metadata */
-  export const withValue = <M extends object, K extends string, V>(
-    meta: Metadata<M>,
+  export const withValue = <
+    M extends Record<string, unknown>,
+    K extends keyof M,
+  >(
+    meta: Attrs<M> | undefined,
     key: K,
-    value: V,
-  ): Metadata<M & { [P in K]: V }> =>
-    Metadata.merge(meta, { [key]: value } as { [P in K]: V });
+    value: M[K],
+  ): Attrs<Omit<M, K> & { [P in K]: M[P] }> => {
+    const patch = { [key]: value } as { [P in K]: M[P] };
+    const base: Attrs<M> = meta ?? Attrs.create({} as M);
+    // 2つめのジェネリック <M, K> を明示してもOK
+    return Attrs.merge(base, patch);
+  };
 
   /**
    * Merge multiple fields into the existing Context.
    * Can create a new type with additional fields.
    */
-  export const merge = <M extends object, U extends object>(
-    meta: Metadata<M>,
-    patch: U,
-  ): Metadata<M & U> => Metadata({ ...meta, ...patch });
+
+  export const merge = <
+    M extends Record<string, unknown>,
+    U extends keyof M, // ← 上書きするキー集合
+  >(
+    meta: Attrs<M>,
+    patch: Pick<M, U>, // ← そのキーは *必須* で型も同じ
+  ): Attrs<Omit<M, U> & Pick<M, U>> => Attrs({ ...meta, ...patch });
 }

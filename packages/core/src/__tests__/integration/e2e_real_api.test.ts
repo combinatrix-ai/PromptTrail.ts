@@ -14,7 +14,7 @@ import { createGenerateOptions } from '../../generate_options';
 import type { Message } from '../../message';
 import type { Session } from '../../session';
 import { createSession } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import {
   Agent,
   Assistant,
@@ -116,13 +116,9 @@ describe('End-to-End Workflows with Real APIs', () => {
   });
 
   it('should handle context and metadata correctly', async () => {
-    interface UserContext extends Context {
-      username: string;
-    }
-    interface MessageMetadata extends Metadata {
-      timestamp?: Date;
-    }
-    const initialContext: UserContext = Context.create({
+    type UserContext = Vars<{ username: string }>;
+    type MessageMetadata = Attrs<{ timestamp?: Date }>;
+    const initialContext: UserContext = Vars.create({
       username: 'Alice',
     });
     const date = new Date();
@@ -133,37 +129,34 @@ describe('End-to-End Workflows with Real APIs', () => {
       // Update context with the last message
       .add(
         new Transform((session) => {
-          // TODO: Making new Session is too difficult
-          createSession({
+          const msgs = session.messages.map((m) => ({
+            ...m,
+            attrs: Attrs.withValue(m.attrs, 'timestamp', date),
+          }));
+          const next = createSession<UserContext, MessageMetadata>({
             context: session.context,
-            messages: session.messages.map((message) => {
-              return {
-                ...message,
-                metadata: Metadata.withValue(
-                  message.metadata!,
-                  'timestamp',
-                  date,
-                ),
-              };
-            }),
+            messages: msgs,
             print: session.print,
           });
-          return session.setContextValue('username', 'Bob');
+          return next.withVar('username', 'Bob');
         }),
       );
     // Pass the raw initialContext object to createSession
     const session = await template.execute(
       createSession<UserContext>({ context: initialContext }),
     );
-    console.log(session.toString());
-    const messages = Array.from(session.messages) as Message<MessageMetadata>[];
+    const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'assistant', 'user']);
     expect(messages[1].content).toContain('Hello, Alice!');
-    expect(session.getContextValue('username')).toBe('Bob');
+    expect(session.getVar('username')).toBe('Bob');
+    console.log(
+      'Messages with metadata:',
+      messages.map((message) => message.attrs),
+    );
     expect(
       messages
-        .map((message) => message.metadata?.timestamp === date)
+        .map((message) => message.attrs?.timestamp === date)
         .every((value) => value === true),
     ).toBe(true);
   });
@@ -323,7 +316,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const userContentSource = new ListSource(['123456789', '987654321']);
 
     // Define the body of the loop as a Agent
-    const loopBodySequence = new Agent<Context<{ count: number }>>()
+    const loopBodySequence = new Agent<Vars<{ count: number }>>()
       .addSystem('This is automated API testing. Repeat what user says.')
       .addUser(userContentSource)
       .addAssistant(openAIgenerateOptions)
@@ -339,26 +332,25 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Define the exit condition for the loop
     // Add a transform to increment count in the loop body
     const loopBodySequenceWithTransform = loopBodySequence.addTransform(
-      (session: Session<Context<{ count: number }>>) => {
+      (session: Session<Vars<{ count: number }>>) => {
         const currentCount =
-          (session.getContextValue('count') as number | undefined) ?? 0;
-        return session.setContextValue('count', currentCount + 1);
+          (session.getVar('count') as number | undefined) ?? 0;
+        return session.withVar('count', currentCount + 1);
       },
     );
 
     // Define the exit condition for the loop (pure check)
     const loopExitCondition = (
-      session: Session<Context<{ count: number }>>,
+      session: Session<Vars<{ count: number }>>,
     ): boolean => {
-      const updatedCount =
-        (session.getContextValue('count') as number | undefined) ?? 0;
+      const updatedCount = (session.getVar('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
       // There are two items in the static list, so exit after two iterations
       return updatedCount < 2;
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
-    const loop = new Loop<any, Context<{ count: number }>>({
+    const loop = new Loop<any, Vars<{ count: number }>>({
       bodyTemplate: loopBodySequenceWithTransform,
       loopIf: loopExitCondition,
     });
@@ -391,7 +383,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages2[3].content).toContain('Condition MET');
 
     // Check final context count
-    expect(session2.getContextValue('count')).toBe(2);
+    expect(session2.getVar('count')).toBe(2);
 
     // Removed misplaced commented code
   });

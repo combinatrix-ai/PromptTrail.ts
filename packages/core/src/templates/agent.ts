@@ -1,7 +1,7 @@
 import { ModelOutput, Source, ValidationOptions } from '../content_source';
 import { GenerateOptions } from '../generate_options';
 import type { Session } from '../session';
-import { Context, Metadata } from '../tagged_record';
+import { Attrs, Vars } from '../tagged_record';
 import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
@@ -17,8 +17,8 @@ import { ISubroutineTemplateOptions } from './template_types';
 
 /**
  * Agent class for building and executing templates
- * @template TMetadata - The metadata type.
- * @template TContext - The context type.
+ * @template TAttrs - The metadata type.
+ * @template TVars - The context type.
  * @class
  * @public
  * @remarks
@@ -43,7 +43,7 @@ import { ISubroutineTemplateOptions } from './template_types';
  *   .addLoop(userInput => userInput !== 'exit', userInputTemplate)
  *   .addSubroutine(subroutineTemplate);
  */
-export class Agent<TC extends Context = Context, TM extends Metadata = Metadata>
+export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   implements Template<TM, TC>, Fluent<TM, TC>
 {
   constructor(private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>()) {}

@@ -126,7 +126,7 @@ describe('Sequence Template', () => {
           const nameMatch = message.match(/my name is (\w+)/i);
           const name = nameMatch ? nameMatch[1] : 'unknown';
           // Cast the result to satisfy TTransformFunction type
-          return session.setContextValues({ userName: name });
+          return session.withVars({ userName: name });
         }),
       )
       .add(new User('Nice to meet you, ${userName}'));
@@ -141,7 +141,7 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Nice to meet you, Alice' },
     ]);
 
-    expect(session.getContextValue('userName')).toBe('Alice');
+    expect(session.getVar('userName')).toBe('Alice');
   });
 
   it('should execute an empty sequence without errors', async () => {
@@ -157,16 +157,16 @@ describe('Sequence Template', () => {
     const sequence1 = new Sequence().add(new User('First message')).add(
       new Transform((session) => {
         // Cast the result to satisfy TTransformFunction type
-        return session.setContextValues({ counter: 1 });
+        return session.withVars({ counter: 1 });
       }),
     );
 
     const sequence2 = new Sequence().add(new User('Second message')).add(
       new Transform((session) => {
         // Ensure counter is treated as a number
-        const counter = Number(session.getContextValue('counter') || 0);
+        const counter = Number(session.getVar('counter') || 0);
         // Cast the result to satisfy TTransformFunction type
-        return session.setContextValues({
+        return session.withVars({
           counter: counter + 1,
         });
       }),
@@ -188,6 +188,6 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Counter value: 2' }, // Interpolated value
     ]);
 
-    expect(session.getContextValue('counter')).toBe(2);
+    expect(session.getVar('counter')).toBe(2);
   });
 });

@@ -137,11 +137,8 @@ describe('Nested Templates', () => {
 
     // Create a session with metadata
     const session = createSession();
-    const sessionWithUsername = session.setContextValue('username', 'Alice');
-    const sessionWithBoth = sessionWithUsername.setContextValue(
-      'topic',
-      'TypeScript',
-    );
+    const sessionWithUsername = session.withVar('username', 'Alice');
+    const sessionWithBoth = sessionWithUsername.withVar('topic', 'TypeScript');
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped
@@ -178,7 +175,7 @@ describe('Nested Templates', () => {
 
     // Create a session with a condition flag
     const session = createSession();
-    const updatedSession = session.setContextValue('condition', true);
+    const updatedSession = session.withVar('condition', true);
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
@@ -187,7 +184,7 @@ describe('Nested Templates', () => {
       .add(
         new Conditional({
           // Use add()
-          condition: (session) => Boolean(session.getContextValue('condition')),
+          condition: (session) => Boolean(session.getVar('condition')),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
             .add(new Assistant(generateOptions)) // Removed comma
@@ -235,7 +232,7 @@ describe('Nested Templates', () => {
 
     // Now test with condition = false
     const session2 = createSession();
-    const updatedSession2 = session2.setContextValue('condition', false);
+    const updatedSession2 = session2.withVar('condition', false);
 
     const result2 = await template.execute(updatedSession2);
     const messages2 = Array.from(result2.messages);

@@ -3,41 +3,39 @@ import { LlmSource, Source, StaticSource } from '../content_source';
 import { GenerateOptions } from '../generate_options';
 import type { Session } from '../session';
 import { createSession } from '../session';
-import { Context, Metadata } from '../tagged_record';
+import { Attrs, Vars } from '../tagged_record';
 import { interpolateTemplate } from '../utils/template_interpolation';
 
 /**
  * Core template interface
- * TMetadata: Message metadata type, must extend Record<string, unknown>
- * TContext: Session context type, must extend Record<string, unknown>
+ * TAttrs: Message metadata type, must extend Record<string, unknown>
+ * TVars: Session context type, must extend Record<string, unknown>
  */
 export interface Template<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
 > {
-  execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>>;
+  execute(session?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
 }
 
 /**
  * Base template class with composition methods
  */
 export abstract class TemplateBase<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> implements Template<TMetadata, TContext>
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> implements Template<TAttrs, TVars>
 {
   protected contentSource?: Source<unknown>;
 
   abstract execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>>;
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>>;
 
   protected ensureSession(
-    session?: Session<TContext, TMetadata>,
-  ): Session<TContext, TMetadata> {
-    return session || createSession<TContext, TMetadata>();
+    session?: Session<TVars, TAttrs>,
+  ): Session<TVars, TAttrs> {
+    return session || createSession<TVars, TAttrs>();
   }
 
   getContentSource(): Source<unknown> | undefined {
@@ -66,7 +64,7 @@ export abstract class TemplateBase<
       if (expectedSourceType === 'model') {
         return {
           async getContent(
-            session: Session<TContext, TMetadata>,
+            session: Session<TVars, TAttrs>,
           ): Promise<ModelOutput> {
             const interpolatedContent = interpolateTemplate(
               input,

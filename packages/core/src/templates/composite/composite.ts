@@ -1,6 +1,6 @@
 import type { Source } from '../../content_source';
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
 import { User } from '../primitives/user';
@@ -11,21 +11,21 @@ import { Fluent } from './chainable';
  * Provides common functionality and a unified execution model
  */
 export abstract class Composite<
-    TMetadata extends Metadata = Metadata,
-    TContext extends Context = Context,
+    TAttrs extends Attrs = Attrs,
+    TVars extends Vars = Vars,
   >
-  extends TemplateBase<TMetadata, TContext>
-  implements Fluent<TMetadata, TContext>
+  extends TemplateBase<TAttrs, TVars>
+  implements Fluent<TAttrs, TVars>
 {
   protected templates: Template<any, any>[] = [];
   protected initFunction?: (
-    session: Session<TContext, TMetadata>,
-  ) => Session<TContext, TMetadata>;
+    session: Session<TVars, TAttrs>,
+  ) => Session<TVars, TAttrs>;
   protected squashFunction?: (
-    parentSession: Session<TContext, TMetadata>,
-    childSession: Session<TContext, TMetadata>,
-  ) => Session<TContext, TMetadata>;
-  protected loopCondition?: (session: Session<TContext, TMetadata>) => boolean;
+    parentSession: Session<TVars, TAttrs>,
+    childSession: Session<TVars, TAttrs>,
+  ) => Session<TVars, TAttrs>;
+  protected loopCondition?: (session: Session<TVars, TAttrs>) => boolean;
   protected maxIterations: number = 100;
   protected defaultUserContentSource?: Source<any>;
   protected defaultAssistantContentSource?: Source<any>;
@@ -35,7 +35,7 @@ export abstract class Composite<
     return this;
   }
 
-  add(template: Template<TMetadata, TContext>): this {
+  add(template: Template<TAttrs, TVars>): this {
     this.templates.push(template);
     return this;
   }
@@ -44,8 +44,8 @@ export abstract class Composite<
   // Priority: this.contentSource > content source passed by the parent
   // If child template is a CompositeTemplate, pass the default too
   ensureTemplateHasContentSource(
-    template: Template<TMetadata, TContext>,
-  ): Template<TMetadata, TContext> {
+    template: Template<TAttrs, TVars>,
+  ): Template<TAttrs, TVars> {
     if (template instanceof Composite) {
       // Pass default content sources to child CompositeTemplates
       if (template.defaultAssistantContentSource) {
@@ -74,8 +74,8 @@ export abstract class Composite<
 
   // Unified execute implementation
   async execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     const originalSession = this.ensureSession(session);
 
     // Validate that we have templates to execute

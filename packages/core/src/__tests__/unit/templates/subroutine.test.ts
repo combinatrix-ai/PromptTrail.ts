@@ -4,7 +4,7 @@ import { generateText } from '../../../generate';
 import { createGenerateOptions } from '../../../generate_options';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
-import { Context, Metadata } from '../../../tagged_record';
+import { Attrs, Vars } from '../../../tagged_record';
 import {
   Agent,
   Assistant,
@@ -63,7 +63,7 @@ describe('SubroutineTemplate', () => {
         .addUser('Extract information')
         .addAssistant('Information extracted')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({
+          return session.withVars({
             extractedData: { name: 'Alice', age: 30 },
           }) as Session<any>;
         }),
@@ -73,7 +73,7 @@ describe('SubroutineTemplate', () => {
     const session = await subroutine.execute(createSession());
 
     // Verify the context was merged
-    expect(session.getContextValue('extractedData')).toEqual({
+    expect(session.getVar('extractedData')).toEqual({
       name: 'Alice',
       age: 30,
     });
@@ -115,12 +115,9 @@ describe('SubroutineTemplate', () => {
   });
 
   it('should use parent session context by default', async () => {
-    type SharedContext = Context<{ userName: string }>;
+    type SharedContext = Vars<{ userName: string }>;
     // Create a parent session with context
-    const parentSession = createSession<
-      SharedContext,
-      Metadata
-    >().setContextValues({
+    const parentSession = createSession<SharedContext, Attrs>().withVars({
       userName: 'Bob',
     });
 
@@ -131,12 +128,12 @@ describe('SubroutineTemplate', () => {
     });
 
     // Create a subroutine that uses parent context (via default initWith)
-    const subroutine = new Subroutine<Metadata, SharedContext>(
+    const subroutine = new Subroutine<Attrs, SharedContext>(
       new Agent<SharedContext>()
         .addUser(
           new (class extends Source<string> {
             async getContent(session: Session<SharedContext>) {
-              return `Hello, ${session.getContextValue('userName')}!`;
+              return `Hello, ${session.getVar('userName')}!`;
             }
           })(),
         )
@@ -156,7 +153,7 @@ describe('SubroutineTemplate', () => {
     expect(messages[2].type).toBe('assistant');
     expect(messages[2].content).toBe('Nice to meet you!');
     // Verify parent context is still there
-    expect(resultSession.getContextValue('userName')).toBe('Bob');
+    expect(resultSession.getVar('userName')).toBe('Bob');
   });
 
   it('should allow transformers within the subroutine template', async () => {
@@ -188,7 +185,7 @@ describe('SubroutineTemplate', () => {
           const weatherCondition = weatherMatch
             ? weatherMatch[1].toLowerCase()
             : null;
-          return session.setContextValues({
+          return session.withVars({
             weatherData: {
               location: 'Tokyo',
               temperature,
@@ -206,7 +203,7 @@ describe('SubroutineTemplate', () => {
     expect(messages).toHaveLength(2); // User, Assistant
 
     // Verify the extracted context was merged back
-    const weatherData = session.getContextValue('weatherData') as any;
+    const weatherData = session.getVar('weatherData') as any;
     expect(weatherData).toBeDefined();
     expect(weatherData.location).toBe('Tokyo');
     expect(weatherData.temperature).toBe(25);
@@ -220,7 +217,7 @@ describe('SubroutineTemplate', () => {
         .addUser('Inner subroutine question')
         .addAssistant('Inner subroutine answer')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({
+          return session.withVars({
             inner: 'completed',
           }) as Session<any>;
         }),
@@ -233,7 +230,7 @@ describe('SubroutineTemplate', () => {
         .add(innerSubroutine) // Nest the subroutine
         .addUser('Outer subroutine end')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({
+          return session.withVars({
             outer: 'completed',
           }) as Session<any>;
         }),
@@ -251,13 +248,13 @@ describe('SubroutineTemplate', () => {
     expect(messages[3].content).toBe('Outer subroutine end');
 
     // Verify the context from both subroutines was merged (default behavior)
-    expect(session.getContextValue('inner')).toBe('completed');
-    expect(session.getContextValue('outer')).toBe('completed');
+    expect(session.getVar('inner')).toBe('completed');
+    expect(session.getVar('outer')).toBe('completed');
   });
 
   it('should support isolatedContext mode', async () => {
     // Use Session<any> for parent to allow checking dynamic keys later if needed
-    const parentSession = createSession().setContextValues({
+    const parentSession = createSession().withVars({
       parentData: 'visible',
     });
 
@@ -267,9 +264,9 @@ describe('SubroutineTemplate', () => {
         .addUser('Testing isolated context')
         .addTransform((session: Session<any>) => {
           // Try to access parent context (should be undefined due to isolated context)
-          const parentData = session.getContextValue('parentData');
+          const parentData = session.getVar('parentData');
           // Set new context in the isolated context
-          return session.setContextValues({
+          return session.withVars({
             isolatedData: 'not visible to parent',
             parentDataVisible: parentData !== undefined, // This will be false
           }) as Session<any>;
@@ -286,13 +283,13 @@ describe('SubroutineTemplate', () => {
     expect(messages[0].content).toBe('Testing isolated context');
 
     // The isolatedData should NOT be available in the result due to isolated context
-    expect(resultSession.getContextValue('isolatedData')).toBeUndefined();
+    expect(resultSession.getVar('isolatedData')).toBeUndefined();
 
     // The parentDataVisible context (set inside isolated context) should also NOT be merged back
-    expect(resultSession.getContextValue('parentDataVisible')).toBeUndefined();
+    expect(resultSession.getVar('parentDataVisible')).toBeUndefined();
 
     // Parent context should remain unchanged
-    expect(resultSession.getContextValue('parentData')).toBe('visible');
+    expect(resultSession.getVar('parentData')).toBe('visible');
 
     // --- Test shared context (default) ---
     const sharedSubroutine = new Subroutine<any, any>(
@@ -300,9 +297,9 @@ describe('SubroutineTemplate', () => {
         .addUser('Testing shared context')
         .addTransform((session: Session<any>) => {
           // Try to access parent context (should be visible via default initWith)
-          const parentData = session.getContextValue('parentData');
+          const parentData = session.getVar('parentData');
           // Set new context in the shared context
-          return session.setContextValues({
+          return session.withVars({
             sharedData: 'visible to parent',
             parentDataVisible: parentData !== undefined, // This will be true
           }) as Session<any>;
@@ -313,15 +310,13 @@ describe('SubroutineTemplate', () => {
     const sharedResultSession = await sharedSubroutine.execute(parentSession);
 
     // The sharedData should be available in the result (merged by default squashWith)
-    expect(sharedResultSession.getContextValue('sharedData')).toBe(
-      'visible to parent',
-    );
+    expect(sharedResultSession.getVar('sharedData')).toBe('visible to parent');
 
     // The parentDataVisible should be true and merged back
-    expect(sharedResultSession.getContextValue('parentDataVisible')).toBe(true);
+    expect(sharedResultSession.getVar('parentDataVisible')).toBe(true);
 
     // Parent context should still be there
-    expect(sharedResultSession.getContextValue('parentData')).toBe('visible');
+    expect(sharedResultSession.getVar('parentData')).toBe('visible');
   });
 
   it('should use the initWith function when provided', async () => {
@@ -332,7 +327,7 @@ describe('SubroutineTemplate', () => {
         // Create a new session with the context values we need
         return createSession({
           context: {
-            userName: parentSession.getContextValue('userName'),
+            userName: parentSession.getVar('userName'),
             customInit: true,
           },
         });
@@ -340,17 +335,17 @@ describe('SubroutineTemplate', () => {
 
     // Create a parent session with various context
     const parentSession = createSession()
-      .setContextValues({ userName: 'Charlie' })
-      .setContextValues({ sensitiveData: 'should not be copied' });
+      .withVars({ userName: 'Charlie' })
+      .withVars({ sensitiveData: 'should not be copied' });
 
     // Create a subroutine with the custom initWith function
     const subroutine = new Subroutine(
       new Agent().addUser(
         new (class extends Source<string> {
           async getContent(session: Session) {
-            const userName = session.getContextValue('userName');
-            const customInit = session.getContextValue('customInit');
-            const sensitiveData = session.getContextValue('sensitiveData');
+            const userName = session.getVar('userName');
+            const customInit = session.getVar('customInit');
+            const sensitiveData = session.getVar('sensitiveData');
             return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
               sensitiveData === undefined ? 'protected' : 'exposed'
             }`;
@@ -373,19 +368,17 @@ describe('SubroutineTemplate', () => {
       'User: Charlie, Custom: true, Sensitive: protected',
     );
     // Verify context reflects custom init and default merge
-    expect(resultSession.getContextValue('userName')).toBe('Charlie'); // From parent via initWith
-    expect(resultSession.getContextValue('customInit')).toBe(true);
-    expect(resultSession.getContextValue('sensitiveData')).toBe(
-      'should not be copied',
-    );
+    expect(resultSession.getVar('userName')).toBe('Charlie'); // From parent via initWith
+    expect(resultSession.getVar('customInit')).toBe(true);
+    expect(resultSession.getVar('sensitiveData')).toBe('should not be copied');
   });
 
   it('should use the squashWith function when provided', async () => {
     // Create a parent session with nested context
-    let parentSession = createSession().setContextValues({
+    let parentSession = createSession().withVars({
       user: { name: 'Dave', age: 30 },
     });
-    parentSession = parentSession.setContextValues({
+    parentSession = parentSession.withVars({
       preferences: { theme: 'dark' },
     });
 
@@ -394,9 +387,9 @@ describe('SubroutineTemplate', () => {
       .fn()
       .mockImplementation((parent: Session<any>, subroutine: Session<any>) => {
         // Start with a clone of the parent's context object
-        const mergedMetadataObject = { ...parent.getContextObject() };
+        const mergedMetadataObject = { ...parent.getVarsObject() };
 
-        const subroutineMeta = subroutine.getContextObject();
+        const subroutineMeta = subroutine.getVarsObject();
 
         // Deep merge 'user' object
         if (subroutineMeta.user && typeof subroutineMeta.user === 'object') {
@@ -440,7 +433,7 @@ describe('SubroutineTemplate', () => {
         .addUser('Updating user profile')
         .addTransform((session: Session) => {
           // This context will be processed by squashWith
-          return session.setContextValues({
+          return session.withVars({
             user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
             preferences: { notifications: true }, // Overwrite preferences
             status: 'updated', // Add new key
@@ -460,13 +453,13 @@ describe('SubroutineTemplate', () => {
     expect(messages).toHaveLength(0); // Parent session started empty
 
     // Verify the deep-merged context according to custom logic
-    const user = resultSession.getContextValue('user');
+    const user = resultSession.getVar('user');
     expect(user).toEqual({ name: 'Dave', age: 31, occupation: 'Engineer' });
 
-    const preferences = resultSession.getContextValue('preferences');
+    const preferences = resultSession.getVar('preferences');
     expect(preferences).toEqual({ notifications: true }); // Overwritten
 
-    expect(resultSession.getContextValue('status')).toBe('updated');
+    expect(resultSession.getVar('status')).toBe('updated');
   });
 
   // New functionality tests for list of templates and method chaining
@@ -521,7 +514,7 @@ describe('SubroutineTemplate', () => {
         .addUser('Inner subroutine question')
         .addAssistant('Inner subroutine answer')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({ inner: 'completed' });
+          return session.withVars({ inner: 'completed' });
         }),
     );
 
@@ -532,7 +525,7 @@ describe('SubroutineTemplate', () => {
         .add(innerSubroutine) // Nest the subroutine
         .addUser('Outer subroutine end')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({ outer: 'completed' });
+          return session.withVars({ outer: 'completed' });
         }),
     );
     // Execute the nested subroutines
@@ -547,8 +540,8 @@ describe('SubroutineTemplate', () => {
     expect(messages[3].content).toBe('Outer subroutine end');
 
     // Verify the context from both subroutines was merged (default behavior)
-    expect(session.getContextValue('inner')).toBe('completed');
-    expect(session.getContextValue('outer')).toBe('completed');
+    expect(session.getVar('inner')).toBe('completed');
+    expect(session.getVar('outer')).toBe('completed');
   });
 
   it('should support adding subroutines to LinearTemplate (Sequence)', async () => {
@@ -583,9 +576,9 @@ describe('SubroutineTemplate', () => {
       new Agent()
         .addUser('Message from loop subroutine')
         .addTransform((session: Session<any>) => {
-          return session.setContextValues({
+          return session.withVars({
             // count at the end of agent is 1, 2, 3...
-            count: session.getContextValue('count', 0) + 1,
+            count: session.getVar('count', 0) + 1,
           });
         }),
     );
@@ -595,7 +588,7 @@ describe('SubroutineTemplate', () => {
       bodyTemplate: loopSubroutine, // Use the subroutine as the body
       loopIf: (session: Session<any>) => {
         // Loop if count is 0, 1, or 2
-        return (session.getContextValue('count') || 0) < 2; // Exit when count reaches 2 or more
+        return (session.getVar('count') || 0) < 2; // Exit when count reaches 2 or more
       },
     });
 
@@ -610,18 +603,18 @@ describe('SubroutineTemplate', () => {
     expect(messages[0].content).toBe('Message from loop subroutine');
 
     // Verify the count was incremented to 2 (executed twice)
-    expect(session.getContextValue('count')).toBe(2);
+    expect(session.getVar('count')).toBe(2);
   });
 
   it('should work with direct loop implementation', async () => {
-    interface CounterContext extends Context {
+    interface CounterContext extends Vars {
       count: number;
     }
 
     const counterTemplate = new Transform(
       (session: Session<CounterContext>) => {
-        const currentCount = session.getContextValue('count', 0);
-        return session.setContextValues({ count: currentCount + 1 });
+        const currentCount = session.getVar('count', 0);
+        return session.withVars({ count: currentCount + 1 });
       },
     );
 
@@ -629,15 +622,15 @@ describe('SubroutineTemplate', () => {
       bodyTemplate: counterTemplate,
       loopIf: (session: Session<CounterContext>) => {
         // Loop if count is 0, 1, or 2
-        return (session.getContextValue('count') || 0) < 3; // Exit when count reaches 3 or more
+        return (session.getVar('count') || 0) < 3; // Exit when count reaches 3 or more
       },
     });
 
-    const initialSession = createSession<CounterContext, Metadata>();
+    const initialSession = createSession<CounterContext, Attrs>();
     const session = await loop.execute(initialSession);
 
     // Verify the count was incremented to 3
-    expect(session.getContextValue('count')).toBe(3);
+    expect(session.getVar('count')).toBe(3);
   });
 
   it('should handle empty templates list gracefully', async () => {

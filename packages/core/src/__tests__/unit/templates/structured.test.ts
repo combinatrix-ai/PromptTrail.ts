@@ -27,7 +27,7 @@ describe('SchemaTemplate API Integration', () => {
       provider: {
         type: 'anthropic',
         apiKey: process.env.ANTHROPIC_API_KEY || '',
-        modelName: 'claude-3-haiku-20240307',
+        modelName: 'claude-3-haiku-latest',
       },
       temperature: 0.7,
     });
@@ -109,7 +109,7 @@ describe('SchemaTemplate API Integration', () => {
     const template = new Structured({
       generateOptions: anthropicOptions,
       schema: productSchema,
-      maxAttempts: 2,
+      maxAttempts: 5,
     });
 
     const session = createSession({

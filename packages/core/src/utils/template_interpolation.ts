@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import type { Context, Metadata } from '../tagged_record';
+import type { Attrs, Vars } from '../tagged_record';
 
 /**
  * Type guard for Session interface
@@ -8,8 +8,8 @@ function isSession(value: unknown): value is Session<any, any> {
   return (
     value !== null &&
     typeof value === 'object' &&
-    'getContextValue' in value &&
-    typeof (value as any).getContextValue === 'function'
+    'geTVarsValue' in value &&
+    typeof (value as any).geTVarsValue === 'function'
   );
 }
 
@@ -26,12 +26,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<
-  TContext extends Context,
-  TMetadata extends Metadata,
->(
+export function interpolateTemplate<TVars extends Vars, TAttrs extends Attrs>(
   template: string,
-  session: Session<TContext, TMetadata> | Context | Record<string, unknown>,
+  session: Session<TVars, TAttrs> | Vars | Record<string, unknown>,
 ): string {
   if ('context' in session && session.context) {
     // If it's a Session object, use its context
@@ -46,7 +43,7 @@ export function interpolateTemplate<
         }
 
         if (isSession(current)) {
-          current = current.getContextValue(key);
+          current = current.getVar(key);
         } else if (isRecord(current)) {
           current = current[key];
         } else {
@@ -70,7 +67,7 @@ export function interpolateTemplate<
         }
 
         if (isSession(current)) {
-          current = current.getContextValue(key);
+          current = current.getVar(key);
         } else if (isRecord(current)) {
           current = current[key];
         } else {

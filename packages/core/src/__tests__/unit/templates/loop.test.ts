@@ -242,16 +242,14 @@ describe('Loop Template', () => {
         .addTransform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
-            (session.getContextValue('counter') as number | undefined) ?? 0;
+            (session.getVar('counter') as number | undefined) ?? 0;
           // Increment the counter
-          return session.setContextValues({ counter: counter + 1 });
+          return session.withVars({ counter: counter + 1 });
         }),
       loopIf: (session: Session) => {
         // Exit when counter reaches 3
         // Get counter, default to 0, ensure it's a number before comparing
-        return (
-          ((session.getContextValue('counter') as number | undefined) ?? 0) < 3
-        );
+        return ((session.getVar('counter') as number | undefined) ?? 0) < 3;
       },
     });
 
@@ -266,7 +264,7 @@ describe('Loop Template', () => {
     expect(messages[2].content).toBe('Adding to counter');
 
     // Verify the final counter value
-    expect(session.getContextValue('counter')).toBe(3);
+    expect(session.getVar('counter')).toBe(3);
   });
 
   it('should support if statements inside loop templates', async () => {

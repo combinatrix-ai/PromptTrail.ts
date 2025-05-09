@@ -4,7 +4,7 @@ import { ValidationError } from './errors';
 import { generateText } from './generate';
 import type { GenerateOptions } from './generate_options';
 import type { Session } from './session';
-import type { Context } from './tagged_record';
+import type { Vars } from './tagged_record';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
@@ -283,7 +283,7 @@ export class CLISource extends TextSource {
 export class CallbackSource extends TextSource {
   // Inherits from TextSource
   constructor(
-    private callback: (context: { context?: Context }) => Promise<string>,
+    private callback: (context: { context?: Vars }) => Promise<string>,
     options?: ValidationOptions, // Use ValidationOptions
   ) {
     super(options); // Pass options to base class
@@ -387,7 +387,7 @@ export class LlmSource extends ModelSource {
         return {
           content: responseContent,
           toolCalls: response.toolCalls,
-          metadata: response.metadata,
+          metadata: response.attrs,
         };
       }
 
@@ -406,7 +406,7 @@ export class LlmSource extends ModelSource {
           return {
             content: responseContent,
             toolCalls: response.toolCalls,
-            metadata: response.metadata,
+            metadata: response.attrs,
           };
         }
       } else {
@@ -528,7 +528,7 @@ export class SchemaSource<
                 content: responseContent,
                 toolCalls: lastResponse.toolCalls,
                 structuredOutput: result.data,
-                metadata: lastResponse.metadata,
+                metadata: lastResponse.attrs,
               };
             } else {
               lastError = new Error(
@@ -547,7 +547,7 @@ export class SchemaSource<
                 return {
                   content: responseContent,
                   toolCalls: lastResponse.toolCalls,
-                  metadata: lastResponse.metadata,
+                  metadata: lastResponse.attrs,
                 };
               }
               console.log(
@@ -577,7 +577,7 @@ export class SchemaSource<
           return {
             content: responseContent,
             toolCalls: lastResponse?.toolCalls,
-            metadata: lastResponse?.metadata,
+            metadata: lastResponse?.attrs,
           };
         }
         console.log(`Retrying generation due to missing schema tool call...`);
@@ -604,7 +604,7 @@ export class SchemaSource<
               return {
                 content: lastResponse.content ?? '',
                 toolCalls: lastResponse.toolCalls,
-                metadata: lastResponse.metadata,
+                metadata: lastResponse.attrs,
               };
             } else {
               return { content: '' }; // Return empty if no response was generated

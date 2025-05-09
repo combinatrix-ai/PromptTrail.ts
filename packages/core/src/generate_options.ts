@@ -188,7 +188,10 @@ export interface GoogleProviderConfig {
 /**
  * Provider configuration union type
  */
-export type ProviderConfig = OpenAIProviderConfig | AnthropicProviderConfig | GoogleProviderConfig;
+export type ProviderConfig =
+  | OpenAIProviderConfig
+  | AnthropicProviderConfig
+  | GoogleProviderConfig;
 
 /**
  * MCP Server configuration for generate

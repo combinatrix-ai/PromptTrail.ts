@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 import type { TransformFn } from '../template_types';
 
@@ -9,19 +9,17 @@ import type { TransformFn } from '../template_types';
  */
 // Make TransformTemplate generic
 export class Transform<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends TemplateBase<TMetadata, TContext> {
-  private transformFn: TransformFn<TMetadata, TContext>;
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends TemplateBase<TAttrs, TVars> {
+  private transformFn: TransformFn<TAttrs, TVars>;
 
   // Update constructor signature
-  constructor(
-    fn: TransformFn<TMetadata, TContext> | TransformFn<TMetadata, TContext>[],
-  ) {
+  constructor(fn: TransformFn<TAttrs, TVars> | TransformFn<TAttrs, TVars>[]) {
     super();
     // Higher-order function
     if (Array.isArray(fn)) {
-      this.transformFn = async (session: Session<TContext, TMetadata>) => {
+      this.transformFn = async (session: Session<TVars, TAttrs>) => {
         let updatedSession = session;
         for (const f of fn) {
           updatedSession = await f(updatedSession);
@@ -37,13 +35,13 @@ export class Transform<
 
   // Update execute signature
   async execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     // Return Session<any>
     const currentSession = this.ensureSession(session);
     // Apply the transformation function
     const updatedSession = await this.transformFn(currentSession);
-    // Cast the result back to Session<TContext, TMetadata> as the transform might have changed metadata type
-    return updatedSession as Session<TContext, TMetadata>;
+    // Cast the result back to Session<TVars, TAttrs> as the transform might have changed metadata type
+    return updatedSession as Session<TVars, TAttrs>;
   }
 }

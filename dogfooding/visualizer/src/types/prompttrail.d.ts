@@ -188,7 +188,7 @@ declare module '@prompttrail/core' {
 
   export function createSession<
     T extends Record<string, unknown> = Record<string, unknown>,
-  >(options?: { messages?: Message[]; metadata?: T; print?: boolean }): Session;
+  >(options?: { messages?: Message[]; context?: T; print?: boolean }): Session;
 
   export function createMetadata<
     T extends Record<string, unknown> = Record<string, unknown>,

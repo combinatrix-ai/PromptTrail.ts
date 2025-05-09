@@ -1,22 +1,19 @@
 import { ValidationError } from './errors';
 import type { Message } from './message';
-import { Context, Metadata } from './tagged_record';
+import { Attrs, Vars } from './tagged_record';
 /**
  * Internal session implementation
  */
-export class Session<
-  TContext extends Context = Context,
-  TMetadata extends Metadata = Metadata,
-> {
+export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   constructor(
-    public readonly messages: readonly Message<TMetadata>[] = [],
-    public readonly context: TContext,
+    public readonly messages: readonly Message<TAttrs>[] = [],
+    public readonly context: TVars,
     public readonly print: boolean = false,
   ) {}
   /**
    * Create a new session with additional message
    */
-  addMessage(message: Message<TMetadata>): Session<TContext, TMetadata> {
+  addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -30,7 +27,7 @@ export class Session<
           break;
       }
     }
-    return new Session<TContext, TMetadata>(
+    return new Session<TVars, TAttrs>(
       [...this.messages, message],
       { ...this.context }, // Create a shallow copy of the context
       this.print,
@@ -40,72 +37,61 @@ export class Session<
   /**
    * Get a value from the context
    */
-  getContextValue<K extends keyof TContext>(key: K): TContext[K] | undefined;
-  getContextValue<K extends keyof TContext>(
+  getVar<K extends keyof TVars>(key: K): TVars[K] | undefined;
+  getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
+  getVar<K extends keyof TVars>(
     key: K,
-    defaultValue: TContext[K],
-  ): TContext[K];
-  getContextValue<K extends keyof TContext>(
-    key: K,
-    defaultValue?: TContext[K],
-  ): TContext[K] | undefined {
+    defaultValue?: TVars[K],
+  ): TVars[K] | undefined {
     return this.context[key] !== undefined ? this.context[key] : defaultValue;
   }
 
   /**
    * Set a value in the context
    */
-  setContextValue<K extends keyof TContext>(
+  withVar<K extends keyof TVars>(
     key: K,
-    value: TContext[K],
-  ): Session<TContext, TMetadata> {
+    value: TVars[K],
+  ): Session<TVars, TAttrs> {
     const newContext = { ...this.context };
     newContext[key] = value;
-    return new Session<TContext, TMetadata>(
-      this.messages,
-      newContext,
-      this.print,
-    );
+    return new Session<TVars, TAttrs>(this.messages, newContext, this.print);
   }
 
-  setContextValues(context: Partial<TContext>): Session<TContext, TMetadata> {
+  withVars(context: Partial<TVars>): Session<TVars, TAttrs> {
     const newContext = { ...this.context, ...context };
-    return new Session<TContext, TMetadata>(
-      this.messages,
-      newContext,
-      this.print,
-    );
+    return new Session<TVars, TAttrs>(this.messages, newContext, this.print);
   }
 
   /**
    * Get the size of the context
    */
-  get contextSize(): number {
+  get varsSize(): number {
     return Object.keys(this.context).length;
   }
 
   /**
    * Get a copy of the context as a plain object
    */
-  getContextObject(): TContext {
+  getVarsObject(): TVars {
     return { ...this.context };
   }
 
   /**
    * Get the last message in the session
    */
-  getLastMessage(): Message<TMetadata> | undefined {
+  getLastMessage(): Message<TAttrs> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends Message<TMetadata>['type']>(
+  getMessagesByType<U extends Message<TAttrs>['type']>(
     type: U,
-  ): Extract<Message<TMetadata>, { type: U }>[] {
+  ): Extract<Message<TAttrs>, { type: U }>[] {
     return this.messages.filter((msg) => msg.type === type) as Extract<
-      Message<TMetadata>,
+      Message<TAttrs>,
       { type: U }
     >[];
   }
@@ -155,9 +141,9 @@ export class Session<
   /**
    * Create a new session from a JSON representation
    */
-  static fromJSON<TContext extends Context, TMetadata extends Metadata>(
+  static fromJSON<TVars extends Vars, TAttrs extends Attrs>(
     json: Record<string, unknown>,
-  ): Session<TContext, TMetadata> {
+  ): Session<TVars, TAttrs> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -170,9 +156,9 @@ export class Session<
       );
     }
 
-    return createSession<TContext, TMetadata>({
-      messages: json.messages as Message<TMetadata>[],
-      context: json.context as TContext,
+    return createSession<TVars, TAttrs>({
+      messages: json.messages as Message<TAttrs>[],
+      context: json.context as TVars,
       print: json.print ? (json.print as boolean) : false,
     });
   }
@@ -181,38 +167,18 @@ export class Session<
 /**
  * Create a new session with type inference
  */
-
 export function createSession<
-  C extends Record<string, unknown> = Record<string, unknown>,
-  M extends Record<string, unknown> = Record<string, unknown>,
+  C extends Record<string, unknown> | Vars<Record<string, unknown>> = Vars,
+  M extends Record<string, unknown> | Attrs<Record<string, unknown>> = Attrs,
 >(options?: {
   context?: C;
-  messages?: Message<Metadata<M>>[];
+  messages?: Message<Attrs<M>>[];
   print?: boolean;
-}): Session<Context<C>, Metadata<M>>;
-export function createSession<
-  TContext extends Context = Context,
-  M extends Record<string, unknown> = Record<string, unknown>,
->(options?: {
-  context?: TContext;
-  messages?: Message<Metadata<M>>[];
-  print?: boolean;
-}): Session<TContext, Metadata<M>>;
-
-export function createSession<
-  C extends
-    | Record<string, unknown>
-    | Context<Record<string, unknown>> = Context,
-  M extends Metadata = Metadata,
->(options?: {
-  context?: C;
-  messages?: Message<M>[];
-  print?: boolean;
-}): Session<Context<C>, M> {
+}): Session<Vars<C>, Attrs<M>> {
   options = options ?? {};
   const raw = options.context as any;
-  const ctx: Context<C> = Context.is(raw) ? raw : Context.create(raw ?? {});
-  return new Session<Context<C>, M>(
+  const ctx: Vars<C> = Vars.is(raw) ? raw : Vars.create(raw ?? {});
+  return new Session<Vars<C>, Attrs<M>>(
     options.messages ?? [],
     ctx,
     options.print ?? false,

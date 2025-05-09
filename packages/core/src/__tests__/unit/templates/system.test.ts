@@ -50,8 +50,8 @@ describe('SystemTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    const sessionWithRole = session.setContextValue('role', 'coding assistant');
-    const sessionWithBoth = sessionWithRole.setContextValue(
+    const sessionWithRole = session.withVar('role', 'coding assistant');
+    const sessionWithBoth = sessionWithRole.withVar(
       'rules',
       'be helpful and clear',
     );
@@ -81,7 +81,7 @@ describe('SystemTemplate', () => {
 
     // Create a session with metadata
     const session = createSession();
-    const updatedSession = session.setContextValue('role', 'financial expert');
+    const updatedSession = session.withVar('role', 'financial expert');
 
     // Execute the template and verify the result
     const result = await template.execute(updatedSession);

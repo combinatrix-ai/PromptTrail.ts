@@ -1,20 +1,20 @@
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import type { Template } from '../base';
 import { TemplateBase } from '../base';
 
 export class Conditional<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
 > extends TemplateBase<any, any> {
-  private condition: (session: Session<TContext, TMetadata>) => boolean;
-  private thenTemplate: Template<TMetadata, TContext>;
-  private elseTemplate?: Template<TMetadata, TContext>;
+  private condition: (session: Session<TVars, TAttrs>) => boolean;
+  private thenTemplate: Template<TAttrs, TVars>;
+  private elseTemplate?: Template<TAttrs, TVars>;
 
   constructor(options: {
-    condition: (session: Session<TContext, TMetadata>) => boolean;
-    thenTemplate: Template<TMetadata, TContext>;
-    elseTemplate?: Template<TMetadata, TContext>;
+    condition: (session: Session<TVars, TAttrs>) => boolean;
+    thenTemplate: Template<TAttrs, TVars>;
+    elseTemplate?: Template<TAttrs, TVars>;
   }) {
     super();
     this.condition = options.condition;
@@ -23,8 +23,8 @@ export class Conditional<
   }
 
   async execute(
-    session?: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session?: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
 
     if (this.condition(validSession)) {

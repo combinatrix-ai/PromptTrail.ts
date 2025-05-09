@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
 import { createSession } from '../../session';
-import { Context } from '../../tagged_record';
+import { Vars } from '../../tagged_record';
 
 function createUserMessage(content: string): Message {
   return {
@@ -30,7 +30,7 @@ describe('Session', () => {
   it('should create empty session', () => {
     const session = createSession();
     expect(session.messages).toHaveLength(0);
-    expect(session.contextSize).toBe(0);
+    expect(session.varsSize).toBe(0);
   });
 
   it('should create session with initial messages', () => {
@@ -54,20 +54,20 @@ describe('Session', () => {
   });
 
   it('should update metadata immutably', () => {
-    type TestMetadata = Record<string, unknown> & {
+    type TesTAttrs = Record<string, unknown> & {
       initial: boolean;
       added?: string;
     };
 
-    const session = createSession<TestMetadata>({
+    const session = createSession<TesTAttrs>({
       context: { initial: true },
     });
-    const newSession = session.setContextValues({ added: 'value' });
+    const newSession = session.withVars({ added: 'value' });
 
-    expect(session.getContextValue('initial')).toBe(true);
-    expect(session.getContextValue('added')).toBeUndefined();
-    expect(newSession.getContextValue('initial')).toBe(true);
-    expect(newSession.getContextValue('added')).toBe('value');
+    expect(session.getVar('initial')).toBe(true);
+    expect(session.getVar('added')).toBeUndefined();
+    expect(newSession.getVar('initial')).toBe(true);
+    expect(newSession.getVar('added')).toBe('value');
   });
 
   it('should get messages by type', () => {
@@ -135,51 +135,49 @@ describe('Session', () => {
     // TODO: We need to use toMatchObject here. toEqual will fail on our current implementation
     // because the context is created with spread operator,
     // which changes the order of the properties
-    expect(Context.create(parsedJson.context)).toMatchObject(
-      Context.create(context),
-    );
+    expect(Vars.create(parsedJson.context)).toMatchObject(Vars.create(context));
     expect(parsedJson.messages).toEqual(session.messages);
 
     const sessionFromJson = createSession(parsedJson);
     expect(sessionFromJson.messages).toEqual(session.messages);
     expect(sessionFromJson.context).toMatchObject(session.context);
     expect(sessionFromJson.print).toEqual(session.print);
-    expect(sessionFromJson.getContextValue('key')).toEqual('value');
-    expect(sessionFromJson.getContextValue('nonexistent')).toBeUndefined();
+    expect(sessionFromJson.getVar('key')).toEqual('value');
+    expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();
   });
 
   it('should create session with type inference', () => {
-    type TestMetadata = Record<string, unknown> & {
+    type TesTAttrs = Record<string, unknown> & {
       userId: number;
       settings: {
         theme: string;
       };
     };
 
-    const metadata: TestMetadata = {
+    const metadata: TesTAttrs = {
       userId: 123,
       settings: { theme: 'dark' },
     };
 
     const session = createSession({ context: metadata });
-    expect(session.getContextValue('userId')).toBe(123);
-    expect(session.getContextValue('settings')).toEqual({ theme: 'dark' });
+    expect(session.getVar('userId')).toBe(123);
+    expect(session.getVar('settings')).toEqual({ theme: 'dark' });
   });
 
   it('should handle optional parameters', () => {
     const session1 = createSession();
     expect(session1.messages).toHaveLength(0);
-    expect(session1.contextSize).toBe(0);
+    expect(session1.varsSize).toBe(0);
     expect(session1.print).toBe(false);
 
     const session2 = createSession({ messages: [createUserMessage('Test')] });
     expect(session2.messages).toHaveLength(1);
-    expect(session2.contextSize).toBe(0);
+    expect(session2.varsSize).toBe(0);
     expect(session2.print).toBe(false);
 
     const session3 = createSession({ context: { test: true } });
     expect(session3.messages).toHaveLength(0);
-    expect(session3.getContextValue('test')).toBe(true);
+    expect(session3.getVar('test')).toBe(true);
     expect(session3.print).toBe(false);
   });
 
@@ -192,7 +190,7 @@ describe('Session', () => {
     const session = createSession({ print: true });
     const newSession = session
       .addMessage(createUserMessage('Test'))
-      .setContextValues({ test: true });
+      .withVars({ test: true });
 
     expect(session.print).toBe(true);
     expect(newSession.print).toBe(true);

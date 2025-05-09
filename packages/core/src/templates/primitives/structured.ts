@@ -1,7 +1,7 @@
 import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
 import { GenerateOptions } from '../../generate_options';
 import type { Session } from '../../session';
-import { Context, Metadata } from '../../tagged_record';
+import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 
 /**
@@ -21,9 +21,9 @@ import { generateText, Output } from 'ai';
  * the expected structure using Zod schemas.
  */
 export class Structured<
-  TMetadata extends Metadata = Metadata,
-  TContext extends Context = Context,
-> extends TemplateBase<TMetadata, TContext> {
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> extends TemplateBase<TAttrs, TVars> {
   private generateOptions: GenerateOptions;
   private schema: z.ZodType;
   private maxAttempts: number;
@@ -41,8 +41,8 @@ export class Structured<
   }
 
   async execute(
-    session: Session<TContext, TMetadata>,
-  ): Promise<Session<TContext, TMetadata>> {
+    session: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     if (!this.generateOptions) {
       throw new Error('No generateOptions provided for SchemaTemplate');
     }

@@ -11,7 +11,7 @@ import {
 import type { GenerateOptions, MCPServerConfig } from './generate_options';
 import type { Message } from './message';
 import type { Session } from './session';
-import { Context, Metadata } from './tagged_record';
+import { Attrs, Vars } from './tagged_record';
 
 /**
  * Convert Session to AI SDK compatible format
@@ -68,7 +68,7 @@ export function convertSessionToAiSdkMessages(
       // Store tool results to process later
       toolResults.push({
         content: msg.content,
-        toolCallId: (msg.metadata?.toolCallId as string) || crypto.randomUUID(),
+        toolCallId: (msg.attrs?.toolCallId as string) || crypto.randomUUID(),
       });
     }
   }
@@ -122,7 +122,11 @@ export function createProvider(options: GenerateOptions): LanguageModelV1 {
     const anthropic = createAnthropic(sdkProviderOptions);
     return anthropic(providerConfig.modelName);
   } else if (providerConfig.type === 'google') {
-    const googleSdkOptions: { apiKey?: string; baseURL?: string; dangerouslyAllowBrowser?: boolean } = {};
+    const googleSdkOptions: {
+      apiKey?: string;
+      baseURL?: string;
+      dangerouslyAllowBrowser?: boolean;
+    } = {};
     if (providerConfig.apiKey) {
       googleSdkOptions.apiKey = providerConfig.apiKey;
     }
@@ -134,7 +138,7 @@ export function createProvider(options: GenerateOptions): LanguageModelV1 {
     // For now, assuming it might be a common option or handled by the core AI SDK.
     // If it causes issues, it should be removed for the Google provider.
     if (options.dangerouslyAllowBrowser) {
-        // googleSdkOptions.dangerouslyAllowBrowser = true; // Temporarily commenting out until confirmed
+      // googleSdkOptions.dangerouslyAllowBrowser = true; // Temporarily commenting out until confirmed
     }
 
     const googleProvider = createGoogleGenerativeAI(googleSdkOptions);
@@ -176,13 +180,10 @@ async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText<
-  TContext extends Context,
-  TMetadata extends Metadata,
->(
-  session: Session<TContext, TMetadata>,
+export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
+  session: Session<TVars, TAttrs>,
   options: GenerateOptions,
-): Promise<Message<TMetadata>> {
+): Promise<Message<TAttrs>> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -257,12 +258,12 @@ export async function generateText<
  * Generate text stream using AI SDK
  */
 export async function* generateTextStream<
-  TContext extends Context,
-  TMetadata extends Metadata,
+  TVars extends Vars,
+  TAttrs extends Attrs,
 >(
-  session: Session<TContext, TMetadata>,
+  session: Session<TVars, TAttrs>,
   options: GenerateOptions, // Fixed type to match generateText
-): AsyncGenerator<Message<TMetadata>, void, unknown> {
+): AsyncGenerator<Message<TAttrs>, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 

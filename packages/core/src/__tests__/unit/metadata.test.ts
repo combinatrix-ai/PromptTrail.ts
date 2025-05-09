@@ -1,15 +1,15 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { Metadata } from '../../tagged_record';
+import { Attrs } from '../../tagged_record';
 
 describe('Context', () => {
   it('should create empty context', () => {
-    const context = Metadata.create({});
+    const context = Attrs.create({});
     expect(Object.keys(context).length).toBe(0);
   });
 
   it('should create context with initial data', () => {
     const initial = { name: 'test', value: 123 };
-    const context = Metadata.create(initial);
+    const context = Attrs.create(initial);
     expect(context.name).toBe('test');
     expect(context.value).toBe(123);
   });
@@ -23,7 +23,7 @@ describe('Context', () => {
         },
       },
     };
-    const context = Metadata.create(data);
+    const context = Attrs.create(data);
     expect(context.user).toBeDefined();
     expect(context.user.name).toBe('test');
     expect(context.user.settings).toBeDefined();
@@ -31,14 +31,14 @@ describe('Context', () => {
   });
 
   it('should create context with type inference', () => {
-    const context = Metadata.create({
+    const context = Attrs.create({
       name: 'test',
       count: 42,
       settings: { enabled: true },
     });
 
     expectTypeOf(context).toEqualTypeOf<
-      Metadata<{
+      Attrs<{
         name: string;
         count: number;
         settings: { enabled: boolean };
@@ -53,13 +53,13 @@ describe('Context', () => {
       isAdmin: boolean;
     };
 
-    const context = Metadata.create<UserContext>({
+    const context = Attrs.create<UserContext>({
       name: 'John',
       age: 30,
       isAdmin: true,
     });
 
-    expectTypeOf(context).toEqualTypeOf<Metadata<UserContext>>();
+    expectTypeOf(context).toEqualTypeOf<Attrs<UserContext>>();
 
     expect(context.name).toBe('John');
     expect(context.age).toBe(30);
@@ -68,7 +68,7 @@ describe('Context', () => {
 
   it('should create a new object instance', () => {
     const original = { name: 'test' };
-    const context = Metadata.create(original);
+    const context = Attrs.create(original);
 
     // Verify it's a new object
     expect(context).not.toBe(original);
@@ -79,11 +79,11 @@ describe('Context', () => {
   });
 
   it('should is work correctly', () => {
-    const context = Metadata.create({ a: 1 });
-    expect(Metadata.is(context)).toBe(true); // Branded
-    expect(Metadata.is({ a: 1 })).toBe(false); // Not branded
-    expect(Metadata.is({})).toBe(false);
-    expect(Metadata.is(null)).toBe(false);
-    expect(Metadata.is(undefined)).toBe(false);
+    const context = Attrs.create({ a: 1 });
+    expect(Attrs.is(context)).toBe(true); // Branded
+    expect(Attrs.is({ a: 1 })).toBe(false); // Not branded
+    expect(Attrs.is({})).toBe(false);
+    expect(Attrs.is(null)).toBe(false);
+    expect(Attrs.is(undefined)).toBe(false);
   });
 });
