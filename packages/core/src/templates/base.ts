@@ -68,7 +68,7 @@ export abstract class TemplateBase<
           ): Promise<ModelOutput> {
             const interpolatedContent = interpolateTemplate(
               input,
-              session.context,
+              session.vars,
             );
             return { content: interpolatedContent };
           },

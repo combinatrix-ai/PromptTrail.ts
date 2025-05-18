@@ -131,10 +131,10 @@ describe('End-to-End Workflows with Real APIs', () => {
         new Transform((session) => {
           const msgs = session.messages.map((m) => ({
             ...m,
-            attrs: Attrs.withValue(m.attrs, 'timestamp', date),
+            attrs: Attrs.set(m.attrs, { timestamp: date }),
           }));
           const next = createSession<UserContext, MessageMetadata>({
-            context: session.context,
+            context: session.vars,
             messages: msgs,
             print: session.print,
           });

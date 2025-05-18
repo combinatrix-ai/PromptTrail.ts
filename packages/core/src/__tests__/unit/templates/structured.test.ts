@@ -27,7 +27,7 @@ describe('SchemaTemplate API Integration', () => {
       provider: {
         type: 'anthropic',
         apiKey: process.env.ANTHROPIC_API_KEY || '',
-        modelName: 'claude-3-haiku-latest',
+        modelName: 'claude-3-opus-latest',
       },
       temperature: 0.7,
     });

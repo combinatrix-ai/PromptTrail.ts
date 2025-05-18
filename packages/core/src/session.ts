@@ -7,9 +7,9 @@ import { Attrs, Vars } from './tagged_record';
 export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   constructor(
     public readonly messages: readonly Message<TAttrs>[] = [],
-    public readonly context: TVars,
+    public readonly vars: TVars,
     public readonly print: boolean = false,
-  ) {}
+  ) { }
   /**
    * Create a new session with additional message
    */
@@ -29,7 +29,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     }
     return new Session<TVars, TAttrs>(
       [...this.messages, message],
-      { ...this.context }, // Create a shallow copy of the context
+      { ...this.vars }, // Create a shallow copy of the context
       this.print,
     );
   }
@@ -37,44 +37,55 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   /**
    * Get a value from the context
    */
-  getVar<K extends keyof TVars>(key: K): TVars[K] | undefined;
+  getVar<K extends keyof TVars>(key: K): TVars[K];
   getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
   getVar<K extends keyof TVars>(
     key: K,
     defaultValue?: TVars[K],
-  ): TVars[K] | undefined {
-    return this.context[key] !== undefined ? this.context[key] : defaultValue;
+  ): TVars[K] {
+    return this.vars[key] !== undefined ? this.vars[key] : defaultValue!;
   }
 
   /**
    * Set a value in the context
    */
-  withVar<K extends keyof TVars>(
+  withVar<
+    K extends PropertyKey,
+    V,
+  >(
     key: K,
-    value: TVars[K],
-  ): Session<TVars, TAttrs> {
-    const newContext = { ...this.context };
-    newContext[key] = value;
-    return new Session<TVars, TAttrs>(this.messages, newContext, this.print);
+    value: V,
+  ): Session<
+    TVars & { [P in K]: V },
+    TAttrs
+  > {
+    const newContext = {
+      ...this.vars,
+      [key]: value,
+    } as TVars & { [P in K]: V };
+
+    return new Session([...this.messages], newContext, this.print);
   }
 
-  withVars(context: Partial<TVars>): Session<TVars, TAttrs> {
-    const newContext = { ...this.context, ...context };
-    return new Session<TVars, TAttrs>(this.messages, newContext, this.print);
+  withVars<
+    U extends Record<string, unknown>
+  >(vars: U): Session<TVars & U, TAttrs> {
+    const newContext = { ...this.vars, ...vars } as TVars & U;
+    return new Session([...this.messages], newContext, this.print);
   }
 
   /**
    * Get the size of the context
    */
   get varsSize(): number {
-    return Object.keys(this.context).length;
+    return Object.keys(this.vars).length;
   }
 
   /**
    * Get a copy of the context as a plain object
    */
   getVarsObject(): TVars {
-    return { ...this.context };
+    return { ...this.vars };
   }
 
   /**
@@ -126,7 +137,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      context: this.context,
+      context: this.vars,
       print: this.print,
     };
   }

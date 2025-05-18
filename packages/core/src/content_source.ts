@@ -296,7 +296,7 @@ export class CallbackSource extends TextSource {
 
     while (attempts < this.maxAttempts) {
       attempts++;
-      currentInput = await this.callback({ context: session.context });
+      currentInput = await this.callback({ context: session.vars });
       lastResult = await this.validateContent(currentInput, session); // Validate the newly fetched content (single attempt)
 
       if (lastResult.isValid) {

@@ -30,11 +30,12 @@ export function interpolateTemplate<TVars extends Vars, TAttrs extends Attrs>(
   template: string,
   session: Session<TVars, TAttrs> | Vars | Record<string, unknown>,
 ): string {
-  if ('context' in session && session.context) {
+  // TODO: Simplify the logic here
+  if ('vars' in session && session.vars) {
     // If it's a Session object, use its context
     return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
       const keys = path.split('.');
-      let current: unknown = session.context;
+      let current: unknown = session.vars;
 
       // Navigate through nested objects
       for (const key of keys) {

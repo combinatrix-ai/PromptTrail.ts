@@ -140,7 +140,7 @@ describe('Session', () => {
 
     const sessionFromJson = createSession(parsedJson);
     expect(sessionFromJson.messages).toEqual(session.messages);
-    expect(sessionFromJson.context).toMatchObject(session.context);
+    expect(sessionFromJson.vars).toMatchObject(session.vars);
     expect(sessionFromJson.print).toEqual(session.print);
     expect(sessionFromJson.getVar('key')).toEqual('value');
     expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();

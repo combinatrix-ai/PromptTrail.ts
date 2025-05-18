@@ -6,16 +6,27 @@ import ignore from 'ignore';
 import * as path from 'path';
 
 // Get command-line arguments
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const excludeArgs: string[] = [];
+const positionalArgs: string[] = [];
 
-if (args.length < 2) {
-  console.error('Usage: ts-node script.ts <directory> <ext1> [ext2] ...');
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === '--exclude') {
+    excludeArgs.push(rawArgs[i + 1]);
+    i++; // skip next arg
+  } else {
+    positionalArgs.push(rawArgs[i]);
+  }
+}
+
+if (positionalArgs.length < 2) {
+  console.error('Usage: ts-node script.ts <directory> <ext1> [ext2] ... [--exclude keyword]');
   process.exit(1);
 }
 
 const workingDir = process.cwd();
-const baseDir = path.resolve(args[0]);
-const extensions = args.slice(1);
+const baseDir = path.resolve(positionalArgs[0]);
+const extensions = positionalArgs.slice(1);
 
 // Validate base directory
 if (!fs.existsSync(baseDir) || !fs.statSync(baseDir).isDirectory()) {
@@ -39,10 +50,7 @@ const gitignorePath = path.join(workingDir, '.gitignore');
 if (fs.existsSync(gitignorePath)) {
   const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
   ig.add(gitignoreContent);
-} else {
-  console.warn(`Warning: No .gitignore file found in '${baseDir}'.`);
 }
-// Add the base directory to the ignore list
 
 // Helper to recursively find files respecting .gitignore
 function collectFiles(dir: string, relativeToBase = ''): string[] {
@@ -52,8 +60,9 @@ function collectFiles(dir: string, relativeToBase = ''): string[] {
     const absPath = path.join(dir, entry);
     const relPath = path.join(relativeToBase, entry);
 
-    // Skip ignored files
+    // Skip ignored files and excluded patterns
     if (ig.ignores(relPath)) continue;
+    if (excludeArgs.some(keyword => relPath.includes(keyword))) continue;
 
     let stat;
     try {

@@ -119,7 +119,7 @@ describe('If Template', () => {
 
     // Create a condition that checks metadata
     const condition = (s: typeof adminSession) => {
-      return s.context.userRole === 'admin';
+      return s.vars.userRole === 'admin';
     };
 
     // Create then and else templates

@@ -23,5 +23,6 @@
     }),
     print: session.print,
     });
-    return session.setContextValue('username', 'Bob');
+    return session.seTVarsValue('username', 'Bob');
 - Tests are redundant and useless
+- Let Meatdata and Context be updatablew with immer

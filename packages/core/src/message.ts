@@ -1,4 +1,4 @@
-import type { Attrs } from './tagged_record';
+import { Attrs } from './tagged_record';
 
 /**
  * Represents the role of a message in a conversation
@@ -66,3 +66,90 @@ export type Message<TAttrs extends Attrs = Attrs> =
   | UserMessage<TAttrs>
   | AssistantMessage<TAttrs>
   | ToolResultMessage<TAttrs>;
+
+export const Message = {
+  create: <M extends Attrs = Attrs>(
+    type: MessageRole,
+    content: string,
+    attrs?: M,
+  ): Message<M> => {
+    switch (type) {
+      case 'system':
+        return { type: 'system', content, attrs };
+      case 'user':
+        return { type: 'user', content, attrs };
+      case 'assistant':
+        return { type: 'assistant', content, attrs };
+      case 'tool_result':
+        return { type: 'tool_result', content, attrs };
+      default:
+        throw new Error(`Unknown message type: ${type}`);
+    }
+  },
+
+  setAttrs: <M extends Attrs = Attrs>(
+    message: Message<M>,
+    attrs: M,
+  ): Message<M> => {
+    return {
+      ...message,
+      attrs: Attrs.set<M, keyof M>(message.attrs, attrs),
+    };
+  },
+
+  expandAttrs: <
+    M extends Record<string, unknown>,
+    U extends Record<string, unknown>,
+  >(
+    message: Message<Attrs<M>>,
+    attrs: U | Attrs<U>,
+  ): Message<Attrs<Omit<M, keyof U> & U>> => {
+    const base: Attrs<M> = message.attrs ?? Attrs.create({} as M);
+    return {
+      ...message,
+      attrs: Attrs.extend(base, attrs),
+    };
+  },
+
+  setStructuredContent: <M extends Attrs = Attrs, S extends Record<string, unknown> = Record<string, unknown>>(
+    message: Message<M>,
+    structuredContent: S,
+  ): Message<M> => {
+    return {
+      ...message,
+      structuredContent,
+    };
+  },
+
+  setContent: <M extends Attrs = Attrs>(
+    message: Message<M>,
+    content: string,
+  ): Message<M> => {
+    return {
+      ...message,
+      content,
+    };
+  },
+
+  system: <M extends Attrs = Attrs>(
+    content: string,
+    attrs?: M,
+  ): Message<M> => ({ type: 'system', content, attrs }),
+
+  user: <M extends Attrs = Attrs>(content: string, attrs?: M): Message<M> => ({
+    type: 'user',
+    content,
+    attrs,
+  }),
+
+  assistant: <M extends Attrs = Attrs>(
+    content: string,
+    attrs?: M,
+  ): Message<M> => {
+    return {
+      type: 'assistant',
+      content,
+      attrs,
+    };
+  },
+};

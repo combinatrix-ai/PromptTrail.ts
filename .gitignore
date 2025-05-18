@@ -15,4 +15,4 @@ vscode-extension.zip
 dogfooding/interactive-agent/
 dogfooding/visualizer/
 scratchpad.ts
-
+packages/core/tsconfig.tsbuildinfo

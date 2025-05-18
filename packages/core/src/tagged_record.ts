@@ -10,11 +10,14 @@ export const attrsBrand: unique symbol = Symbol('attrsBrand') as any;
 export type Vars<T extends Record<string, unknown> = {}> = Readonly<T> & {
   readonly [varsBrand]: void;
 };
+export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T> & {
+  readonly [attrsBrand]: void;
+};
 
 /**
  * Vars is a tagged record that allows you to create a read-only object
- * with additional properties for use in a context.
- * It is useful for storing data from outside the context,
+ * with additional properties for use in a Vars.
+ * It is useful for storing data from outside the Vars,
  * variables to be used in interactions, and other data that needs to be passed around.
  *
  * @param v - The initial value of the Vars.
@@ -24,8 +27,29 @@ export function Vars<T extends Record<string, unknown> = {}>(v: T): Vars<T> {
   return v as Vars<T>;
 }
 
+/**
+ * Attrs is a tagged record that allows you to create a read-only object
+ * with additional properties in messages.
+ * It is useful for storing information about the message, such as the role, hidden flag etc.
+ *
+ * @param v - The initial value of the Attrs.
+ * @returns A read-only object with the specified type.
+ */
+export function Attrs<T extends Record<string, unknown> = {}>(v: T): Attrs<T> {
+  return v as Attrs<T>;
+}
+
 export namespace Vars {
-  /** recommended entry point */
+  /**
+   * Create a new Vars object.
+   * @param v - The initial value of the Vars.
+   * @returns A new Vars object with the specified type.
+   * @example
+   * const v = Vars.create({ name: 'test', value: 123 });
+   * console.log(v) // { name: 'test', value: 123 }
+   * console.log(v.name) // 'test'
+   * console.log(v.value) // 123
+   */
   export const create = <T extends Record<string, unknown> = {}>(
     v: T,
   ): Vars<T> =>
@@ -39,55 +63,79 @@ export namespace Vars {
   export const is = (x: unknown): x is Vars<any> =>
     !!x && typeof x === 'object' && varsBrand in (x as any);
 
-  /** Overwrite existing key in Context */
-  export const withValue = <
-    C extends Record<string, unknown>,
-    K extends string,
-    V,
+  /**
+   * Overwrite existing key in Vars
+   * @param vars - The existing Vars object.
+   * @param patch - The patch object containing the new value for the key. The key must be a valid key in the Vars object.
+   * @returns A new Vars object with the updated key with the same type as the original Vars object.
+   * @example
+   * const v = Vars.create({ name: 'test', value: 123 });
+   * const updated = Vars.set(v, { name: 'newTest' });
+   * console.log(v) // { name: 'test', value: 123 }
+   * console.log(updated) // { name: 'newTest', value: 123 }
+   */
+  export const set = <
+    M extends Record<string, unknown>,
+    U extends keyof M,
   >(
-    ctx: Vars<C>,
-    key: K,
-    value: V,
-  ): Vars<C & { [P in K]: V }> =>
-    Vars.patch(ctx, { [key]: value } as { [P in K]: V });
+    vars: Vars<M> | undefined,
+    patch: Pick<M, U> | Vars<Pick<M, U>>,
+  ): Vars<Omit<M, U> & Pick<M, U>> => {
+    const base: Vars<M> = vars ?? Vars.create({} as M);
+    return Vars.create({
+      ...base,
+      ...patch,
+    });
+  }
 
   /**
-   * Merge multiple fields into the existing Context as a patch.
-   * Can create a new type with additional fields.
+   * Extend existing Vars object with new keys if they don't exist
+   * @param vars - The existing Vars object.
+   * @param patch - The patch object containing the new value for the key. The key can be a new key or an existing key.
+   * @returns A new Vars object. The type of the new Vars object is the same as the original Vars object or extended type if new keys are added.
+   * @example
+   * const v = Vars.create({ name: 'test', value: 123 });
+   * console.log(v) // { name: 'test', value: 123, newKey: 'newValue' }
+   * typeof v // Vars<{ name: string; value: number }>
+   * const updated = Vars.extend(v, { name: 'newTest' });
+   * console.log(updated) // { name: 'newTest', value: 123 }
+   * typeof updated // Vars<{ name: string; value: number }>
+   * const updated2 = Vars.extend(v, { name: 'newTest', newKey: 'newValue' });
+   * console.log(updated2) // { name: 'newTest', value: 123, newKey: 'newValue' }
+   * typeof updated2 // Vars<{ name: string; value: number; newKey: string }>
    */
-  export const patch = <
-    C extends Record<string, unknown>,
+  export const extend = <
+    M extends Record<string, unknown>,
     U extends Record<string, unknown>,
   >(
-    ctx: Vars<C>,
-    patch: U,
-  ): Vars<C & U> => Vars({ ...ctx, ...patch });
-}
-
-export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T> & {
-  readonly [attrsBrand]: void;
-};
-
-/**
- * Attrs is a tagged record that allows you to create a read-only object
- * with additional properties in messages.
- * It is useful for storing information about the message, such as the role, hidden flag etc.
- *
- * @param v - The initial value of the metadata.
- * @returns A read-only object with the specified type.
- */
-export function Attrs<T extends Record<string, unknown> = {}>(v: T): Attrs<T> {
-  return v as Attrs<T>;
+    vars: Vars<M> | undefined,
+    patch: U | Vars<U>,
+  ): Vars<Omit<M, keyof U> & U> => {
+    const base: Vars<M> = vars ?? Vars.create({} as M);
+    return Vars.create({
+      ...base,
+      ...patch,
+    });
+  }
 }
 
 export namespace Attrs {
-  /** recommended entry point */
+  /**
+   * Create a new Attrs object.
+   * @param v - The initial value of the Attrs.
+   * @returns A new Attrs object with the specified type.
+   * @example
+   * const v = Attrs.create({ name: 'test', value: 123 });
+   * console.log(v) // { name: 'test', value: 123 }
+   * console.log(v.name) // 'test'
+   * console.log(v.value) // 123
+   */
   export const create = <T extends Record<string, unknown> = {}>(
     v: T,
   ): Attrs<T> =>
     ({
       ...v,
-      // We have actual metaBrand key here, but this is a Symbol key
+      // We have actual attrsBrand key here, but this is a Symbol key
       // and won't appear in JSON.stringify etc.
       [attrsBrand]: undefined,
     }) as Attrs<T>;
@@ -95,31 +143,58 @@ export namespace Attrs {
   export const is = (x: unknown): x is Attrs<any> =>
     !!x && typeof x === 'object' && attrsBrand in (x as any);
 
-  /** Overwrite existing key in Metadata */
-  export const withValue = <
+  /**
+   * Overwrite existing key in Attrs
+   * @param attrs - The existing Attrs object.
+   * @param patch - The patch object containing the new value for the key. The key must be a valid key in the Attrs object.
+   * @returns A new Attrs object with the updated key with the same type as the original Attrs object.
+   * @example
+   * const v = Attrs.create({ name: 'test', value: 123 });
+   * const updated = Attrs.set(v, { name: 'newTest' });
+   * console.log(v) // { name: 'test', value: 123 }
+   * console.log(updated) // { name: 'newTest', value: 123 }
+   */
+  export const set = <
     M extends Record<string, unknown>,
-    K extends keyof M,
+    U extends keyof M,
   >(
-    meta: Attrs<M> | undefined,
-    key: K,
-    value: M[K],
-  ): Attrs<Omit<M, K> & { [P in K]: M[P] }> => {
-    const patch = { [key]: value } as { [P in K]: M[P] };
-    const base: Attrs<M> = meta ?? Attrs.create({} as M);
-    // 2つめのジェネリック <M, K> を明示してもOK
-    return Attrs.merge(base, patch);
+    attrs: Attrs<M> | undefined,
+    patch: Pick<M, U> | Attrs<Pick<M, U>>,
+  ): Attrs<Omit<M, U> & Pick<M, U>> => {
+    const base: Attrs<M> = attrs ?? Attrs.create({} as M);
+    return Attrs.create({
+      ...base,
+      ...patch,
+    });
   };
 
   /**
-   * Merge multiple fields into the existing Context.
-   * Can create a new type with additional fields.
+   * Extend existing Attrs object with new keys if they don't exist
+   * @param attrs - The existing Attrs object.
+   * @param patch - The patch object containing the new value for the key. The key can be a new key or an existing key.
+   * @returns A new Attrs object. The type of the new Attrs object is the same as the original Attrs object or extended type if new keys are added.
+   * @example
+   * const v = Attrs.create({ name: 'test', value: 123 });
+   * console.log(v) // { name: 'test', value: 123, newKey: 'newValue' }
+   * typeof v // Attrs<{ name: string; value: number }>
+   * const updated = Attrs.extend(v, { name: 'newTest' });
+   * console.log(updated) // { name: 'newTest', value: 123 }
+   * typeof updated // Attrs<{ name: string; value: number }>
+   * const updated2 = Attrs.extend(v, { name: 'newTest', newKey: 'newValue' });
+   * console.log(updated2) // { name: 'newTest', value: 123, newKey: 'newValue' }
+   * typeof updated2 // Attrs<{ name: string; value: number; newKey: string }>
    */
-
-  export const merge = <
+  export const extend = <
     M extends Record<string, unknown>,
-    U extends keyof M, // ← 上書きするキー集合
+    U extends Record<string, unknown>,
   >(
-    meta: Attrs<M>,
-    patch: Pick<M, U>, // ← そのキーは *必須* で型も同じ
-  ): Attrs<Omit<M, U> & Pick<M, U>> => Attrs({ ...meta, ...patch });
+    attrs: Attrs<M> | undefined,
+    patch: U | Attrs<U>,
+  ): Attrs<Omit<M, keyof U> & U> => {
+    const base: Attrs<M> = attrs ?? Attrs.create({} as M);
+    return Attrs.create({
+      ...base,
+      ...patch,
+    });
+  }
 }
