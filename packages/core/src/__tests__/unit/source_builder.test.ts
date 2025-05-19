@@ -42,7 +42,10 @@ describe('Source builders', () => {
       expect.anything(),
       expect.objectContaining({
         temperature: 0.5,
-        provider: expect.objectContaining({ type: 'openai', modelName: 'gpt-4' }),
+        provider: expect.objectContaining({
+          type: 'openai',
+          modelName: 'gpt-4',
+        }),
       }),
     );
   });
@@ -50,7 +53,11 @@ describe('Source builders', () => {
   it('builds CLISource via builder', async () => {
     const validator = new CustomValidator((c) => ({ isValid: true }));
     const user = new User(
-      Source.cli().prompt('Your input: ').defaultValue('def').validate(validator).build(),
+      Source.cli()
+        .prompt('Your input: ')
+        .defaultValue('def')
+        .validate(validator)
+        .build(),
     );
 
     const session = await user.execute(createSession());

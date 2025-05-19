@@ -4,10 +4,11 @@ A type-safe, composable framework for building structured LLM conversations with
 
 PromptTrail helps TypeScript developers build robust, maintainable LLM applications with incremental strong typing, composable templates, and powerful validation tools. Built on Vercel's widely-adopted [ai-sdk](https://github.com/vercel/ai), PromptTrail leverages its ecosystem for LLM and tool interactions, enabling seamless integration with a broad range of language models and function calling capabilities.
 
-You can write agents with multigranular level templates, from simple chatbots to complex workflows, using a fluent API. 
+You can write agents with multigranular level templates, from simple chatbots to complex workflows, using a fluent API.
 PromptTrail is designed to be extensible and adaptable, allowing you to create custom templates and integrate with various LLMs and tools.
 
 You can write turn-by-turn conversation management ():
+
 ```typescript
 import { Agent } from '@prompttrail/core';
 const agent = Agent.create()
@@ -16,27 +17,31 @@ const agent = Agent.create()
   .user(Source.cli()) // Use CLI for user input
   .assistant(Source.llm()) // Use LLM for assistant responses
   .loopif(true)
-  .execute()
+  .execute();
 ```
 
 Or, you can automate the conversation with defining the steps:
+
 ```typescript
 import { Agent } from '@prompttrail/core';
 const agent = Scenario.create()
-  .system(
-    "You are a research assistant. Help the user with their research.",
-  )
-  .step('Ask the user for their question.', {allow_interaction: true})
+  .system('You are a research assistant. Help the user with their research.')
+  .step('Ask the user for their question.', { allow_interaction: true })
   .step('Do search for the answer until you get satisfied information.')
-      .tool(Tools.search())
+  .tool(Tools.search())
   .step('Summarize the information and return to the user')
-  .step('Get comments from the user. Follow up on their feedback. If satisfied, exit conversation.', {
-    allow_interaction: true,
-  })
-      .tool(Tools.exit())
-  .execute()
+  .step(
+    'Get comments from the user. Follow up on their feedback. If satisfied, exit conversation.',
+    {
+      allow_interaction: true,
+    },
+  )
+  .tool(Tools.exit())
+  .execute();
 ```
+
 This will be compiled to the folliowing:
+
 ```typescript
 const agent = Agent.create()
   .system(
@@ -70,7 +75,7 @@ const agent = Agent.create()
     )
     .assistant() // Loop only by assistant
     .tool(Tools.search())
-    // allow_interaction: false 
+    // allow_interaction: false
     .loopif(
       Validation.isNotGoalSatisfied() // Loop if the goal is not satisfied, this will be determined by LLM
     )
@@ -99,18 +104,12 @@ const agent = Agent.create()
     )
     .assistant() // Loop only by assistant
     .tool(Tools.ask_user()) // allow_interaction: true
-    .tool(Tools.exit()) // allow_interaction: true    
+    .tool(Tools.exit()) // allow_interaction: true
   )
-``` 
-
-
-
-
-
-
-
+```
 
 You can interact with the user in a more structured way, by defining the data structure of the conversation:
+
 ```typescript
 import { Agent } from '@prompttrail/core';
 const agent = Agent.create()
@@ -144,36 +143,32 @@ const agent = Agent.create()
   ...
 ```
 
-
-
-
-
 ```
 
 ```
+
 import { Agent } from '@prompttrail/core';
 
 const workflow = new Agent()
-  .setup(
-    z.object({
-      name: z.string(),
-      age: z.number().min(0),
-    }),
-  )
-  .step(
-    "Interact with the user and ask for their name and age",
-  ).validate(
-    session => {
-      const { name, age } = session.getVars();
-      return session.setVars({user_info: db.searchUser(name, age)})
-    },
-    on_failure: "retry",
-  )
-  
-  )
+.setup(
+z.object({
+name: z.string(),
+age: z.number().min(0),
+}),
+)
+.step(
+"Interact with the user and ask for their name and age",
+).validate(
+session => {
+const { name, age } = session.getVars();
+return session.setVars({user_info: db.searchUser(name, age)})
+},
+on_failure: "retry",
+)
 
+)
 
-```
+````
 
 
 
@@ -206,7 +201,7 @@ npm install github:combinatrix-ai/PromptTrail.ts
 
 # Using yarn
 yarn add github:combinatrix-ai/PromptTrail.ts
-```
+````
 
 ## Package Structure
 
@@ -271,6 +266,7 @@ console.log('last message:', session.getLastMessage()?.content);
 ### API Convention
 
 - PromptTrail is designed so typing the object name gives autocompletion.
+
   - Every object has a `[Thing].create()` factory method.
     - For example, `Session.create()`, `Vars.create()`, `Attrs.create()`, `Agent.create()`.
   - Use `set` or `extend` to update Session, Vars or Attrs.

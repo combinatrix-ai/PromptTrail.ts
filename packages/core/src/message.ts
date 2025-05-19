@@ -111,7 +111,10 @@ export const Message = {
     };
   },
 
-  setStructuredContent: <M extends Attrs = Attrs, S extends Record<string, unknown> = Record<string, unknown>>(
+  setStructuredContent: <
+    M extends Attrs = Attrs,
+    S extends Record<string, unknown> = Record<string, unknown>,
+  >(
     message: Message<M>,
     structuredContent: S,
   ): Message<M> => {

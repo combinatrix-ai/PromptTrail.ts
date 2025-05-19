@@ -20,7 +20,9 @@ for (let i = 0; i < rawArgs.length; i++) {
 }
 
 if (positionalArgs.length < 2) {
-  console.error('Usage: ts-node script.ts <directory> <ext1> [ext2] ... [--exclude keyword]');
+  console.error(
+    'Usage: ts-node script.ts <directory> <ext1> [ext2] ... [--exclude keyword]',
+  );
   process.exit(1);
 }
 
@@ -62,7 +64,7 @@ function collectFiles(dir: string, relativeToBase = ''): string[] {
 
     // Skip ignored files and excluded patterns
     if (ig.ignores(relPath)) continue;
-    if (excludeArgs.some(keyword => relPath.includes(keyword))) continue;
+    if (excludeArgs.some((keyword) => relPath.includes(keyword))) continue;
 
     let stat;
     try {

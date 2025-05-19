@@ -2,7 +2,11 @@ import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import { ValidationError } from './errors';
 import { generateText } from './generate';
-import type { GenerateOptions, OpenAIProviderConfig, AnthropicProviderConfig } from './generate_options';
+import type {
+  GenerateOptions,
+  OpenAIProviderConfig,
+  AnthropicProviderConfig,
+} from './generate_options';
 import { createGenerateOptions } from './generate_options';
 import type { Session } from './session';
 import type { Vars } from './tagged_record';

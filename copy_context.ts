@@ -35,7 +35,9 @@ const patterns = args.slice(1).map((p) => p.toLowerCase()); // keywords
 // 2. Validate directory --------------------------------------------------------
 // -----------------------------------------------------------------------------
 if (!fs.existsSync(baseDir) || !fs.statSync(baseDir).isDirectory()) {
-  console.error(`Error: Directory "${baseDir}" not found or is not a directory.`);
+  console.error(
+    `Error: Directory "${baseDir}" not found or is not a directory.`,
+  );
   process.exit(1);
 }
 
@@ -74,8 +76,7 @@ function collectFiles(dir: string, relativeToBase = ''): string[] {
     } else if (stat.isFile()) {
       const relPathLower = relPath.toLowerCase();
       const matchesPattern =
-        patterns.length === 0 ||
-        patterns.some((p) => relPathLower.includes(p));
+        patterns.length === 0 || patterns.some((p) => relPathLower.includes(p));
       if (matchesPattern) files.push(absPath);
     }
   }
@@ -112,5 +113,7 @@ console.log(output);
 try {
   clipboardy.writeSync(output);
 } catch {
-  console.warn('Warning: Unable to write to clipboard (headless environment?).');
+  console.warn(
+    'Warning: Unable to write to clipboard (headless environment?).',
+  );
 }

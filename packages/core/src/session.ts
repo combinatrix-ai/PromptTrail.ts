@@ -9,7 +9,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     public readonly messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
     public readonly print: boolean = false,
-  ) { }
+  ) {}
   /**
    * Create a new session with additional message
    */
@@ -39,26 +39,17 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
    */
   getVar<K extends keyof TVars>(key: K): TVars[K];
   getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
-  getVar<K extends keyof TVars>(
-    key: K,
-    defaultValue?: TVars[K],
-  ): TVars[K] {
+  getVar<K extends keyof TVars>(key: K, defaultValue?: TVars[K]): TVars[K] {
     return this.vars[key] !== undefined ? this.vars[key] : defaultValue!;
   }
 
   /**
    * Set a value in the context
    */
-  withVar<
-    K extends PropertyKey,
-    V,
-  >(
+  withVar<K extends PropertyKey, V>(
     key: K,
     value: V,
-  ): Session<
-    TVars & { [P in K]: V },
-    TAttrs
-  > {
+  ): Session<TVars & { [P in K]: V }, TAttrs> {
     const newContext = {
       ...this.vars,
       [key]: value,
@@ -67,9 +58,9 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     return new Session([...this.messages], newContext, this.print);
   }
 
-  withVars<
-    U extends Record<string, unknown>
-  >(vars: U): Session<TVars & U, TAttrs> {
+  withVars<U extends Record<string, unknown>>(
+    vars: U,
+  ): Session<TVars & U, TAttrs> {
     const newContext = { ...this.vars, ...vars } as TVars & U;
     return new Session([...this.messages], newContext, this.print);
   }

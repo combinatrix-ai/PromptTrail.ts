@@ -74,10 +74,7 @@ export namespace Vars {
    * console.log(v) // { name: 'test', value: 123 }
    * console.log(updated) // { name: 'newTest', value: 123 }
    */
-  export const set = <
-    M extends Record<string, unknown>,
-    U extends keyof M,
-  >(
+  export const set = <M extends Record<string, unknown>, U extends keyof M>(
     vars: Vars<M> | undefined,
     patch: Pick<M, U> | Vars<Pick<M, U>>,
   ): Vars<Omit<M, U> & Pick<M, U>> => {
@@ -86,7 +83,7 @@ export namespace Vars {
       ...base,
       ...patch,
     });
-  }
+  };
 
   /**
    * Extend existing Vars object with new keys if they don't exist
@@ -116,7 +113,7 @@ export namespace Vars {
       ...base,
       ...patch,
     });
-  }
+  };
 }
 
 export namespace Attrs {
@@ -154,10 +151,7 @@ export namespace Attrs {
    * console.log(v) // { name: 'test', value: 123 }
    * console.log(updated) // { name: 'newTest', value: 123 }
    */
-  export const set = <
-    M extends Record<string, unknown>,
-    U extends keyof M,
-  >(
+  export const set = <M extends Record<string, unknown>, U extends keyof M>(
     attrs: Attrs<M> | undefined,
     patch: Pick<M, U> | Attrs<Pick<M, U>>,
   ): Attrs<Omit<M, U> & Pick<M, U>> => {
@@ -196,5 +190,5 @@ export namespace Attrs {
       ...base,
       ...patch,
     });
-  }
+  };
 }
