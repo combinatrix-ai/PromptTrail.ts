@@ -186,7 +186,7 @@ const workflow = new Agent()
 - 🔌 [**Multi-Provider**](#-model-configuration) - Works with OpenAI, Anthropic, and extensible for more
 - 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
 - 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
-- 📊 [**Context Transformation**](#-context-transformation) - Modify session context during execution using `Transform`
+- 📊 [**Vars Transformation**](#-vars-transformation) - Modify session vars during execution using `Transform`
 - 🛡️ [**Validation**](#%EF%B8%8F-validation) - Validate both user input and LLM responses using `Source` options or `Assistant` parameters
 - 🧪 [**Structured Output**](#-structured-output) - Force LLMs to produce structured outputs using the `Structured` template and Zod schemas
 - 🛠️ [**Tool Integration**](#%EF%B8%8F-tool-integration) - First-class support for function calling via `ai-sdk`
@@ -255,56 +255,55 @@ console.log('last message:', session.getLastMessage()?.content);
 
 ### Core Concepts
 
-- PromptTrailでは、会話の状態はすべて`Session`オブジェクトに保存されます。
-  - `Session`は、`vars`（変数）と`messages`（メッセージ）を持つ不変のオブジェクトです。
-    - `vars`は、会話の状態を保持するための構造化されたオブジェクトです。
-      - LLMの応答を整形して保存したり、外部から取得した情報を保存して、会話で利用したりすることができます。
-        - 例えば、 session.vars == { userName: 'Alice' } のときに、`Hi ${userName}`と書くと、`Hi Alice`に変換されます。
-        - varsに情報を保存する方法は、後ほど説明します。
-    - `messages`は、会話の履歴を保持する不変の配列です。
-      - 例えば、`[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`のような形です。
-      - `messages`には、`attrs`というメタデータを付与することができます。
-        - 例えば、`{role: 'user', content: 'Hello!', attrs: { timestamp: Date.now() }}`のように、メッセージにタイムスタンプを付与することができます。
-        - attrsに情報を保存する方法は、後ほど説明します。
-- Sessionは、この`vars`と`attrs`を型として持つことができるため、TypeScriptの型推論を利用して、会話の状態を型安全に扱うことができます。
+- In PromptTrail, all conversation state is stored in a `Session` object.
+  - `Session` is an immutable object with `vars` and `messages`.
+    - `vars` is a structured object that holds conversation state.
+      - You can store formatted LLM responses or external data for later use.
+        - For example, if `session.vars == { userName: 'Alice' }`, writing `Hi ${userName}` becomes `Hi Alice`.
+        - We'll show how to save data to `vars` later.
+    - `messages` is an immutable array of conversation history.
+      - For example, `[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`.
+      - Messages can include `attrs` metadata.
+        - For instance `{ role: 'user', content: 'Hello!', attrs: { timestamp: Date.now() } }` attaches a timestamp.
+        - We'll cover how to save data to `attrs` later.
+- Because `Session` uses `vars` and `attrs` types, TypeScript can safely infer conversation state.
 
 ### API Convention
 
-- PromptTrailでは、操作したいオブジェクト名を入力すれば、補完が効くように設計されています。
-  - すべてのオブジェクトの生成は、[作りたいもの].create()という形で、`create`メソッドを持っています。
-    - 例えば、Session.create() / Vars.create() / Attrs.create() / Agent.create()
-  - 会話状態を管理する、Session / Vars / Attrsに関連したデータの更新は、set / extendを使います
-    - setは、値を上書きします。extendは、値を追加するので、型が変わる可能性があります
-      - Vars.create({userName: `Alice`}).set({userName: `Bob`}) // userNameは`Bob`に上書きされ、返り値はVars<{userName: string}>になります
-      - Vars.create({userName: `Alice`}).set({age: `20`}) // これはTypeErrorになります
-      - Vars.create({userName: `Alice`}).extend({userName: `Bob`}) // userNameは`Bob`に上書きされ、返り値はVars<{userName: string}>になります
-      - Vars.create({userName: `Alice`}).extend({age: `20`}) // これは通りますが、返り値はVars<{userName: string, age: string}>になります
-    - 例えば、session.setVars({ userName: 'Alice' }) / session.extendVars({ userName: 'Alice' })
-      - extendを使うことで、既存の値に追加することができます。
-  - テンプレートの構築は、Agent.create()を使います
-    - Fluent APIを使用して、テンプレートを構築することができます。
-      - Agent.create().addSystem(...).loopIf(...)
-    - Agent(new Loop([System(...), User(...), Assistant(...)]))のような書き方もできます
-  - テキスト生成関数も同様です
-    - Source.create().useLLM().useOpenAI().setTemperature(...)
-    - または、
-      - LLMSource.create().openAI().setTemperature(...) // Source.create().useLLM()はLLMSource.create()のエイリアスです
-      - CLISource.create().setPrompt(...) // Source.create().useCLI()はCLISource.create()のエイリアスです
+- PromptTrail is designed so typing the object name gives autocompletion.
+  - Every object has a `[Thing].create()` factory method.
+    - For example, `Session.create()`, `Vars.create()`, `Attrs.create()`, `Agent.create()`.
+  - Use `set` or `extend` to update Session, Vars or Attrs.
+    - `set` overwrites values while `extend` adds keys and may change types.
+      - `Vars.create({ userName: 'Alice' }).set({ userName: 'Bob' })` // userName becomes `Bob` and returns `Vars<{ userName: string }>`
+      - `Vars.create({ userName: 'Alice' }).set({ age: '20' })` // TypeError
+      - `Vars.create({ userName: 'Alice' }).extend({ userName: 'Bob' })` // userName becomes `Bob` and returns `Vars<{ userName: string }>`
+      - `Vars.create({ userName: 'Alice' }).extend({ age: '20' })` // Works and returns `Vars<{ userName: string, age: string }>`
+    - For example, `session.setVars({ userName: 'Alice' })` or `session.extendVars({ userName: 'Alice' })`
+      - `extend` lets you append to existing values.
+  - Build templates with `Agent.create()`.
+    - The fluent API lets you compose templates: `Agent.create().addSystem(...).loopIf(...)`.
+    - You can also write `Agent(new Loop([System(...), User(...), Assistant(...)]))`.
+  - Text generation functions work the same way.
+    - `Source.create().useLLM().useOpenAI().setTemperature(...)`
+    - Or:
+      - `LLMSource.create().openAI().setTemperature(...)` // `Source.create().useLLM()` is an alias of `LLMSource.create()`
+      - `CLISource.create().setPrompt(...)` // `Source.create().useCLI()` is an alias of `CLISource.create()`
 
-- **Session**: Represents a conversation with `context` and `messages`. Immutable.
+- **Session**: Represents a conversation with `vars` and `messages`. Immutable.
   ```typescript
   import { createSession } from '@prompttrail/core';
   const session = createSession(); // Creates an empty session
   const sessionWithContext = createSession({ context: { userName: 'Alice' } });
   ```
-  - **Context**: A read-only structured object (`Context<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`context.loopCounter`).
+  - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
     ```typescript
-    import { createContext, Assistant } from '@prompttrail/core';
-    // Context objects have a hidden _type: 'context' property
-    const userContext = createContext({ userName: 'Alice', userId: 'u-123' });
+    import { Vars, Assistant } from '@prompttrail/core';
+    // Vars objects have a hidden brand property
+    const userVars = Vars.create({ userName: 'Alice', userId: 'u-123' });
     // Usage in interpolation:
-    const greeting = new Assistant('Hi ${userName}!'); // Resolves to "Hi Alice!" if context has userName: 'Alice'
-    // Accessing values: session.geTVarsValue('userId')
+    const greeting = new Assistant('Hi ${userName}!'); // Resolves to "Hi Alice!" if vars has userName: 'Alice'
+    // Accessing values: session.getVar('userId')
     ```
   - **Messages**: An immutable array of conversation history. `[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`.
     ```typescript
@@ -315,13 +314,13 @@ console.log('last message:', session.getLastMessage()?.content);
     ];
     const sessionWithMessages = createSession({ messages });
     ```
-    - **Metadata**: Optional read-only data (`Metadata<T>`) attached to messages. Used for storing additional information (e.g., non-default roles, timestamps).
+    - **Attrs**: Optional read-only data (`Attrs<T>`) attached to messages. Used for storing additional information (e.g., non-default roles, timestamps).
       ```typescript
-      import { createMetadata } from '@prompttrail/core';
+      import { Attrs } from '@prompttrail/core';
       const messageWithMeta = {
         type: 'user',
         content: 'User input',
-        metadata: createMetadata({
+        metadata: Attrs.create({
           timestamp: Date.now(),
           customRole: 'tester',
         }),
@@ -372,7 +371,7 @@ const simpleTemplate = new Agent()
 const session = await simpleTemplate.execute(
   createSession({
     context: {
-      // Context is type-safe if generics are provided
+      // Vars are type-safe if generics are provided
       userId: 'user-123',
       language: 'TypeScript',
     },
@@ -386,22 +385,22 @@ const session = await simpleTemplate.execute(
 PromptTrail leverages TypeScript for strong typing, better IDE support, and a robust development experience.
 
 ```typescript
-import { createSession, Context, Metadata } from '@prompttrail/core';
+import { createSession, Vars, Attrs } from '@prompttrail/core';
 
 // Define types for context and metadata
-interface MyContext extends Context {
+interface MyVars extends Vars {
   name: string;
   preferences: {
     theme: 'light' | 'dark';
     language: string;
   };
 }
-interface MyMetadata extends Metadata {
+interface MyAttrs extends Attrs {
   timestamp: number;
 }
 
 // Type-safe session creation
-const session = createSession<MyContext, MyMetadata>({
+const session = createSession<MyVars, MyAttrs>({
   context: {
     name: 'Alice',
     preferences: {
@@ -412,23 +411,23 @@ const session = createSession<MyContext, MyMetadata>({
 });
 
 // Type-safe context access
-const userName = session.geTVarsValue('name'); // Type: string | undefined
-const theme = session.geTVarsValue('preferences')?.theme; // Type: 'light' | 'dark' | undefined
+const userName = session.getVar('name'); // Type: string | undefined
+const theme = session.getVar('preferences')?.theme; // Type: 'light' | 'dark' | undefined
 
 // Immutable operations maintain type safety
 const updatedSession = session.addMessage({
   type: 'user',
   content: 'Hi',
-  metadata: { timestamp: Date.now() }, // Metadata matches MyMetadata
+  metadata: { timestamp: Date.now() }, // Attrs match MyAttrs
 });
-const newSession = updatedSession.seTVarsValues({ name: 'Bob' }); // Updates context immutably
+const newSession = updatedSession.withVars({ name: 'Bob' }); // Updates context immutably
 ```
 
 PromptTrail's immutable architecture ensures predictable state management:
 
-- Session operations (`addMessage`, `seTVarsValue`, `seTVarsValues`) return new `Session` instances.
+- Session operations (`addMessage`, `withVar`, `withVars`) return new `Session` instances.
 - Templates operate on sessions without side effects.
-- Consistent use of `Context<T>` and `Metadata<T>` ensures type safety.
+- Consistent use of `Vars<T>` and `Attrs<T>` ensures type safety.
 
 ### 🏗️ Building Templates
 
@@ -441,6 +440,7 @@ import {
   createGenerateOptions,
   User,
   Assistant,
+  Vars,
 } from '@prompttrail/core';
 
 // Define generateOptions for OpenAI
@@ -453,8 +453,8 @@ let openAIgenerateOptions = createGenerateOptions({
   temperature: 0.7,
 });
 
-// Define context type
-interface UserInfo extends Context {
+// Define vars type
+interface UserInfo extends Vars {
   name: string;
   language: string;
 }
@@ -505,18 +505,18 @@ import {
   ListSource,
   createSession,
   createGenerateOptions,
-  Context,
-  Metadata,
+  Vars,
+  Attrs,
 } from '@prompttrail/core';
 
 // Define generateOptions (assuming openAIgenerateOptions is defined elsewhere)
 
-interface QuizContext extends Context {
+interface QuizVars extends Vars {
   quizComplete?: boolean;
   summary?: string;
 }
 
-const quiz = new Agent<QuizContext>() // Use Agent as the main builder
+const quiz = new Agent<QuizVars>() // Use Agent as the main builder
   .addSystem("You're a TypeScript quiz bot.")
   // Greet based on time using addConditional
   .addConditional(
@@ -560,7 +560,7 @@ const quiz = new Agent<QuizContext>() // Use Agent as the main builder
         const summaryMessage = subroutineSession.getLastMessage();
         if (summaryMessage?.type === 'assistant') {
           // Add the summary to the parent context instead of as a message
-          return parentSession.seTVarsValues({
+          return parentSession.withVars({
             summary: summaryMessage.content,
           });
         }
@@ -574,14 +574,14 @@ const quiz = new Agent<QuizContext>() // Use Agent as the main builder
   .addAssistant(
     new Assistant(
       (session) =>
-        `Quiz finished! 🚀\n**Summary:**\n${session.geTVarsValue('summary', 'No summary generated.')}`,
+        `Quiz finished! 🚀\n**Summary:**\n${session.getVar('summary', 'No summary generated.')}`,
     ),
   );
 
 // Execute the quiz
-const session = await quiz.execute(createSession<QuizContext>({ print: true }));
+const session = await quiz.execute(createSession<QuizVars>({ print: true }));
 
-console.log('Final Context:', session.geTVarsObject());
+console.log('Final Vars:', session.getVarsObject());
 ```
 
 ### 🤖 Model Configuration
@@ -645,20 +645,20 @@ import {
   Assistant,
   Sequence,
 } from '@prompttrail/core';
-import type { Context, Metadata } from '@prompttrail/core';
+import type { Vars, Attrs } from '@prompttrail/core';
 
-interface MyContext extends Context {
+interface MyVarsSession extends Vars {
   userId: string;
   language: string;
   tone: string;
   topics: string[];
 }
-interface MyMetadata extends Metadata {
+interface MyAttrsSession extends Attrs {
   timestamp?: number;
 }
 
 // Create a session with initial context
-const initialSession = createSession<MyContext, MyMetadata>({
+const initialSession = createSession<MyVarsSession, MyAttrsSession>({
   context: {
     userId: 'user-123',
     language: 'TypeScript',
@@ -669,7 +669,7 @@ const initialSession = createSession<MyContext, MyMetadata>({
 });
 
 // Templates use ${variable} syntax for context interpolation
-const template = new Agent<MyContext, MyMetadata>() // Specify types for Agent
+const template = new Agent<MyVarsSession, MyAttrsSession>() // Specify types for Agent
   .addSystem(`I'll use \${tone} language to explain \${topics[0]}`)
   .addAssistant(`Let me explain \${topics[0]} in \${language}`)
   .addUser(`Can you also cover \${topics[1]}?`);
@@ -692,18 +692,18 @@ console.log(
 );
 
 // Update context (returns a new session instance)
-const sessionWithNewTone = sessionWithMessage.seTVarsValues({
+const sessionWithNewTone = sessionWithMessage.withVars({
   tone: 'casual', // Update existing key
   lastInteraction: Date.now(), // Add new key
 });
 
-console.log('Original tone:', sessionWithMessage.geTVarsValue('tone')); // professional
-console.log('New tone:', sessionWithNewTone.geTVarsValue('tone')); // casual
+console.log('Original tone:', sessionWithMessage.getVar('tone')); // professional
+console.log('New tone:', sessionWithNewTone.getVar('tone')); // casual
 
 // Serialize/deserialize (useful for saving/loading state)
 const json = sessionWithNewTone.toJSON();
 console.log('Session JSON:', JSON.stringify(json, null, 2));
-// const loadedSession = Session.fromJSON<MyContext, MyMetadata>(json); // Deserialize
+// const loadedSession = Session.fromJSON<MyVarsSession, MyAttrsSession>(json); // Deserialize
 ```
 
 ### 🌊 Streaming Responses
@@ -739,58 +739,58 @@ try {
 console.log('\n--- End of Stream ---');
 ```
 
-### 📊 Context Transformation
+### 📊 Vars Transformation
 
-Modify session context during template execution using the `Transform` template:
+Modify session vars during template execution using the `Transform` template:
 
 ```typescript
 import { Agent, Transform, createSession } from '@prompttrail/core';
-import type { Context } from '@prompttrail/core';
+import type { Vars } from '@prompttrail/core';
 
-interface ServerInfoContext extends Context {
+interface ServerInfoVars extends Vars {
   ipAddress?: string;
   uptime?: number;
   status?: string;
 }
 
 // Example: Extract data using regex and update context
-const dataExtractionAgent = new Agent<ServerInfoContext>()
+const dataExtractionAgent = new Agent<ServerInfoVars>()
   .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
   // Add a transform step
   .addTransform((session) => {
     const lastMessageContent = session.getLastMessage()?.content || '';
-    const updatedContext: Partial<ServerInfoContext> = {}; // Store updates
+    const updatedVars: Partial<ServerInfoVars> = {}; // Store updates
 
     // Extract IP Address
     const ipMatch = lastMessageContent.match(/IP ([\d\.]+)/);
     if (ipMatch) {
-      updatedContext.ipAddress = ipMatch[1];
+      updatedVars.ipAddress = ipMatch[1];
     }
 
     // Extract and transform Uptime
     const uptimeMatch = lastMessageContent.match(/Uptime ([\d\.]+)%/);
     if (uptimeMatch) {
-      updatedContext.uptime = parseFloat(uptimeMatch[1]) / 100;
+      updatedVars.uptime = parseFloat(uptimeMatch[1]) / 100;
     }
 
     // Extract Status
     const statusMatch = lastMessageContent.match(/Status: (\w+)/);
     if (statusMatch) {
-      updatedContext.status = statusMatch[1];
+      updatedVars.status = statusMatch[1];
     }
 
-    // Return a new session with the updated context values
-    return session.seTVarsValues(updatedContext);
+    // Return a new session with the updated vars values
+    return session.withVars(updatedVars);
   });
 
 // Execute the agent
 const dataSession =
-  await dataExtractionAgent.execute(createSession<ServerInfoContext>());
+  await dataExtractionAgent.execute(createSession<ServerInfoVars>());
 
 // Access the extracted data from the final session context
-console.log('IP:', dataSession.geTVarsValue('ipAddress')); // "192.168.1.100"
-console.log('Uptime:', dataSession.geTVarsValue('uptime')); // 0.9999
-console.log('Status:', dataSession.geTVarsValue('status')); // "Running"
+console.log('IP:', dataSession.getVar('ipAddress')); // "192.168.1.100"
+console.log('Uptime:', dataSession.getVar('uptime')); // 0.9999
+console.log('Status:', dataSession.getVar('status')); // "Running"
 ```
 
 ### 🛡️ Validation
@@ -873,7 +873,7 @@ const customValidator = new CustomValidator(
   (content, session) => {
     // Validation logic can access session context
     const wordCount = content.split(/\s+/).filter(Boolean).length;
-    const maxWords = session?.geTVarsValue('maxWords', 5); // Example: Get limit from context
+    const maxWords = session?.getVar('maxWords', 5); // Example: Get limit from context
     return wordCount <= maxWords
       ? { isValid: true } // Success
       : {

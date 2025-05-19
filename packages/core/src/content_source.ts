@@ -2,7 +2,8 @@ import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import { ValidationError } from './errors';
 import { generateText } from './generate';
-import type { GenerateOptions } from './generate_options';
+import type { GenerateOptions, OpenAIProviderConfig, AnthropicProviderConfig } from './generate_options';
+import { createGenerateOptions } from './generate_options';
 import type { Session } from './session';
 import type { Vars } from './tagged_record';
 import { interpolateTemplate } from './utils/template_interpolation';
@@ -622,5 +623,108 @@ export class SchemaSource<
     throw new Error(
       `SchemaSource: Execution finished in an unexpected state after ${this.maxAttempts} attempts.`,
     );
+  }
+}
+
+/**
+ * Builder for {@link LlmSource}
+ */
+export class LlmBuilder {
+  private readonly options: GenerateOptions;
+  private validation: ValidationOptions = {};
+
+  constructor() {
+    // Provide dummy provider; user should override via openai()/anthropic()
+    this.options = createGenerateOptions({
+      provider: { type: 'openai', apiKey: '', modelName: '' },
+    });
+  }
+
+  /** Configure OpenAI provider */
+  openai(cfg: Omit<OpenAIProviderConfig, 'type'>) {
+    this.options.provider = { type: 'openai', ...cfg };
+    return this;
+  }
+
+  /** Configure Anthropic provider */
+  anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
+    this.options.provider = { type: 'anthropic', ...cfg };
+    return this;
+  }
+
+  /** Set temperature */
+  temperature(value: number) {
+    this.options.temperature = value;
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.addTool */
+  addTool(name: string, tool: unknown) {
+    this.options.addTool(name, tool);
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.setToolChoice */
+  toolChoice(choice: 'auto' | 'required' | 'none') {
+    this.options.setToolChoice(choice);
+    return this;
+  }
+
+  /** Assign validator */
+  validate(v: IValidator) {
+    this.validation.validator = v;
+    return this;
+  }
+
+  /** Build the LlmSource instance */
+  build() {
+    return new LlmSource(this.options, this.validation);
+  }
+}
+
+/**
+ * Builder for {@link CLISource}
+ */
+export class CliBuilder {
+  private promptText = '';
+  private defaultVal?: string;
+  private validation: ValidationOptions = {};
+
+  /** Set prompt shown to the user */
+  prompt(text: string) {
+    this.promptText = text;
+    return this;
+  }
+
+  /** Set default value when user provides empty input */
+  defaultValue(val: string) {
+    this.defaultVal = val;
+    return this;
+  }
+
+  /** Configure validator */
+  validate(v: IValidator) {
+    this.validation.validator = v;
+    return this;
+  }
+
+  /** Build the CLISource instance */
+  build() {
+    return new CLISource(this.promptText, this.defaultVal, this.validation);
+  }
+}
+
+/**
+ * Convenience factory methods for creating common sources
+ */
+export namespace Source {
+  /** Create builder for LLM backed source */
+  export function llm() {
+    return new LlmBuilder();
+  }
+
+  /** Create builder for CLI input source */
+  export function cli() {
+    return new CliBuilder();
   }
 }
