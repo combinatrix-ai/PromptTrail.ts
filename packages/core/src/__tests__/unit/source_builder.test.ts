@@ -50,6 +50,27 @@ describe('Source builders', () => {
     );
   });
 
+  it('builds LlmSource with Google provider', async () => {
+    const assistant = new Assistant(
+      Source.google({ apiKey: 'g-key', modelName: 'gemini-pro' })
+        .temperature(0.2)
+        .build(),
+    );
+
+    await assistant.execute(createSession());
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        temperature: 0.2,
+        provider: expect.objectContaining({
+          type: 'google',
+          modelName: 'gemini-pro',
+        }),
+      }),
+    );
+  });
+
   it('builds CLISource via builder', async () => {
     const validator = new CustomValidator((c) => ({ isValid: true }));
     const user = new User(

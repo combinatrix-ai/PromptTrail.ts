@@ -6,6 +6,7 @@ import type {
   GenerateOptions,
   OpenAIProviderConfig,
   AnthropicProviderConfig,
+  GoogleProviderConfig,
 } from './generate_options';
 import { createGenerateOptions } from './generate_options';
 import type { Session } from './session';
@@ -638,7 +639,7 @@ export class LlmBuilder {
   private validation: ValidationOptions = {};
 
   constructor() {
-    // Provide dummy provider; user should override via openai()/anthropic()
+    // Provide dummy provider; user should override via openai()/anthropic()/google()
     this.options = createGenerateOptions({
       provider: { type: 'openai', apiKey: '', modelName: '' },
     });
@@ -653,6 +654,12 @@ export class LlmBuilder {
   /** Configure Anthropic provider */
   anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
     this.options.provider = { type: 'anthropic', ...cfg };
+    return this;
+  }
+
+  /** Configure Google provider */
+  google(cfg: Omit<GoogleProviderConfig, 'type'>) {
+    this.options.provider = { type: 'google', ...cfg };
     return this;
   }
 
@@ -725,6 +732,11 @@ export namespace Source {
   /** Create builder for LLM backed source */
   export function llm() {
     return new LlmBuilder();
+  }
+
+  /** Create builder for LLM with Google provider */
+  export function google(cfg: Omit<GoogleProviderConfig, 'type'>) {
+    return new LlmBuilder().google(cfg);
   }
 
   /** Create builder for CLI input source */
