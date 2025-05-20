@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CallbackSource,
   CLISource,
   StaticSource,
 } from '../../../content_source';
+import { createSession } from '../../../session';
+import { User } from '../../../templates/primitives/user';
 import { CustomValidator } from '../../../validators/custom';
-import { User } from '../../../templates/user';
 
 // Mock the readline module
 vi.mock('node:readline/promises', () => {
@@ -63,13 +63,16 @@ describe('UserTemplate', () => {
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('query', 'weather');
+    console.log('Before setting context value:', session);
+    const updatedSession = session.withVar('query', 'weather');
+    console.log('After setting context value:', updatedSession);
+    console.log('Original session after setting context value:', session);
 
     // Create a UserTemplate with interpolated text
     const template = new User('What is the ${query} like today?');
 
     // Execute the template and verify the result
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );
@@ -78,13 +81,22 @@ describe('UserTemplate', () => {
   it('should support interpolation in content source', async () => {
     // Create a session with metadata
     const session = createSession();
-    session.metadata.set('query', 'weather');
+    console.log('Before setting context value (content source):', session);
+    const updatedSession = session.withVar('query', 'weather');
+    console.log(
+      'After setting context value (content source):',
+      updatedSession,
+    );
+    console.log(
+      'Original session after setting context value (content source):',
+      session,
+    );
 
     const template = new User(
       new StaticSource('What is the ${query} like today?'),
     );
 
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );
@@ -120,8 +132,8 @@ describe('UserTemplate', () => {
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('Callback user input');
 
-    // Verify the callback was called with the session metadata
-    expect(callback).toHaveBeenCalledWith({ metadata: expect.anything() });
+    // Verify the callback was called with the session context
+    expect(callback).toHaveBeenCalledWith({ context: expect.anything() });
   });
 
   it('should validate content with a custom validator', async () => {

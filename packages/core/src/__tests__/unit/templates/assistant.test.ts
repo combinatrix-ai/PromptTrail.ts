@@ -1,11 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/assistant';
-import { createSession } from '../../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StaticSource } from '../../../content_source';
-import type { ModelOutput } from '../../../content_source'; // Use "import type"
-import { createGenerateOptions } from '../../../generate_options';
-import { createMetadata } from '../../../metadata';
 import { generateText } from '../../../generate';
+import { createGenerateOptions } from '../../../generate_options';
+import { createSession } from '../../../session';
+import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
 
@@ -40,7 +38,6 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Generated content',
-      metadata: createMetadata(),
     });
 
     // Create GenerateOptions
@@ -83,9 +80,9 @@ describe('AssistantTemplate', () => {
 
   it('should support interpolation in static content', async () => {
     const session = createSession();
-    session.metadata.set('username', 'Alice');
+    const updatedSession = session.withVar('username', 'Alice');
     const template = new Assistant('Hello, ${username}!');
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe('Hello, Alice!');
   });
 
@@ -154,7 +151,6 @@ describe('AssistantTemplate', () => {
           id: 'tool-123',
         },
       ],
-      metadata: createMetadata(),
     });
 
     const weatherTool = createWeatherTool();
@@ -219,7 +215,6 @@ describe('AssistantTemplate', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is invalid',
-      metadata: createMetadata(),
     });
 
     // Create a custom validator

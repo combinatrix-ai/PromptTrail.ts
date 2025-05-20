@@ -1,19 +1,18 @@
 // Export core template interfaces and base classes
+export { TemplateBase } from './base';
 export type { Template } from './base';
-export { BaseTemplate } from './base';
-export { CompositeTemplateBase } from './composite_base';
+export { Composite } from './composite/composite';
 
 // Export concrete template implementations
-export { System as System } from './system';
-export { User as User } from './user';
-export { Assistant as Assistant } from './assistant';
-export { Conditional as Conditional } from './conditional';
-export { Loop as Loop } from './loop';
-export { Sequence } from './sequence';
-export { Subroutine as Subroutine } from './subroutine';
+export { Loop } from './composite/loop';
+export { Sequence } from './composite/sequence';
+export { Subroutine } from './composite/subroutine';
+export { Assistant } from './primitives/assistant';
+export { Conditional } from './primitives/conditional';
+export { Structured } from './primitives/structured';
+export { System } from './primitives/system';
+export { Transform } from './primitives/transform';
+export { User } from './primitives/user';
 
-// Export factory methods
-export { TemplateFactory } from './factory';
-
-// Alias Sequence as Agent for user convenience
-export { Sequence as Agent } from './sequence';
+// Export Agent (Template Builder)
+export { Agent } from './agent';

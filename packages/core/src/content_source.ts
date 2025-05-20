@@ -1,14 +1,21 @@
-import type { ISession } from './types';
+import * as readline from 'node:readline/promises';
+import { z } from 'zod';
+import { ValidationError } from './errors';
+import { generateText } from './generate';
+import type {
+  GenerateOptions,
+  OpenAIProviderConfig,
+  AnthropicProviderConfig,
+  GoogleProviderConfig,
+} from './generate_options';
+import { createGenerateOptions } from './generate_options';
+import type { Session } from './session';
+import type { Vars } from './tagged_record';
+import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
   TValidationResult as ValidationResult,
 } from './validators/base'; // TODO: Rename IValidator to Validator, Use TValidationResult
-import type { Metadata } from './metadata';
-import { interpolateTemplate } from './utils/template_interpolation';
-import * as readline from 'node:readline/promises';
-import { generateText } from './generate';
-import type { GenerateOptions } from './generate_options';
-import { z } from 'zod';
 
 // --- Temporary Definitions (Move to appropriate files later) ---
 
@@ -31,31 +38,16 @@ export interface ModelOutput {
  * Options for validation behavior
  */
 export interface ValidationOptions {
-  validator?: IValidator; // TODO: Rename IValidator to Validator
+  validator?: IValidator;
   maxAttempts?: number;
   raiseError?: boolean;
 }
 
 /**
- * Custom error for validation failures
- */
-export class ValidationError extends Error {
-  constructor(
-    message: string,
-    public result?: ValidationResult,
-  ) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
-
-// --- Refactored Content Sources ---
-
-/**
  * Base class for all content sources (Renamed from ContentSource)
  */
 export abstract class Source<T = unknown> {
-  protected validator?: IValidator; // TODO: Rename IValidator to Validator
+  protected validator?: IValidator;
   protected maxAttempts: number;
   protected raiseError: boolean;
 
@@ -70,7 +62,7 @@ export abstract class Source<T = unknown> {
    * @param session Session context for content generation
    * @returns Promise resolving to content of type T
    */
-  abstract getContent(session: ISession): Promise<T>; // TODO: Rename ISession to Session
+  abstract getContent(session: Session<any, any>): Promise<T>;
 
   /**
    * Validates the given content once using the assigned validator.
@@ -78,7 +70,7 @@ export abstract class Source<T = unknown> {
    */
   protected async validateContent(
     content: string,
-    session: ISession, // TODO: Rename ISession to Session
+    session: Session<any, any>,
   ): Promise<ValidationResult> {
     if (!this.validator) {
       return { isValid: true }; // No validator means content is considered valid
@@ -100,7 +92,6 @@ export abstract class Source<T = unknown> {
    * @returns The validator or undefined if no validator is set
    */
   getValidator(): IValidator | undefined {
-    // TODO: Rename IValidator to Validator
     return this.validator;
   }
 }
@@ -121,7 +112,7 @@ export abstract class ModelSource extends Source<ModelOutput> {
 
 /**
  * Static content source that returns the same content every time
- * Supports template interpolation with session metadata (Renamed from StaticContentSource)
+ * Supports template interpolation with session context (Renamed from StaticContentSource)
  */
 export class StaticSource extends TextSource {
   constructor(
@@ -131,12 +122,8 @@ export class StaticSource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
-    const interpolatedContent = interpolateTemplate(
-      this.content,
-      session.metadata,
-    );
+  async getContent(session: Session<any, any>): Promise<string> {
+    const interpolatedContent = interpolateTemplate(this.content, session);
     // Use shared validation logic (single attempt)
     const validationResult = await this.validateContent(
       interpolatedContent,
@@ -144,7 +131,7 @@ export class StaticSource extends TextSource {
     );
     if (!validationResult.isValid && this.raiseError) {
       const errorMessage = `Validation failed: ${validationResult.instruction || ''}`;
-      throw new ValidationError(errorMessage, validationResult);
+      throw new ValidationError(errorMessage);
     }
     // If valid or raiseError is false, return content
     return interpolatedContent;
@@ -152,31 +139,84 @@ export class StaticSource extends TextSource {
 }
 
 /**
- * Static content source that returns the content based on predefined list
+ * Content source that returns a random element from a predefined list
  */
-export class StaticListSource extends TextSource {
+export class RandomSource extends TextSource {
   constructor(
     private contentList: string[],
-    private index: number = 0,
-    options?: ValidationOptions, // Added options
+    options?: ValidationOptions,
   ) {
-    super(options); // Pass options to base class
+    super(options);
   }
 
-  async getContent(session: ISession): Promise<string> {
+  async getContent(session: Session<any, any>): Promise<string> {
+    const randomIndex = Math.floor(Math.random() * this.contentList.length);
+    return this.contentList[randomIndex];
+  }
+}
+
+/**
+ * Content source that returns elements from a predefined list sequentially.
+ * By default, it throws an error when the list is exhausted.
+ * If `loop` is set to true in options, it restarts from the beginning.
+ */
+export class ListSource extends TextSource {
+  private index: number = 0;
+  private loop: boolean;
+
+  constructor(
+    private contentList: string[],
+    options?: ValidationOptions & { loop?: boolean },
+  ) {
+    super(options);
+    this.loop = options?.loop ?? false;
+  }
+
+  async getContent(session: Session<any, any>): Promise<string> {
     if (this.index < this.contentList.length) {
-      return this.contentList[this.index++];
+      const content = this.contentList[this.index++];
+      // Apply validation if a validator exists
+      const validationResult = await this.validateContent(content, session);
+      if (!validationResult.isValid && this.raiseError) {
+        const errorMessage = `Validation failed for item at index ${this.index - 1}: ${validationResult.instruction || ''}`;
+        throw new ValidationError(errorMessage);
+      }
+      // Return content if valid or if raiseError is false
+      return content;
+    } else if (this.loop) {
+      this.index = 0; // Reset index to loop
+      if (this.index < this.contentList.length) {
+        // Check if list is not empty
+        const content = this.contentList[this.index++];
+        // Apply validation if a validator exists
+        const validationResult = await this.validateContent(content, session);
+        if (!validationResult.isValid && this.raiseError) {
+          const errorMessage = `Validation failed for item at index ${this.index - 1} (looping): ${validationResult.instruction || ''}`;
+          throw new ValidationError(errorMessage);
+        }
+        // Return content if valid or if raiseError is false
+        return content;
+      } else {
+        // Handle empty list case during loop reset
+        throw new Error('ListSource is empty.');
+      }
     } else {
-      throw new Error('No more content in the StaticListSource');
+      throw new Error('No more content in the ListSource.');
     }
   }
 
-  async getIndex(): Promise<number> {
+  /**
+   * Gets the current index.
+   */
+  getIndex(): number {
     return this.index;
   }
 
-  async atEnd(): Promise<boolean> {
-    return this.index >= this.contentList.length;
+  /**
+   * Checks if the source is at the end of the list (and not looping).
+   */
+  atEnd(): boolean {
+    return !this.loop && this.index >= this.contentList.length;
   }
 }
 
@@ -193,8 +233,7 @@ export class CLISource extends TextSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session<any, any>): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -221,7 +260,7 @@ export class CLISource extends TextSource {
         if (isLastAttempt) {
           if (this.raiseError) {
             const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-            throw new ValidationError(errorMessage, lastResult);
+            throw new ValidationError(errorMessage);
           } else {
             console.warn(
               `CLISource: Validation failed after ${attempts} attempts. Returning last input or default value.`,
@@ -250,21 +289,20 @@ export class CLISource extends TextSource {
 export class CallbackSource extends TextSource {
   // Inherits from TextSource
   constructor(
-    private callback: (context: { metadata?: Metadata }) => Promise<string>,
+    private callback: (context: { context?: Vars }) => Promise<string>,
     options?: ValidationOptions, // Use ValidationOptions
   ) {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<string> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session<any, any>): Promise<string> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
     let currentInput = '';
 
     while (attempts < this.maxAttempts) {
       attempts++;
-      currentInput = await this.callback({ metadata: session.metadata });
+      currentInput = await this.callback({ context: session.vars });
       lastResult = await this.validateContent(currentInput, session); // Validate the newly fetched content (single attempt)
 
       if (lastResult.isValid) {
@@ -277,7 +315,7 @@ export class CallbackSource extends TextSource {
       if (isLastAttempt) {
         if (this.raiseError) {
           const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-          throw new ValidationError(errorMessage, lastResult);
+          throw new ValidationError(errorMessage);
         } else {
           console.warn(
             `CallbackSource: Validation failed after ${attempts} attempts. Returning last (invalid) input.`,
@@ -292,6 +330,7 @@ export class CallbackSource extends TextSource {
           }. Retrying...`,
         );
         // Optionally add delay here
+        // session = session.addMessage({ type: 'system', content: `Validation failed: ${lastResult.instruction}. Please revise.` });
       }
     }
 
@@ -320,8 +359,7 @@ export class LlmSource extends ModelSource {
     super(options); // Pass options to base class
   }
 
-  async getContent(session: ISession): Promise<ModelOutput> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session<any, any>): Promise<ModelOutput> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
 
@@ -355,7 +393,7 @@ export class LlmSource extends ModelSource {
         return {
           content: responseContent,
           toolCalls: response.toolCalls,
-          metadata: response.metadata?.toObject(),
+          metadata: response.attrs,
         };
       }
 
@@ -365,7 +403,7 @@ export class LlmSource extends ModelSource {
       if (isLastAttempt) {
         if (this.raiseError) {
           const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-          throw new ValidationError(errorMessage, lastResult);
+          throw new ValidationError(errorMessage);
         } else {
           console.warn(
             `LlmSource: Validation failed after ${attempts} attempts. Returning last generated content.`,
@@ -374,7 +412,7 @@ export class LlmSource extends ModelSource {
           return {
             content: responseContent,
             toolCalls: response.toolCalls,
-            metadata: response.metadata?.toObject(),
+            metadata: response.attrs,
           };
         }
       } else {
@@ -430,8 +468,7 @@ export class SchemaSource<
     // but ideally, it should use a dedicated validator.
   }
 
-  async getContent(session: ISession): Promise<ModelOutput> {
-    // TODO: Rename ISession to Session
+  async getContent(session: Session<any, any>): Promise<ModelOutput> {
     const schemaFunction = {
       name: this.options.functionName || 'generateStructuredOutput',
       description: 'Generate structured output according to schema',
@@ -461,10 +498,7 @@ export class SchemaSource<
             session,
           );
           if (!textValidationResult.isValid) {
-            lastError = new ValidationError(
-              'Text content validation failed',
-              textValidationResult,
-            );
+            lastError = new ValidationError('Text content validation failed');
             console.warn(
               `SchemaSource: Text content validation failed (attempt ${attempts}).`,
             );
@@ -500,7 +534,7 @@ export class SchemaSource<
                 content: responseContent,
                 toolCalls: lastResponse.toolCalls,
                 structuredOutput: result.data,
-                metadata: lastResponse.metadata?.toObject(),
+                metadata: lastResponse.attrs,
               };
             } else {
               lastError = new Error(
@@ -509,86 +543,204 @@ export class SchemaSource<
               console.warn(
                 `SchemaSource: Schema validation failed (attempt ${attempts}): ${lastError.message}`,
               );
+              if (attempts >= this.maxAttempts && this.raiseError) {
+                throw lastError;
+              }
+              if (attempts >= this.maxAttempts && !this.raiseError) {
+                console.warn(
+                  `SchemaSource: Schema validation failed after ${attempts} attempts. Returning last generated content.`,
+                );
+                return {
+                  content: responseContent,
+                  toolCalls: lastResponse.toolCalls,
+                  metadata: lastResponse.attrs,
+                };
+              }
+              console.log(
+                `Retrying generation due to schema validation failure...`,
+              );
+              continue; // Retry generation
             }
-          } else {
-            lastError = new Error(
-              `SchemaSource: Expected tool call '${schemaFunction.name}' not found.`,
-            );
-            console.warn(
-              `SchemaSource: Tool call not found (attempt ${attempts}).`,
-            );
           }
-        } else {
-          lastError = new Error(
-            `SchemaSource: No valid assistant response with tool call found.`,
-          );
+        }
+
+        // If we reach here, either no tool call was made, or the tool call was not for the schema function.
+        // This might be a valid response depending on the use case, but for SchemaSource, we expect a structured output.
+        // Treat this as a validation failure for the purpose of retries.
+        lastError = new Error('No valid schema tool call found in response.');
+        console.warn(
+          `SchemaSource: No valid schema tool call found (attempt ${attempts}).`,
+        );
+
+        if (attempts >= this.maxAttempts && this.raiseError) {
+          throw lastError;
+        }
+        if (attempts >= this.maxAttempts && !this.raiseError) {
           console.warn(
-            `SchemaSource: No valid assistant response (attempt ${attempts}).`,
+            `SchemaSource: No valid schema tool call found after ${attempts} attempts. Returning last generated content.`,
           );
+          // Return the last response even if it didn't have the expected tool call
+          return {
+            content: responseContent,
+            toolCalls: lastResponse?.toolCalls,
+            metadata: lastResponse?.attrs,
+          };
         }
-
-        // If we reach here, either schema validation failed or no tool call found (or text validation failed earlier and raiseError=true)
-        if (this.raiseError && lastError) {
-          throw lastError; // Throw immediately if raiseError is true
-        }
-
-        if (attempts >= this.maxAttempts) break; // Exit loop if max attempts reached
-
-        // If raiseError is false, log the specific error and continue to retry
-        if (lastError) {
-          console.log(`Retrying generation due to: ${lastError.message}`);
-        }
-      } catch (err) {
-        // Catch errors from generateText or validateContent (if raiseError=true)
-        lastError = err as Error;
+        console.log(`Retrying generation due to missing schema tool call...`);
+        continue; // Retry generation
+      } catch (error) {
+        // Handle other errors during generateText or processing
+        lastError = error as Error;
         console.error(
-          `SchemaSource: Error during generation/validation (attempt ${attempts}):`,
+          `SchemaSource: Attempt ${attempts}/${this.maxAttempts} failed:`,
           lastError,
         );
-        if (this.raiseError) throw lastError; // Re-throw immediately if raiseError is true
-        if (attempts >= this.maxAttempts) break; // Exit loop if max attempts reached
-      }
-    }
 
-    // Loop finished (max attempts reached or error occurred with raiseError=false)
-    if (this.raiseError && lastError) {
-      // Should have been thrown inside loop, but as a fallback
-      throw new Error(
-        `Schema generation failed after ${this.maxAttempts} attempts. Last error: ${lastError.message}`,
-      );
-    } else if (!this.raiseError) {
-      console.warn(
-        `SchemaSource: Max attempts reached or non-fatal error occurred. Returning last response or fallback.`,
-      );
-      // Return last response even if invalid, or generate a fallback without schema tool
-      if (lastResponse) {
-        return {
-          content: lastResponse.content ?? '',
-          toolCalls:
-            lastResponse.type === 'assistant'
-              ? lastResponse.toolCalls
-              : undefined,
-          metadata: lastResponse.metadata?.toObject(),
-          structuredOutput: undefined, // Indicate schema validation failed
-        };
-      } else {
-        // Fallback if generateText failed consistently
-        const fallbackResponse = await generateText(
-          session,
-          this.generateOptions,
-        ); // Generate without schema tool
-        return {
-          content: fallbackResponse.content,
-          toolCalls:
-            fallbackResponse.type === 'assistant'
-              ? fallbackResponse.toolCalls
-              : undefined,
-          metadata: fallbackResponse.metadata?.toObject(),
-        };
-      }
-    } else {
-      // Should not happen, but safety return
-      return { content: '' };
-    }
+        if (attempts >= this.maxAttempts) {
+          if (this.raiseError) {
+            throw new Error(
+              `SchemaSource: Failed after ${this.maxAttempts} attempts: ${lastError.message}`,
+            );
+          } else {
+            console.warn(
+              `SchemaSource: Failed after ${attempts} attempts. Returning last generated content (if any).`,
+            );
+            // Return last response if available, even if it caused an error
+            if (lastResponse) {
+              return {
+                content: lastResponse.content ?? '',
+                toolCalls: lastResponse.toolCalls,
+                metadata: lastResponse.attrs,
+              };
+            } else {
+              return { content: '' }; // Return empty if no response was generated
+            }
+          }
+        }
+        console.log(`Retrying... (${attempts}/${this.maxAttempts})`);
+        // Optionally add delay here
+      } // End catch
+    } // End while
+
+    // Should not be reachable if raiseError is true and maxAttempts >= 1
+    // If raiseError is false, the last attempt failure case should have returned.
+    // This might be reached if maxAttempts is 0 or negative, or if there's a logic error.
+    throw new Error(
+      `SchemaSource: Execution finished in an unexpected state after ${this.maxAttempts} attempts.`,
+    );
+  }
+}
+
+/**
+ * Builder for {@link LlmSource}
+ */
+export class LlmBuilder {
+  private readonly options: GenerateOptions;
+  private validation: ValidationOptions = {};
+
+  constructor() {
+    // Provide dummy provider; user should override via openai()/anthropic()/google()
+    this.options = createGenerateOptions({
+      provider: { type: 'openai', apiKey: '', modelName: '' },
+    });
+  }
+
+  /** Configure OpenAI provider */
+  openai(cfg: Omit<OpenAIProviderConfig, 'type'>) {
+    this.options.provider = { type: 'openai', ...cfg };
+    return this;
+  }
+
+  /** Configure Anthropic provider */
+  anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
+    this.options.provider = { type: 'anthropic', ...cfg };
+    return this;
+  }
+
+  /** Configure Google provider */
+  google(cfg: Omit<GoogleProviderConfig, 'type'>) {
+    this.options.provider = { type: 'google', ...cfg };
+    return this;
+  }
+
+  /** Set temperature */
+  temperature(value: number) {
+    this.options.temperature = value;
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.addTool */
+  addTool(name: string, tool: unknown) {
+    this.options.addTool(name, tool);
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.setToolChoice */
+  toolChoice(choice: 'auto' | 'required' | 'none') {
+    this.options.setToolChoice(choice);
+    return this;
+  }
+
+  /** Assign validator */
+  validate(v: IValidator) {
+    this.validation.validator = v;
+    return this;
+  }
+
+  /** Build the LlmSource instance */
+  build() {
+    return new LlmSource(this.options, this.validation);
+  }
+}
+
+/**
+ * Builder for {@link CLISource}
+ */
+export class CliBuilder {
+  private promptText = '';
+  private defaultVal?: string;
+  private validation: ValidationOptions = {};
+
+  /** Set prompt shown to the user */
+  prompt(text: string) {
+    this.promptText = text;
+    return this;
+  }
+
+  /** Set default value when user provides empty input */
+  defaultValue(val: string) {
+    this.defaultVal = val;
+    return this;
+  }
+
+  /** Configure validator */
+  validate(v: IValidator) {
+    this.validation.validator = v;
+    return this;
+  }
+
+  /** Build the CLISource instance */
+  build() {
+    return new CLISource(this.promptText, this.defaultVal, this.validation);
+  }
+}
+
+/**
+ * Convenience factory methods for creating common sources
+ */
+export namespace Source {
+  /** Create builder for LLM backed source */
+  export function llm() {
+    return new LlmBuilder();
+  }
+
+  /** Create builder for LLM with Google provider */
+  export function google(cfg: Omit<GoogleProviderConfig, 'type'>) {
+    return new LlmBuilder().google(cfg);
+  }
+
+  /** Create builder for CLI input source */
+  export function cli() {
+    return new CliBuilder();
   }
 }

@@ -19,7 +19,7 @@ describe('CodingAgent Integration', () => {
 
     const agent = new CodingAgent({ provider, apiKey });
 
-    // runExampleを実行
+    // Run the example
     await agent.runExample();
   });
 });

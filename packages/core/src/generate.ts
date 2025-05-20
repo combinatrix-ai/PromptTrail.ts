@@ -1,23 +1,24 @@
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
   experimental_createMCPClient,
+  LanguageModelV1,
+  ToolSet,
 } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import type {
-  TMessage,
-  ISession,
-  TProviderConfig,
-  IMCPServerConfig,
-} from './types';
-import { createMetadata } from './metadata';
-import type { GenerateOptions } from './generate_options';
+import type { GenerateOptions, MCPServerConfig } from './generate_options';
+import type { Message } from './message';
+import type { Session } from './session';
+import { Attrs, Vars } from './tagged_record';
 
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: ISession): Array<{
+export function convertSessionToAiSdkMessages(
+  session: Session<any, any>,
+): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -67,8 +68,7 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
       // Store tool results to process later
       toolResults.push({
         content: msg.content,
-        toolCallId:
-          (msg.metadata?.get('toolCallId') as string) || crypto.randomUUID(),
+        toolCallId: (msg.attrs?.toolCallId as string) || crypto.randomUUID(),
       });
     }
   }
@@ -88,54 +88,85 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
 }
 
 /**
- * Create a provider based on configuration
+ * Create a provider based on the full GenerateOptions
  */
-function createProvider(config: TProviderConfig): unknown {
-  const options: Record<string, unknown> = {};
-  if (config.type === 'openai') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+export function createProvider(options: GenerateOptions): LanguageModelV1 {
+  const providerConfig = options.provider;
+  const sdkProviderOptions: Record<string, unknown> = {}; // Options specifically for createOpenAI/createAnthropic
+
+  if (providerConfig.type === 'openai') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
     }
-    if (config.organization) {
-      options.organization = config.organization;
+    if (providerConfig.organization) {
+      sdkProviderOptions.organization = providerConfig.organization;
     }
-
-    options.apiKey = config.apiKey;
-
-    const openai = createOpenAI(options);
-
-    return openai(config.modelName);
-  } else if (config.type === 'anthropic') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
     }
 
-    options.apiKey = config.apiKey;
+    const openai = createOpenAI(sdkProviderOptions);
+    return openai(providerConfig.modelName);
+  } else if (providerConfig.type === 'anthropic') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
+    }
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set (Anthropic might support this too)
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
+    }
 
-    const anthropic = createAnthropic(options);
+    const anthropic = createAnthropic(sdkProviderOptions);
+    return anthropic(providerConfig.modelName);
+  } else if (providerConfig.type === 'google') {
+    const googleSdkOptions: {
+      apiKey?: string;
+      baseURL?: string;
+      dangerouslyAllowBrowser?: boolean;
+    } = {};
+    if (providerConfig.apiKey) {
+      googleSdkOptions.apiKey = providerConfig.apiKey;
+    }
+    if (providerConfig.baseURL) {
+      googleSdkOptions.baseURL = providerConfig.baseURL;
+    }
+    // Note: Check if @ai-sdk/google's createGoogleGenerativeAI supports dangerouslyAllowBrowser.
+    // The documentation for @ai-sdk/google didn't explicitly list it for createGoogleGenerativeAI.
+    // For now, assuming it might be a common option or handled by the core AI SDK.
+    // If it causes issues, it should be removed for the Google provider.
+    if (options.dangerouslyAllowBrowser) {
+      // googleSdkOptions.dangerouslyAllowBrowser = true; // Temporarily commenting out until confirmed
+    }
 
-    return anthropic(config.modelName, options);
+    const googleProvider = createGoogleGenerativeAI(googleSdkOptions);
+    return googleProvider(providerConfig.modelName);
   }
 
   throw new Error(
-    `Unsupported provider type: ${(config as { type: string }).type}`,
+    `Unsupported provider type: ${(providerConfig as { type: string }).type}`,
   );
 }
 
 /**
  * Initialize MCP client
  */
-async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
+async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
   try {
+    // Add 'type: 'mcp'' based on MCPServerConfig definition
     const transport = {
+      type: 'mcp' as const, // Use 'mcp' literal type
       url: config.url,
       name: config.name || 'prompttrail-mcp-client',
       version: config.version || '1.0.0',
       headers: config.headers || {},
     };
 
+    // Cast transport to 'any' to bypass potential type definition issues in ai-sdk
     const mcpClient = await experimental_createMCPClient({
-      transport,
+      transport: transport as any,
     });
 
     return mcpClient;
@@ -149,15 +180,15 @@ async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText(
-  session: ISession,
+export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
+  session: Session<TVars, TAttrs>,
   options: GenerateOptions,
-): Promise<TMessage> {
+): Promise<Message<TAttrs>> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
+  const provider = createProvider(options); // Pass the full options object
 
   // Handle MCP tools if configured
   const mcpClients = [];
@@ -177,19 +208,18 @@ export async function generateText(
 
   // Generate text using AI SDK
   const result = await aiSdkGenerateText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as unknown, // TODO: Fix this assertion
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
+    // Pass the initialized MCP clients to the AI SDK
+    ...(mcpClients.length > 0 && { mcpClients }),
     ...options.sdkOptions,
   });
-
-  // Create metadata for the response
-  const metadata = createMetadata();
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
@@ -214,7 +244,6 @@ export async function generateText(
     return {
       type: 'assistant',
       content: content,
-      metadata,
       toolCalls: formattedToolCalls,
     };
   }
@@ -222,32 +251,34 @@ export async function generateText(
   return {
     type: 'assistant',
     content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
-    metadata,
   };
 }
 
 /**
  * Generate text stream using AI SDK
  */
-export async function* generateTextStream(
-  session: ISession,
+export async function* generateTextStream<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
   options: GenerateOptions, // Fixed type to match generateText
-): AsyncGenerator<TMessage, void, unknown> {
+): AsyncGenerator<Message<TAttrs>, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
+  const provider = createProvider(options); // Pass the full options object
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools, // Use tools directly from options
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -258,7 +289,6 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
       };
     } else if (chunk.type === 'tool-call') {
       // Add tool calls directly to the message
@@ -271,7 +301,6 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
         toolCalls: [toolCall],
       };
     }

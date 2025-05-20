@@ -1,61 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { createMetadata } from '../../metadata';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { Attrs } from '../../tagged_record';
 
-describe('Metadata', () => {
-  it('should create empty metadata', () => {
-    const metadata = createMetadata();
-    expect(metadata.size).toBe(0);
+describe('Context', () => {
+  it('should create empty context', () => {
+    const context = Attrs.create({});
+    expect(Object.keys(context).length).toBe(0);
   });
 
-  it('should create metadata with initial data', () => {
+  it('should create context with initial data', () => {
     const initial = { name: 'test', value: 123 };
-    const metadata = createMetadata({ initial });
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('value')).toBe(123);
-  });
-
-  it('should set and get values', () => {
-    const metadata = createMetadata<{ name: string; count: number }>();
-    metadata.set('name', 'test');
-    metadata.set('count', 42);
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('count')).toBe(42);
-  });
-
-  it('should clone metadata', () => {
-    const metadata = createMetadata({
-      initial: { name: 'test', obj: { nested: true } },
-    });
-    const cloned = metadata.clone();
-
-    expect(cloned.get('name')).toBe('test');
-    expect(cloned.get('obj')).toEqual({ nested: true });
-
-    // Verify deep clone
-    const obj = cloned.get('obj') as { nested: boolean };
-    obj.nested = false;
-    expect(metadata.get('obj')).toEqual({ nested: true });
-  });
-
-  it('should merge metadata', () => {
-    const metadata1 = createMetadata({ initial: { a: 1, b: 2 } });
-    const metadata2 = createMetadata({ initial: { b: 3, c: 4 } });
-
-    const merged = metadata1.merge(metadata2);
-    expect(merged.toObject()).toEqual({ a: 1, b: 3, c: 4 });
-  });
-
-  it('should convert to JSON', () => {
-    const data = { name: 'test', value: 123 };
-    const metadata = createMetadata({ initial: data });
-    expect(metadata.toJSON()).toEqual(data);
-  });
-
-  it('should support iteration', () => {
-    const data = { a: 1, b: 2, c: 3 };
-    const metadata = createMetadata({ initial: data });
-    const entries = Array.from(metadata);
-    expect(entries).toEqual(Object.entries(data));
+    const context = Attrs.create(initial);
+    expect(context.name).toBe('test');
+    expect(context.value).toBe(123);
   });
 
   it('should handle nested objects', () => {
@@ -67,21 +23,67 @@ describe('Metadata', () => {
         },
       },
     };
-    const metadata = createMetadata({ initial: data });
-    expect(metadata.get('user')).toEqual(data.user);
+    const context = Attrs.create(data);
+    expect(context.user).toBeDefined();
+    expect(context.user.name).toBe('test');
+    expect(context.user.settings).toBeDefined();
+    expect(context.user.settings.theme).toBe('dark');
   });
 
-  it('should create metadata with type inference', () => {
-    const metadata = createMetadata({
-      initial: {
-        name: 'test',
-        count: 42,
-        settings: { enabled: true },
-      },
+  it('should create context with type inference', () => {
+    const context = Attrs.create({
+      name: 'test',
+      count: 42,
+      settings: { enabled: true },
     });
 
-    expect(metadata.get('name')).toBe('test');
-    expect(metadata.get('count')).toBe(42);
-    expect(metadata.get('settings')).toEqual({ enabled: true });
+    expectTypeOf(context).toEqualTypeOf<
+      Attrs<{
+        name: string;
+        count: number;
+        settings: { enabled: boolean };
+      }>
+    >();
+  });
+
+  it('should work with type annotations', () => {
+    type UserContext = {
+      name: string;
+      age: number;
+      isAdmin: boolean;
+    };
+
+    const context = Attrs.create<UserContext>({
+      name: 'John',
+      age: 30,
+      isAdmin: true,
+    });
+
+    expectTypeOf(context).toEqualTypeOf<Attrs<UserContext>>();
+
+    expect(context.name).toBe('John');
+    expect(context.age).toBe(30);
+    expect(context.isAdmin).toBe(true);
+  });
+
+  it('should create a new object instance', () => {
+    const original = { name: 'test' };
+    const context = Attrs.create(original);
+
+    // Verify it's a new object
+    expect(context).not.toBe(original);
+
+    // Modify the original, context should not change
+    original.name = 'changed';
+    expect(context.name).toBe('test');
+  });
+
+  it('should is work correctly', () => {
+    const context = Attrs.create({ a: 1 });
+    expect(Attrs.is(context)).toBe(true); // Branded
+    expect(Attrs.is({ a: 1 })).toBe(false); // Not branded
+    expect(Attrs.is({})).toBe(false);
+    expect(Attrs.is(null)).toBe(false);
+    expect(Attrs.is(undefined)).toBe(false);
   });
 });

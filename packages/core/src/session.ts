@@ -1,28 +1,19 @@
-import type { TMessage } from './types';
-import type { Metadata } from './metadata';
-import { createMetadata } from './metadata';
-import type { ISession } from './types';
-import { ValidationError } from './types';
-
-/**
- * Immutable session implementation
- */
+import { ValidationError } from './errors';
+import type { Message } from './message';
+import { Attrs, Vars } from './tagged_record';
 /**
  * Internal session implementation
  */
-class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
-  implements ISession<T>
-{
+export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   constructor(
-    public readonly messages: readonly TMessage[] = [],
-    public readonly metadata: Metadata<T> = createMetadata<T>(),
+    public readonly messages: readonly Message<TAttrs>[] = [],
+    public readonly vars: TVars,
     public readonly print: boolean = false,
   ) {}
-
   /**
    * Create a new session with additional message
    */
-  addMessage(message: TMessage): ISession<T> {
+  addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -36,42 +27,75 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
           break;
       }
     }
-    return new _SessionImpl<T>(
+    return new Session<TVars, TAttrs>(
       [...this.messages, message],
-      this.metadata.clone(),
+      { ...this.vars }, // Create a shallow copy of the context
       this.print,
     );
   }
 
   /**
-   * Create a new session with updated metadata
+   * Get a value from the context
    */
-  updateMetadata<U extends Record<string, unknown>>(
-    metadata: U,
-  ): ISession<T & U> {
-    return new _SessionImpl<T & U>(
-      this.messages,
-      this.metadata.merge(metadata),
-      this.print,
-    );
+  getVar<K extends keyof TVars>(key: K): TVars[K];
+  getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
+  getVar<K extends keyof TVars>(key: K, defaultValue?: TVars[K]): TVars[K] {
+    return this.vars[key] !== undefined ? this.vars[key] : defaultValue!;
+  }
+
+  /**
+   * Set a value in the context
+   */
+  withVar<K extends PropertyKey, V>(
+    key: K,
+    value: V,
+  ): Session<TVars & { [P in K]: V }, TAttrs> {
+    const newContext = {
+      ...this.vars,
+      [key]: value,
+    } as TVars & { [P in K]: V };
+
+    return new Session([...this.messages], newContext, this.print);
+  }
+
+  withVars<U extends Record<string, unknown>>(
+    vars: U,
+  ): Session<TVars & U, TAttrs> {
+    const newContext = { ...this.vars, ...vars } as TVars & U;
+    return new Session([...this.messages], newContext, this.print);
+  }
+
+  /**
+   * Get the size of the context
+   */
+  get varsSize(): number {
+    return Object.keys(this.vars).length;
+  }
+
+  /**
+   * Get a copy of the context as a plain object
+   */
+  getVarsObject(): TVars {
+    return { ...this.vars };
   }
 
   /**
    * Get the last message in the session
    */
-  getLastMessage(): TMessage | undefined {
+  getLastMessage(): Message<TAttrs> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends TMessage['type']>(
+  getMessagesByType<U extends Message<TAttrs>['type']>(
     type: U,
-  ): Extract<TMessage, { type: U }>[] {
-    return this.messages.filter(
-      (msg): msg is Extract<TMessage, { type: U }> => msg.type === type,
-    );
+  ): Extract<Message<TAttrs>, { type: U }>[] {
+    return this.messages.filter((msg) => msg.type === type) as Extract<
+      Message<TAttrs>,
+      { type: U }
+    >[];
   }
 
   /**
@@ -104,7 +128,7 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
-      metadata: this.metadata.toJSON(),
+      context: this.vars,
       print: this.print,
     };
   }
@@ -119,19 +143,25 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * Create a new session from a JSON representation
    */
-  static fromJSON<U extends Record<string, unknown>>(
+  static fromJSON<TVars extends Vars, TAttrs extends Attrs>(
     json: Record<string, unknown>,
-  ): ISession<U> {
+  ): Session<TVars, TAttrs> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
       );
     }
 
-    return createSession<U>({
-      messages: json.messages as TMessage[],
-      metadata: json.metadata as U,
-      print: json.print as boolean,
+    if (json.context && typeof json.context !== 'object') {
+      throw new ValidationError(
+        'Invalid session JSON: context must be an object',
+      );
+    }
+
+    return createSession<TVars, TAttrs>({
+      messages: json.messages as Message<TAttrs>[],
+      context: json.context as TVars,
+      print: json.print ? (json.print as boolean) : false,
     });
   }
 }
@@ -139,18 +169,20 @@ class _SessionImpl<T extends Record<string, unknown> = Record<string, unknown>>
 /**
  * Create a new session with type inference
  */
-export function createSession<T extends Record<string, unknown>>(
-  options: {
-    messages?: TMessage[];
-    metadata?: T;
-    print?: boolean;
-  } = {},
-): ISession<T> {
-  return new _SessionImpl<T>(
-    options.messages,
-    options.metadata
-      ? createMetadata<T>({ initial: options.metadata })
-      : undefined,
+export function createSession<
+  C extends Record<string, unknown> | Vars<Record<string, unknown>> = Vars,
+  M extends Record<string, unknown> | Attrs<Record<string, unknown>> = Attrs,
+>(options?: {
+  context?: C;
+  messages?: Message<Attrs<M>>[];
+  print?: boolean;
+}): Session<Vars<C>, Attrs<M>> {
+  options = options ?? {};
+  const raw = options.context as any;
+  const ctx: Vars<C> = Vars.is(raw) ? raw : Vars.create(raw ?? {});
+  return new Session<Vars<C>, Attrs<M>>(
+    options.messages ?? [],
+    ctx,
     options.print ?? false,
   );
 }
