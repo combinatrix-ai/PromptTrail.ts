@@ -28,6 +28,24 @@ describe('Source builders', () => {
     });
   });
 
+  it('uses default OpenAI configuration when none provided', async () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    const assistant = new Assistant(Source.llm().build());
+
+    await assistant.execute(createSession());
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          type: 'openai',
+          apiKey: 'env-key',
+          modelName: 'gpt-4o-mini',
+        }),
+      }),
+    );
+  });
+
   it('builds LlmSource via builder', async () => {
     const assistant = new Assistant(
       Source.llm()

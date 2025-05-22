@@ -62,7 +62,7 @@ describe('Default Content Source', () => {
         provider: {
           type: 'openai',
           apiKey: 'test-api-key',
-          modelName: 'gpt-4',
+          modelName: 'gpt-4o-mini',
         },
       });
 
@@ -90,7 +90,7 @@ describe('Default Content Source', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'openai',
-            modelName: 'gpt-4',
+          modelName: 'gpt-4o-mini',
           }),
         }),
       );

@@ -639,21 +639,37 @@ export class LlmBuilder {
   private validation: ValidationOptions = {};
 
   constructor() {
-    // Provide dummy provider; user should override via openai()/anthropic()/google()
+    // Use sensible defaults: OpenAI provider with env API key and gpt-4o-mini model
     this.options = createGenerateOptions({
-      provider: { type: 'openai', apiKey: '', modelName: '' },
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY || '',
+        modelName: 'gpt-4o-mini',
+      },
     });
   }
 
   /** Configure OpenAI provider */
-  openai(cfg: Omit<OpenAIProviderConfig, 'type'>) {
-    this.options.provider = { type: 'openai', ...cfg };
+  openai(cfg: Partial<Omit<OpenAIProviderConfig, 'type'>> = {}) {
+    this.options.provider = {
+      type: 'openai',
+      apiKey: cfg.apiKey ?? process.env.OPENAI_API_KEY ?? '',
+      modelName: cfg.modelName ?? 'gpt-4o-mini',
+      baseURL: cfg.baseURL,
+      organization: cfg.organization,
+      dangerouslyAllowBrowser: cfg.dangerouslyAllowBrowser,
+    };
     return this;
   }
 
   /** Configure Anthropic provider */
-  anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
-    this.options.provider = { type: 'anthropic', ...cfg };
+  anthropic(cfg: Partial<Omit<AnthropicProviderConfig, 'type'>> = {}) {
+    this.options.provider = {
+      type: 'anthropic',
+      apiKey: cfg.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '',
+      modelName: cfg.modelName ?? 'claude-3.7-haiku',
+      baseURL: cfg.baseURL,
+    };
     return this;
   }
 
