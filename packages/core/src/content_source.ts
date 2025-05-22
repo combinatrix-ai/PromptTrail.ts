@@ -7,6 +7,7 @@ import type {
   OpenAIProviderConfig,
   AnthropicProviderConfig,
   GoogleProviderConfig,
+  ProviderConfig,
 } from './generate_options';
 import { createGenerateOptions } from './generate_options';
 import type { Session } from './session';
@@ -351,12 +352,99 @@ export class CallbackSource extends TextSource {
  * Basic model content generation (Renamed from BasicModelContentSource to LlmSource)
  */
 export class LlmSource extends ModelSource {
-  // Inherits from ModelSource
-  constructor(
-    private generateOptions: GenerateOptions,
-    options?: ValidationOptions, // Use ValidationOptions
-  ) {
-    super(options); // Pass options to base class
+  private generateOptions: GenerateOptions;
+
+  constructor(options?: ValidationOptions) {
+    super(options);
+    // Sensible defaults using OpenAI provider
+    this.generateOptions = createGenerateOptions({
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY || '',
+        modelName: 'gpt-4o-mini',
+      },
+    });
+  }
+
+  /** Configure OpenAI provider */
+  openai(cfg: Partial<Omit<OpenAIProviderConfig, 'type'>> = {}) {
+    this.generateOptions.provider = {
+      type: 'openai',
+      apiKey: cfg.apiKey ?? process.env.OPENAI_API_KEY ?? '',
+      modelName: cfg.modelName ?? 'gpt-4o-mini',
+      baseURL: cfg.baseURL,
+      organization: cfg.organization,
+      dangerouslyAllowBrowser: cfg.dangerouslyAllowBrowser,
+    };
+    return this;
+  }
+
+  /** Configure Anthropic provider */
+  anthropic(cfg: Partial<Omit<AnthropicProviderConfig, 'type'>> = {}) {
+    this.generateOptions.provider = {
+      type: 'anthropic',
+      apiKey: cfg.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '',
+      modelName: cfg.modelName ?? 'claude-3.7-haiku',
+      baseURL: cfg.baseURL,
+    };
+    return this;
+  }
+
+  /** Configure Google provider */
+  google(cfg: Partial<Omit<GoogleProviderConfig, 'type'>> = {}) {
+    this.generateOptions.provider = {
+      type: 'google',
+      apiKey:
+        cfg.apiKey ??
+        process.env.GOOGLE_API_KEY ??
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
+        '',
+      modelName: cfg.modelName ?? 'gemini-pro',
+      baseURL: cfg.baseURL,
+    };
+    return this;
+  }
+
+  /** Set temperature */
+  temperature(value: number) {
+    this.generateOptions.temperature = value;
+    return this;
+  }
+
+  /** Override provider model */
+  model(name: string) {
+    this.generateOptions.provider = {
+      ...this.generateOptions.provider,
+      modelName: name,
+    } as ProviderConfig;
+    return this;
+  }
+
+  /** Override provider API key */
+  apikey(key: string) {
+    this.generateOptions.provider = {
+      ...this.generateOptions.provider,
+      apiKey: key,
+    } as ProviderConfig;
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.addTool */
+  addTool(name: string, tool: unknown) {
+    this.generateOptions.addTool(name, tool);
+    return this;
+  }
+
+  /** Delegate to GenerateOptions.setToolChoice */
+  toolChoice(choice: 'auto' | 'required' | 'none') {
+    this.generateOptions.setToolChoice(choice);
+    return this;
+  }
+
+  /** Assign validator */
+  validate(v: IValidator) {
+    this.validator = v;
+    return this;
   }
 
   async getContent(session: Session<any, any>): Promise<ModelOutput> {
@@ -632,68 +720,6 @@ export class SchemaSource<
 }
 
 /**
- * Builder for {@link LlmSource}
- */
-export class LlmBuilder {
-  private readonly options: GenerateOptions;
-  private validation: ValidationOptions = {};
-
-  constructor() {
-    // Provide dummy provider; user should override via openai()/anthropic()/google()
-    this.options = createGenerateOptions({
-      provider: { type: 'openai', apiKey: '', modelName: '' },
-    });
-  }
-
-  /** Configure OpenAI provider */
-  openai(cfg: Omit<OpenAIProviderConfig, 'type'>) {
-    this.options.provider = { type: 'openai', ...cfg };
-    return this;
-  }
-
-  /** Configure Anthropic provider */
-  anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
-    this.options.provider = { type: 'anthropic', ...cfg };
-    return this;
-  }
-
-  /** Configure Google provider */
-  google(cfg: Omit<GoogleProviderConfig, 'type'>) {
-    this.options.provider = { type: 'google', ...cfg };
-    return this;
-  }
-
-  /** Set temperature */
-  temperature(value: number) {
-    this.options.temperature = value;
-    return this;
-  }
-
-  /** Delegate to GenerateOptions.addTool */
-  addTool(name: string, tool: unknown) {
-    this.options.addTool(name, tool);
-    return this;
-  }
-
-  /** Delegate to GenerateOptions.setToolChoice */
-  toolChoice(choice: 'auto' | 'required' | 'none') {
-    this.options.setToolChoice(choice);
-    return this;
-  }
-
-  /** Assign validator */
-  validate(v: IValidator) {
-    this.validation.validator = v;
-    return this;
-  }
-
-  /** Build the LlmSource instance */
-  build() {
-    return new LlmSource(this.options, this.validation);
-  }
-}
-
-/**
  * Builder for {@link CLISource}
  */
 export class CliBuilder {
@@ -731,12 +757,12 @@ export class CliBuilder {
 export namespace Source {
   /** Create builder for LLM backed source */
   export function llm() {
-    return new LlmBuilder();
+    return new LlmSource();
   }
 
   /** Create builder for LLM with Google provider */
   export function google(cfg: Omit<GoogleProviderConfig, 'type'>) {
-    return new LlmBuilder().google(cfg);
+    return new LlmSource().google(cfg);
   }
 
   /** Create builder for CLI input source */
