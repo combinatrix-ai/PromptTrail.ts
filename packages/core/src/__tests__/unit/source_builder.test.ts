@@ -28,12 +28,29 @@ describe('Source builders', () => {
     });
   });
 
-  it('builds LlmSource via builder', async () => {
+  it('uses default OpenAI configuration when none provided', async () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    const assistant = new Assistant(Source.llm());
+
+    await assistant.execute(createSession());
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          type: 'openai',
+          apiKey: 'env-key',
+          modelName: 'gpt-4o-mini',
+        }),
+      }),
+    );
+  });
+
+  it('configures LlmSource via chaining', async () => {
     const assistant = new Assistant(
       Source.llm()
         .openai({ apiKey: 'key', modelName: 'gpt-4' })
-        .temperature(0.5)
-        .build(),
+        .temperature(0.5),
     );
 
     await assistant.execute(createSession());
@@ -50,11 +67,10 @@ describe('Source builders', () => {
     );
   });
 
-  it('builds LlmSource with Google provider', async () => {
+  it('configures LlmSource with Google provider', async () => {
     const assistant = new Assistant(
       Source.google({ apiKey: 'g-key', modelName: 'gemini-pro' })
-        .temperature(0.2)
-        .build(),
+        .temperature(0.2),
     );
 
     await assistant.execute(createSession());
