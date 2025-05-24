@@ -1,5 +1,5 @@
+// assistant.ts
 import { ModelOutput, Source, ValidationOptions } from '../../content_source';
-import { GenerateOptions } from '../../generate_options';
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../tagged_record';
@@ -16,11 +16,7 @@ export class Assistant<
   private isStaticContent: boolean;
 
   constructor(
-    contentOrSource?:
-      | string
-      | Source<ModelOutput>
-      | GenerateOptions
-      | Record<string, any>,
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
     super();

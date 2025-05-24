@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GenerateOptions } from '../../generate_options';
 import { createSession } from '../../session';
 import { Assistant, Sequence, System, User } from '../../templates';
 
@@ -7,8 +6,8 @@ import { Assistant, Sequence, System, User } from '../../templates';
 vi.mock('../../generate');
 
 // Import mocked modules after mocking
+import { Source } from '../../content_source';
 import { generateText } from '../../generate';
-import { createGenerateOptions } from '../../generate_options';
 
 describe('Browser Compatibility', () => {
   beforeEach(() => {
@@ -31,16 +30,10 @@ describe('Browser Compatibility', () => {
   });
 
   it('should work with templates in browser context', async () => {
-    // Define generateOptions with browser flag
-    const generateOptions: GenerateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-        dangerouslyAllowBrowser: true,
-      },
-      temperature: 0.7,
-    });
+    const llm: Source = Source.llm()
+      .apiKey('test-api-key')
+      .model('gpt-4o-mini')
+      .temperature(0.7);
 
     // Create a template
     const template = new Sequence()

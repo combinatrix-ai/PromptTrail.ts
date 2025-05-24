@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Source } from '../../../content_source';
 import { generateText } from '../../../generate';
-import { createGenerateOptions } from '../../../generate_options';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
 import { Attrs, Vars } from '../../../tagged_record';
@@ -168,13 +167,10 @@ describe('SubroutineTemplate', () => {
       new Agent()
         .addUser('What is the weather in Tokyo?')
         .addAssistant(
-          createGenerateOptions({
-            provider: {
-              type: 'openai',
-              apiKey: 'test-api-key',
-              modelName: 'gpt-4o-mini',
-            },
-          }),
+          Source.llm()
+            .apiKey('test-api-key')
+            .model('gpt-4o-mini')
+            .temperature(0.7),
         )
         .addTransform((session: Session<any>) => {
           const lasMessage = session.getLastMessage();

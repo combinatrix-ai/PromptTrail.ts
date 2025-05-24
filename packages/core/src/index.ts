@@ -1,7 +1,6 @@
 export { tool } from 'ai';
 export * from './content_source';
 export * from './generate';
-export { createGenerateOptions, GenerateOptions } from './generate_options';
 export * from './message';
 export { createSession } from './session';
 export * from './tagged_record';

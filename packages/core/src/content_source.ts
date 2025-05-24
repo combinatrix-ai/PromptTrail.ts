@@ -1,21 +1,76 @@
+// content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import { ValidationError } from './errors';
-import { generateText } from './generate';
-import type {
-  GenerateOptions,
-  OpenAIProviderConfig,
-  AnthropicProviderConfig,
-  GoogleProviderConfig,
-} from './generate_options';
-import { createGenerateOptions } from './generate_options';
+import {
+  generateText,
+  generateWithSchema,
+  SchemaGenerationOptions,
+} from './generate';
 import type { Session } from './session';
 import type { Vars } from './tagged_record';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
   TValidationResult as ValidationResult,
-} from './validators/base'; // TODO: Rename IValidator to Validator, Use TValidationResult
+} from './validators/base';
+
+// --- Provider Types ---
+
+/**
+ * OpenAI provider configuration
+ */
+export interface OpenAIProviderConfig {
+  type: 'openai';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+  organization?: string;
+  dangerouslyAllowBrowser?: boolean;
+}
+
+/**
+ * Anthropic provider configuration
+ */
+export interface AnthropicProviderConfig {
+  type: 'anthropic';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+}
+
+/**
+ * Google provider configuration
+ */
+export interface GoogleProviderConfig {
+  type: 'google';
+  apiKey?: string;
+  modelName: string;
+  baseURL?: string;
+}
+
+/**
+ * Provider configuration union type
+ */
+export type ProviderConfig =
+  | OpenAIProviderConfig
+  | AnthropicProviderConfig
+  | GoogleProviderConfig;
+
+/**
+ * LLM Generation Options
+ */
+export interface LLMOptions {
+  provider: ProviderConfig;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+  tools?: Record<string, unknown>;
+  toolChoice?: 'auto' | 'required' | 'none';
+  dangerouslyAllowBrowser?: boolean;
+  sdkOptions?: Record<string, unknown>;
+}
 
 // --- Temporary Definitions (Move to appropriate files later) ---
 
@@ -117,9 +172,9 @@ export abstract class ModelSource extends Source<ModelOutput> {
 export class StaticSource extends TextSource {
   constructor(
     private content: string,
-    options?: ValidationOptions, // Added options
+    options?: ValidationOptions,
   ) {
-    super(options); // Pass options to base class
+    super(options);
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
@@ -228,9 +283,9 @@ export class CLISource extends TextSource {
   constructor(
     private prompt: string,
     private defaultValue?: string,
-    options?: ValidationOptions, // Use ValidationOptions
+    options?: ValidationOptions,
   ) {
-    super(options); // Pass options to base class
+    super(options);
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
@@ -290,9 +345,9 @@ export class CallbackSource extends TextSource {
   // Inherits from TextSource
   constructor(
     private callback: (context: { context?: Vars }) => Promise<string>,
-    options?: ValidationOptions, // Use ValidationOptions
+    options?: ValidationOptions,
   ) {
-    super(options); // Pass options to base class
+    super(options);
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
@@ -348,15 +403,217 @@ export class CallbackSource extends TextSource {
 }
 
 /**
- * Basic model content generation (Renamed from BasicModelContentSource to LlmSource)
+ * Source for LLM content generation, with immutable and fluent configuration
  */
 export class LlmSource extends ModelSource {
-  // Inherits from ModelSource
+  private readonly options: LLMOptions;
+  private schemaConfig?: SchemaGenerationOptions;
+
   constructor(
-    private generateOptions: GenerateOptions,
-    options?: ValidationOptions, // Use ValidationOptions
+    options?: Partial<LLMOptions>,
+    validationOptions?: ValidationOptions,
   ) {
-    super(options); // Pass options to base class
+    super(validationOptions);
+
+    // Set sensible defaults
+    this.options = {
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY || '',
+        modelName: 'gpt-4o-mini',
+      },
+      temperature: 0.7,
+      ...options,
+    };
+  }
+
+  // Helper method to create new instance with merged options
+  private clone(
+    newOptions: Partial<LLMOptions>,
+    newValidationOptions?: ValidationOptions,
+  ): LlmSource {
+    const mergedOptions: LLMOptions = {
+      ...this.options,
+      ...newOptions,
+      // Deep merge provider config
+      provider: {
+        ...this.options.provider,
+        ...(newOptions.provider || {}),
+      },
+      // Deep merge tools
+      tools: {
+        ...this.options.tools,
+        ...newOptions.tools,
+      },
+    };
+
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    const newSource = new LlmSource(mergedOptions, mergedValidationOptions);
+    // Copy schema configuration
+    if (this.schemaConfig) {
+      newSource.schemaConfig = { ...this.schemaConfig };
+    }
+    return newSource;
+  }
+
+  // Provider configuration - all return new instances
+  openai(config?: Partial<Omit<OpenAIProviderConfig, 'type'>>): LlmSource {
+    return this.clone({
+      provider: {
+        type: 'openai',
+        apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
+        modelName: config?.modelName || 'gpt-4o-mini',
+        baseURL: config?.baseURL,
+        organization: config?.organization,
+        dangerouslyAllowBrowser: config?.dangerouslyAllowBrowser,
+      },
+    });
+  }
+
+  anthropic(
+    config?: Partial<Omit<AnthropicProviderConfig, 'type'>>,
+  ): LlmSource {
+    return this.clone({
+      provider: {
+        type: 'anthropic',
+        apiKey: config?.apiKey || process.env.ANTHROPIC_API_KEY || '',
+        modelName: config?.modelName || 'claude-3-5-haiku-latest',
+        baseURL: config?.baseURL,
+      },
+    });
+  }
+
+  google(config?: Partial<Omit<GoogleProviderConfig, 'type'>>): LlmSource {
+    return this.clone({
+      provider: {
+        type: 'google',
+        apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
+        modelName: config?.modelName || 'gemini-pro',
+        baseURL: config?.baseURL,
+      },
+    });
+  }
+
+  // Model configuration - all return new instances
+  model(modelName: string): LlmSource {
+    return this.clone({
+      provider: {
+        ...this.options.provider,
+        modelName,
+      },
+    });
+  }
+
+  apiKey(apiKey: string): LlmSource {
+    return this.clone({
+      provider: {
+        ...this.options.provider,
+        apiKey,
+      },
+    });
+  }
+
+  // Generation parameters - all return new instances
+  temperature(value: number): LlmSource {
+    return this.clone({ temperature: value });
+  }
+
+  maxTokens(value: number): LlmSource {
+    return this.clone({ maxTokens: value });
+  }
+
+  topP(value: number): LlmSource {
+    return this.clone({ topP: value });
+  }
+
+  topK(value: number): LlmSource {
+    return this.clone({ topK: value });
+  }
+
+  // Tool configuration - all return new instances
+  addTool(name: string, tool: unknown): LlmSource {
+    return this.clone({
+      tools: {
+        ...this.options.tools,
+        [name]: tool,
+      },
+    });
+  }
+
+  toolChoice(choice: 'auto' | 'required' | 'none'): LlmSource {
+    return this.clone({ toolChoice: choice });
+  }
+
+  // Browser compatibility - returns new instance
+  dangerouslyAllowBrowser(allow: boolean = true): LlmSource {
+    const newOptions: Partial<LLMOptions> = {
+      dangerouslyAllowBrowser: allow,
+    };
+
+    // Also update provider-specific setting for OpenAI
+    if (this.options.provider.type === 'openai') {
+      newOptions.provider = {
+        ...this.options.provider,
+        dangerouslyAllowBrowser: allow,
+      };
+    }
+
+    return this.clone(newOptions);
+  }
+
+  // Schema configuration - returns new instance
+  withSchema<T>(
+    schema: z.ZodType<T>,
+    options?: {
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+    },
+  ): LlmSource {
+    const newSource = this.clone({});
+    newSource.schemaConfig = {
+      schema,
+      mode: options?.mode || 'structured_output',
+      functionName: options?.functionName || 'generateStructuredOutput',
+    };
+    return newSource;
+  }
+
+  // Validation configuration - returns new instance
+  validate(validator: IValidator): LlmSource {
+    const newSource = this.clone({});
+    // Create new instance with updated validation
+    return new LlmSource(newSource.options, {
+      validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withMaxAttempts(attempts: number): LlmSource {
+    return this.clone(
+      {},
+      {
+        validator: this.validator,
+        maxAttempts: attempts,
+        raiseError: this.raiseError,
+      },
+    );
+  }
+
+  withRaiseError(raise: boolean): LlmSource {
+    return this.clone(
+      {},
+      {
+        validator: this.validator,
+        maxAttempts: this.maxAttempts,
+        raiseError: raise,
+      },
+    );
   }
 
   async getContent(session: Session<any, any>): Promise<ModelOutput> {
@@ -365,331 +622,90 @@ export class LlmSource extends ModelSource {
 
     while (attempts < this.maxAttempts) {
       attempts++;
-      const response = await generateText(session, this.generateOptions);
-      const responseContent = response.content ?? ''; // Handle null/undefined content
 
-      if (response.type !== 'assistant') {
-        console.warn(
-          `LLM generation did not return assistant response. Attempt ${attempts}.`,
-        );
-        // Decide how to handle non-assistant responses (retry? throw? return empty?)
-        // For now, let's retry if not last attempt, otherwise handle based on raiseError
-        if (attempts >= this.maxAttempts) {
-          if (this.raiseError) {
-            throw new Error(
-              `LLM generation failed after ${attempts} attempts: Did not return assistant response.`,
-            );
-          } else {
-            return { content: '' }; // Return empty on failure if not raising error
-          }
-        }
-        continue; // Retry generation
-      }
+      try {
+        let response: any;
 
-      // Validate the string content using shared logic (single attempt)
-      lastResult = await this.validateContent(responseContent, session);
-
-      if (lastResult.isValid) {
-        return {
-          content: responseContent,
-          toolCalls: response.toolCalls,
-          metadata: response.attrs,
-        };
-      }
-
-      // If validation failed
-      const isLastAttempt = attempts >= this.maxAttempts;
-
-      if (isLastAttempt) {
-        if (this.raiseError) {
-          const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-          throw new ValidationError(errorMessage);
-        } else {
-          console.warn(
-            `LlmSource: Validation failed after ${attempts} attempts. Returning last generated content.`,
+        if (this.schemaConfig) {
+          // Use schema-based generation
+          response = await generateWithSchema(
+            session,
+            this.options,
+            this.schemaConfig,
           );
-          // Return the last (invalid) response if not raising error
+        } else {
+          // Use regular generation
+          response = await generateText(session, this.options);
+        }
+
+        const responseContent = response.content ?? '';
+
+        if (response.type && response.type !== 'assistant') {
+          console.warn(
+            `LLM generation did not return assistant response. Attempt ${attempts}.`,
+          );
+          if (attempts >= this.maxAttempts) {
+            if (this.raiseError) {
+              throw new Error(
+                `LLM generation failed after ${attempts} attempts: Did not return assistant response.`,
+              );
+            } else {
+              return { content: '' };
+            }
+          }
+          continue;
+        }
+
+        // Validate the string content using shared logic
+        lastResult = await this.validateContent(responseContent, session);
+
+        if (lastResult.isValid) {
           return {
             content: responseContent,
             toolCalls: response.toolCalls,
             metadata: response.attrs,
+            structuredOutput: response.structuredOutput,
           };
         }
-      } else {
-        console.log(
-          `Validation attempt ${attempts} failed: ${
-            lastResult?.instruction || 'Invalid input'
-          }. Retrying generation...`,
-        );
-        // Optionally add feedback to the session for the next attempt
-        // session = session.addMessage({ type: 'system', content: `Validation failed: ${lastResult.instruction}. Please revise.` });
+
+        // Handle validation failure
+        const isLastAttempt = attempts >= this.maxAttempts;
+
+        if (isLastAttempt) {
+          if (this.raiseError) {
+            const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
+            throw new ValidationError(errorMessage);
+          } else {
+            console.warn(
+              `LlmSource: Validation failed after ${attempts} attempts. Returning last generated content.`,
+            );
+            return {
+              content: responseContent,
+              toolCalls: response.toolCalls,
+              metadata: response.attrs,
+              structuredOutput: response.structuredOutput,
+            };
+          }
+        } else {
+          console.log(
+            `Validation attempt ${attempts} failed: ${lastResult?.instruction || 'Invalid input'}. Retrying generation...`,
+          );
+        }
+      } catch (error) {
+        if (attempts >= this.maxAttempts) {
+          if (this.raiseError) {
+            throw error;
+          } else {
+            return { content: '' };
+          }
+        }
+        console.log(`Generation attempt ${attempts} failed, retrying...`);
       }
     }
 
-    // Fallback (should not be reached with maxAttempts >= 1 and proper error handling)
     throw new Error(
       `LLM content generation failed unexpectedly after ${this.maxAttempts} attempts.`,
     );
-  }
-}
-
-/**
- * Schema-based content generation (Adapted to new structure)
- */
-export class SchemaSource<
-  T extends Record<string, unknown>,
-> extends ModelSource {
-  // Inherits from ModelSource
-  // private schemaValidator: IValidator; // Removed unused property
-
-  constructor(
-    private generateOptions: GenerateOptions,
-    private schema: z.ZodType<T>,
-    private options: {
-      functionName?: string;
-      maxAttempts?: number; // Use base class maxAttempts
-      raiseError?: boolean; // Use base class raiseError
-      // Allow passing an additional validator for the text part
-      validator?: IValidator;
-    } = {},
-  ) {
-    // Pass validator options to the base class for text content validation
-    super({
-      validator: options.validator,
-      maxAttempts: options.maxAttempts,
-      raiseError: options.raiseError,
-    });
-
-    // Create an internal validator for the schema itself
-    // This requires a SchemaValidator implementation (assuming it exists in validators/schema)
-    // import { SchemaValidator } from './validators/schema'; // Assuming this path
-    // this.schemaValidator = new SchemaValidator(schema); // Need to adapt based on actual SchemaValidator constructor
-    // For now, we'll handle schema validation within getContent as before,
-    // but ideally, it should use a dedicated validator.
-  }
-
-  async getContent(session: Session<any, any>): Promise<ModelOutput> {
-    const schemaFunction = {
-      name: this.options.functionName || 'generateStructuredOutput',
-      description: 'Generate structured output according to schema',
-      parameters: this.schema,
-    };
-
-    const enhancedOptions = this.generateOptions
-      .clone()
-      .addTool(schemaFunction.name, schemaFunction)
-      .setToolChoice('required');
-
-    let attempts = 0;
-    let lastError: Error | null = null;
-    let lastResponse: Awaited<ReturnType<typeof generateText>> | undefined;
-
-    // Use maxAttempts from base class
-    while (attempts < this.maxAttempts) {
-      attempts++;
-      try {
-        lastResponse = await generateText(session, enhancedOptions);
-        const responseContent = lastResponse.content ?? ''; // Handle null/undefined content
-
-        // 1. Validate text content if a validator was provided (single attempt)
-        if (this.validator) {
-          const textValidationResult = await this.validateContent(
-            responseContent,
-            session,
-          );
-          if (!textValidationResult.isValid) {
-            lastError = new ValidationError('Text content validation failed');
-            console.warn(
-              `SchemaSource: Text content validation failed (attempt ${attempts}).`,
-            );
-            if (this.raiseError) throw lastError;
-            // If not raising error, continue to schema validation, but store the error
-          } else {
-            lastError = null; // Reset error if text validation passes
-          }
-        }
-
-        // If text validation failed and we are not raising errors, we might still want to check schema
-        // or we might want to retry immediately. Let's retry immediately if text validation fails.
-        if (lastError && !this.raiseError) {
-          if (attempts >= this.maxAttempts) break; // Don't retry if last attempt
-          console.log(`Retrying generation due to text validation failure...`);
-          continue;
-        }
-
-        // 2. Validate structured output (schema validation)
-        if (
-          lastResponse.type === 'assistant' &&
-          lastResponse.toolCalls?.some((tc) => tc.name === schemaFunction.name)
-        ) {
-          const toolCall = lastResponse.toolCalls.find(
-            (tc) => tc.name === schemaFunction.name,
-          );
-
-          if (toolCall) {
-            const result = this.schema.safeParse(toolCall.arguments);
-            if (result.success) {
-              // Both text (if validator provided and passed) and schema are valid
-              return {
-                content: responseContent,
-                toolCalls: lastResponse.toolCalls,
-                structuredOutput: result.data,
-                metadata: lastResponse.attrs,
-              };
-            } else {
-              lastError = new Error(
-                `Schema validation failed: ${result.error.message}`,
-              );
-              console.warn(
-                `SchemaSource: Schema validation failed (attempt ${attempts}): ${lastError.message}`,
-              );
-              if (attempts >= this.maxAttempts && this.raiseError) {
-                throw lastError;
-              }
-              if (attempts >= this.maxAttempts && !this.raiseError) {
-                console.warn(
-                  `SchemaSource: Schema validation failed after ${attempts} attempts. Returning last generated content.`,
-                );
-                return {
-                  content: responseContent,
-                  toolCalls: lastResponse.toolCalls,
-                  metadata: lastResponse.attrs,
-                };
-              }
-              console.log(
-                `Retrying generation due to schema validation failure...`,
-              );
-              continue; // Retry generation
-            }
-          }
-        }
-
-        // If we reach here, either no tool call was made, or the tool call was not for the schema function.
-        // This might be a valid response depending on the use case, but for SchemaSource, we expect a structured output.
-        // Treat this as a validation failure for the purpose of retries.
-        lastError = new Error('No valid schema tool call found in response.');
-        console.warn(
-          `SchemaSource: No valid schema tool call found (attempt ${attempts}).`,
-        );
-
-        if (attempts >= this.maxAttempts && this.raiseError) {
-          throw lastError;
-        }
-        if (attempts >= this.maxAttempts && !this.raiseError) {
-          console.warn(
-            `SchemaSource: No valid schema tool call found after ${attempts} attempts. Returning last generated content.`,
-          );
-          // Return the last response even if it didn't have the expected tool call
-          return {
-            content: responseContent,
-            toolCalls: lastResponse?.toolCalls,
-            metadata: lastResponse?.attrs,
-          };
-        }
-        console.log(`Retrying generation due to missing schema tool call...`);
-        continue; // Retry generation
-      } catch (error) {
-        // Handle other errors during generateText or processing
-        lastError = error as Error;
-        console.error(
-          `SchemaSource: Attempt ${attempts}/${this.maxAttempts} failed:`,
-          lastError,
-        );
-
-        if (attempts >= this.maxAttempts) {
-          if (this.raiseError) {
-            throw new Error(
-              `SchemaSource: Failed after ${this.maxAttempts} attempts: ${lastError.message}`,
-            );
-          } else {
-            console.warn(
-              `SchemaSource: Failed after ${attempts} attempts. Returning last generated content (if any).`,
-            );
-            // Return last response if available, even if it caused an error
-            if (lastResponse) {
-              return {
-                content: lastResponse.content ?? '',
-                toolCalls: lastResponse.toolCalls,
-                metadata: lastResponse.attrs,
-              };
-            } else {
-              return { content: '' }; // Return empty if no response was generated
-            }
-          }
-        }
-        console.log(`Retrying... (${attempts}/${this.maxAttempts})`);
-        // Optionally add delay here
-      } // End catch
-    } // End while
-
-    // Should not be reachable if raiseError is true and maxAttempts >= 1
-    // If raiseError is false, the last attempt failure case should have returned.
-    // This might be reached if maxAttempts is 0 or negative, or if there's a logic error.
-    throw new Error(
-      `SchemaSource: Execution finished in an unexpected state after ${this.maxAttempts} attempts.`,
-    );
-  }
-}
-
-/**
- * Builder for {@link LlmSource}
- */
-export class LlmBuilder {
-  private readonly options: GenerateOptions;
-  private validation: ValidationOptions = {};
-
-  constructor() {
-    // Provide dummy provider; user should override via openai()/anthropic()/google()
-    this.options = createGenerateOptions({
-      provider: { type: 'openai', apiKey: '', modelName: '' },
-    });
-  }
-
-  /** Configure OpenAI provider */
-  openai(cfg: Omit<OpenAIProviderConfig, 'type'>) {
-    this.options.provider = { type: 'openai', ...cfg };
-    return this;
-  }
-
-  /** Configure Anthropic provider */
-  anthropic(cfg: Omit<AnthropicProviderConfig, 'type'>) {
-    this.options.provider = { type: 'anthropic', ...cfg };
-    return this;
-  }
-
-  /** Configure Google provider */
-  google(cfg: Omit<GoogleProviderConfig, 'type'>) {
-    this.options.provider = { type: 'google', ...cfg };
-    return this;
-  }
-
-  /** Set temperature */
-  temperature(value: number) {
-    this.options.temperature = value;
-    return this;
-  }
-
-  /** Delegate to GenerateOptions.addTool */
-  addTool(name: string, tool: unknown) {
-    this.options.addTool(name, tool);
-    return this;
-  }
-
-  /** Delegate to GenerateOptions.setToolChoice */
-  toolChoice(choice: 'auto' | 'required' | 'none') {
-    this.options.setToolChoice(choice);
-    return this;
-  }
-
-  /** Assign validator */
-  validate(v: IValidator) {
-    this.validation.validator = v;
-    return this;
-  }
-
-  /** Build the LlmSource instance */
-  build() {
-    return new LlmSource(this.options, this.validation);
   }
 }
 
@@ -729,18 +745,40 @@ export class CliBuilder {
  * Convenience factory methods for creating common sources
  */
 export namespace Source {
-  /** Create builder for LLM backed source */
-  export function llm() {
-    return new LlmBuilder();
-  }
-
-  /** Create builder for LLM with Google provider */
-  export function google(cfg: Omit<GoogleProviderConfig, 'type'>) {
-    return new LlmBuilder().google(cfg);
+  /** Create LLM source with sensible defaults */
+  export function llm(options?: Partial<LLMOptions>): LlmSource {
+    return new LlmSource(options);
   }
 
   /** Create builder for CLI input source */
   export function cli() {
     return new CliBuilder();
+  }
+
+  /** Create schema-based source using enhanced LlmSource */
+  export function schema<T extends Record<string, unknown>>(
+    schema: z.ZodType<T>,
+    options?: {
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+      maxAttempts?: number;
+      raiseError?: boolean;
+      validator?: IValidator;
+    } & Partial<LLMOptions>,
+  ): LlmSource {
+    const {
+      mode,
+      functionName,
+      maxAttempts,
+      raiseError,
+      validator,
+      ...llmOptions
+    } = options || {};
+
+    return new LlmSource(llmOptions, {
+      validator,
+      maxAttempts,
+      raiseError,
+    }).withSchema(schema, { mode, functionName });
   }
 }

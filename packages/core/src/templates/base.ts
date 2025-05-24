@@ -1,6 +1,5 @@
-import type { ModelOutput } from '../content_source';
-import { LlmSource, Source, StaticSource } from '../content_source';
-import { GenerateOptions } from '../generate_options';
+import type { LlmSource, ModelOutput } from '../content_source';
+import { Source, StaticSource } from '../content_source';
 import type { Session } from '../session';
 import { createSession } from '../session';
 import { Attrs, Vars } from '../tagged_record';
@@ -43,15 +42,9 @@ export abstract class TemplateBase<
   }
 
   protected initializeContentSource(
-    input:
-      | string
-      | Source<any>
-      | GenerateOptions
-      | Record<string, any>
-      | undefined,
+    input: string | Source<any> | LlmSource | Record<string, any> | undefined,
     expectedSourceType: 'string' | 'model' | 'any' = 'any',
   ): Source<any> | undefined {
-    // Remove debug logs
     if (input === undefined) {
       return undefined;
     }
@@ -77,33 +70,18 @@ export abstract class TemplateBase<
         return new StaticSource(input);
       }
     }
-    // Check if it's a GenerateOptions instance or has the same constructor name
-    if (
-      input instanceof GenerateOptions ||
-      (input &&
-        typeof input === 'object' &&
-        input.constructor &&
-        input.constructor.name === 'GenerateOptions')
-    ) {
-      if (expectedSourceType === 'string') {
-        throw new Error(
-          'GenerateOptions cannot be used for a string-based source.',
-        );
-      }
-      return new LlmSource(input as GenerateOptions);
-    }
 
-    // Handle plain objects that might be GenerateOptions
+    // Handle plain objects that might be LLMOptions
     if (typeof input === 'object' && input !== null) {
       if (expectedSourceType === 'string') {
         throw new Error('Object cannot be used for a string-based source.');
       }
 
-      // Check if it has the properties of a GenerateOptions
-      if ('provider' in input) {
-        // Create a new LlmSource directly with the input
-        return new LlmSource(input as any);
-      }
+      // For Assistant templates, we no longer support GenerateOptions
+      // Users should use Source.llm() instead
+      throw new Error(
+        'Object parameters are no longer supported. Please use Source.llm() for LLM-based content generation.',
+      );
     }
 
     throw new Error(

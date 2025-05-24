@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Source, type LlmSource } from '../../../content_source';
 import { generateText } from '../../../generate';
-import {
-  createGenerateOptions,
-  type GenerateOptions,
-} from '../../../generate_options';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
 import {
@@ -23,7 +20,7 @@ vi.mock('../../../generate', () => {
 });
 
 describe('Nested Templates', () => {
-  let generateOptions: GenerateOptions;
+  let llm: LlmSource;
   let responseIndex: number;
   const mockResponses = [
     'Response to first question',
@@ -40,14 +37,7 @@ describe('Nested Templates', () => {
     responseIndex = 0;
 
     // Create generateOptions
-    generateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-      },
-      temperature: 0.7,
-    });
+    llm = Source.llm().apiKey('test-key');
 
     // Setup mock implementation for generateText
     vi.mocked(generateText).mockImplementation(async () => {
@@ -69,7 +59,7 @@ describe('Nested Templates', () => {
       condition: () => true, // Always true for this test
       thenTemplate: new Sequence() // Use Sequence
         .add(new User('First question')) // Use add()
-        .add(new Assistant(generateOptions)), // Use add()
+        .add(new Assistant(llm)), // Use add()
       elseTemplate: new System('Condition was false'),
     });
 
@@ -77,7 +67,7 @@ describe('Nested Templates', () => {
       // Use constructor options
       bodyTemplate: new Sequence() // Use Sequence for body
         .add(new User('Second question')) // Use add()
-        .add(new Assistant(generateOptions)) // Removed comma
+        .add(new Assistant(llm)) // Removed comma
         .add(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
       loopIf: (session: Session) => {
@@ -187,7 +177,7 @@ describe('Nested Templates', () => {
           condition: (session) => Boolean(session.getVar('condition')),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
-            .add(new Assistant(generateOptions)) // Removed comma
+            .add(new Assistant(llm)) // Removed comma
             // Nested condition
             .add(
               new Conditional({
@@ -205,7 +195,7 @@ describe('Nested Templates', () => {
             ), // Close inner addIf
           elseTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is false')) // Use add()
-            .add(new Assistant(generateOptions)), // Use add()
+            .add(new Assistant(llm)), // Use add()
         }),
       ); // Close outer addIf
 

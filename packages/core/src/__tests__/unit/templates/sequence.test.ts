@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Source } from '../../../content_source';
 import { generateText } from '../../../generate';
-import { createGenerateOptions } from '../../../generate_options';
 import { createSession } from '../../../session';
 import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -60,7 +60,7 @@ describe('Sequence Template', () => {
     expect(messages[2].type).toBe('assistant');
   });
 
-  it('should support default ContentSource for UserTemplate', async () => {
+  it('should support string for UserTemplate', async () => {
     const sequence = new Sequence()
       .add(new System('You are a helpful assistant.'))
       .add(new User('Default user message'));
@@ -81,18 +81,12 @@ describe('Sequence Template', () => {
       content: 'I am the assistant response',
     });
 
-    const options = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4',
-      },
-    });
+    const llm = Source.llm().model('gpt-4').apiKey('test-api-key');
 
     const sequence = new Sequence()
       .add(new System('You are a helpful assistant.'))
       .add(new User('Hello, assistant'))
-      .add(new Assistant(options));
+      .add(new Assistant(llm));
 
     const session = await sequence.execute(createSession());
 

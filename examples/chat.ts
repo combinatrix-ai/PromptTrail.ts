@@ -2,9 +2,9 @@ import {
   Agent,
   Assistant,
   CLISource,
-  createGenerateOptions,
   createSession,
   Sequence,
+  Source,
   User,
 } from '../packages/core/src/index';
 
@@ -15,7 +15,7 @@ async function main() {
   const userCliSource = new CLISource('Your message (type "exit" to end): ');
 
   // Create generateOptions for the OpenAI model
-  const generateOptions = createGenerateOptions({
+  const generateOptions = Source.llm({
     provider: {
       type: 'openai',
       apiKey: apiKey as string,

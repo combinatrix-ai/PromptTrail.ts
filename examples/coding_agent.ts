@@ -9,11 +9,10 @@
 import {
   Agent,
   CLISource,
-  createGenerateOptions,
   createSession,
+  Source,
   System,
-  type GenerateOptions,
-} from '../packages/core/src/index.js';
+} from '../packages/core/src/index';
 
 // Import tool definitions from ai SDK
 import { tool, type Tool } from 'ai';
@@ -100,7 +99,7 @@ type ToolsMap = Record<string, Tool>;
  */
 export class CodingAgent {
   private tools: ToolsMap;
-  private generateOptions: GenerateOptions;
+  private llm: Source;
 
   constructor(config: {
     provider: 'openai' | 'anthropic';
@@ -122,15 +121,14 @@ export class CodingAgent {
         modelName:
           config.provider === 'openai'
             ? 'gpt-4o-mini'
-            : 'claude-3-5-haiku-20240620',
+            : 'claude-3-5-haiku-latest',
       },
       temperature: 0.7,
+      tools: this.tools,
     };
 
     // Create options with tools using the fluent API
-    this.generateOptions = createGenerateOptions(baseOptions).addTools(
-      this.tools,
-    );
+    this.llm = Source.llm(baseOptions);
   }
 
   /**
@@ -155,12 +153,10 @@ export class CodingAgent {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
       // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
-      new Agent()
-        .addUser(initialPrompt as string)
-        .addAssistant(this.generateOptions),
+      new Agent().addUser(initialPrompt as string).addAssistant(this.llm),
       // Otherwise, this is interactive mode
       new Agent().addLoop(
-        new Agent().addUser(userCliSource).addAssistant(this.generateOptions),
+        new Agent().addUser(userCliSource).addAssistant(this.llm),
         (session) => {
           const lastUserMessage = session
             .getMessagesByType('user')

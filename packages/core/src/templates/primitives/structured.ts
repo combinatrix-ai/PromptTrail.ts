@@ -1,102 +1,118 @@
-import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
-import { GenerateOptions } from '../../generate_options';
+// structured.ts
+import { z } from 'zod';
+import { LlmSource, ModelOutput, Source } from '../../content_source';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 
 /**
- * Import zod for schema building and validation
- */
-import { z } from 'zod';
-
-/**
- * Import AI SDK components for structured data generation
- */
-import { generateText, Output } from 'ai';
-
-/**
  * Template that enforces structured output according to a Zod schema
- *
- * This template uses AI SDK's schema functionality to ensure the LLM output matches
- * the expected structure using Zod schemas.
+ * Now uses the Source abstraction consistently with enhanced LlmSource
  */
 export class Structured<
   TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
 > extends TemplateBase<TAttrs, TVars> {
-  private generateOptions: GenerateOptions;
-  private schema: z.ZodType;
-  private maxAttempts: number;
+  private source: Source<ModelOutput>;
 
   constructor(options: {
-    generateOptions: GenerateOptions;
+    source?: Source<ModelOutput>;
     schema: z.ZodType;
-    maxAttempts?: number;
+    mode?: 'tool' | 'structured_output';
     functionName?: string;
+    maxAttempts?: number;
   }) {
     super();
-    this.generateOptions = options.generateOptions;
-    this.schema = options.schema;
-    this.maxAttempts = options.maxAttempts || 3; // Default to 3 attempts if not specified
+
+    if (options.source) {
+      // If source is provided, check if it's an LlmSource and configure schema
+      if (options.source instanceof LlmSource) {
+        this.source = options.source.withSchema(options.schema, {
+          mode: options.mode,
+          functionName: options.functionName,
+        });
+      } else {
+        // For other source types, use as-is (assuming they handle schema internally)
+        this.source = options.source;
+      }
+    } else {
+      // No source provided, create a schema-configured LlmSource
+      const {
+        source: _,
+        schema,
+        mode,
+        functionName,
+        maxAttempts,
+        ...rest
+      } = options;
+
+      this.source = Source.schema(schema, {
+        mode,
+        functionName,
+        maxAttempts,
+        ...rest,
+      });
+    }
+  }
+
+  /**
+   * Static factory method for easier creation with just schema
+   */
+  static withSchema<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+    schema: z.ZodType,
+    options?: {
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+      maxAttempts?: number;
+    },
+  ): Structured<TAttrs, TVars> {
+    return new Structured<TAttrs, TVars>({
+      schema,
+      ...options,
+    });
+  }
+
+  /**
+   * Static factory method for creation with custom source
+   */
+  static withSource<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+    source: Source<ModelOutput>,
+    schema: z.ZodType,
+    options?: {
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+    },
+  ): Structured<TAttrs, TVars> {
+    return new Structured<TAttrs, TVars>({
+      source,
+      schema,
+      ...options,
+    });
   }
 
   async execute(
-    session: Session<TVars, TAttrs>,
+    session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
-    if (!this.generateOptions) {
-      throw new Error('No generateOptions provided for SchemaTemplate');
+    const validSession = this.ensureSession(session);
+
+    if (!this.source) {
+      throw new Error('No source provided for Structured template');
     }
 
-    const aiMessages = convertSessionToAiSdkMessages(session);
-    // TODO: Check this is enough to force use call
+    try {
+      const output = await this.source.getContent(validSession);
 
-    let currentAttempt = 0;
-
-    while (currentAttempt < this.maxAttempts) {
-      currentAttempt++;
-      try {
-        const model = createProvider(this.generateOptions);
-        const result = await generateText({
-          model,
-          // TODO: Fix this type
-          messages: aiMessages as any,
-          temperature: this.generateOptions.temperature,
-          experimental_output: Output.object({
-            schema: this.schema,
-          }),
-        });
-        const structuredOutput = result.experimental_output;
-        // Check compliance with the schema
-        const parsedOutput = this.schema.safeParse(structuredOutput);
-        if (!parsedOutput.success) {
-          throw new Error('Generated output does not comply with the schema');
-        }
-
-        return session.addMessage({
-          type: 'assistant',
-          content: JSON.stringify(parsedOutput.data, null, 2),
-          structuredContent: parsedOutput.data,
-        });
-      } catch (error) {
-        console.error(
-          `Attempt ${currentAttempt}/${this.maxAttempts} failed to generate structured output:`,
-          error,
-        );
-
-        if (currentAttempt >= this.maxAttempts) {
-          const err = error as Error;
-          throw new Error(
-            `Failed to generate structured output after ${this.maxAttempts} attempts: ${err.message}`,
-          );
-        }
-
-        console.log(`Retrying... (${currentAttempt}/${this.maxAttempts})`);
-      }
+      return validSession.addMessage({
+        type: 'assistant',
+        content: output.content,
+        toolCalls: output.toolCalls,
+        structuredContent: output.structuredOutput,
+        attrs: Attrs.create<TAttrs>(output.metadata as TAttrs),
+      });
+    } catch (error) {
+      const err = error as Error;
+      throw new Error(`Structured template execution failed: ${err.message}`);
     }
-
-    throw new Error(
-      `Failed to generate structured output after ${this.maxAttempts} attempts`,
-    );
   }
 }
 
@@ -104,10 +120,11 @@ export class Structured<
  * Schema and Validation Types
  * --------------------------------------------------------------------
  */
+
 /**
  * Schema type interface for defining JSON schema structures
+ * @deprecated Use Zod schemas directly instead
  */
-
 export interface SchemaType {
   properties: Record<string, { type: string; description: string }>;
   required?: string[];

@@ -1,17 +1,28 @@
+// generate.ts
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
-  experimental_createMCPClient,
   LanguageModelV1,
+  Output,
   ToolSet,
 } from 'ai';
-import type { GenerateOptions, MCPServerConfig } from './generate_options';
+import { z } from 'zod';
+import type { LLMOptions } from './content_source';
 import type { Message } from './message';
 import type { Session } from './session';
 import { Attrs, Vars } from './tagged_record';
+
+/**
+ * Schema generation options
+ */
+export interface SchemaGenerationOptions {
+  schema: z.ZodType;
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
+}
 
 /**
  * Convert Session to AI SDK compatible format
@@ -88,9 +99,9 @@ export function convertSessionToAiSdkMessages(
 }
 
 /**
- * Create a provider based on the full GenerateOptions
+ * Create a provider based on the LLMOptions
  */
-export function createProvider(options: GenerateOptions): LanguageModelV1 {
+export function createProvider(options: LLMOptions): LanguageModelV1 {
   const providerConfig = options.provider;
   const sdkProviderOptions: Record<string, unknown> = {}; // Options specifically for createOpenAI/createAnthropic
 
@@ -151,60 +162,18 @@ export function createProvider(options: GenerateOptions): LanguageModelV1 {
 }
 
 /**
- * Initialize MCP client
- */
-async function initializeMCPClient(config: MCPServerConfig): Promise<unknown> {
-  try {
-    // Add 'type: 'mcp'' based on MCPServerConfig definition
-    const transport = {
-      type: 'mcp' as const, // Use 'mcp' literal type
-      url: config.url,
-      name: config.name || 'prompttrail-mcp-client',
-      version: config.version || '1.0.0',
-      headers: config.headers || {},
-    };
-
-    // Cast transport to 'any' to bypass potential type definition issues in ai-sdk
-    const mcpClient = await experimental_createMCPClient({
-      transport: transport as any,
-    });
-
-    return mcpClient;
-  } catch (error) {
-    console.error(`Failed to initialize MCP client for ${config.name}:`, error);
-    throw error;
-  }
-}
-
-/**
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
   session: Session<TVars, TAttrs>,
-  options: GenerateOptions,
+  options: LLMOptions,
 ): Promise<Message<TAttrs>> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options); // Pass the full options object
-
-  // Handle MCP tools if configured
-  const mcpClients = [];
-  if (options.mcpServers && options.mcpServers.length > 0) {
-    for (const server of options.mcpServers) {
-      try {
-        const mcpClient = await initializeMCPClient(server);
-        mcpClients.push(mcpClient);
-      } catch (error) {
-        console.error(
-          `Failed to initialize MCP client for ${server.name}:`,
-          error,
-        );
-      }
-    }
-  }
+  const provider = createProvider(options);
 
   // Generate text using AI SDK
   const result = await aiSdkGenerateText({
@@ -216,8 +185,6 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     topK: options.topK,
     tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
-    // Pass the initialized MCP clients to the AI SDK
-    ...(mcpClients.length > 0 && { mcpClients }),
     ...options.sdkOptions,
   });
 
@@ -255,6 +222,93 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 }
 
 /**
+ * Generate structured content using schema
+ */
+export async function generateWithSchema<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions,
+  schemaOptions: SchemaGenerationOptions,
+): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const messages = convertSessionToAiSdkMessages(session);
+  const provider = createProvider(options);
+
+  if (schemaOptions.mode === 'structured_output') {
+    // Use AI SDK's experimental_output for structured generation
+    const result = await aiSdkGenerateText({
+      model: provider as LanguageModelV1,
+      messages: messages as [],
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      topK: options.topK,
+      experimental_output: Output.object({
+        schema: schemaOptions.schema,
+      }),
+      ...options.sdkOptions,
+    });
+
+    // Validate the structured output
+    const parsedOutput = schemaOptions.schema.safeParse(
+      result.experimental_output,
+    );
+    if (!parsedOutput.success) {
+      throw new Error(
+        `Schema validation failed: ${parsedOutput.error.message}`,
+      );
+    }
+
+    return {
+      type: 'assistant',
+      content: JSON.stringify(parsedOutput.data, null, 2),
+      structuredOutput: parsedOutput.data,
+    };
+  } else {
+    // Use tool-based generation (existing SchemaSource logic)
+    const functionName =
+      schemaOptions.functionName || 'generateStructuredOutput';
+    const toolOptions: LLMOptions = {
+      ...options,
+      tools: {
+        ...options.tools,
+        [functionName]: {
+          name: functionName,
+          description: 'Generate structured output according to schema',
+          parameters: schemaOptions.schema,
+        },
+      },
+      toolChoice: 'required',
+    };
+
+    const response = await generateText(session, toolOptions);
+
+    if (response.toolCalls?.some((tc) => tc.name === functionName)) {
+      const toolCall = response.toolCalls.find(
+        (tc) => tc.name === functionName,
+      );
+
+      if (toolCall) {
+        const result = schemaOptions.schema.safeParse(toolCall.arguments);
+        if (result.success) {
+          return {
+            type: 'assistant',
+            content: response.content,
+            toolCalls: response.toolCalls,
+            structuredOutput: result.data,
+          };
+        } else {
+          throw new Error(`Schema validation failed: ${result.error.message}`);
+        }
+      }
+    }
+
+    throw new Error('No valid schema tool call found in response');
+  }
+}
+
+/**
  * Generate text stream using AI SDK
  */
 export async function* generateTextStream<
@@ -262,13 +316,13 @@ export async function* generateTextStream<
   TAttrs extends Attrs,
 >(
   session: Session<TVars, TAttrs>,
-  options: GenerateOptions, // Fixed type to match generateText
+  options: LLMOptions,
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options); // Pass the full options object
+  const provider = createProvider(options);
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({

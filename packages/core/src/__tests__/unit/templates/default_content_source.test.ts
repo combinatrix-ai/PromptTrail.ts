@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ListSource,
   RandomSource,
+  Source,
   StaticSource,
 } from '../../../content_source';
 import { generateText } from '../../../generate';
-import { createGenerateOptions } from '../../../generate_options';
 import { createSession } from '../../../session';
 import { Loop } from '../../../templates/composite/loop';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -58,13 +58,7 @@ describe('Default Content Source', () => {
 
     it('should set and pass default AssistantTemplate content source', async () => {
       // Create a GenerateOptions to be used as default for AssistantTemplate
-      const defaultGenerateOptions = createGenerateOptions({
-        provider: {
-          type: 'openai',
-          apiKey: 'test-api-key',
-          modelName: 'gpt-4',
-        },
-      });
+      const defaultLLM = Source.llm().apiKey('test-key').model('gpt-4');
 
       // Create a Sequence with a default AssistantTemplate source
       // Sequence constructor takes an array of templates, not default sources
@@ -73,7 +67,7 @@ describe('Default Content Source', () => {
 
       // Add an AssistantTemplate without specifying a content source
       // Explicitly provide the source intended as default
-      sequence.add(new Assistant(defaultGenerateOptions));
+      sequence.add(new Assistant(defaultLLM));
 
       // Execute the sequence
       const session = await sequence.execute(createSession());

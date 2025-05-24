@@ -9,8 +9,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { ListSource, StaticSource } from '../../content_source';
-import { createGenerateOptions } from '../../generate_options';
+import { ListSource, Source, StaticSource } from '../../content_source';
 import type { Message } from '../../message';
 import type { Session } from '../../session';
 import { createSession } from '../../session';
@@ -40,30 +39,22 @@ import { createWeatherTool, expect_types } from '../utils';
  * - This test should be run with real API keys
  */
 
-const openAIgenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY!,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-});
+const openAILLMSource = Source.llm()
+  .openai()
+  .model('gpt-4o-mini')
+  .temperature(0.7);
 
-const anthroGenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY!,
-    modelName: 'claude-3-haiku-20240307',
-  },
-  temperature: 0.7,
-});
+const anthropicLLMSource = Source.llm()
+  .anthropic()
+  .model('claude-3-5-haiku-latest')
+  .temperature(0.7);
 
 describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a simple conversation with OpenAI', async () => {
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))
       .add(new User('Hello, how are you?'))
-      .add(new Assistant(openAIgenerateOptions));
+      .add(new Assistant(openAILLMSource));
 
     const session = await template.execute(createSession());
 
@@ -76,7 +67,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))
       .add(new User('Hello, how are you?'))
-      .add(new Assistant(anthroGenerateOptions));
+      .add(new Assistant(anthropicLLMSource));
 
     const session = await template.execute(createSession());
 
@@ -165,7 +156,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const sequence = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
-      .add(new Assistant(openAIgenerateOptions));
+      .add(new Assistant(openAILLMSource));
     const session = await sequence.execute(createSession());
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -176,7 +167,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const agent = new Agent()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
-      .add(new Assistant(openAIgenerateOptions));
+      .add(new Assistant(openAILLMSource));
     const agentSession = await agent.execute(createSession());
     const agenMessages = Array.from(agentSession.messages) as Message[];
     expect(agenMessages).toHaveLength(3);
@@ -189,7 +180,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User(new StaticSource('123456789')))
-      .add(new Assistant(openAIgenerateOptions));
+      .add(new Assistant(openAILLMSource));
     const session = await template.execute(createSession());
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -203,7 +194,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('YES'))
-      .add(new Assistant(openAIgenerateOptions))
+      .add(new Assistant(openAILLMSource))
       .add(
         new Conditional({
           condition: (session) => {
@@ -226,7 +217,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const template2 = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('NO'))
-      .add(new Assistant(openAIgenerateOptions))
+      .add(new Assistant(openAILLMSource))
       .add(
         new Conditional({
           condition: (session) => {
@@ -296,7 +287,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const sequence = new Agent()
       .addSystem('This is automated API testing. Repeat what user says.')
       .addUser('123456789')
-      .addAssistant(openAIgenerateOptions)
+      .addAssistant(openAILLMSource)
       .addConditional(
         (session) => {
           const lastMessage = session.getLastMessage();
@@ -319,7 +310,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const loopBodySequence = new Agent<Vars<{ count: number }>>()
       .addSystem('This is automated API testing. Repeat what user says.')
       .addUser(userContentSource)
-      .addAssistant(openAIgenerateOptions)
+      .addAssistant(openAILLMSource)
       .addConditional((session: Session) => {
         // Add type annotation
         const lastMessage = session.getLastMessage();
@@ -393,7 +384,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const subroutineBody = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
-      .add(new Assistant(openAIgenerateOptions));
+      .add(new Assistant(openAILLMSource));
 
     // Create a subroutine template with the body
     const subroutine = new Subroutine(subroutineBody);
@@ -415,9 +406,10 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with weather tool', async () => {
     const weatherTool = createWeatherTool();
 
-    const openAIgenerateOptionsWith = openAIgenerateOptions
-      .clone()
-      .addTool('weather', weatherTool);
+    const openAIgenerateOptionsWith = openAILLMSource.addTool(
+      'weather',
+      weatherTool,
+    );
 
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))
@@ -446,7 +438,7 @@ describe('End-to-End Workflows with Real APIs', () => {
         new Loop({
           bodyTemplate: new Sequence()
             .add(new User(new StaticSource('What is your name?')))
-            .add(new Assistant(openAIgenerateOptions))
+            .add(new Assistant(openAILLMSource))
             .add(new User(continueResponses)),
           loopIf: (session) => {
             // User(continueResponses) is the last message

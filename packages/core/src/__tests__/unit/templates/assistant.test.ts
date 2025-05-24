@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { StaticSource } from '../../../content_source';
+import { Source, StaticSource } from '../../../content_source';
 import { generateText } from '../../../generate';
-import { createGenerateOptions } from '../../../generate_options';
 import { createSession } from '../../../session';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
@@ -41,7 +40,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create GenerateOptions
-    const options = createGenerateOptions({
+    const llm = Source.llm({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
@@ -50,7 +49,7 @@ describe('AssistantTemplate', () => {
       temperature: 0.7,
     });
 
-    const template = new Assistant(options);
+    const template = new Assistant(llm);
     const session = await template.execute(createSession());
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
@@ -156,7 +155,7 @@ describe('AssistantTemplate', () => {
     const weatherTool = createWeatherTool();
 
     // Create GenerateOptions with the weather tool
-    const options = createGenerateOptions({
+    const options = Source.llm({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
@@ -228,7 +227,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create GenerateOptions
-    const options = createGenerateOptions({
+    const options = Source.llm({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',

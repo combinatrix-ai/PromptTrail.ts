@@ -4,27 +4,17 @@ import { type IValidator, type TValidationResult } from '../../validators/base';
 
 vi.mock('../../generate');
 
+import { Source, type LlmSource } from '../../content_source';
 import { generateText } from '../../generate';
-import {
-  createGenerateOptions,
-  type GenerateOptions,
-} from '../../generate_options';
 import { Assistant } from '../../templates';
 
 describe('AssistantTemplate with Validator', () => {
-  let generateOptions: GenerateOptions;
+  let llm: LlmSource;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    generateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-      },
-      temperature: 0.7,
-    });
+    llm = Source.llm().apiKey('test-key');
 
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
