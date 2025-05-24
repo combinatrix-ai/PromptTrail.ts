@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CallbackSource,
   CLISource,
-  StaticSource,
+  LiteralSource,
 } from '../../../content_source';
 import { createSession } from '../../../session';
 import { User } from '../../../templates/primitives/user';
@@ -26,7 +26,7 @@ describe('UserTemplate', () => {
   });
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
-    const mockSource = new StaticSource('User query from source');
+    const mockSource = new LiteralSource('User query from source');
 
     // Create a UserTemplate with the source
     const template = new User(mockSource);
@@ -93,7 +93,7 @@ describe('UserTemplate', () => {
     );
 
     const template = new User(
-      new StaticSource('What is the ${query} like today?'),
+      new LiteralSource('What is the ${query} like today?'),
     );
 
     const result = await template.execute(updatedSession);
@@ -148,7 +148,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with validation
-    const validSource = new StaticSource('This is valid user input', {
+    const validSource = new LiteralSource('This is valid user input', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -226,7 +226,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with invalid content and raiseError set to false
-    const invalidSource = new StaticSource('This is invalid', {
+    const invalidSource = new LiteralSource('This is invalid', {
       validator,
       maxAttempts: 1,
       raiseError: false,

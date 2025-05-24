@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ListSource,
+  LiteralSource,
   RandomSource,
   Source,
-  StaticSource,
 } from '../../../content_source';
 import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
@@ -35,7 +35,7 @@ describe('Default Content Source', () => {
   describe('Sequence with default content sources', () => {
     it('should set and pass default UserTemplate content source', async () => {
       // Create a StaticSource to be used as default for UserTemplate
-      const defaultUserSource = new StaticSource('Default user message');
+      const defaultUserSource = new LiteralSource('Default user message');
 
       // Create a Sequence with a default UserTemplate source
       // Sequence constructor takes an array of templates, not default sources
@@ -92,14 +92,14 @@ describe('Default Content Source', () => {
 
     it('should override the default source with explicit source', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
       // Create explicit sources that will override the defaults
-      const explicitUserSource = new StaticSource('Explicit user message');
-      const explicitAssistantSource = new StaticSource(
+      const explicitUserSource = new LiteralSource('Explicit user message');
+      const explicitAssistantSource = new LiteralSource(
         'Explicit assistant message',
       );
 
@@ -126,8 +126,8 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to convenience methods', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -157,8 +157,8 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to nested sequences', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -196,8 +196,8 @@ describe('Default Content Source', () => {
   describe('LoopTemplate with default content sources', () => {
     it('should set and pass default sources in loop body', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -240,8 +240,8 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to convenience methods in loop', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -283,8 +283,8 @@ describe('Default Content Source', () => {
 
     it('should pass parent default sources to nested loop', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -331,8 +331,8 @@ describe('Default Content Source', () => {
   describe('SubroutineTemplate with default content sources', () => {
     it('should set and pass default sources in subroutine', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource('Default user message');
+      const defaultAssistantSource = new LiteralSource(
         'Default assistant message',
       );
 
@@ -364,8 +364,10 @@ describe('Default Content Source', () => {
 
     it('should inherit default sources from parent template', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Parent default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = new LiteralSource(
+        'Parent default user message',
+      );
+      const defaultAssistantSource = new LiteralSource(
         'Parent default assistant message',
       );
 
@@ -400,16 +402,16 @@ describe('Default Content Source', () => {
 
     it('should override parent default sources with its own defaults', async () => {
       // Create parent default sources
-      const parentUserSource = new StaticSource('Parent default user message');
-      const parentAssistantSource = new StaticSource(
+      const parentUserSource = new LiteralSource('Parent default user message');
+      const parentAssistantSource = new LiteralSource(
         'Parent default assistant message',
       );
 
       // Create subroutine default sources
-      const subroutineUserSource = new StaticSource(
+      const subroutineUserSource = new LiteralSource(
         'Subroutine default user message',
       );
-      const subroutineAssistantSource = new StaticSource(
+      const subroutineAssistantSource = new LiteralSource(
         'Subroutine default assistant message',
       );
 
@@ -453,18 +455,20 @@ describe('Default Content Source', () => {
   describe('Complex nested templates with default content sources', () => {
     it('should handle default sources in deeply nested templates', async () => {
       // Create default sources at different levels
-      const topLevelUserSource = new StaticSource('Top-level user message');
-      const topLevelAssistantSource = new StaticSource(
+      const topLevelUserSource = new LiteralSource('Top-level user message');
+      const topLevelAssistantSource = new LiteralSource(
         'Top-level assistant message',
       );
 
-      const midLevelUserSource = new StaticSource('Mid-level user message');
-      const midLevelAssistantSource = new StaticSource(
+      const midLevelUserSource = new LiteralSource('Mid-level user message');
+      const midLevelAssistantSource = new LiteralSource(
         'Mid-level assistant message',
       );
 
-      const innerLevelUserSource = new StaticSource('Inner-level user message');
-      const innerLevelAssistantSource = new StaticSource(
+      const innerLevelUserSource = new LiteralSource(
+        'Inner-level user message',
+      );
+      const innerLevelAssistantSource = new LiteralSource(
         'Inner-level assistant message',
       );
 
@@ -536,13 +540,13 @@ describe('Default Content Source', () => {
     it('should maintain separate default sources for multiple template instances', async () => {
       // Create two different sets of default sources
       const sourceSetA = {
-        user: new StaticSource('User from set A'),
-        assistant: new StaticSource('Assistant from set A'),
+        user: new LiteralSource('User from set A'),
+        assistant: new LiteralSource('Assistant from set A'),
       };
 
       const sourceSetB = {
-        user: new StaticSource('User from set B'),
-        assistant: new StaticSource('Assistant from set B'),
+        user: new LiteralSource('User from set B'),
+        assistant: new LiteralSource('Assistant from set B'),
       };
 
       // Create two separate sequences with different default sources

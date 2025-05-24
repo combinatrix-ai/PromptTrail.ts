@@ -154,7 +154,7 @@ export abstract class Source<T = unknown> {
 /**
  * Base class for sources returning simple string content (Renamed from StringContentSource)
  */
-export abstract class TextSource extends Source<string> {
+export abstract class StringSource extends Source<string> {
   // Returns plain string content
 }
 
@@ -166,37 +166,9 @@ export abstract class ModelSource extends Source<ModelOutput> {
 }
 
 /**
- * Static content source that returns the same content every time
- * Supports template interpolation with session context (Renamed from StaticContentSource)
- */
-export class StaticSource extends TextSource {
-  constructor(
-    private content: string,
-    options?: ValidationOptions,
-  ) {
-    super(options);
-  }
-
-  async getContent(session: Session<any, any>): Promise<string> {
-    const interpolatedContent = interpolateTemplate(this.content, session);
-    // Use shared validation logic (single attempt)
-    const validationResult = await this.validateContent(
-      interpolatedContent,
-      session,
-    );
-    if (!validationResult.isValid && this.raiseError) {
-      const errorMessage = `Validation failed: ${validationResult.instruction || ''}`;
-      throw new ValidationError(errorMessage);
-    }
-    // If valid or raiseError is false, return content
-    return interpolatedContent;
-  }
-}
-
-/**
  * Content source that returns a random element from a predefined list
  */
-export class RandomSource extends TextSource {
+export class RandomSource extends StringSource {
   constructor(
     private contentList: string[],
     options?: ValidationOptions,
@@ -215,7 +187,7 @@ export class RandomSource extends TextSource {
  * By default, it throws an error when the list is exhausted.
  * If `loop` is set to true in options, it restarts from the beginning.
  */
-export class ListSource extends TextSource {
+export class ListSource extends StringSource {
   private index: number = 0;
   private loop: boolean;
 
@@ -276,16 +248,72 @@ export class ListSource extends TextSource {
 }
 
 /**
- * CLI input source that reads from command line (Adapted to new structure)
+ * CLI input source with fluent API that reads from command line
  */
-export class CLISource extends TextSource {
-  // Inherits from TextSource
+export class CLISource extends StringSource {
+  private promptText: string;
+  private defaultVal?: string;
+
   constructor(
-    private prompt: string,
-    private defaultValue?: string,
+    prompt: string = '',
+    defaultValue?: string,
     options?: ValidationOptions,
   ) {
     super(options);
+    this.promptText = prompt;
+    this.defaultVal = defaultValue;
+  }
+
+  // Helper method to create new instance with merged options
+  private clone(
+    newPrompt?: string,
+    newDefaultValue?: string,
+    newValidationOptions?: ValidationOptions,
+  ): CLISource {
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    return new CLISource(
+      newPrompt ?? this.promptText,
+      newDefaultValue ?? this.defaultVal,
+      mergedValidationOptions,
+    );
+  }
+
+  // Fluent API methods - all return new instances
+  prompt(text: string): CLISource {
+    return this.clone(text, this.defaultVal);
+  }
+
+  defaultValue(value: string): CLISource {
+    return this.clone(this.promptText, value);
+  }
+
+  validate(validator: IValidator): CLISource {
+    return this.clone(this.promptText, this.defaultVal, {
+      validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withMaxAttempts(attempts: number): CLISource {
+    return this.clone(this.promptText, this.defaultVal, {
+      validator: this.validator,
+      maxAttempts: attempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withRaiseError(raise: boolean): CLISource {
+    return this.clone(this.promptText, this.defaultVal, {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: raise,
+    });
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
@@ -301,10 +329,10 @@ export class CLISource extends TextSource {
 
       while (attempts < this.maxAttempts) {
         attempts++;
-        const rawInput = await rl.question(this.prompt);
-        currentInput = rawInput || this.defaultValue || '';
+        const rawInput = await rl.question(this.promptText);
+        currentInput = rawInput || this.defaultVal || '';
 
-        lastResult = await this.validateContent(currentInput, session); // Single validation attempt
+        lastResult = await this.validateContent(currentInput, session);
 
         if (lastResult.isValid) {
           return currentInput;
@@ -320,7 +348,7 @@ export class CLISource extends TextSource {
             console.warn(
               `CLISource: Validation failed after ${attempts} attempts. Returning last input or default value.`,
             );
-            return currentInput; // Return the last invalid input
+            return currentInput;
           }
         } else {
           console.log(
@@ -330,8 +358,7 @@ export class CLISource extends TextSource {
           );
         }
       }
-      // Fallback (should not be reached with maxAttempts >= 1)
-      return this.defaultValue || '';
+      return this.defaultVal || '';
     } finally {
       rl.close();
     }
@@ -339,15 +366,65 @@ export class CLISource extends TextSource {
 }
 
 /**
- * Callback-based content source (Adapted to new structure)
+ * Callback-based content source with fluent API
  */
-export class CallbackSource extends TextSource {
-  // Inherits from TextSource
+export class CallbackSource extends StringSource {
+  private callback: (context: { context?: Vars }) => Promise<string>;
+
   constructor(
-    private callback: (context: { context?: Vars }) => Promise<string>,
+    callback: (context: { context?: Vars }) => Promise<string>,
     options?: ValidationOptions,
   ) {
     super(options);
+    this.callback = callback;
+  }
+
+  // Helper method to create new instance with merged options
+  private clone(
+    newCallback?: (context: { context?: Vars }) => Promise<string>,
+    newValidationOptions?: ValidationOptions,
+  ): CallbackSource {
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    return new CallbackSource(
+      newCallback ?? this.callback,
+      mergedValidationOptions,
+    );
+  }
+
+  // Fluent API methods - all return new instances
+  withCallback(
+    callback: (context: { context?: Vars }) => Promise<string>,
+  ): CallbackSource {
+    return this.clone(callback);
+  }
+
+  validate(validator: IValidator): CallbackSource {
+    return this.clone(this.callback, {
+      validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withMaxAttempts(attempts: number): CallbackSource {
+    return this.clone(this.callback, {
+      validator: this.validator,
+      maxAttempts: attempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withRaiseError(raise: boolean): CallbackSource {
+    return this.clone(this.callback, {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: raise,
+    });
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
@@ -358,13 +435,12 @@ export class CallbackSource extends TextSource {
     while (attempts < this.maxAttempts) {
       attempts++;
       currentInput = await this.callback({ context: session.vars });
-      lastResult = await this.validateContent(currentInput, session); // Validate the newly fetched content (single attempt)
+      lastResult = await this.validateContent(currentInput, session);
 
       if (lastResult.isValid) {
-        return currentInput; // Return the valid input
+        return currentInput;
       }
 
-      // If validation failed
       const isLastAttempt = attempts >= this.maxAttempts;
 
       if (isLastAttempt) {
@@ -375,30 +451,95 @@ export class CallbackSource extends TextSource {
           console.warn(
             `CallbackSource: Validation failed after ${attempts} attempts. Returning last (invalid) input.`,
           );
-          return currentInput; // Return the last invalid input if not raising error
+          return currentInput;
         }
       } else {
-        // Log retry message if not the last attempt
         console.log(
           `Validation attempt ${attempts} failed: ${
             lastResult?.instruction || 'Invalid input'
           }. Retrying...`,
         );
-        // Optionally add delay here
-        // session = session.addMessage({ type: 'system', content: `Validation failed: ${lastResult.instruction}. Please revise.` });
       }
     }
 
-    // Fallback in case loop finishes unexpectedly (e.g., maxAttempts <= 0)
-    // This part should ideally not be reached with maxAttempts >= 1
     if (!this.raiseError) {
-      return currentInput; // Return the last input fetched
+      return currentInput;
     } else {
-      // If raiseError was true, an error should have been thrown already.
       throw new Error(
         `Callback input validation failed unexpectedly after ${this.maxAttempts} attempts.`,
       );
     }
+  }
+}
+
+/**
+ * Static text content source with fluent API
+ */
+export class LiteralSource extends StringSource {
+  private content: string;
+
+  constructor(content: string, options?: ValidationOptions) {
+    super(options);
+    this.content = content;
+  }
+
+  // Helper method to create new instance with merged options
+  private clone(
+    newContent?: string,
+    newValidationOptions?: ValidationOptions,
+  ): LiteralSource {
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    return new LiteralSource(
+      newContent ?? this.content,
+      mergedValidationOptions,
+    );
+  }
+
+  // Fluent API methods - all return new instances
+  withContent(content: string): LiteralSource {
+    return this.clone(content);
+  }
+
+  validate(validator: IValidator): LiteralSource {
+    return this.clone(this.content, {
+      validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withMaxAttempts(attempts: number): LiteralSource {
+    return this.clone(this.content, {
+      validator: this.validator,
+      maxAttempts: attempts,
+      raiseError: this.raiseError,
+    });
+  }
+
+  withRaiseError(raise: boolean): LiteralSource {
+    return this.clone(this.content, {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: raise,
+    });
+  }
+
+  async getContent(session: Session<any, any>): Promise<string> {
+    const interpolatedContent = interpolateTemplate(this.content, session);
+    const validationResult = await this.validateContent(
+      interpolatedContent,
+      session,
+    );
+    if (!validationResult.isValid && this.raiseError) {
+      const errorMessage = `Validation failed: ${validationResult.instruction || ''}`;
+      throw new ValidationError(errorMessage);
+    }
+    return interpolatedContent;
   }
 }
 
@@ -710,38 +851,6 @@ export class LlmSource extends ModelSource {
 }
 
 /**
- * Builder for {@link CLISource}
- */
-export class CliBuilder {
-  private promptText = '';
-  private defaultVal?: string;
-  private validation: ValidationOptions = {};
-
-  /** Set prompt shown to the user */
-  prompt(text: string) {
-    this.promptText = text;
-    return this;
-  }
-
-  /** Set default value when user provides empty input */
-  defaultValue(val: string) {
-    this.defaultVal = val;
-    return this;
-  }
-
-  /** Configure validator */
-  validate(v: IValidator) {
-    this.validation.validator = v;
-    return this;
-  }
-
-  /** Build the CLISource instance */
-  build() {
-    return new CLISource(this.promptText, this.defaultVal, this.validation);
-  }
-}
-
-/**
  * Convenience factory methods for creating common sources
  */
 export namespace Source {
@@ -750,9 +859,21 @@ export namespace Source {
     return new LlmSource(options);
   }
 
-  /** Create builder for CLI input source */
-  export function cli() {
-    return new CliBuilder();
+  /** Create CLI input source with fluent API */
+  export function cli(prompt?: string, defaultValue?: string): CLISource {
+    return new CLISource(prompt, defaultValue);
+  }
+
+  /** Create static literal content source with fluent API */
+  export function literal(content: string): LiteralSource {
+    return new LiteralSource(content);
+  }
+
+  /** Create callback-based source with fluent API */
+  export function callback(
+    callback: (context: { context?: Vars }) => Promise<string>,
+  ): CallbackSource {
+    return new CallbackSource(callback);
   }
 
   /** Create schema-based source using enhanced LlmSource */

@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { ListSource, Source, StaticSource } from '../../content_source';
+import { ListSource, LiteralSource, Source } from '../../content_source';
 import type { Message } from '../../message';
 import type { Session } from '../../session';
 import { createSession } from '../../session';
@@ -179,7 +179,7 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should handle UserTemplate with InputSource', async () => {
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User(new StaticSource('123456789')))
+      .add(new User(new LiteralSource('123456789')))
       .add(new Assistant(openAILLMSource));
     const session = await template.execute(createSession());
     const messages = Array.from(session.messages);
@@ -437,7 +437,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(
         new Loop({
           bodyTemplate: new Sequence()
-            .add(new User(new StaticSource('What is your name?')))
+            .add(new User(new LiteralSource('What is your name?')))
             .add(new Assistant(openAILLMSource))
             .add(new User(continueResponses)),
           loopIf: (session) => {

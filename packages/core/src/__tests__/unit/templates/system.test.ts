@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CallbackSource, StaticSource } from '../../../content_source';
+import { CallbackSource, LiteralSource } from '../../../content_source';
 import { createSession } from '../../../session';
 import { System } from '../../../templates/primitives/system';
 import { CustomValidator } from '../../../validators/custom';
@@ -8,7 +8,7 @@ import { expect_messages } from '../../utils';
 describe('SystemTemplate', () => {
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
-    const mockSource = new StaticSource('You are a helpful assistant.');
+    const mockSource = new LiteralSource('You are a helpful assistant.');
 
     // Create a SystemTemplate with the source
     const template = new System(mockSource);
@@ -111,7 +111,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a static source with validation
-    const validSource = new StaticSource('You are a helpful assistant.', {
+    const validSource = new LiteralSource('You are a helpful assistant.', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -127,7 +127,7 @@ describe('SystemTemplate', () => {
     );
 
     // Create a static source with invalid content
-    const invalidSource = new StaticSource('You are an AI.', {
+    const invalidSource = new LiteralSource('You are an AI.', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -197,7 +197,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a static source with invalid content and raiseError set to false
-    const invalidSource = new StaticSource('You are an AI.', {
+    const invalidSource = new LiteralSource('You are an AI.', {
       validator,
       maxAttempts: 1,
       raiseError: false,
@@ -242,7 +242,7 @@ describe('SystemTemplate', () => {
     expect(result1.getLastMessage()!.content).toBe('String initialization');
 
     // Test with StaticSource constructor
-    const source = new StaticSource('Source initialization');
+    const source = new LiteralSource('Source initialization');
     const template2 = new System(source);
     const result2 = await template2.execute(createSession());
     expect(result2.getLastMessage()!.content).toBe('Source initialization');

@@ -1,5 +1,5 @@
 import type { LlmSource, ModelOutput } from '../content_source';
-import { Source, StaticSource } from '../content_source';
+import { LiteralSource, Source } from '../content_source';
 import type { Session } from '../session';
 import { createSession } from '../session';
 import { Attrs, Vars } from '../tagged_record';
@@ -67,7 +67,7 @@ export abstract class TemplateBase<
           },
         } as Source<ModelOutput>;
       } else {
-        return new StaticSource(input);
+        return new LiteralSource(input);
       }
     }
 
