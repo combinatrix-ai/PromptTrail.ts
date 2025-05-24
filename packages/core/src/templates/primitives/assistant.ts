@@ -22,8 +22,13 @@ export class Assistant<
     super();
     this.isStaticContent = typeof contentOrSource === 'string';
 
-    // Use the initializeContentSource method from BaseTemplate
-    this.contentSource = this.initializeContentSource(contentOrSource, 'model');
+    // If no content source is provided, use default LLM source
+    if (contentOrSource === undefined) {
+      this.contentSource = Source.llm(); // Default to Source.llm()
+    } else {
+      // Use the initializeContentSource method from BaseTemplate
+      this.contentSource = this.initializeContentSource(contentOrSource, 'model');
+    }
 
     // Handle both validator and options cases
     if (validatorOrOptions) {
@@ -48,8 +53,11 @@ export class Assistant<
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
-    if (!this.contentSource)
-      throw new Error('Content source required for AssistantTemplate');
+    
+    // Content source should always be available now (either provided or default)
+    if (!this.contentSource) {
+      throw new Error('Content source initialization failed for AssistantTemplate');
+    }
 
     let attempts = 0;
     let lastError: Error | undefined;

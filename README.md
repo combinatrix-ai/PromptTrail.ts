@@ -108,70 +108,66 @@ const agent = Agent.create()
   )
 ```
 
-You can interact with the user in a more structured way, by defining the data structure of the conversation:
+We're focusing on providing sensible defaults for the most common use cases, but you can customize everything.
 
 ```typescript
-import { Agent } from '@prompttrail/core';
-const agent = Agent.create()
-  .system('You are a customer success agent on a website.')
-  .step(
-    'Welcome the user and ask what\'s their goal today.',
+  .assistant() // Uses default Source.llm() with OpenAI GPT-4o-mini
+```
+
+You can pass `Source` objects, which yield ModelOutput or string content:
+
+```typescript
+  .assistant(Source.llm()) // Explicit default LLM source
+```
+
+You can impersonate the assistant with user input:
+
+```typescript
+  .assistant(Source.cli()) // Use CLI response to impersonate the assistant
+```
+
+You can customize LLM settings with the `Source` object:
+
+```typescript
+  .assistant(
+    Source.llm()
+      .openai()
+      .apiKey(process.env.OPENAI_API_KEY!)
+      .modelName('gpt-4o-mini')
+      .temperature(0.7)
   )
-  .withdata( // Add auto getter / setter for the data
-    'user_goal',
+```
+
+Or, you can use `ai-sdk` style configuration to set up everything at once:
+
+```typescript
+  .assistant(Source.llm(
     {
-      goal: z.string(),
-    },
-  )
-  .step(
-    'Ask the user for their name and age and save it to the ',
-  )
-  .withdata( // Add auto getter / setter for the data
-    'user',
-    {
-      name: z.string(),
-      age: z.number().min(0),
-    },
-  )
-  .validate(
-    session => {
-      const { name, age } = session.getVars();
-      return session.setVars({user_info: db.set(name, age)})
-    },
-    on_failure: "retry",
-  )
-  ...
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY!,
+        modelName: 'gpt-4o-mini',
+      },
+      temperature: 0.7,
+    }
+  ))
 ```
 
+This also applies to `User` templates:
+
+```typescript
+  .assistant("Hello!")
+  .user(Source.cli().prompt('What\'s your name?')) // CLI prompt for user input
 ```
 
+This will appear like this in the terminal:
+
+```bash
+Assistant: Hello!
+What's your name? > 
 ```
 
-import { Agent } from '@prompttrail/core';
-
-const workflow = new Agent()
-.setup(
-z.object({
-name: z.string(),
-age: z.number().min(0),
-}),
-)
-.step(
-"Interact with the user and ask for their name and age",
-).validate(
-session => {
-const { name, age } = session.getVars();
-return session.setVars({user_info: db.searchUser(name, age)})
-},
-on_failure: "retry",
-)
-
-)
-
-````
-
-
-
+You can interact with the user in a more structured way, by defining the data structure of the conversation:
 
 ## ✨ Features
 
