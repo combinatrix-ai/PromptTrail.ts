@@ -1,59 +1,30 @@
-import {
-  Agent,
-  Assistant,
-  CLISource,
-  createSession,
-  Sequence,
-  Source,
-  User,
-} from '../packages/core/src/index';
-
-const apiKey = process.env.OPENAI_API_KEY!;
+import { Agent, createSession, Source } from '../packages/core/src/index';
 
 async function main() {
-  // Create an interactive CLI source to get user input
-  const userCliSource = new CLISource('Your message (type "exit" to end): ');
-
-  // Create generateOptions for the OpenAI model
-  const generateOptions = Source.llm({
-    provider: {
-      type: 'openai',
-      apiKey: apiKey as string,
-      modelName: 'gpt-4o-mini',
+  // Create the main conversation flow using the new function-based API
+  const chatAgent = Agent.system(
+    'You are a helpful AI assistant. Be concise and friendly in your responses.',
+  ).loop(
+    // Function-based loop body
+    (agent) =>
+      agent
+        // User message from CLI with custom prompt
+        .user(Source.cli('Your message (type "exit" to end): '))
+        // Assistant message using the default model
+        .assistant(),
+    // Loop condition: continue until user types "exit"
+    (session) => {
+      const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
+      return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
     },
-    temperature: 0.7,
-  });
-
-  // Create the main conversation flow using an Agent
-  const template = new Agent()
-    .addSystem(
-      'You are a helpful AI assistant. Be concise and friendly in your responses.',
-    )
-    .addLoop(
-      // The body of the loop is a Sequence containing the user turn and assistant turn
-      new Sequence([
-        // User message from the CLI
-        new User(userCliSource),
-        // Assistant message using the OpenAI model
-        new Assistant(generateOptions),
-      ]),
-      (session) => {
-        return (
-          session
-            .getMessagesByType('user')
-            .slice(-1)[0]
-            ?.content.toLowerCase()
-            .trim() !== 'exit'
-        );
-      },
-    );
+  );
 
   // Create an initial session, enabling 'print' to log messages to the console
   const session = createSession({ print: true });
 
-  // Execute the template
+  // Execute the chat agent
   console.log('\nStarting chat with gpt-4o-mini (type "exit" to end)...\n');
-  await template.execute(session);
+  await chatAgent.execute(session);
   console.log('\nChat ended. Goodbye!\n');
 }
 

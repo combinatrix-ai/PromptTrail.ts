@@ -48,6 +48,38 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 {
   constructor(private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>()) {}
 
+  /** Static factory methods -------------------------------------------------- */
+
+  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>() {
+    return new Agent<TC, TM>();
+  }
+
+  static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
+    content: string,
+  ) {
+    return new Agent<TC, TM>().addSystem(content);
+  }
+
+  static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
+    contentOrSource?: string | Source<string>,
+  ) {
+    return new Agent<TC, TM>().addUser(contentOrSource);
+  }
+
+  static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
+    contentOrSource?:
+      | string
+      | Source<ModelOutput>
+      | GenerateOptions
+      | Record<string, any>,
+    validatorOrOptions?: IValidator | ValidationOptions,
+  ) {
+    return new Agent<TC, TM>().addAssistant(
+      contentOrSource,
+      validatorOrOptions,
+    );
+  }
+
   /** fluent helpers -------------------------------------------------- */
 
   add(t: Template<TM, TC>) {
@@ -59,9 +91,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     this.root.add(new System(content));
     return this;
   }
+
+  system(content: string) {
+    return this.addSystem(content);
+  }
+
   addUser(contentOrSource?: string | Source<string>) {
     this.root.add(new User(contentOrSource));
     return this;
+  }
+
+  user(contentOrSource?: string | Source<string>) {
+    return this.addUser(contentOrSource);
   }
 
   addAssistant(
@@ -74,6 +115,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   ) {
     this.root.add(new Assistant(contentOrSource, validatorOrOptions));
     return this;
+  }
+
+  assistant(
+    contentOrSource?:
+      | string
+      | Source<ModelOutput>
+      | GenerateOptions
+      | Record<string, any>,
+    validatorOrOptions?: IValidator | ValidationOptions,
+  ) {
+    return this.addAssistant(contentOrSource, validatorOrOptions);
   }
 
   addConditional(
@@ -111,6 +163,50 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   addSequence(parts: Template<TM, TC>[]) {
     this.root.add(new Sequence(parts));
+    return this;
+  }
+
+  /** Function-based template builders -------------------------------------------------- */
+
+  loop(
+    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    loopIf: boolean | ((s: Session<TC, TM>) => boolean),
+    maxIterations?: number,
+  ) {
+    const innerAgent = new Agent<TC, TM>();
+    const builtAgent = builderFn(innerAgent);
+    const bodyTemplate = builtAgent.build();
+
+    const loopCondition = typeof loopIf === 'boolean' ? () => loopIf : loopIf;
+
+    this.root.add(
+      new Loop({ bodyTemplate, loopIf: loopCondition, maxIterations }),
+    );
+    return this;
+  }
+
+  loopForever(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
+    return this.loop(builderFn, true);
+  }
+
+  subroutine(
+    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    opts?: ISubroutineTemplateOptions<TM, TC>,
+  ) {
+    const innerAgent = new Agent<TC, TM>();
+    const builtAgent = builderFn(innerAgent);
+    const subroutineTemplate = builtAgent.build();
+
+    this.root.add(new Subroutine(subroutineTemplate, opts));
+    return this;
+  }
+
+  sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
+    const innerAgent = new Agent<TC, TM>();
+    const builtAgent = builderFn(innerAgent);
+    const sequenceTemplate = builtAgent.build();
+
+    this.root.add(sequenceTemplate);
     return this;
   }
 

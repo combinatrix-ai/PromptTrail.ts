@@ -7,20 +7,21 @@ PromptTrail helps TypeScript developers build robust, maintainable LLM applicati
 You can write agents with multigranular level templates, from simple chatbots to complex workflows, using a fluent API.
 PromptTrail is designed to be extensible and adaptable, allowing you to create custom templates and integrate with various LLMs and tools.
 
-You can write turn-by-turn conversation management ():
+You can write turn-by-turn conversation management (Agent Level):
 
 ```typescript
 import { Agent } from '@prompttrail/core';
-const agent = Agent.create()
-  .system('You are a helpful assistant.')
-  .loop()
-  .user(Source.cli()) // Use CLI for user input
-  .assistant(Source.llm()) // Use LLM for assistant responses
-  .loopif(true)
+const agent = Agent.system('You are a helpful assistant.')
+  .loop(
+    l => l
+      .user() // Use CLI for user input
+      .assistant(), // Use LLM for assistant responses
+    true, // Forever loop (You can also use `.loopForever()`)
+  )
   .execute();
 ```
 
-Or, you can automate the conversation with defining the steps:
+(Default: `OpenAI GPT-4o-mini` model for assistant, `CLI` for user input)
 
 ```typescript
 import { Agent } from '@prompttrail/core';

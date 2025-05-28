@@ -66,15 +66,22 @@ describe('AssistantTemplate', () => {
     );
   });
 
-  it('should throw error during execution if no ContentSource is provided', async () => {
+  it('should use default LLM source when no ContentSource is provided', async () => {
+    // Mock generateText to return a valid response
+    vi.mocked(generateText).mockResolvedValue({
+      type: 'assistant',
+      content: 'Default LLM response',
+    });
+
     // This should not throw an error during instantiation
     const template = new Assistant();
 
-    // But, if we try to execute it, it should throw an error
-    // because no content source is given by anyone.
-    await expect(template.execute(createSession()))
-      // Use .rejects to assert that a promise-returning function throws an error when called
-      .rejects.toThrow('Content source required for AssistantTemplate');
+    // Execute should work with the default LLM source
+    const session = await template.execute(createSession());
+
+    expect(session.getLastMessage()?.type).toBe('assistant');
+    expect(session.getLastMessage()?.content).toBe('Default LLM response');
+    expect(generateText).toHaveBeenCalled();
   });
 
   it('should support interpolation in static content', async () => {
