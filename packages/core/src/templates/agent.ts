@@ -1,5 +1,5 @@
-import { ModelOutput, Source, ValidationOptions } from '../content_source';
 import type { Session } from '../session';
+import { ModelOutput, Source, ValidationOptions } from '../source';
 import { Attrs, Vars } from '../tagged_record';
 import { IValidator } from '../validators';
 import type { Template } from './base';

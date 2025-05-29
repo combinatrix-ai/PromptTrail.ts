@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Source } from '../../../content_source';
 import { generateText } from '../../../generate';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
+import { Source } from '../../../source';
 import { Attrs, Vars } from '../../../tagged_record';
 import {
   Agent,

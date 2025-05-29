@@ -1,5 +1,5 @@
-import type { Source } from '../../content_source';
 import type { Session } from '../../session';
+import type { Source } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';

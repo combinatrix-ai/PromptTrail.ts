@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ListSource } from '../../../content_source';
 import { generateText } from '../../../generate';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
+import { ListSource } from '../../../source';
 import { Agent } from '../../../templates';
 import { Loop } from '../../../templates/composite/loop';
 import { Sequence } from '../../../templates/composite/sequence';

@@ -10,9 +10,9 @@ import {
   ToolSet,
 } from 'ai';
 import { z } from 'zod';
-import type { LLMOptions } from './content_source';
 import type { Message } from './message';
 import type { Session } from './session';
+import type { LLMOptions } from './source';
 import { Attrs, Vars } from './tagged_record';
 
 /**

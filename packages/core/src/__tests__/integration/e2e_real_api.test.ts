@@ -9,10 +9,10 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { ListSource, LiteralSource, Source } from '../../content_source';
 import type { Message } from '../../message';
 import type { Session } from '../../session';
 import { createSession } from '../../session';
+import { ListSource, LiteralSource, Source } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import {
   Agent,

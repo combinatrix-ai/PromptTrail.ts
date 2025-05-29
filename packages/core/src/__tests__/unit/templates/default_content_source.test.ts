@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateText } from '../../../generate';
+import { createSession } from '../../../session';
 import {
   ListSource,
   LiteralSource,
   RandomSource,
   Source,
-} from '../../../content_source';
-import { generateText } from '../../../generate';
-import { createSession } from '../../../session';
+} from '../../../source';
 import { Loop } from '../../../templates/composite/loop';
 import { Sequence } from '../../../templates/composite/sequence';
 import { Subroutine } from '../../../templates/composite/subroutine';

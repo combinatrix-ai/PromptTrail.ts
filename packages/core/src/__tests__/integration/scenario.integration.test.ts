@@ -1,9 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Scenario, StepTemplates } from '../../templates/scenario';
-import { Source, LiteralSource } from '../../content_source';
-import { createSession } from '../../session';
-import { Vars } from '../../tagged_record';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as generateModule from '../../generate';
+import { createSession } from '../../session';
+import { Scenario, StepTemplates } from '../../templates/scenario';
 
 // Mock the generate module
 vi.mock('../../generate', async () => {

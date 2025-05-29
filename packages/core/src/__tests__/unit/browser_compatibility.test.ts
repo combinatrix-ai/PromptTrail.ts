@@ -6,8 +6,8 @@ import { Assistant, Sequence, System, User } from '../../templates';
 vi.mock('../../generate');
 
 // Import mocked modules after mocking
-import { Source } from '../../content_source';
 import { generateText } from '../../generate';
+import { Source } from '../../source';
 
 describe('Browser Compatibility', () => {
   beforeEach(() => {

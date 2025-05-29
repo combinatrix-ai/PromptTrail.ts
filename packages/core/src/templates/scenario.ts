@@ -1,11 +1,11 @@
-import { Attrs, Vars } from '../tagged_record';
-import type { Session } from '../session';
-import { createSession } from '../session';
-import type { Template } from './base';
-import { Agent } from './agent';
-import { Source, CLISource, LlmSource } from '../content_source';
 import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
+import type { Session } from '../session';
+import { createSession } from '../session';
+import { LlmSource, Source } from '../source';
+import { Attrs, Vars } from '../tagged_record';
+import { Agent } from './agent';
+import type { Template } from './base';
 
 /**
  * Base options for all step types

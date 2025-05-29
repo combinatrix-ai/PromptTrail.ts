@@ -1,6 +1,6 @@
-import type { Source } from '../../content_source';
 import type { UserMessage } from '../../message';
 import type { Session } from '../../session';
+import type { Source } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 

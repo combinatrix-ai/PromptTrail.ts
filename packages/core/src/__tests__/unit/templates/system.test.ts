@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CallbackSource, LiteralSource } from '../../../content_source';
 import { createSession } from '../../../session';
+import { CallbackSource, LiteralSource } from '../../../source';
 import { System } from '../../../templates/primitives/system';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';

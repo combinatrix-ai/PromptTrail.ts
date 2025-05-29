@@ -1,7 +1,7 @@
 // assistant.ts
-import { ModelOutput, Source, ValidationOptions } from '../../content_source';
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
+import { ModelOutput, Source, ValidationOptions } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';

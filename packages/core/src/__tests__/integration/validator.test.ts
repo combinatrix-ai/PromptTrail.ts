@@ -4,8 +4,8 @@ import { type IValidator, type TValidationResult } from '../../validators/base';
 
 vi.mock('../../generate');
 
-import { Source, type LlmSource } from '../../content_source';
 import { generateText } from '../../generate';
+import { Source, type LlmSource } from '../../source';
 import { Assistant } from '../../templates';
 
 describe('AssistantTemplate with Validator', () => {

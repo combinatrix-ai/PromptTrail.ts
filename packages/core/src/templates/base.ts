@@ -1,7 +1,7 @@
-import type { LlmSource, ModelOutput } from '../content_source';
-import { LiteralSource, Source } from '../content_source';
 import type { Session } from '../session';
 import { createSession } from '../session';
+import type { LlmSource, ModelOutput } from '../source';
+import { LiteralSource, Source } from '../source';
 import { Attrs, Vars } from '../tagged_record';
 import { interpolateTemplate } from '../utils/template_interpolation';
 

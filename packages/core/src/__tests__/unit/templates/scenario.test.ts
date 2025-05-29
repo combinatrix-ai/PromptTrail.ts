@@ -1,14 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSession } from '../../../session';
+import { Source } from '../../../source';
 import {
   Scenario,
-  StepTemplates,
   Scenarios,
+  StepTemplates,
   isInteractiveStep,
 } from '../../../templates/scenario';
-import { Source } from '../../../content_source';
-import { createSession } from '../../../session';
-import { Vars } from '../../../tagged_record';
-import * as generateModule from '../../../generate';
 
 // Mock the generate module instead of Source to avoid instanceof issues
 vi.mock('../../../generate', async () => {

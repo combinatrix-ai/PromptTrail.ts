@@ -1,7 +1,7 @@
 // structured.ts
 import { z } from 'zod';
-import { LlmSource, ModelOutput, Source } from '../../content_source';
 import type { Session } from '../../session';
+import { LlmSource, ModelOutput, Source } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import { TemplateBase } from '../base';
 

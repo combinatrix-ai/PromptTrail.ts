@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LlmSource, Source } from '../../../content_source';
 import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
+import { LlmSource, Source } from '../../../source';
 import { CustomValidator } from '../../../validators/custom';
 
 // Mock the generate module

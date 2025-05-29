@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { LlmSource, Source } from '../../../content_source';
 import { createSession } from '../../../session';
+import { LlmSource, Source } from '../../../source';
 import { Structured } from '../../../templates/primitives/structured';
 
 const hasOpenAIKey = !!process.env.OPENAI_API_KEY;

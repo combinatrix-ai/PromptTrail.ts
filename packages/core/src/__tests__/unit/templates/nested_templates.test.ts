@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Source, type LlmSource } from '../../../content_source';
 import { generateText } from '../../../generate';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
+import { Source, type LlmSource } from '../../../source';
 import {
   Assistant,
   Conditional,

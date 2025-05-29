@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LiteralSource, Source } from '../../../content_source';
 import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
+import { LiteralSource, Source } from '../../../source';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
