@@ -5,8 +5,6 @@
   "description": "PromptTrail: A lightweight library for Prompt Programming, Agent as Code",
   "type": "module",
   "scripts": {
-    "dump:ts": "find examples packages -type f -name \"*.ts\" ! -path \"*/node_modules/*\" -print0 | while IFS= read -r -d '' file; do echo -e \"\\`\\`\\`ts\\n// $file\\n\"; cat \"$file\"; echo -e \"\\n\\`\\`\\`\\n\"; done > /tmp/ts_files.txt",
-    "dump:ts:copy": "pnpm dump:ts && cat /tmp/ts_files.txt | pbcopy",
     "build": "pnpm -r build",
     "test": "vitest --run --watch=false",
     "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1; cat \"$tmpfile\" && rm \"$tmpfile\"",
@@ -32,6 +30,7 @@
     "ignore": "^7.0.4",
     "madge": "^8.0.0",
     "prettier": "^3.5.3",
+    "tiktoken": "^1.0.21",
     "ts-node": "^10.9.2",
     "ts-prune": "^0.10.3",
     "tsup": "^8.4.0",

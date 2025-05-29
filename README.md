@@ -36,15 +36,17 @@ const researchTools = {
   searchDocs: tool({
     description: 'Search documentation',
     parameters: z.object({ query: z.string() }),
-    execute: async ({ query }) => ({ results: ['...'] })
-  })
+    execute: async ({ query }) => ({ results: ['...'] }),
+  }),
 };
 
-const scenario = Scenario
-  .system('You are a research assistant. Help users find information.', {
+const scenario = Scenario.system(
+  'You are a research assistant. Help users find information.',
+  {
     tools: researchTools,
-    llmSource: Source.llm().openai({ model: 'gpt-4' })
-  })
+    llmSource: Source.llm().openai({ model: 'gpt-4' }),
+  },
+)
   .step('Ask the user for their question', { allow_interaction: true })
   .step('Research the question using tools 2-3 times', { max_attempts: 6 })
   .step('Provide a comprehensive answer')
@@ -63,7 +65,7 @@ Behind the scenes, Scenario compiles to Agent-based subroutines with loops that 
 
 ### Key Features
 
-- **Built-in Tools**: 
+- **Built-in Tools**:
   - `ask_user`: Get user input (only in interactive steps)
   - `check_goal`: LLM self-evaluates goal completion
   - Custom tools: Your domain-specific tools
