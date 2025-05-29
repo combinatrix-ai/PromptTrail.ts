@@ -6,5 +6,6 @@ export { createSession } from './session';
 export * from './tagged_record';
 export * from './templates';
 export * from './templates/primitives/structured';
+export * from './tool';
 export * from './utils';
 export * from './validators';

@@ -690,6 +690,24 @@ export class LlmSource extends ModelSource {
     });
   }
 
+  withTool(name: string, tool: unknown): LlmSource {
+    return this.clone({
+      tools: {
+        ...this.options.tools,
+        [name]: tool,
+      },
+    });
+  }
+
+  withTools(tools: Record<string, unknown>): LlmSource {
+    return this.clone({
+      tools: {
+        ...this.options.tools,
+        ...tools,
+      },
+    });
+  }
+
   toolChoice(choice: 'auto' | 'required' | 'none'): LlmSource {
     return this.clone({ toolChoice: choice });
   }

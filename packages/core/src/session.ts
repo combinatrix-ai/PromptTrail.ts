@@ -23,7 +23,20 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
           console.log('\nUser:', message.content);
           break;
         case 'assistant':
-          console.log('Assistant:', message.content);
+          // Only print content if it's not just whitespace
+          if (message.content && message.content.trim()) {
+            console.log('Assistant:', message.content);
+          }
+          // Print tool calls if present
+          if (message.toolCalls && message.toolCalls.length > 0) {
+            console.log('\nAssistant:');
+            message.toolCalls.forEach((tc) => {
+              console.log(`[${tc.name}(${JSON.stringify(tc.arguments)})]`);
+            });
+          }
+          break;
+        case 'tool_result':
+          console.log('Tool Result:', message.content);
           break;
       }
     }

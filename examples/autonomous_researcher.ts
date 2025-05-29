@@ -1,5 +1,4 @@
-import { Scenario, Source, createSession } from '@prompttrail/core';
-import { tool } from 'ai';
+import { Scenario, Source, Tool, createSession } from '@prompttrail/core';
 import { z } from 'zod';
 
 /**
@@ -11,7 +10,7 @@ import { z } from 'zod';
 
 // Research tools that return varying amounts of information
 const researchTools = {
-  searchDocumentation: tool({
+  searchDocumentation: Tool.create({
     description: 'Search project documentation for information',
     parameters: z.object({
       query: z.string().describe('Search query'),
@@ -76,7 +75,7 @@ const researchTools = {
     },
   }),
 
-  analyzeCodebase: tool({
+  analyzeCodebase: Tool.create({
     description: 'Analyze codebase statistics and structure',
     parameters: z.object({
       aspect: z
@@ -123,7 +122,7 @@ const researchTools = {
     },
   }),
 
-  investigateSpecific: tool({
+  investigateSpecific: Tool.create({
     description: 'Deep dive into a specific file or component',
     parameters: z.object({
       target: z

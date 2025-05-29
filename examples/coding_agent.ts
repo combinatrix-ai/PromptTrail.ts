@@ -14,8 +14,8 @@ import {
   System,
 } from '../packages/core/src/index';
 
-// Import tool definitions from ai SDK
-import { tool, type Tool } from 'ai';
+// Import Tool namespace from PromptTrail
+import { Tool } from '../packages/core/src/index';
 import { z } from 'zod';
 
 // Node.js modules for file and command operations
@@ -26,12 +26,12 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 // Define shell command tool
-const shellCommandTool = tool({
+const shellCommandTool = Tool.create({
   description: 'Execute a shell command',
   parameters: z.object({
     command: z.string().describe('Shell command to execute'),
   }),
-  execute: async (input: z.infer<z.ZodObject<{ command: z.ZodString }>>) => {
+  execute: async (input) => {
     try {
       console.log(`[Debug] Executing command: ${input.command}`);
       const { stdout, stderr } = await execAsync(input.command);
@@ -44,12 +44,12 @@ const shellCommandTool = tool({
 });
 
 // Define file reading tool
-const readFileTool = tool({
+const readFileTool = Tool.create({
   description: 'Read content from a file',
   parameters: z.object({
     path: z.string().describe('Path to the file to read'),
   }),
-  execute: async (input: z.infer<z.ZodObject<{ path: z.ZodString }>>) => {
+  execute: async (input) => {
     try {
       const content = await readFile(input.path, 'utf-8');
       console.log(
@@ -66,15 +66,13 @@ const readFileTool = tool({
 });
 
 // Define file writing tool
-const writeFileTool = tool({
+const writeFileTool = Tool.create({
   description: 'Write content to a file',
   parameters: z.object({
     path: z.string().describe('Path to write the file'),
     content: z.string().describe('Content to write to the file'),
   }),
-  execute: async (
-    input: z.infer<z.ZodObject<{ path: z.ZodString; content: z.ZodString }>>,
-  ) => {
+  execute: async (input) => {
     try {
       console.log(
         `[Debug] Writing content to ${input.path}:`,
@@ -113,22 +111,24 @@ export class CodingAgent {
       write_file: writeFileTool,
     };
 
-    // Configure the LLM options
-    const baseOptions = {
-      provider: {
-        type: config.provider,
-        apiKey: config.apiKey,
-        modelName:
-          config.provider === 'openai'
-            ? 'gpt-4o-mini'
-            : 'claude-3-5-haiku-latest',
-      },
-      temperature: 0.7,
-      tools: this.tools,
-    };
+    // Configure the LLM with tools using the fluent API
+    let llmSource = Source.llm();
 
-    // Create options with tools using the fluent API
-    this.llm = Source.llm(baseOptions);
+    // Configure provider
+    if (config.provider === 'openai') {
+      llmSource = llmSource.openai({
+        apiKey: config.apiKey,
+        modelName: config.modelName || 'gpt-4o-mini',
+      });
+    } else {
+      llmSource = llmSource.anthropic({
+        apiKey: config.apiKey,
+        modelName: config.modelName || 'claude-3-5-haiku-latest',
+      });
+    }
+
+    // Add temperature and tools
+    this.llm = llmSource.temperature(0.7).withTools(this.tools);
   }
 
   /**

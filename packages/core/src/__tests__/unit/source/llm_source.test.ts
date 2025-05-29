@@ -314,6 +314,119 @@ describe('LlmSource', () => {
         }),
       );
     });
+
+    it('should add tool with withTool method', async () => {
+      const weatherTool = {
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: { type: 'object' },
+      };
+
+      const source = Source.llm().withTool('weather', weatherTool);
+      await source.getContent(createSession());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tools: expect.objectContaining({
+            weather: weatherTool,
+          }),
+        }),
+      );
+    });
+
+    it('should add multiple tools with withTools method', async () => {
+      const tools = {
+        weather: { name: 'weather', description: 'Get weather' },
+        calculator: { name: 'calculator', description: 'Calculate' },
+        search: { name: 'search', description: 'Search web' },
+      };
+
+      const source = Source.llm().withTools(tools);
+      await source.getContent(createSession());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tools: expect.objectContaining(tools),
+        }),
+      );
+    });
+
+    it('should merge tools when using withTools multiple times', async () => {
+      const firstTools = {
+        weather: { name: 'weather' },
+        calculator: { name: 'calculator' },
+      };
+      const secondTools = {
+        search: { name: 'search' },
+        translate: { name: 'translate' },
+      };
+
+      const source = Source.llm().withTools(firstTools).withTools(secondTools);
+
+      await source.getContent(createSession());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tools: expect.objectContaining({
+            ...firstTools,
+            ...secondTools,
+          }),
+        }),
+      );
+    });
+
+    it('should override tools with same name when using withTools', async () => {
+      const firstTools = {
+        weather: { name: 'weather', version: 1 },
+        calculator: { name: 'calculator' },
+      };
+      const secondTools = {
+        weather: { name: 'weather', version: 2 }, // Should override
+        search: { name: 'search' },
+      };
+
+      const source = Source.llm().withTools(firstTools).withTools(secondTools);
+
+      await source.getContent(createSession());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tools: expect.objectContaining({
+            weather: { name: 'weather', version: 2 },
+            calculator: { name: 'calculator' },
+            search: { name: 'search' },
+          }),
+        }),
+      );
+    });
+
+    it('should combine withTool and withTools methods', async () => {
+      const tools = {
+        weather: { name: 'weather' },
+        calculator: { name: 'calculator' },
+      };
+      const searchTool = { name: 'search', description: 'Search' };
+
+      const source = Source.llm()
+        .withTools(tools)
+        .withTool('search', searchTool);
+
+      await source.getContent(createSession());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tools: expect.objectContaining({
+            ...tools,
+            search: searchTool,
+          }),
+        }),
+      );
+    });
   });
 
   describe('Browser compatibility', () => {
