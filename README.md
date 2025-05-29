@@ -13,9 +13,10 @@ You can write turn-by-turn conversation management (Agent Level):
 import { Agent } from '@prompttrail/core';
 const agent = Agent.system('You are a helpful assistant.')
   .loop(
-    l => l
-      .user() // Use CLI for user input
-      .assistant(), // Use LLM for assistant responses
+    (l) =>
+      l
+        .user() // Use CLI for user input
+        .assistant(), // Use LLM for assistant responses
     true, // Forever loop (You can also use `.loopForever()`)
   )
   .execute();
@@ -23,91 +24,58 @@ const agent = Agent.system('You are a helpful assistant.')
 
 (Default: `OpenAI GPT-4o-mini` model for assistant, `CLI` for user input)
 
+Or, you can automate the conversation by defining the steps (Scenario Level):
+
 ```typescript
-import { Agent } from '@prompttrail/core';
-const agent = Scenario.create()
-  .system('You are a research assistant. Help the user with their research.')
-  .step('Ask the user for their question.', { allow_interaction: true })
-  .step('Do search for the answer until you get satisfied information.')
-  .tool(Tools.search())
-  .step('Summarize the information and return to the user')
-  .step(
-    'Get comments from the user. Follow up on their feedback. If satisfied, exit conversation.',
-    {
-      allow_interaction: true,
-    },
-  )
-  .tool(Tools.exit())
+import { Scenario, Source } from '@prompttrail/core';
+import { tool } from 'ai';
+import { z } from 'zod';
+
+// Define your research tools
+const researchTools = {
+  searchDocs: tool({
+    description: 'Search documentation',
+    parameters: z.object({ query: z.string() }),
+    execute: async ({ query }) => ({ results: ['...'] })
+  })
+};
+
+const scenario = Scenario
+  .system('You are a research assistant. Help users find information.', {
+    tools: researchTools,
+    llmSource: Source.llm().openai({ model: 'gpt-4' })
+  })
+  .step('Ask the user for their question', { allow_interaction: true })
+  .step('Research the question using tools 2-3 times', { max_attempts: 6 })
+  .step('Provide a comprehensive answer')
   .execute();
 ```
 
-This will be compiled to the folliowing:
+### How Scenario API Works
 
-```typescript
-const agent = Agent.create()
-  .system(
-    "You are a research assistant. Help the user with their research.",
-    {parent: "system_1"} // L1 layer
-  )
-  .subroutine(
-    initWith: Subroutine.initWithParent(), // Use the parent session as the initial context
-    squashWith: Subroutine.squashWithParent(), // Merge the subroutine result with the parent session
-    new Agent()
-    .loop()
-    .system(
-      "You are a research assistant. Help the user with their research." // Original system prompt
-      + "Ask the user for their question." // Goal as additional context
-    )
-    .assistant() // Loop only by assistant
-    .tool(Tools.ask_user()) // allow_interaction: true
-    .loopif(
-      Validation.isNotGoalSatisfied() // Loop if the goal is not satisfied, this will be determined by LLM
-    ),
-    {parent: "step_1"} // L1 layer
-  )
-  .subroutine(
-    initWith: Subroutine.initWithParent(), // Use the parent session as the initial context
-    squashWith: Subroutine.squashWithParent(), // Merge the subroutine result with the parent session
-    new Agent()
-    .loop()
-    .system(
-      "You are a research assistant. Help the user with their research." // Original system prompt
-      + "Do search for the answer until you get satisfied information." // Goal as additional context
-    )
-    .assistant() // Loop only by assistant
-    .tool(Tools.search())
-    // allow_interaction: false
-    .loopif(
-      Validation.isNotGoalSatisfied() // Loop if the goal is not satisfied, this will be determined by LLM
-    )
-  )
-  .subroutine(
-    initWith: Subroutine.initWithParent(), // Use the parent session as the initial context
-    squashWith: Subroutine.squashWithParent(), // Merge the subroutine result with the parent session
-    new Agent()
-    .loop()
-    .system(
-      "You are a research assistant. Help the user with their research." // Original system prompt
-      + "Summarize the information and return to the user" // Goal as additional context
-    )
-    .assistant() // Loop only by assistant
-    .loopif(
-      Validation.isNotGoalSatisfied() // Loop if the goal is not satisfied, this will be determined by LLM
-    )
-  .subroutine(
-    initWith: Subroutine.initWithParent(), // Use the parent session as the initial context
-    squashWith: Subroutine.squashWithParent(), // Merge the subroutine result with the parent session
-    new Agent()
-    .loop()
-    .system(
-      "You are a research assistant. Help the user with their research." // Original system prompt
-      + "Get comments from the user. Follow up on their feedback. If satisfied, exit conversation." // Goal as additional context
-    )
-    .assistant() // Loop only by assistant
-    .tool(Tools.ask_user()) // allow_interaction: true
-    .tool(Tools.exit()) // allow_interaction: true
-  )
-```
+The Scenario API provides a high-level, goal-oriented interface for building autonomous agents. Each step represents a goal that the LLM must accomplish using available tools:
+
+1. **Interactive Steps** (`allow_interaction: true`): The LLM must use the `ask_user` tool to get user input
+2. **Processing Steps**: The LLM uses provided tools autonomously to achieve the goal
+3. **Goal Validation**: Each step includes an automatic `check_goal` tool that the LLM uses to self-evaluate completion
+
+Behind the scenes, Scenario compiles to Agent-based subroutines with loops that continue until goals are satisfied or max attempts are reached.
+
+### Key Features
+
+- **Built-in Tools**: 
+  - `ask_user`: Get user input (only in interactive steps)
+  - `check_goal`: LLM self-evaluates goal completion
+  - Custom tools: Your domain-specific tools
+- **Step Control**:
+  - `max_attempts`: Limit iterations per step (default: 10)
+  - `is_satisfied`: Custom validation function
+  - `interaction_prompt`: Custom prompt for user interaction
+- **Convenience Methods**:
+  - `.interact()`: Interactive step shorthand
+  - `.process()`: Processing step shorthand
+  - `.collect()`: Collect specific information
+  - `.decide()`: Make decisions with branches
 
 We're focusing on providing sensible defaults for the most common use cases, but you can customize everything.
 
@@ -165,7 +133,7 @@ This will appear like this in the terminal:
 
 ```bash
 Assistant: Hello!
-What's your name? > 
+What's your name? >
 ```
 
 You can interact with the user in a more structured way, by defining the data structure of the conversation:
@@ -198,7 +166,7 @@ npm install github:combinatrix-ai/PromptTrail.ts
 
 # Using yarn
 yarn add github:combinatrix-ai/PromptTrail.ts
-````
+```
 
 ## Package Structure
 
@@ -209,23 +177,19 @@ yarn add github:combinatrix-ai/PromptTrail.ts
 
 ```typescript
 // Usually all imports are from @prompttrail/core
-import { Agent, createSession, createGenerateOptions } from '@prompttrail/core';
-
-// Define generateOptions for OpenAI
-let openAIgenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY!,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-});
+import { Agent, Source, createSession } from '@prompttrail/core';
 
 // Create a simple conversation template using the Agent builder
 const chat = new Agent()
   .addSystem("I'm a helpful assistant.")
   .addUser("What's TypeScript?")
-  .addAssistant(openAIgenerateOptions);
+  .addAssistant(
+    Source.llm()
+      .openai()
+      .apiKey(process.env.OPENAI_API_KEY!)
+      .model('gpt-4o-mini')
+      .temperature(0.7),
+  );
 
 // Execute the template
 const session = await chat.execute(
@@ -251,14 +215,19 @@ console.log('last message:', session.getLastMessage()?.content);
   - `Session` is an immutable object with `vars` and `messages`.
     - `vars` is a structured object that holds conversation state.
       - You can store formatted LLM responses or external data for later use.
-        - For example, if `session.vars == { userName: 'Alice' }`, writing `Hi ${userName}` becomes `Hi Alice`.
+        - For example, if `session.vars == { userName: 'Alice' }`, writing `Hi ${userName}!` becomes `Hi Alice!`.
         - We'll show how to save data to `vars` later.
     - `messages` is an immutable array of conversation history.
       - For example, `[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`.
       - Messages can include `attrs` metadata.
-        - For instance `{ role: 'user', content: 'Hello!', attrs: { timestamp: Date.now() } }` attaches a timestamp.
+        - For instance `{ role: 'user', content: 'Hello!', attrs: { timestamp: "2025-03-25T12:00:00Z" } }` attaches a timestamp.
         - We'll cover how to save data to `attrs` later.
 - Because `Session` uses `vars` and `attrs` types, TypeScript can safely infer conversation state.
+  - ```
+      type UserVars = { userName: string; userId: string; } extends Vars;
+      type UserAttrs = { timestamp: number; customRole: string; } extends Attrs;
+      const session = createSession<UserVars, UserAttrs>();
+    ```
 
 ### API Convention
 

@@ -42,11 +42,18 @@ export function convertSessionToAiSdkMessages(
     tool_calls?: Array<unknown>;
   }> = [];
 
-  // TODO: Check this implementation is sane?
-  // Filter out tool_result messages for now, as AI SDK doesn't support them directly
-  // We'll handle them separately
-  const toolResults: Array<{ content: string; toolCallId: string }> = [];
+  // Build a map of tool results by their tool call ID for easy lookup
+  const toolResultsMap = new Map<string, string>();
+  for (const msg of session.messages) {
+    if (msg.type === 'tool_result') {
+      const toolCallId = msg.attrs?.toolCallId as string;
+      if (toolCallId) {
+        toolResultsMap.set(toolCallId, msg.content);
+      }
+    }
+  }
 
+  // Process messages in order, but handle tool results immediately after their assistant message
   for (const msg of session.messages) {
     if (msg.type === 'system') {
       messages.push({ role: 'system', content: msg.content });
@@ -75,24 +82,22 @@ export function convertSessionToAiSdkMessages(
       }
 
       messages.push(assistantMsg);
-    } else if (msg.type === 'tool_result') {
-      // Store tool results to process later
-      toolResults.push({
-        content: msg.content,
-        toolCallId: (msg.attrs?.toolCallId as string) || crypto.randomUUID(),
-      });
-    }
-  }
 
-  // Process tool results
-  if (toolResults.length > 0) {
-    for (const result of toolResults) {
-      messages.push({
-        role: 'tool',
-        content: result.content,
-        tool_call_id: result.toolCallId,
-      });
+      // Immediately add tool results for this assistant message
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const toolCall of msg.toolCalls) {
+          const toolResult = toolResultsMap.get(toolCall.id);
+          if (toolResult) {
+            messages.push({
+              role: 'tool',
+              content: toolResult,
+              tool_call_id: toolCall.id,
+            });
+          }
+        }
+      }
     }
+    // Skip tool_result messages as they're handled above
   }
 
   return messages;
@@ -212,7 +217,8 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
       type: 'assistant',
       content: content,
       toolCalls: formattedToolCalls,
-    };
+      toolResults: result.toolResults, // Include tool results from ai-sdk
+    } as any;
   }
 
   return {

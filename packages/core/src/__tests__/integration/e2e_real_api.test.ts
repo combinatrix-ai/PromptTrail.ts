@@ -419,12 +419,16 @@ describe('End-to-End Workflows with Real APIs', () => {
     const session = await template.execute(createSession());
 
     const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect_types(messages, ['system', 'user', 'assistant']);
+    expect(messages).toHaveLength(4);
+    expect_types(messages, ['system', 'user', 'assistant', 'tool_result']);
 
     expect(messages[2].toolCalls).toBeDefined();
     const toolCalls = messages[2].toolCalls!;
     expect(toolCalls[0].name).toBe('weather');
+
+    // Verify the tool result message
+    expect(messages[3].type).toBe('tool_result');
+    expect(messages[3].content).toBeDefined();
   });
 
   it('should execute a conversation with a loop and user input', async () => {

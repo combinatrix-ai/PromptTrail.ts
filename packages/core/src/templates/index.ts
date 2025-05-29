@@ -16,3 +16,17 @@ export { User } from './primitives/user';
 
 // Export Agent (Template Builder)
 export { Agent } from './agent';
+
+// Export Scenario API
+export {
+  Scenario,
+  StepTemplates,
+  Scenarios,
+  isInteractiveStep,
+} from './scenario';
+export type {
+  StepOptions,
+  InteractiveStepOptions,
+  NonInteractiveStepOptions,
+  ScenarioConfig,
+} from './scenario';

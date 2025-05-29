@@ -27,7 +27,10 @@ export class Assistant<
       this.contentSource = Source.llm(); // Default to Source.llm()
     } else {
       // Use the initializeContentSource method from BaseTemplate
-      this.contentSource = this.initializeContentSource(contentOrSource, 'model');
+      this.contentSource = this.initializeContentSource(
+        contentOrSource,
+        'model',
+      );
     }
 
     // Handle both validator and options cases
@@ -53,10 +56,12 @@ export class Assistant<
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
-    
+
     // Content source should always be available now (either provided or default)
     if (!this.contentSource) {
-      throw new Error('Content source initialization failed for AssistantTemplate');
+      throw new Error(
+        'Content source initialization failed for AssistantTemplate',
+      );
     }
 
     let attempts = 0;
@@ -102,6 +107,16 @@ export class Assistant<
           metadata: outpuTAttrs,
           structuredOutput: outputStructured,
         };
+
+        // Extract tool results if available
+        if (
+          rawOutput &&
+          typeof rawOutput === 'object' &&
+          'toolResults' in rawOutput
+        ) {
+          currentOutput.toolResults = (rawOutput as ModelOutput).toolResults;
+        }
+
         lastOutput = currentOutput; // Keep track of the very last output
 
         // 2. Validate Content (if validator exists)
@@ -128,7 +143,22 @@ export class Assistant<
           attrs: Attrs.create<TAttrs>(currentOutput.metadata as TAttrs),
           structuredContent: currentOutput.structuredOutput,
         };
-        return validSession.addMessage(message);
+        let updatedSession = validSession.addMessage(message);
+
+        // Add tool results as separate messages if available
+        if (currentOutput.toolResults && currentOutput.toolResults.length > 0) {
+          for (const toolResult of currentOutput.toolResults) {
+            updatedSession = updatedSession.addMessage({
+              type: 'tool_result',
+              content: JSON.stringify(toolResult.result),
+              attrs: Attrs.create<TAttrs>({
+                toolCallId: toolResult.toolCallId,
+              } as TAttrs),
+            });
+          }
+        }
+
+        return updatedSession;
       } catch (error) {
         // 4. Handle Error (Validation or other error during try block)
         currentError = error as Error;
@@ -169,6 +199,9 @@ export class Assistant<
         structuredContent: lastOutput.structuredOutput,
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);
+
+      // Note: Not adding tool results to avoid ai-sdk message ordering issues
+
       return lastAttemptSession; // Resolve with the session containing the last (failed) output
     }
 

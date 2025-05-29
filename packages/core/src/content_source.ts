@@ -85,6 +85,10 @@ export interface ModelOutput {
     arguments: Record<string, unknown>;
     id: string;
   }>;
+  toolResults?: Array<{
+    toolCallId: string;
+    result: unknown;
+  }>;
   structuredOutput?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
@@ -804,6 +808,7 @@ export class LlmSource extends ModelSource {
           return {
             content: responseContent,
             toolCalls: response.toolCalls,
+            toolResults: response.toolResults,
             metadata: response.attrs,
             structuredOutput: response.structuredOutput,
           };
@@ -823,6 +828,7 @@ export class LlmSource extends ModelSource {
             return {
               content: responseContent,
               toolCalls: response.toolCalls,
+              toolResults: response.toolResults,
               metadata: response.attrs,
               structuredOutput: response.structuredOutput,
             };

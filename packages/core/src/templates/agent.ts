@@ -1,5 +1,4 @@
 import { ModelOutput, Source, ValidationOptions } from '../content_source';
-import { GenerateOptions } from '../generate_options';
 import type { Session } from '../session';
 import { Attrs, Vars } from '../tagged_record';
 import { IValidator } from '../validators';
@@ -67,11 +66,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource?:
-      | string
-      | Source<ModelOutput>
-      | GenerateOptions
-      | Record<string, any>,
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
     return new Agent<TC, TM>().addAssistant(
@@ -106,11 +101,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   addAssistant(
-    contentOrSource?:
-      | string
-      | Source<ModelOutput>
-      | GenerateOptions
-      | Record<string, any>,
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
     this.root.add(new Assistant(contentOrSource, validatorOrOptions));
@@ -118,11 +109,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   assistant(
-    contentOrSource?:
-      | string
-      | Source<ModelOutput>
-      | GenerateOptions
-      | Record<string, any>,
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
     return this.addAssistant(contentOrSource, validatorOrOptions);

@@ -81,6 +81,26 @@ pnpm -r build
 cd packages/core && pnpm build
 ```
 
+### Running Examples
+
+```bash
+# Run examples using bun
+bun run examples/[example_name].ts
+
+# Example: Run the autonomous researcher
+bun run examples/autonomous_researcher.ts
+```
+
+### Installing Dependencies
+
+```bash
+# Install dependencies in workspace root (for pnpm workspaces)
+pnpm install -w
+
+# Install dev dependencies in workspace root
+pnpm install -w -D <package-name>
+```
+
 ## Code Style and Conventions
 
 ### TypeScript
