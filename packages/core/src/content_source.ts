@@ -15,6 +15,26 @@ import type {
   TValidationResult as ValidationResult,
 } from './validators/base';
 
+// --- Debug Mode Configuration ---
+
+/**
+ * Get debug mode configuration for LLM sources
+ */
+function isDebugMode(): boolean {
+  return process.env.PROMPTTRAIL_DEBUG === 'true';
+}
+
+function getMaxLLMCalls(): number {
+  return process.env.PROMPTTRAIL_MAX_LLM_CALLS
+    ? parseInt(process.env.PROMPTTRAIL_MAX_LLM_CALLS, 10)
+    : 100;
+}
+
+/**
+ * Global call counter for LLM sources in debug mode
+ */
+const llmCallCounter = new Map<string, number>();
+
 // --- Provider Types ---
 
 /**
@@ -70,6 +90,7 @@ export interface LLMOptions {
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
   sdkOptions?: Record<string, unknown>;
+  maxCallLimit?: number;
 }
 
 // --- Temporary Definitions (Move to appropriate files later) ---
@@ -553,6 +574,8 @@ export class LiteralSource extends StringSource {
 export class LlmSource extends ModelSource {
   private readonly options: LLMOptions;
   private schemaConfig?: SchemaGenerationOptions;
+  private instanceId: string;
+  private readonly maxCallLimit: number;
 
   constructor(
     options?: Partial<LLMOptions>,
@@ -570,6 +593,17 @@ export class LlmSource extends ModelSource {
       temperature: 0.7,
       ...options,
     };
+
+    // Generate unique instance ID for tracking
+    this.instanceId = `llm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Set max call limit from options or environment
+    this.maxCallLimit = options?.maxCallLimit ?? getMaxLLMCalls();
+
+    // Initialize counter for this instance in debug mode
+    if (isDebugMode()) {
+      llmCallCounter.set(this.instanceId, 0);
+    }
   }
 
   // Helper method to create new instance with merged options
@@ -590,6 +624,8 @@ export class LlmSource extends ModelSource {
         ...this.options.tools,
         ...newOptions.tools,
       },
+      // Preserve maxCallLimit unless explicitly overridden
+      maxCallLimit: newOptions.maxCallLimit ?? this.maxCallLimit,
     };
 
     const mergedValidationOptions = newValidationOptions || {
@@ -603,6 +639,14 @@ export class LlmSource extends ModelSource {
     if (this.schemaConfig) {
       newSource.schemaConfig = { ...this.schemaConfig };
     }
+
+    // In debug mode, share the same counter for cloned instances
+    if (isDebugMode() && llmCallCounter.has(this.instanceId)) {
+      const currentCount = llmCallCounter.get(this.instanceId) || 0;
+      llmCallCounter.delete(newSource.instanceId);
+      newSource.instanceId = this.instanceId;
+    }
+
     return newSource;
   }
 
@@ -729,6 +773,11 @@ export class LlmSource extends ModelSource {
     return this.clone(newOptions);
   }
 
+  // Debug mode configuration - returns new instance
+  maxCalls(limit: number): LlmSource {
+    return this.clone({ maxCallLimit: limit });
+  }
+
   // Schema configuration - returns new instance
   withSchema<T>(
     schema: z.ZodType<T>,
@@ -779,7 +828,25 @@ export class LlmSource extends ModelSource {
     );
   }
 
+  /** Get the instance ID for this LlmSource (useful for debugging/testing) */
+  getInstanceId(): string {
+    return this.instanceId;
+  }
+
   async getContent(session: Session<any, any>): Promise<ModelOutput> {
+    // Check call limit in debug mode
+    if (isDebugMode()) {
+      const currentCalls = llmCallCounter.get(this.instanceId) || 0;
+      if (currentCalls >= this.maxCallLimit) {
+        throw new Error(
+          `LlmSource call limit exceeded: ${currentCalls} calls made, limit is ${this.maxCallLimit}. ` +
+            `This safety check prevents infinite loops during development. ` +
+            `Set PROMPTTRAIL_DEBUG=false or increase PROMPTTRAIL_MAX_LLM_CALLS to disable.`,
+        );
+      }
+      llmCallCounter.set(this.instanceId, currentCalls + 1);
+    }
+
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
 
@@ -881,6 +948,16 @@ export namespace Source {
   /** Create LLM source with sensible defaults */
   export function llm(options?: Partial<LLMOptions>): LlmSource {
     return new LlmSource(options);
+  }
+
+  /** Reset all LLM call counters (useful for testing) */
+  export function resetCallCounters(): void {
+    llmCallCounter.clear();
+  }
+
+  /** Get current call count for a specific LlmSource instance */
+  export function getCallCount(instanceId: string): number {
+    return llmCallCounter.get(instanceId) || 0;
   }
 
   /** Create CLI input source with fluent API */
