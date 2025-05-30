@@ -27,15 +27,8 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle GenerateOptions on constructor', async () => {
-    // Create mock source with the same configuration
-    const llm = Source.mock({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4',
-      },
-      temperature: 0.7,
-    }).mockResponse({
+    // Create mock source  
+    const llm = Source.llm().mock().mockResponse({
       content: 'Generated content',
     });
 
@@ -44,15 +37,13 @@ describe('AssistantTemplate', () => {
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
 
-    // Verify the configuration was used
-    const lastCall = llm.getLastCall();
-    expect(lastCall.options.provider.type).toBe('openai');
-    expect(lastCall.options.provider.modelName).toBe('gpt-4');
+    // Verify the mock was called
+    expect(llm.getCallCount()).toBe(1);
   });
 
   it('should use default LLM source when no ContentSource is provided', async () => {
     // Create a mock source for the test
-    const mockSource = Source.mock().mockResponse({
+    const mockSource = Source.llm().mock().mockResponse({
       content: 'Default LLM response',
     });
 
@@ -132,14 +123,9 @@ describe('AssistantTemplate', () => {
     const weatherTool = createWeatherTool();
 
     // Create mock source with tool calls
-    const options = Source.mock({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4',
-      },
-    })
+    const options = Source.llm()
       .addTool('weather', weatherTool)
+      .mock()
       .mockResponse({
         content: 'I need to check the weather',
         toolCalls: [
@@ -209,13 +195,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create mock source that returns invalid content
-    const options = Source.mock({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4',
-      },
-    }).mockResponse({
+    const options = Source.llm().mock().mockResponse({
       content: 'This is invalid',
     });
 

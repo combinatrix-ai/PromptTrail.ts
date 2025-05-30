@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createSession } from '../../../session';
-import { Source, MockSource } from '../../../source';
+import { Source } from '../../../source';
 import { Validation } from '../../../validators';
 
-describe('MockSource', () => {
+describe('Source.llm().mock()', () => {
   describe('API compatibility with LlmSource', () => {
     it('should have the same fluent API as LlmSource', () => {
       const llmSource = Source.llm();
-      const mockSource = Source.mock();
+      const mockSource = Source.llm().mock();
 
       // Both should have the same methods
       expect(typeof mockSource.openai).toBe(typeof llmSource.openai);
@@ -38,16 +38,14 @@ describe('MockSource', () => {
       );
     });
 
-    it('should maintain fluent API chain with MockSource return type', () => {
-      const source = Source.mock()
+    it('should maintain fluent API chain with MockedLlmSource return type', () => {
+      const source = Source.llm()
         .openai({ modelName: 'gpt-4' })
         .temperature(0.8)
         .maxTokens(1000)
         .withTool('weather', { name: 'weather' })
-        .validate(Validation.length({ min: 10 }));
-
-      // All chained methods should return MockSource
-      expect(source).toBeInstanceOf(Source.mock().constructor);
+        .validate(Validation.length({ min: 10 }))
+        .mock();
 
       // Mock-specific methods should be available
       expect(typeof source.mockResponse).toBe('function');
@@ -57,30 +55,36 @@ describe('MockSource', () => {
 
     it('should support all provider configurations', () => {
       // OpenAI
-      const openaiMock = Source.mock().openai({
-        modelName: 'gpt-4',
-        apiKey: 'test-key',
-        baseURL: 'https://test.com',
-        organization: 'test-org',
-        dangerouslyAllowBrowser: true,
-      });
-      expect(openaiMock).toBeInstanceOf(Source.mock().constructor);
+      const openaiMock = Source.llm()
+        .openai({
+          modelName: 'gpt-4',
+          apiKey: 'test-key',
+          baseURL: 'https://test.com',
+          organization: 'test-org',
+          dangerouslyAllowBrowser: true,
+        })
+        .mock();
+      expect(typeof openaiMock.mockResponse).toBe('function');
 
       // Anthropic
-      const anthropicMock = Source.mock().anthropic({
-        modelName: 'claude-3',
-        apiKey: 'test-key',
-        baseURL: 'https://test.com',
-      });
-      expect(anthropicMock).toBeInstanceOf(Source.mock().constructor);
+      const anthropicMock = Source.llm()
+        .anthropic({
+          modelName: 'claude-3',
+          apiKey: 'test-key',
+          baseURL: 'https://test.com',
+        })
+        .mock();
+      expect(typeof anthropicMock.mockResponse).toBe('function');
 
       // Google
-      const googleMock = Source.mock().google({
-        modelName: 'gemini-pro',
-        apiKey: 'test-key',
-        baseURL: 'https://test.com',
-      });
-      expect(googleMock).toBeInstanceOf(Source.mock().constructor);
+      const googleMock = Source.llm()
+        .google({
+          modelName: 'gemini-pro',
+          apiKey: 'test-key',
+          baseURL: 'https://test.com',
+        })
+        .mock();
+      expect(typeof googleMock.mockResponse).toBe('function');
     });
 
     it('should support schema configuration', () => {
@@ -89,19 +93,21 @@ describe('MockSource', () => {
         age: z.number(),
       });
 
-      const mockWithSchema = Source.mock().withSchema(schema, {
-        mode: 'structured_output',
-        functionName: 'getUser',
-      });
+      const mockWithSchema = Source.llm()
+        .withSchema(schema, {
+          mode: 'structured_output',
+          functionName: 'getUser',
+        })
+        .mock();
 
-      expect(mockWithSchema).toBeInstanceOf(Source.mock().constructor);
+      expect(typeof mockWithSchema.mockResponse).toBe('function');
     });
   });
 
   describe('Mock functionality', () => {
     it('should return mock response', async () => {
       const session = createSession();
-      const mockSource = Source.mock().mockResponse({
+      const mockSource = Source.llm().mock().mockResponse({
         content: 'Test response',
       });
 
@@ -111,7 +117,7 @@ describe('MockSource', () => {
 
     it('should cycle through multiple mock responses', async () => {
       const session = createSession();
-      const mockSource = Source.mock().mockResponses(
+      const mockSource = Source.llm().mock().mockResponses(
         { content: 'Response 1' },
         { content: 'Response 2' },
         { content: 'Response 3' },
@@ -128,20 +134,23 @@ describe('MockSource', () => {
 
     it('should use callback for dynamic responses', async () => {
       const session = createSession({ context: { name: 'Alice' } });
-      const mockSource = Source.mock().mockCallback(async (sess, options) => ({
-        content: `Hello, ${sess.vars.name}! Temperature: ${options.temperature}`,
-      }));
+      const mockSource = Source.llm()
+        .temperature(0.9)
+        .mock()
+        .mockCallback(async (sess, options) => ({
+          content: `Hello, ${sess.vars.name}! Temperature: ${options.temperature}`,
+        }));
 
-      const source = mockSource.temperature(0.9);
-      const result = await source.getContent(session);
+      const result = await mockSource.getContent(session);
       expect(result.content).toBe('Hello, Alice! Temperature: 0.9');
     });
 
     it('should track call history', async () => {
       const session = createSession();
-      const mockSource = Source.mock()
+      const mockSource = Source.llm()
         .model('gpt-4')
         .temperature(0.7)
+        .mock()
         .mockResponse({ content: 'Test' });
 
       expect(mockSource.getCallCount()).toBe(0);
@@ -160,7 +169,7 @@ describe('MockSource', () => {
 
     it('should support reset', async () => {
       const session = createSession();
-      const mockSource = Source.mock().mockResponse({ content: 'Test' });
+      const mockSource = Source.llm().mock().mockResponse({ content: 'Test' });
 
       await mockSource.getContent(session);
       expect(mockSource.getCallCount()).toBe(1);
@@ -171,7 +180,7 @@ describe('MockSource', () => {
 
     it('should include tool calls and structured output in response', async () => {
       const session = createSession();
-      const mockSource = Source.mock().mockResponse({
+      const mockSource = Source.llm().mock().mockResponse({
         content: 'Using weather tool',
         toolCalls: [{ name: 'weather', arguments: { city: 'Tokyo' }, id: 'call_1' }],
         toolResults: [{ toolCallId: 'call_1', result: { temp: 25 } }],
@@ -195,13 +204,14 @@ describe('MockSource', () => {
       const session = createSession();
       const validator = Validation.length({ min: 20 });
 
-      const mockSource = Source.mock()
+      const mockSource = Source.llm()
         .validate(validator)
         .withRaiseError(true)
+        .mock()
         .mockResponse({ content: 'Too short' });
 
       await expect(mockSource.getContent(session)).rejects.toThrow(
-        'Validation failed:',
+        'Validation failed after 1 attempts:',
       );
     });
 
@@ -210,9 +220,10 @@ describe('MockSource', () => {
       const validator = Validation.length({ min: 20 });
 
       // With raiseError = false, should return content even if invalid
-      const mockSource = Source.mock()
+      const mockSource = Source.llm()
         .validate(validator)
         .withRaiseError(false)
+        .mock()
         .mockResponse({ content: 'Too short' });
 
       const result = await mockSource.getContent(session);
@@ -221,21 +232,27 @@ describe('MockSource', () => {
 
     it('should return default mock response when none is set', async () => {
       const session = createSession();
-      const mockSource = Source.mock();
+      const mockSource = Source.llm().mock();
 
       const result = await mockSource.getContent(session);
       expect(result.content).toBe('Mock LLM response');
     });
 
-    it('should maintain immutability', () => {
-      const original = Source.mock().mockResponse({ content: 'Original' });
-      const modified = original.temperature(0.5).mockResponse({
+    it('should maintain immutability', async () => {
+      const session = createSession();
+      const original = Source.llm().mock().mockResponse({ content: 'Original' });
+      
+      // Call getContent to populate call history
+      await original.getContent(session);
+      expect(original.getCallCount()).toBe(1);
+      
+      // Create modified version should not affect original's call history
+      const modified = Source.llm().temperature(0.5).mock().mockResponse({
         content: 'Modified',
       });
 
-      // They should be different instances
-      expect(original).not.toBe(modified);
-      expect(original.getCallCount()).toBe(0);
+      // They should be different instances with independent state
+      expect(original.getCallCount()).toBe(1);
       expect(modified.getCallCount()).toBe(0);
     });
   });

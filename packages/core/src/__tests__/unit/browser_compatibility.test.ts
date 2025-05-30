@@ -30,10 +30,7 @@ describe('Browser Compatibility', () => {
   });
 
   it('should work with templates in browser context', async () => {
-    const llm: Source = Source.llm()
-      .apiKey('test-api-key')
-      .model('gpt-4o-mini')
-      .temperature(0.7);
+    const llm: Source = Source.llm();
 
     // Create a template
     const template = new Sequence()

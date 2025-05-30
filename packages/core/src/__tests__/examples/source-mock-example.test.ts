@@ -3,10 +3,10 @@ import { Agent } from '../../templates';
 import { createSession } from '../../session';
 import { Source } from '../../source';
 
-describe('Source.mock() examples', () => {
+describe('Source.llm().mock() examples', () => {
   it('should demonstrate basic mock usage', async () => {
     // Create a mock source that returns a fixed response
-    const mockSource = Source.mock().mockResponse({
+    const mockSource = Source.llm().mock().mockResponse({
       content: 'Hello from mock!',
     });
 
@@ -23,10 +23,11 @@ describe('Source.mock() examples', () => {
 
   it('should demonstrate mock with fluent API configuration', async () => {
     // Mock maintains the same fluent API as Source.llm()
-    const mockSource = Source.mock()
+    const mockSource = Source.llm()
       .openai({ modelName: 'gpt-4' })
       .temperature(0.8)
       .maxTokens(500)
+      .mock()
       .mockResponse({ content: 'Configured mock response' });
 
     // The configuration is available for assertions
@@ -43,7 +44,7 @@ describe('Source.mock() examples', () => {
   });
 
   it('should demonstrate cycling through multiple responses', async () => {
-    const mockSource = Source.mock().mockResponses(
+    const mockSource = Source.llm().mock().mockResponses(
       { content: 'First response' },
       { content: 'Second response' },
       { content: 'Third response' },
@@ -64,20 +65,23 @@ describe('Source.mock() examples', () => {
   });
 
   it('should demonstrate dynamic responses with callback', async () => {
-    const mockSource = Source.mock().mockCallback(async (session, options) => {
-      // Access session variables
-      const userName = session.vars.userName || 'User';
-      
-      // Access LLM options
-      const model = options.provider.modelName;
-      
-      return {
-        content: `Hello ${userName}, I'm using ${model}`,
-      };
-    });
+    const mockSource = Source.llm()
+      .model('claude-3')
+      .mock()
+      .mockCallback(async (session, options) => {
+        // Access session variables
+        const userName = session.vars.userName || 'User';
+        
+        // Access LLM options
+        const model = options.provider.modelName;
+        
+        return {
+          content: `Hello ${userName}, I'm using ${model}`,
+        };
+      });
 
     const agent = new Agent()
-      .addAssistant(mockSource.model('claude-3'));
+      .addAssistant(mockSource);
 
     const session = await agent.execute(
       createSession({ context: { userName: 'Alice' } })
@@ -87,7 +91,7 @@ describe('Source.mock() examples', () => {
   });
 
   it('should demonstrate mocking tool calls', async () => {
-    const mockSource = Source.mock().mockResponse({
+    const mockSource = Source.llm().mock().mockResponse({
       content: 'Let me check the weather for you.',
       toolCalls: [{
         name: 'getWeather',
@@ -110,8 +114,9 @@ describe('Source.mock() examples', () => {
   });
 
   it('should demonstrate testing with validation', async () => {
-    const mockSource = Source.mock()
+    const mockSource = Source.llm()
       .validate(Validation.length({ min: 10, max: 100 }))
+      .mock()
       .mockResponse({ content: 'Valid response text' });
 
     const agent = new Agent().addAssistant(mockSource);
@@ -121,9 +126,10 @@ describe('Source.mock() examples', () => {
     expect(session.messages[0].content).toBe('Valid response text');
 
     // Test with invalid response
-    const invalidMock = Source.mock()
+    const invalidMock = Source.llm()
       .validate(Validation.length({ min: 20 }))
       .withRaiseError(true)
+      .mock()
       .mockResponse({ content: 'Too short' });
 
     const invalidAgent = new Agent().addAssistant(invalidMock);

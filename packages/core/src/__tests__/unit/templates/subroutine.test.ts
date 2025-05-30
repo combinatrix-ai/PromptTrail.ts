@@ -166,12 +166,7 @@ describe('SubroutineTemplate', () => {
     const subroutine = new Subroutine(
       new Agent()
         .addUser('What is the weather in Tokyo?')
-        .addAssistant(
-          Source.llm()
-            .apiKey('test-api-key')
-            .model('gpt-4o-mini')
-            .temperature(0.7),
-        )
+        .addAssistant(Source.llm())
         .addTransform((session: Session<any>) => {
           const lasMessage = session.getLastMessage();
           const content = lasMessage?.content || '';

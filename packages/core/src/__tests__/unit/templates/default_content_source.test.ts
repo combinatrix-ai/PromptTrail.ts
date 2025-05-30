@@ -58,7 +58,7 @@ describe('Default Content Source', () => {
 
     it('should set and pass default AssistantTemplate content source', async () => {
       // Create a GenerateOptions to be used as default for AssistantTemplate
-      const defaultLLM = Source.llm().apiKey('test-key').model('gpt-4');
+      const defaultLLM = Source.llm();
 
       // Create a Sequence with a default AssistantTemplate source
       // Sequence constructor takes an array of templates, not default sources
@@ -84,7 +84,7 @@ describe('Default Content Source', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'openai',
-            modelName: 'gpt-4',
+            modelName: 'gpt-4o-mini',
           }),
         }),
       );

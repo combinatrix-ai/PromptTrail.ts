@@ -37,7 +37,7 @@ describe('Nested Templates', () => {
     responseIndex = 0;
 
     // Create generateOptions
-    llm = Source.llm().apiKey('test-key');
+    llm = Source.llm();
 
     // Setup mock implementation for generateText
     vi.mocked(generateText).mockImplementation(async () => {

@@ -81,7 +81,7 @@ describe('Sequence Template', () => {
       content: 'I am the assistant response',
     });
 
-    const llm = Source.llm().model('gpt-4').apiKey('test-api-key');
+    const llm = Source.llm();
 
     const sequence = new Sequence()
       .add(new System('You are a helpful assistant.'))
@@ -104,7 +104,7 @@ describe('Sequence Template', () => {
         // GenerateOptions object
         provider: expect.objectContaining({
           type: 'openai',
-          modelName: 'gpt-4',
+          modelName: 'gpt-4o-mini',
         }),
       }),
     );

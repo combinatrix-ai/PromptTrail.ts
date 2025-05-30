@@ -14,7 +14,7 @@ describe('AssistantTemplate with Validator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    llm = Source.llm().apiKey('test-key');
+    llm = Source.llm();
 
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
