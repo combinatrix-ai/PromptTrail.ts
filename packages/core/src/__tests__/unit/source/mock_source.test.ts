@@ -117,11 +117,13 @@ describe('Source.llm().mock()', () => {
 
     it('should cycle through multiple mock responses', async () => {
       const session = createSession();
-      const mockSource = Source.llm().mock().mockResponses(
-        { content: 'Response 1' },
-        { content: 'Response 2' },
-        { content: 'Response 3' },
-      );
+      const mockSource = Source.llm()
+        .mock()
+        .mockResponses(
+          { content: 'Response 1' },
+          { content: 'Response 2' },
+          { content: 'Response 3' },
+        );
 
       // First cycle
       expect((await mockSource.getContent(session)).content).toBe('Response 1');
@@ -180,13 +182,17 @@ describe('Source.llm().mock()', () => {
 
     it('should include tool calls and structured output in response', async () => {
       const session = createSession();
-      const mockSource = Source.llm().mock().mockResponse({
-        content: 'Using weather tool',
-        toolCalls: [{ name: 'weather', arguments: { city: 'Tokyo' }, id: 'call_1' }],
-        toolResults: [{ toolCallId: 'call_1', result: { temp: 25 } }],
-        metadata: { usage: { tokens: 100 } },
-        structuredOutput: { parsed: true },
-      });
+      const mockSource = Source.llm()
+        .mock()
+        .mockResponse({
+          content: 'Using weather tool',
+          toolCalls: [
+            { name: 'weather', arguments: { city: 'Tokyo' }, id: 'call_1' },
+          ],
+          toolResults: [{ toolCallId: 'call_1', result: { temp: 25 } }],
+          metadata: { usage: { tokens: 100 } },
+          structuredOutput: { parsed: true },
+        });
 
       const result = await mockSource.getContent(session);
       expect(result.content).toBe('Using weather tool');
@@ -240,12 +246,14 @@ describe('Source.llm().mock()', () => {
 
     it('should maintain immutability', async () => {
       const session = createSession();
-      const original = Source.llm().mock().mockResponse({ content: 'Original' });
-      
+      const original = Source.llm()
+        .mock()
+        .mockResponse({ content: 'Original' });
+
       // Call getContent to populate call history
       await original.getContent(session);
       expect(original.getCallCount()).toBe(1);
-      
+
       // Create modified version should not affect original's call history
       const modified = Source.llm().temperature(0.5).mock().mockResponse({
         content: 'Modified',

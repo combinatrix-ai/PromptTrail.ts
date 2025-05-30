@@ -27,7 +27,7 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle GenerateOptions on constructor', async () => {
-    // Create mock source  
+    // Create mock source
     const llm = Source.llm().mock().mockResponse({
       content: 'Generated content',
     });

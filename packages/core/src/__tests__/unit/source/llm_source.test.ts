@@ -696,7 +696,7 @@ describe('LlmSource', () => {
 
     it('should not enforce call limits when debug mode is disabled', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'false';
-      
+
       const source = Source.llm().maxCalls(2);
       const session = createSession();
 
@@ -712,7 +712,7 @@ describe('LlmSource', () => {
     it('should enforce call limits when debug mode is enabled', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
       process.env.PROMPTTRAIL_MAX_LLM_CALLS = '2';
-      
+
       const source = Source.llm();
       const session = createSession();
 
@@ -722,13 +722,13 @@ describe('LlmSource', () => {
 
       // Third call should throw
       await expect(source.getContent(session)).rejects.toThrow(
-        /LlmSource call limit exceeded: 2 calls made, limit is 2/
+        /LlmSource call limit exceeded: 2 calls made, limit is 2/,
       );
     });
 
     it('should use custom maxCallLimit from options', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const source = Source.llm().maxCalls(3);
       const session = createSession();
 
@@ -739,13 +739,13 @@ describe('LlmSource', () => {
 
       // Fourth call should throw
       await expect(source.getContent(session)).rejects.toThrow(
-        /LlmSource call limit exceeded: 3 calls made, limit is 3/
+        /LlmSource call limit exceeded: 3 calls made, limit is 3/,
       );
     });
 
     it('should track calls per instance', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const source1 = Source.llm().maxCalls(2);
       const source2 = Source.llm().maxCalls(2);
       const session = createSession();
@@ -757,13 +757,17 @@ describe('LlmSource', () => {
       await source2.getContent(session);
 
       // Third call on each should throw
-      await expect(source1.getContent(session)).rejects.toThrow(/call limit exceeded/);
-      await expect(source2.getContent(session)).rejects.toThrow(/call limit exceeded/);
+      await expect(source1.getContent(session)).rejects.toThrow(
+        /call limit exceeded/,
+      );
+      await expect(source2.getContent(session)).rejects.toThrow(
+        /call limit exceeded/,
+      );
     });
 
     it('should share counters between cloned instances', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const original = Source.llm().maxCalls(2);
       const cloned = original.temperature(0.5);
       const session = createSession();
@@ -773,17 +777,21 @@ describe('LlmSource', () => {
       await cloned.getContent(session);
 
       // Third call on either should throw
-      await expect(original.getContent(session)).rejects.toThrow(/call limit exceeded/);
+      await expect(original.getContent(session)).rejects.toThrow(
+        /call limit exceeded/,
+      );
     });
 
     it('should reset counters with resetCallCounters', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const source = Source.llm().maxCalls(1);
       const session = createSession();
 
       await source.getContent(session);
-      await expect(source.getContent(session)).rejects.toThrow(/call limit exceeded/);
+      await expect(source.getContent(session)).rejects.toThrow(
+        /call limit exceeded/,
+      );
 
       // Reset counters
       Source.resetCallCounters();
@@ -794,7 +802,7 @@ describe('LlmSource', () => {
 
     it('should provide access to call count', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const source = Source.llm();
       const instanceId = source.getInstanceId();
       const session = createSession();
@@ -811,7 +819,7 @@ describe('LlmSource', () => {
     it('should use default limit of 100 when not specified', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
       delete process.env.PROMPTTRAIL_MAX_LLM_CALLS;
-      
+
       const source = Source.llm();
       const session = createSession();
 
@@ -825,13 +833,13 @@ describe('LlmSource', () => {
 
       // 101st call should throw
       await expect(source.getContent(session)).rejects.toThrow(
-        /LlmSource call limit exceeded: 100 calls made, limit is 100/
+        /LlmSource call limit exceeded: 100 calls made, limit is 100/,
       );
     });
 
     it('should include helpful error message', async () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
-      
+
       const source = Source.llm().maxCalls(1);
       const session = createSession();
 
@@ -841,7 +849,9 @@ describe('LlmSource', () => {
         await source.getContent(session);
         expect.fail('Should have thrown');
       } catch (error) {
-        expect(error.message).toContain('This safety check prevents infinite loops');
+        expect(error.message).toContain(
+          'This safety check prevents infinite loops',
+        );
         expect(error.message).toContain('Set PROMPTTRAIL_DEBUG=false');
         expect(error.message).toContain('PROMPTTRAIL_MAX_LLM_CALLS');
       }

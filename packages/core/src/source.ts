@@ -621,11 +621,13 @@ export interface MockedLlmSource extends LlmSource {
     options: LLMOptions;
     response: MockResponse;
   }>;
-  getLastCall(): {
-    session: Session<any, any>;
-    options: LLMOptions;
-    response: MockResponse;
-  } | undefined;
+  getLastCall():
+    | {
+        session: Session<any, any>;
+        options: LLMOptions;
+        response: MockResponse;
+      }
+    | undefined;
   getCallCount(): number;
   reset(): MockedLlmSource;
 }
@@ -903,7 +905,7 @@ export class LlmSource extends ModelSource {
   mock(): MockedLlmSource {
     // Create a clone with mock state
     const mockSource = Object.create(this) as LlmSource & MockedLlmSource;
-    
+
     // Initialize mock state
     mockSource._mockState = {
       mockResponses: [],
@@ -914,37 +916,43 @@ export class LlmSource extends ModelSource {
     };
 
     // Add mock-specific methods
-    mockSource.mockResponse = function(response: MockResponse): MockedLlmSource {
+    mockSource.mockResponse = function (
+      response: MockResponse,
+    ): MockedLlmSource {
       this._mockState!.mockResponses = [response];
       this._mockState!.currentResponseIndex = 0;
       return this;
     };
 
-    mockSource.mockResponses = function(...responses: MockResponse[]): MockedLlmSource {
+    mockSource.mockResponses = function (
+      ...responses: MockResponse[]
+    ): MockedLlmSource {
       this._mockState!.mockResponses = responses;
       this._mockState!.currentResponseIndex = 0;
       return this;
     };
 
-    mockSource.mockCallback = function(callback: MockCallback): MockedLlmSource {
+    mockSource.mockCallback = function (
+      callback: MockCallback,
+    ): MockedLlmSource {
       this._mockState!.mockCallback = callback;
       return this;
     };
 
-    mockSource.getCallHistory = function() {
+    mockSource.getCallHistory = function () {
       return [...this._mockState!.callHistory];
     };
 
-    mockSource.getLastCall = function() {
+    mockSource.getLastCall = function () {
       const history = this._mockState!.callHistory;
       return history[history.length - 1];
     };
 
-    mockSource.getCallCount = function(): number {
+    mockSource.getCallCount = function (): number {
       return this._mockState!.callHistory.length;
     };
 
-    mockSource.reset = function(): MockedLlmSource {
+    mockSource.reset = function (): MockedLlmSource {
       this._mockState!.currentResponseIndex = 0;
       this._mockState!.callHistory = [];
       return this;
@@ -956,7 +964,9 @@ export class LlmSource extends ModelSource {
   /**
    * Generate mock response and apply validation
    */
-  private async _generateMockResponse(session: Session<any, any>): Promise<ModelOutput> {
+  private async _generateMockResponse(
+    session: Session<any, any>,
+  ): Promise<ModelOutput> {
     if (!this._mockState) {
       throw new Error('_generateMockResponse called on non-mocked source');
     }
@@ -972,11 +982,16 @@ export class LlmSource extends ModelSource {
         let mockResponse: MockResponse;
 
         if (this._mockState.mockCallback) {
-          mockResponse = await this._mockState.mockCallback(session, this.options);
+          mockResponse = await this._mockState.mockCallback(
+            session,
+            this.options,
+          );
         } else if (this._mockState.mockResponses.length > 0) {
-          mockResponse = this._mockState.mockResponses[this._mockState.currentResponseIndex];
-          this._mockState.currentResponseIndex = 
-            (this._mockState.currentResponseIndex + 1) % this._mockState.mockResponses.length;
+          mockResponse =
+            this._mockState.mockResponses[this._mockState.currentResponseIndex];
+          this._mockState.currentResponseIndex =
+            (this._mockState.currentResponseIndex + 1) %
+            this._mockState.mockResponses.length;
         } else {
           mockResponse = { content: 'Mock LLM response' };
         }
@@ -1168,7 +1183,6 @@ export class LlmSource extends ModelSource {
   }
 }
 
-
 /**
  * Convenience factory methods for creating common sources
  */
@@ -1177,7 +1191,6 @@ export namespace Source {
   export function llm(options?: Partial<LLMOptions>): LlmSource {
     return new LlmSource(options);
   }
-
 
   /** Reset all LLM call counters (useful for testing) */
   export function resetCallCounters(): void {

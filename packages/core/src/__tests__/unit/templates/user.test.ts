@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSession } from '../../../session';
-import {
-  CallbackSource,
-  CLISource,
-  LiteralSource,
-} from '../../../source';
+import { CallbackSource, CLISource, LiteralSource } from '../../../source';
 import { User } from '../../../templates/primitives/user';
 import { CustomValidator } from '../../../validators/custom';
 

@@ -17,7 +17,7 @@ describe('Source.llm().mock() examples', () => {
 
     const session = await agent.execute(createSession());
     const lastMessage = session.messages[session.messages.length - 1];
-    
+
     expect(lastMessage.content).toBe('Hello from mock!');
   });
 
@@ -32,10 +32,10 @@ describe('Source.llm().mock() examples', () => {
 
     // The configuration is available for assertions
     const lastCall = mockSource.getCallHistory()[0];
-    
+
     const agent = new Agent().addAssistant(mockSource);
     const session = await agent.execute(createSession());
-    
+
     // After execution, we can check what configuration was used
     const history = mockSource.getCallHistory();
     expect(history[0].options.provider.modelName).toBe('gpt-4');
@@ -44,11 +44,13 @@ describe('Source.llm().mock() examples', () => {
   });
 
   it('should demonstrate cycling through multiple responses', async () => {
-    const mockSource = Source.llm().mock().mockResponses(
-      { content: 'First response' },
-      { content: 'Second response' },
-      { content: 'Third response' },
-    );
+    const mockSource = Source.llm()
+      .mock()
+      .mockResponses(
+        { content: 'First response' },
+        { content: 'Second response' },
+        { content: 'Third response' },
+      );
 
     const agent = new Agent()
       .addAssistant(mockSource)
@@ -57,7 +59,7 @@ describe('Source.llm().mock() examples', () => {
       .addAssistant(mockSource); // This will cycle back to first
 
     const session = await agent.execute(createSession());
-    
+
     expect(session.messages[0].content).toBe('First response');
     expect(session.messages[1].content).toBe('Second response');
     expect(session.messages[2].content).toBe('Third response');
@@ -71,42 +73,47 @@ describe('Source.llm().mock() examples', () => {
       .mockCallback(async (session, options) => {
         // Access session variables
         const userName = session.vars.userName || 'User';
-        
+
         // Access LLM options
         const model = options.provider.modelName;
-        
+
         return {
           content: `Hello ${userName}, I'm using ${model}`,
         };
       });
 
-    const agent = new Agent()
-      .addAssistant(mockSource);
+    const agent = new Agent().addAssistant(mockSource);
 
     const session = await agent.execute(
-      createSession({ context: { userName: 'Alice' } })
+      createSession({ context: { userName: 'Alice' } }),
     );
-    
+
     expect(session.messages[0].content).toBe("Hello Alice, I'm using claude-3");
   });
 
   it('should demonstrate mocking tool calls', async () => {
-    const mockSource = Source.llm().mock().mockResponse({
-      content: 'Let me check the weather for you.',
-      toolCalls: [{
-        name: 'getWeather',
-        arguments: { city: 'Tokyo' },
-        id: 'call_123',
-      }],
-      toolResults: [{
-        toolCallId: 'call_123',
-        result: { temperature: 25, condition: 'sunny' },
-      }],
-    });
+    const mockSource = Source.llm()
+      .mock()
+      .mockResponse({
+        content: 'Let me check the weather for you.',
+        toolCalls: [
+          {
+            name: 'getWeather',
+            arguments: { city: 'Tokyo' },
+            id: 'call_123',
+          },
+        ],
+        toolResults: [
+          {
+            toolCallId: 'call_123',
+            result: { temperature: 25, condition: 'sunny' },
+          },
+        ],
+      });
 
     const agent = new Agent().addAssistant(mockSource);
     const session = await agent.execute(createSession());
-    
+
     const lastMessage = session.messages[0];
     expect(lastMessage.content).toBe('Let me check the weather for you.');
     expect(lastMessage.toolCalls).toHaveLength(1);
@@ -121,7 +128,7 @@ describe('Source.llm().mock() examples', () => {
 
     const agent = new Agent().addAssistant(mockSource);
     const session = await agent.execute(createSession());
-    
+
     // The response passes validation
     expect(session.messages[0].content).toBe('Valid response text');
 
@@ -133,7 +140,7 @@ describe('Source.llm().mock() examples', () => {
       .mockResponse({ content: 'Too short' });
 
     const invalidAgent = new Agent().addAssistant(invalidMock);
-    
+
     // This should throw because content is too short
     await expect(invalidAgent.execute(createSession())).rejects.toThrow();
   });

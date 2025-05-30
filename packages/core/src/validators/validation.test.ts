@@ -81,9 +81,9 @@ describe('Validation namespace', () => {
       const validator = Validation.schema({
         properties: {
           name: { type: 'string' },
-          age: { type: 'number' }
+          age: { type: 'number' },
         },
-        required: ['name']
+        required: ['name'],
       });
       const result = await validator.validate('{"name": "John", "age": 30}');
       expect(result.isValid).toBe(true);
@@ -99,7 +99,7 @@ describe('Validation namespace', () => {
 
     it('should accept async validators', async () => {
       const validator = Validation.custom(async (content) => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         return content === 'valid';
       });
       const result = await validator.validate('valid');
@@ -109,7 +109,7 @@ describe('Validation namespace', () => {
     it('should accept validators returning TValidationResult', async () => {
       const validator = Validation.custom(() => ({
         isValid: false,
-        instruction: 'Custom error'
+        instruction: 'Custom error',
       }));
       const result = await validator.validate('anything');
       expect(result.isValid).toBe(false);
@@ -121,7 +121,7 @@ describe('Validation namespace', () => {
     it('should combine validators with AND logic', async () => {
       const validator = Validation.all([
         Validation.length({ min: 5 }),
-        Validation.regex(/hello/)
+        Validation.regex(/hello/),
       ]);
       const result = await validator.validate('hello world');
       expect(result.isValid).toBe(true);
@@ -130,7 +130,7 @@ describe('Validation namespace', () => {
     it('should fail if any validator fails', async () => {
       const validator = Validation.all([
         Validation.length({ min: 5 }),
-        Validation.regex(/goodbye/)
+        Validation.regex(/goodbye/),
       ]);
       const result = await validator.validate('hello');
       expect(result.isValid).toBe(false);
@@ -141,7 +141,7 @@ describe('Validation namespace', () => {
     it('should combine validators with OR logic', async () => {
       const validator = Validation.any([
         Validation.regex(/hello/),
-        Validation.regex(/world/)
+        Validation.regex(/world/),
       ]);
       const result = await validator.validate('hello there');
       expect(result.isValid).toBe(true);
@@ -150,7 +150,7 @@ describe('Validation namespace', () => {
     it('should pass if any validator passes', async () => {
       const validator = Validation.any([
         Validation.length({ max: 3 }),
-        Validation.regex(/long/)
+        Validation.regex(/long/),
       ]);
       const result = await validator.validate('this is a long string');
       expect(result.isValid).toBe(true);

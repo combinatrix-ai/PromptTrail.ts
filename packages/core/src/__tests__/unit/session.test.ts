@@ -138,11 +138,13 @@ describe('Session', () => {
     expect(Vars.create(parsedJson.context)).toMatchObject(Vars.create(context));
     expect(parsedJson.messages).toEqual(session.messages);
 
-    const sessionFromJson = createSession(parsedJson);
+    // Explicitly type the session to restore type information
+    const sessionFromJson = createSession<{ key: string }>(parsedJson);
     expect(sessionFromJson.messages).toEqual(session.messages);
     expect(sessionFromJson.vars).toMatchObject(session.vars);
     expect(sessionFromJson.print).toEqual(session.print);
     expect(sessionFromJson.getVar('key')).toEqual('value');
+    // @ts-expect-error - Testing non-existent key
     expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();
   });
 
