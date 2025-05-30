@@ -572,10 +572,10 @@ export class LiteralSource extends StringSource {
  * Source for LLM content generation, with immutable and fluent configuration
  */
 export class LlmSource extends ModelSource {
-  private readonly options: LLMOptions;
-  private schemaConfig?: SchemaGenerationOptions;
-  private instanceId: string;
-  private readonly maxCallLimit: number;
+  protected readonly options: LLMOptions;
+  protected schemaConfig?: SchemaGenerationOptions;
+  protected instanceId: string;
+  protected readonly maxCallLimit: number;
 
   constructor(
     options?: Partial<LLMOptions>,
@@ -942,12 +942,377 @@ export class LlmSource extends ModelSource {
 }
 
 /**
+ * Mock response configuration for MockSource
+ */
+export interface MockResponse {
+  content: string;
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
+  toolResults?: Array<{
+    toolCallId: string;
+    result: unknown;
+  }>;
+  metadata?: Record<string, unknown>;
+  structuredOutput?: Record<string, unknown>;
+}
+
+/**
+ * Mock callback function type
+ */
+export type MockCallback = (
+  session: Session<any, any>,
+  options: LLMOptions,
+) => Promise<MockResponse> | MockResponse;
+
+/**
+ * MockSource extends LlmSource to provide mocking capabilities
+ * while maintaining the same fluent API
+ */
+export class MockSource extends LlmSource {
+  private _mockResponses: MockResponse[] = [];
+  private _mockCallback?: MockCallback;
+  private _currentResponseIndex = 0;
+  private _callHistory: Array<{
+    session: Session<any, any>;
+    options: LLMOptions;
+    response: MockResponse;
+  }> = [];
+
+  // Override the clone method to return MockSource
+  private cloneMock(
+    newOptions: Partial<LLMOptions>,
+    newValidationOptions?: ValidationOptions,
+  ): MockSource {
+    const mergedOptions: LLMOptions = {
+      ...this.options,
+      ...newOptions,
+      provider: {
+        ...this.options.provider,
+        ...(newOptions.provider || {}),
+      },
+      tools: {
+        ...this.options.tools,
+        ...newOptions.tools,
+      },
+      maxCallLimit: newOptions.maxCallLimit ?? this.maxCallLimit,
+    };
+
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    const newSource = new MockSource(mergedOptions, mergedValidationOptions);
+    
+    // Copy mock state
+    newSource._mockResponses = [...this._mockResponses];
+    newSource._mockCallback = this._mockCallback;
+    newSource._currentResponseIndex = this._currentResponseIndex;
+    newSource._callHistory = [...this._callHistory];
+    
+    // Copy schema configuration
+    if (this.schemaConfig) {
+      newSource.schemaConfig = { ...this.schemaConfig };
+    }
+
+    // Share instance ID for call counting
+    if (isDebugMode() && llmCallCounter.has(this.instanceId)) {
+      const currentCount = llmCallCounter.get(this.instanceId) || 0;
+      llmCallCounter.delete(newSource.instanceId);
+      newSource.instanceId = this.instanceId;
+    }
+
+    return newSource;
+  }
+
+  // Mock-specific methods
+  
+  /** Set a single mock response */
+  mockResponse(response: MockResponse): MockSource {
+    const newSource = this.cloneMock({});
+    newSource._mockResponses = [response];
+    newSource._currentResponseIndex = 0;
+    return newSource;
+  }
+
+  /** Set multiple mock responses (will be returned in sequence) */
+  mockResponses(...responses: MockResponse[]): MockSource {
+    const newSource = this.cloneMock({});
+    newSource._mockResponses = responses;
+    newSource._currentResponseIndex = 0;
+    return newSource;
+  }
+
+  /** Set a callback to generate mock responses dynamically */
+  mockCallback(callback: MockCallback): MockSource {
+    const newSource = this.cloneMock({});
+    newSource._mockCallback = callback;
+    return newSource;
+  }
+
+  /** Get the call history for assertions */
+  getCallHistory() {
+    return [...this._callHistory];
+  }
+
+  /** Get the last call made to this mock */
+  getLastCall() {
+    return this._callHistory[this._callHistory.length - 1];
+  }
+
+  /** Get the number of calls made */
+  getCallCount(): number {
+    return this._callHistory.length;
+  }
+
+  /** Reset the mock state */
+  reset(): MockSource {
+    const newSource = this.cloneMock({});
+    newSource._currentResponseIndex = 0;
+    newSource._callHistory = [];
+    return newSource;
+  }
+
+  // Override all fluent API methods to return MockSource
+
+  openai(config?: Partial<Omit<OpenAIProviderConfig, 'type'>>): MockSource {
+    return this.cloneMock({
+      provider: {
+        type: 'openai',
+        apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
+        modelName: config?.modelName || 'gpt-4o-mini',
+        baseURL: config?.baseURL,
+        organization: config?.organization,
+        dangerouslyAllowBrowser: config?.dangerouslyAllowBrowser,
+      },
+    });
+  }
+
+  anthropic(
+    config?: Partial<Omit<AnthropicProviderConfig, 'type'>>,
+  ): MockSource {
+    return this.cloneMock({
+      provider: {
+        type: 'anthropic',
+        apiKey: config?.apiKey || process.env.ANTHROPIC_API_KEY || '',
+        modelName: config?.modelName || 'claude-3-5-haiku-latest',
+        baseURL: config?.baseURL,
+      },
+    });
+  }
+
+  google(config?: Partial<Omit<GoogleProviderConfig, 'type'>>): MockSource {
+    return this.cloneMock({
+      provider: {
+        type: 'google',
+        apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
+        modelName: config?.modelName || 'gemini-pro',
+        baseURL: config?.baseURL,
+      },
+    });
+  }
+
+  model(modelName: string): MockSource {
+    return this.cloneMock({
+      provider: {
+        ...this.options.provider,
+        modelName,
+      },
+    });
+  }
+
+  apiKey(apiKey: string): MockSource {
+    return this.cloneMock({
+      provider: {
+        ...this.options.provider,
+        apiKey,
+      },
+    });
+  }
+
+  temperature(value: number): MockSource {
+    return this.cloneMock({ temperature: value });
+  }
+
+  maxTokens(value: number): MockSource {
+    return this.cloneMock({ maxTokens: value });
+  }
+
+  topP(value: number): MockSource {
+    return this.cloneMock({ topP: value });
+  }
+
+  topK(value: number): MockSource {
+    return this.cloneMock({ topK: value });
+  }
+
+  addTool(name: string, tool: unknown): MockSource {
+    return this.cloneMock({
+      tools: {
+        ...this.options.tools,
+        [name]: tool,
+      },
+    });
+  }
+
+  withTool(name: string, tool: unknown): MockSource {
+    return this.cloneMock({
+      tools: {
+        ...this.options.tools,
+        [name]: tool,
+      },
+    });
+  }
+
+  withTools(tools: Record<string, unknown>): MockSource {
+    return this.cloneMock({
+      tools: {
+        ...this.options.tools,
+        ...tools,
+      },
+    });
+  }
+
+  toolChoice(choice: 'auto' | 'required' | 'none'): MockSource {
+    return this.cloneMock({ toolChoice: choice });
+  }
+
+  dangerouslyAllowBrowser(allow: boolean = true): MockSource {
+    const newOptions: Partial<LLMOptions> = {
+      dangerouslyAllowBrowser: allow,
+    };
+
+    if (this.options.provider.type === 'openai') {
+      newOptions.provider = {
+        ...this.options.provider,
+        dangerouslyAllowBrowser: allow,
+      };
+    }
+
+    return this.cloneMock(newOptions);
+  }
+
+  maxCalls(limit: number): MockSource {
+    return this.cloneMock({ maxCallLimit: limit });
+  }
+
+  withSchema<T>(
+    schema: z.ZodType<T>,
+    options?: {
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+    },
+  ): MockSource {
+    const newSource = this.cloneMock({});
+    newSource.schemaConfig = {
+      schema,
+      mode: options?.mode || 'structured_output',
+      functionName: options?.functionName || 'generateStructuredOutput',
+    };
+    return newSource;
+  }
+
+  validate(validator: IValidator): MockSource {
+    return this.cloneMock(
+      {},
+      {
+        validator,
+        maxAttempts: this.maxAttempts,
+        raiseError: this.raiseError,
+      },
+    );
+  }
+
+  withMaxAttempts(attempts: number): MockSource {
+    return this.cloneMock(
+      {},
+      {
+        validator: this.validator,
+        maxAttempts: attempts,
+        raiseError: this.raiseError,
+      },
+    );
+  }
+
+  withRaiseError(raise: boolean): MockSource {
+    return this.cloneMock(
+      {},
+      {
+        validator: this.validator,
+        maxAttempts: this.maxAttempts,
+        raiseError: raise,
+      },
+    );
+  }
+
+  // Override getContent to return mock responses
+  async getContent(session: Session<any, any>): Promise<ModelOutput> {
+    // Get mock response
+    let mockResponse: MockResponse;
+
+    if (this._mockCallback) {
+      // Use callback to generate response
+      mockResponse = await this._mockCallback(session, this.options);
+    } else if (this._mockResponses.length > 0) {
+      // Use pre-set responses
+      mockResponse = this._mockResponses[this._currentResponseIndex];
+      // Cycle through responses
+      this._currentResponseIndex =
+        (this._currentResponseIndex + 1) % this._mockResponses.length;
+    } else {
+      // Default mock response
+      mockResponse = {
+        content: 'Mock LLM response',
+      };
+    }
+
+    // Record the call
+    this._callHistory.push({
+      session,
+      options: this.options,
+      response: mockResponse,
+    });
+
+    // Apply validation if configured
+    if (this.validator) {
+      const validationResult = await this.validateContent(
+        mockResponse.content,
+        session,
+      );
+      
+      if (!validationResult.isValid && this.raiseError) {
+        const errorMessage = `Validation failed: ${validationResult.instruction || ''}`;
+        throw new ValidationError(errorMessage);
+      }
+    }
+
+    // Return in the expected format
+    return {
+      content: mockResponse.content,
+      toolCalls: mockResponse.toolCalls,
+      toolResults: mockResponse.toolResults,
+      metadata: mockResponse.metadata,
+      structuredOutput: mockResponse.structuredOutput,
+    };
+  }
+}
+
+/**
  * Convenience factory methods for creating common sources
  */
 export namespace Source {
   /** Create LLM source with sensible defaults */
   export function llm(options?: Partial<LLMOptions>): LlmSource {
     return new LlmSource(options);
+  }
+
+  /** Create mock source for testing */
+  export function mock(options?: Partial<LLMOptions>): MockSource {
+    return new MockSource(options);
   }
 
   /** Reset all LLM call counters (useful for testing) */

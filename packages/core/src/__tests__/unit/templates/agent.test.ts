@@ -1,22 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
 import { Agent, Assistant, User } from '../../../templates';
 
-// Mock the generate module
-vi.mock('../../../generate', () => ({
-  generateText: vi.fn(),
-}));
-
 describe('Agent', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
-
-    // Set up default mock for generateText
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
-      content: 'Mock response',
-    });
+    // No mocks needed for these tests
   });
 
   // Original functionality tests

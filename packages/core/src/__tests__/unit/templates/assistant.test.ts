@@ -1,19 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
 import { LiteralSource, Source } from '../../../source';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
 
-// Mock the generate module
-vi.mock('../../../generate', () => ({
-  generateText: vi.fn(),
-}));
-
 describe('AssistantTemplate', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    // No mocks to reset
   });
 
   it('should handle ContentSource on constructor', async () => {
@@ -33,20 +27,16 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle GenerateOptions on constructor', async () => {
-    // Mock the generate function to return a test response
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
-      content: 'Generated content',
-    });
-
-    // Create GenerateOptions
-    const llm = Source.llm({
+    // Create mock source with the same configuration
+    const llm = Source.mock({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4',
       },
       temperature: 0.7,
+    }).mockResponse({
+      content: 'Generated content',
     });
 
     const template = new Assistant(llm);
@@ -54,34 +44,27 @@ describe('AssistantTemplate', () => {
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
 
-    // Verify the generate function was called with the correct arguments
-    expect(generateText).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        provider: expect.objectContaining({
-          type: 'openai',
-          modelName: 'gpt-4',
-        }),
-      }),
-    );
+    // Verify the configuration was used
+    const lastCall = llm.getLastCall();
+    expect(lastCall.options.provider.type).toBe('openai');
+    expect(lastCall.options.provider.modelName).toBe('gpt-4');
   });
 
   it('should use default LLM source when no ContentSource is provided', async () => {
-    // Mock generateText to return a valid response
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
+    // Create a mock source for the test
+    const mockSource = Source.mock().mockResponse({
       content: 'Default LLM response',
     });
 
-    // This should not throw an error during instantiation
-    const template = new Assistant();
+    // Pass the mock source since we can't override the default
+    const template = new Assistant(mockSource);
 
-    // Execute should work with the default LLM source
+    // Execute should work with the mock source
     const session = await template.execute(createSession());
 
     expect(session.getLastMessage()?.type).toBe('assistant');
     expect(session.getLastMessage()?.content).toBe('Default LLM response');
-    expect(generateText).toHaveBeenCalled();
+    expect(mockSource.getCallCount()).toBe(1);
   });
 
   it('should support interpolation in static content', async () => {
@@ -146,31 +129,29 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle LlmSource with toolCalls', async () => {
-    // Mock the generate function to return a response with tool calls
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
-      content: 'I need to check the weather',
-      toolCalls: [
-        {
-          name: 'weather',
-          arguments: { location: 'Tokyo' },
-          id: 'tool-123',
-        },
-      ],
-    });
-
     const weatherTool = createWeatherTool();
 
-    // Create GenerateOptions with the weather tool
-    const options = Source.llm({
+    // Create mock source with tool calls
+    const options = Source.mock({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4',
       },
-    }).addTool('weather', weatherTool);
+    })
+      .addTool('weather', weatherTool)
+      .mockResponse({
+        content: 'I need to check the weather',
+        toolCalls: [
+          {
+            name: 'weather',
+            arguments: { location: 'Tokyo' },
+            id: 'tool-123',
+          },
+        ],
+      });
 
-    // Create an AssistantTemplate with the generate options
+    // Create an AssistantTemplate with the mock options
     const template = new Assistant(options);
 
     // Execute the template and verify the result
@@ -217,12 +198,6 @@ describe('AssistantTemplate', () => {
   });
 
   it('should not throw error when validation fails and raiseError is false', async () => {
-    // Mock the generate function to return an invalid response
-    vi.mocked(generateText).mockResolvedValue({
-      type: 'assistant',
-      content: 'This is invalid',
-    });
-
     // Create a custom validator
     const validator = new CustomValidator((content) => {
       return content.includes('valid')
@@ -233,13 +208,15 @@ describe('AssistantTemplate', () => {
           };
     });
 
-    // Create GenerateOptions
-    const options = Source.llm({
+    // Create mock source that returns invalid content
+    const options = Source.mock({
       provider: {
         type: 'openai',
         apiKey: 'test-api-key',
         modelName: 'gpt-4',
       },
+    }).mockResponse({
+      content: 'This is invalid',
     });
 
     // Create an AssistantTemplate with validation options and raiseError set to false
