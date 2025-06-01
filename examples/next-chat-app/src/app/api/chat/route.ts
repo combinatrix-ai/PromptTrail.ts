@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
     // Agent should be typed with the BrandedChaTVars
     // The System template will use 'codeContext' from ptSession.context
-    const trail = new Agent<BrandedChaTVars>().add(
+    const trail = Agent.create<BrandedChaTVars>().add(
       new System(
         'You are a helpful AI assistant that discusses the provided code context. Code context: ${codeContext}',
       ),

@@ -251,8 +251,8 @@ console.log('last message:', session.getLastMessage()?.content);
   - Text generation functions work the same way.
     - `Source.create().useLLM().useOpenAI().setTemperature(...)`
     - Or:
-      - `LLMSource.create().openAI().setTemperature(...)` // `Source.create().useLLM()` is an alias of `LLMSource.create()`
-      - `CLISource.create().setPrompt(...)` // `Source.create().useCLI()` is an alias of `CLISource.create()`
+      - `Source.llm().openai().temperature(...)` // Modern factory API
+      - `Source.cli().prompt(...)` // Modern factory API
 
 - **Session**: Represents a conversation with `vars` and `messages`. Immutable.
   ```typescript
@@ -302,11 +302,11 @@ console.log('last message:', session.getLastMessage()?.content);
   const myAgent = Agent.create().system('System prompt').user('User query');
   // .assistant(...) etc.
   ```
-- **Source**: Defines where content comes from (`StaticSource`, `LlmSource`, `SchemaSource`, `CLISource`, `CallbackSource`, `RandomSource`, `ListSource`). Passed to templates like `User` or `Assistant`.
+- **Source**: Defines where content comes from. Use the `Source` namespace for factory methods (`Source.literal()`, `Source.llm()`, `Source.cli()`, `Source.callback()`, `Source.random()`, `Source.list()`). Passed to templates like `User` or `Assistant`.
   ```typescript
-  import { StaticSource, User } from '@prompttrail/core';
+  import { Source, User } from '@prompttrail/core';
   const staticUserMessage = new User(
-    new StaticSource('This is a fixed user message.'),
+    Source.literal('This is a fixed user message.'),
   );
   ```
 - **GenerateOptions**: Configuration for LLM generation (provider, model, temperature, tools, etc.). Used by `LlmSource` and `SchemaSource`.
@@ -321,14 +321,14 @@ import {
   Agent,
   createSession,
   createGenerateOptions,
-  StaticSource,
+  Source,
 } from '@prompttrail/core';
 
 // Example of a simple template execution using Agent
 const simpleTemplate = Agent.create()
   .system('Welcome to the conversation!')
   .user('Tell me about TypeScript.')
-  .assistant(new StaticSource('TypeScript is a typed superset of JavaScript.')); // Use StaticSource for fixed response
+  .assistant(Source.literal('TypeScript is a typed superset of JavaScript.')); // Use Source.literal() for fixed response
 
 const session = await simpleTemplate.execute(
   createSession({
@@ -464,7 +464,7 @@ import {
   System,
   User,
   Assistant,
-  ListSource,
+  Source,
   createSession,
   createGenerateOptions,
   Vars,
@@ -491,8 +491,8 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
     (agent) =>
       agent
         .user(
-          new ListSource([
-            // Use ListSource for predefined questions/statements
+          Source.list([
+            // Use Source.list() for predefined questions/statements
             "What's TypeScript?",
             'Explain type inference.',
             "I'm satisfied now.", // Loop exit trigger
@@ -864,8 +864,8 @@ try {
   console.error('Short answer validation failed:', error);
 }
 
-// Note: Validators can also be applied to Sources like CLISource, CallbackSource, etc.
-// Example: new CLISource("Enter name:", { validator: lengthValidator })
+// Note: Validators can also be applied to all Source factory methods
+// Example: Source.cli("Enter name:", undefined, { validator: lengthValidator })
 ```
 
 ### 🧪 Structured Output

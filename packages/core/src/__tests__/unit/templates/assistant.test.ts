@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSession } from '../../../session';
-import { LiteralSource, Source } from '../../../source';
+import { Source } from '../../../source';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
 import { createWeatherTool } from '../../utils';
@@ -11,7 +11,7 @@ describe('AssistantTemplate', () => {
   });
 
   it('should handle ContentSource on constructor', async () => {
-    const mockSource = new LiteralSource('This is a test response');
+    const mockSource = Source.literal('This is a test response');
     const template = new Assistant(mockSource);
     expect(template.getContentSource()).toBeDefined();
     const session = await template.execute(createSession());
@@ -169,7 +169,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Create a static content source that will pass validation
-    const validContent = new LiteralSource('This is valid content');
+    const validContent = Source.literal('This is valid content');
 
     // Create an AssistantTemplate with the static content and validator
     const template = new Assistant(validContent, {

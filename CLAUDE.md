@@ -144,7 +144,10 @@ pnpm install -w -D <package-name>
    ```typescript
    Source.llm(); // LLM generation
    Source.cli(); // CLI input
-   Source.static(); // Fixed content
+   Source.literal(); // Fixed content
+   Source.callback(); // Custom logic
+   Source.random(); // Random from list
+   Source.list(); // Sequential from list
    ```
 
 ## Architecture Principles
@@ -193,11 +196,13 @@ pnpm install -w -D <package-name>
 
 ### Sources
 
-- **LlmSource**: Generate via LLM
-- **CLISource**: User input from terminal
-- **StaticSource**: Fixed content
-- **CallbackSource**: Custom logic
-- **SchemaSource**: Structured generation
+- **Source.llm()**: Generate via LLM
+- **Source.cli()**: User input from terminal  
+- **Source.literal()**: Fixed content
+- **Source.callback()**: Custom logic
+- **Source.random()**: Random from list
+- **Source.list()**: Sequential from list
+- **Source.schema()**: Structured generation
 
 ## Common Tasks
 

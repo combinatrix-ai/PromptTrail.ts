@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import type { Session } from '../../../session';
 import { createSession } from '../../../session';
-import { ListSource } from '../../../source';
+import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 import { Loop } from '../../../templates/composite/loop';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -209,7 +209,7 @@ describe('Loop Template', () => {
     const messageList = ['First message', 'Second message', 'Third message'];
 
     // Create a ListSource
-    const listSource = new ListSource(messageList);
+    const listSource = Source.list(messageList);
 
     // Create a counter for the loop condition
     let counter = 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSession } from '../../../session';
-import { CallbackSource, LiteralSource } from '../../../source';
+import { Source } from '../../../source';
 import { System } from '../../../templates/primitives/system';
 import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
@@ -8,7 +8,7 @@ import { expect_messages } from '../../utils';
 describe('SystemTemplate', () => {
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
-    const mockSource = new LiteralSource('You are a helpful assistant.');
+    const mockSource = Source.literal('You are a helpful assistant.');
 
     // Create a SystemTemplate with the source
     const template = new System(mockSource);
@@ -74,7 +74,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a CallbackSource
-    const callbackSource = new CallbackSource(callback);
+    const callbackSource = Source.callback(callback);
 
     // Create a SystemTemplate with the callback source
     const template = new System(callbackSource);
@@ -111,7 +111,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a static source with validation
-    const validSource = new LiteralSource('You are a helpful assistant.', {
+    const validSource = Source.literal('You are a helpful assistant.', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -127,7 +127,7 @@ describe('SystemTemplate', () => {
     );
 
     // Create a static source with invalid content
-    const invalidSource = new LiteralSource('You are an AI.', {
+    const invalidSource = Source.literal('You are an AI.', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -163,7 +163,7 @@ describe('SystemTemplate', () => {
       .mockResolvedValueOnce('You are a helpful assistant.');
 
     // Create a CallbackSource with validation options
-    const callbackSource = new CallbackSource(callback, {
+    const callbackSource = Source.callback(callback, {
       validator,
       maxAttempts: 2,
       raiseError: true,
@@ -197,7 +197,7 @@ describe('SystemTemplate', () => {
     });
 
     // Create a static source with invalid content and raiseError set to false
-    const invalidSource = new LiteralSource('You are an AI.', {
+    const invalidSource = Source.literal('You are an AI.', {
       validator,
       maxAttempts: 1,
       raiseError: false,
@@ -242,7 +242,7 @@ describe('SystemTemplate', () => {
     expect(result1.getLastMessage()!.content).toBe('String initialization');
 
     // Test with StaticSource constructor
-    const source = new LiteralSource('Source initialization');
+    const source = Source.literal('Source initialization');
     const template2 = new System(source);
     const result2 = await template2.execute(createSession());
     expect(result2.getLastMessage()!.content).toBe('Source initialization');

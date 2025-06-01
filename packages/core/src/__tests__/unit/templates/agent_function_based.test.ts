@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import { createSession } from '../../../session';
-import { LiteralSource, Source } from '../../../source';
+import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 
 // Mock the generate module
@@ -304,7 +304,7 @@ describe('Agent Function-Based Templates', () => {
 
     it('should work in function builders with short names', async () => {
       const agent = Agent.create().loop(
-        (l) => l.user('Question').assistant(new LiteralSource('Answer')),
+        (l) => l.user('Question').assistant(Source.literal('Answer')),
         (s) => s.messages.length < 4, // Stop after 2 iterations
       );
 

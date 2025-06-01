@@ -1203,20 +1203,44 @@ export namespace Source {
   }
 
   /** Create CLI input source with fluent API */
-  export function cli(prompt?: string, defaultValue?: string): CLISource {
-    return new CLISource(prompt, defaultValue);
+  export function cli(
+    prompt?: string,
+    defaultValue?: string,
+    options?: ValidationOptions,
+  ): CLISource {
+    return new CLISource(prompt, defaultValue, options);
   }
 
   /** Create static literal content source with fluent API */
-  export function literal(content: string): LiteralSource {
-    return new LiteralSource(content);
+  export function literal(
+    content: string,
+    options?: ValidationOptions,
+  ): LiteralSource {
+    return new LiteralSource(content, options);
   }
 
   /** Create callback-based source with fluent API */
   export function callback(
     callback: (context: { context?: Vars }) => Promise<string>,
+    options?: ValidationOptions,
   ): CallbackSource {
-    return new CallbackSource(callback);
+    return new CallbackSource(callback, options);
+  }
+
+  /** Create random content source with fluent API */
+  export function random(
+    contentList: string[],
+    options?: ValidationOptions,
+  ): RandomSource {
+    return new RandomSource(contentList, options);
+  }
+
+  /** Create list content source with fluent API */
+  export function list(
+    contentList: string[],
+    options?: ValidationOptions & { loop?: boolean },
+  ): ListSource {
+    return new ListSource(contentList, options);
   }
 
   /** Create schema-based source using enhanced LlmSource */

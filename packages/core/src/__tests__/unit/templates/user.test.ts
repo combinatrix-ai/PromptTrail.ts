@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSession } from '../../../session';
-import { CallbackSource, CLISource, LiteralSource } from '../../../source';
+import { Source } from '../../../source';
 import { User } from '../../../templates/primitives/user';
 import { CustomValidator } from '../../../validators/custom';
 
@@ -22,7 +22,7 @@ describe('UserTemplate', () => {
   });
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
-    const mockSource = new LiteralSource('User query from source');
+    const mockSource = Source.literal('User query from source');
 
     // Create a UserTemplate with the source
     const template = new User(mockSource);
@@ -89,7 +89,7 @@ describe('UserTemplate', () => {
     );
 
     const template = new User(
-      new LiteralSource('What is the ${query} like today?'),
+      Source.literal('What is the ${query} like today?'),
     );
 
     const result = await template.execute(updatedSession);
@@ -99,7 +99,7 @@ describe('UserTemplate', () => {
   });
   it('should work with CLISource', async () => {
     // Create a CLISource
-    const cliSource = new CLISource('Enter your query: ');
+    const cliSource = Source.cli('Enter your query: ');
 
     // Create a UserTemplate with the CLI source
     const template = new User(cliSource);
@@ -118,7 +118,7 @@ describe('UserTemplate', () => {
     const callback = vi.fn().mockResolvedValue('Callback user input');
 
     // Create a CallbackSource
-    const callbackSource = new CallbackSource(callback);
+    const callbackSource = Source.callback(callback);
 
     // Create a UserTemplate with the callback source
     const template = new User(callbackSource);
@@ -144,7 +144,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with validation
-    const validSource = new LiteralSource('This is valid user input', {
+    const validSource = Source.literal('This is valid user input', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -187,7 +187,7 @@ describe('UserTemplate', () => {
     const callback = vi.fn().mockResolvedValue('This is valid user input');
 
     // Create a CallbackSource with validation options
-    const callbackSource = new CallbackSource(callback, {
+    const callbackSource = Source.callback(callback, {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -222,7 +222,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with invalid content and raiseError set to false
-    const invalidSource = new LiteralSource('This is invalid', {
+    const invalidSource = Source.literal('This is invalid', {
       validator,
       maxAttempts: 1,
       raiseError: false,
