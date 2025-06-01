@@ -247,7 +247,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
    * Compiles the scenario into an Agent-based implementation
    */
   private compile(): Agent<TVars, TAttrs> {
-    const agent = new Agent<TVars, TAttrs>();
+    const agent = Agent.create<TVars, TAttrs>();
 
     for (const [index, step] of this.steps.entries()) {
       // Each step is a subroutine that loops until the goal is satisfied

@@ -182,7 +182,7 @@ yarn add github:combinatrix-ai/PromptTrail.ts
 import { Agent, Source, createSession } from '@prompttrail/core';
 
 // Create a simple conversation template using the Agent builder
-const chat = new Agent()
+const chat = Agent.create()
   .system("I'm a helpful assistant.")
   .user("What's TypeScript?")
   .assistant(
@@ -247,7 +247,7 @@ console.log('last message:', session.getLastMessage()?.content);
       - `extend` lets you append to existing values.
   - Build templates with `Agent.create()`.
     - The fluent API lets you compose templates: `Agent.create().system(...).loop(...)`.
-    - You can also write `Agent(new Loop([System(...), User(...), Assistant(...)]))`.
+    - You can also write `Agent.create(new Loop([System(...), User(...), Assistant(...)])).
   - Text generation functions work the same way.
     - `Source.create().useLLM().useOpenAI().setTemperature(...)`
     - Or:
@@ -296,10 +296,10 @@ console.log('last message:', session.getLastMessage()?.content);
   import { System } from '@prompttrail/core';
   const systemPrompt = new System('You are a helpful AI assistant.');
   ```
-- **Agent**: A fluent builder (`new Agent()`) for composing templates sequentially.
+- **Agent**: A fluent builder (`Agent.create()`) for composing templates sequentially.
   ```typescript
   import { Agent } from '@prompttrail/core';
-  const myAgent = new Agent().system('System prompt').user('User query');
+  const myAgent = Agent.create().system('System prompt').user('User query');
   // .assistant(...) etc.
   ```
 - **Source**: Defines where content comes from (`StaticSource`, `LlmSource`, `SchemaSource`, `CLISource`, `CallbackSource`, `RandomSource`, `ListSource`). Passed to templates like `User` or `Assistant`.
@@ -325,12 +325,10 @@ import {
 } from '@prompttrail/core';
 
 // Example of a simple template execution using Agent
-const simpleTemplate = new Agent()
+const simpleTemplate = Agent.create()
   .system('Welcome to the conversation!')
   .user('Tell me about TypeScript.')
-  .assistant(
-    new StaticSource('TypeScript is a typed superset of JavaScript.'),
-  ); // Use StaticSource for fixed response
+  .assistant(new StaticSource('TypeScript is a typed superset of JavaScript.')); // Use StaticSource for fixed response
 
 const session = await simpleTemplate.execute(
   createSession({
@@ -490,16 +488,17 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
   )
   // Quiz loop
   .loop(
-    (agent) => agent
-      .user(
-        new ListSource([
-          // Use ListSource for predefined questions/statements
-          "What's TypeScript?",
-          'Explain type inference.',
-          "I'm satisfied now.", // Loop exit trigger
-        ]),
-      )
-      .assistant(openAIgenerateOptions), // LLM answers the question
+    (agent) =>
+      agent
+        .user(
+          new ListSource([
+            // Use ListSource for predefined questions/statements
+            "What's TypeScript?",
+            'Explain type inference.',
+            "I'm satisfied now.", // Loop exit trigger
+          ]),
+        )
+        .assistant(openAIgenerateOptions), // LLM answers the question
     // Loop condition: Continue as long as the last user message doesn't indicate satisfaction
     (session) => {
       const lastUserMessage = session.getMessagesByType('user').pop();
@@ -509,11 +508,12 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
   )
   // Subroutine to summarize the quiz
   .subroutine(
-    (agent) => agent
-      .system(
-        'You are an educational coach. Write a three-sentence summary of the conversation and suggest one topic for further study.',
-      )
-      .assistant(openAIgenerateOptions), // LLM generates the summary
+    (agent) =>
+      agent
+        .system(
+          'You are an educational coach. Write a three-sentence summary of the conversation and suggest one topic for further study.',
+        )
+        .assistant(openAIgenerateOptions), // LLM generates the summary
     {
       // Subroutine options
       // initWith: (optional) Customize how the subroutine session starts. Default clones parent.
@@ -813,7 +813,7 @@ const validationOptions: ValidationOptions = {
 };
 
 // Create an Agent that asks for a pet name and validates the response
-const petNameAgent = new Agent()
+const petNameAgent = Agent.create()
   .system('You are a helpful assistant that suggests pet names.')
   .user('Suggest a single, short, appropriate name for a pet cat.')
   // Assistant with validation options
@@ -846,7 +846,7 @@ const customValidator = new CustomValidator(
 );
 
 // Use custom validator with Assistant
-const shortAnswerAgent = new Agent()
+const shortAnswerAgent = Agent.create()
   .system('Answer concisely.')
   .user('Explain quantum physics briefly.')
   .assistant(openAIgenerateOptions, {
@@ -899,7 +899,7 @@ const structuredProductTemplate = new Structured({
 });
 
 // Use the Structured template within an Agent
-const productExtractorAgent = new Agent()
+const productExtractorAgent = Agent.create()
   .system(
     'Extract product information from the user query into the provided schema.',
   )
@@ -972,7 +972,7 @@ const toolEnhancedOptions = openAIgenerateOptions
   .setToolChoice('auto'); // Let the model decide when to use the tool
 
 // Create an Agent that might use the tool
-const weatherAgent = new Agent()
+const weatherAgent = Agent.create()
   .system("I'm a weather assistant. Use the available tools.")
   .user("What's the weather like in New York?")
   // The assistant might respond directly or make a tool call
@@ -1030,10 +1030,8 @@ const optionsWithMCP = createGenerateOptions({
 }).addMCPServer(mcpServerConfig); // Add the MCP server config
 
 // Create an Agent that might leverage the MCP tool
-const mcpAgent = new Agent()
-  .system(
-    'You are a helpful assistant with access to research tools via MCP.',
-  )
+const mcpAgent = Agent.create()
+  .system('You are a helpful assistant with access to research tools via MCP.')
   .user('Can you search for the latest papers on LLM reasoning?')
   .assistant(optionsWithMCP); // Use the options with MCP configured
 
@@ -1070,7 +1068,7 @@ const browserOptions = createGenerateOptions({
 });
 
 // Use with templates as normal in your frontend code
-const browserAgent = new Agent()
+const browserAgent = Agent.create()
   .system('You are a helpful assistant running in the browser.')
   .user('Hello from the browser!')
   .assistant(browserOptions);

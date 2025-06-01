@@ -130,10 +130,7 @@ pnpm install -w -D <package-name>
 2. **Fluent API**: Classes provide chainable methods
 
    ```typescript
-   const agent = new Agent()
-     .system('...')
-     .user('...')
-     .assistant('...');
+   const agent = Agent.create().system('...').user('...').assistant('...');
    ```
 
 3. **Factory Methods**: Use `.create()` pattern for object creation

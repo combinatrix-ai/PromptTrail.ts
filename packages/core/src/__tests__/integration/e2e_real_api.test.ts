@@ -164,7 +164,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].content).toBeDefined();
     expect(messages[2].content).toContain('123456789');
 
-    const agent = new Agent()
+    const agent = Agent.create()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
       .add(new Assistant(openAILLMSource));
@@ -284,7 +284,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
     // Each have system, user, assistant, conditional
-    const sequence = new Agent()
+    const sequence = Agent.create()
       .system('This is automated API testing. Repeat what user says.')
       .user('123456789')
       .assistant(openAILLMSource)
@@ -293,8 +293,8 @@ describe('End-to-End Workflows with Real APIs', () => {
           const lastMessage = session.getLastMessage();
           return lastMessage!.content.toLowerCase().includes('123456789');
         },
-        agent => agent.user('YES'),
-        agent => agent.user('NO'),
+        (agent) => agent.user('YES'),
+        (agent) => agent.user('NO'),
       );
     const session = await sequence.execute(createSession());
     const messages = Array.from(session.messages);
@@ -307,18 +307,21 @@ describe('End-to-End Workflows with Real APIs', () => {
     const userContentSource = new ListSource(['123456789', '987654321']);
 
     // Define the body of the loop as a Agent
-    const loopBodySequence = new Agent<Vars<{ count: number }>>()
+    const loopBodySequence = Agent.create<Vars<{ count: number }>>()
       .system('This is automated API testing. Repeat what user says.')
       .user(userContentSource)
       .assistant(openAILLMSource)
-      .conditional((session: Session) => {
-        // Add type annotation
-        const lastMessage = session.getLastMessage();
-        // Safely check lastMessage and its content
-        return (
-          lastMessage?.content?.toLowerCase().includes('123456789') ?? false
-        );
-      }, agent => agent.user('Condition MET: User said 123456789'));
+      .conditional(
+        (session: Session) => {
+          // Add type annotation
+          const lastMessage = session.getLastMessage();
+          // Safely check lastMessage and its content
+          return (
+            lastMessage?.content?.toLowerCase().includes('123456789') ?? false
+          );
+        },
+        (agent) => agent.user('Condition MET: User said 123456789'),
+      );
 
     // Define the exit condition for the loop
     // Add a transform to increment count in the loop body

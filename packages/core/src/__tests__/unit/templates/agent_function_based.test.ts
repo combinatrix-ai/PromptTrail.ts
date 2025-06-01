@@ -24,7 +24,7 @@ describe('Agent Function-Based Templates', () => {
     it('should support loop with builder function', async () => {
       let counter = 0;
 
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('You are a helpful assistant.')
         .user('Start the loop')
         .loop(
@@ -57,19 +57,23 @@ describe('Agent Function-Based Templates', () => {
       let iterations = 0;
 
       // Test loopForever helper
-      const agent = new Agent().system('Forever loop test').loopForever((l) => {
-        iterations++;
-        return l.user(`Iteration ${iterations}`);
-      });
+      const agent = Agent.create()
+        .system('Forever loop test')
+        .loopForever((l) => {
+          iterations++;
+          return l.user(`Iteration ${iterations}`);
+        });
 
       // Since loopForever creates an infinite loop, we need to test with a condition
       // Let's test a regular loop with true condition
       iterations = 0;
-      const limitedAgent = new Agent().system('Limited forever loop').loop(
-        (l) => l.user('Loop message'),
-        () => true, // Always true
-        5, // maxIterations
-      );
+      const limitedAgent = Agent.create()
+        .system('Limited forever loop')
+        .loop(
+          (l) => l.user('Loop message'),
+          () => true, // Always true
+          5, // maxIterations
+        );
 
       const session = await limitedAgent.execute(createSession());
 
@@ -82,20 +86,22 @@ describe('Agent Function-Based Templates', () => {
     it('should support boolean loopIf parameter', async () => {
       let counter = 0;
 
-      const agent = new Agent().system('Boolean loop test').loop(
-        (l) => {
-          counter++;
-          return l.user(`Count: ${counter}`);
-        },
-        counter < 3, // This is evaluated once at build time!
-      );
+      const agent = Agent.create()
+        .system('Boolean loop test')
+        .loop(
+          (l) => {
+            counter++;
+            return l.user(`Count: ${counter}`);
+          },
+          counter < 3, // This is evaluated once at build time!
+        );
 
       const session = await agent.execute(createSession());
 
       // Since boolean is evaluated at build time when counter is 0,
       // it will be true and loop forever (or until maxIterations)
       // Let's use a function that returns false immediately
-      const agent2 = new Agent()
+      const agent2 = Agent.create()
         .system('Boolean loop test')
         .loop((l) => l.user('Should execute once'), false);
 
@@ -107,7 +113,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Function-based subroutine', () => {
     it('should support subroutine with builder function', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Main conversation')
         .user('Start main')
         .subroutine((s) =>
@@ -131,7 +137,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support subroutine with options', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Main conversation')
         .user('Start main')
         .subroutine(
@@ -160,7 +166,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support custom squash function in subroutine', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Main')
         .subroutine((s) => s.user('Process data').assistant('Result: 42'), {
           squashWith: (parent, sub) => {
@@ -187,7 +193,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Function-based sequence', () => {
     it('should support sequence with builder function', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Main')
         .sequence((s) =>
           s
@@ -214,23 +220,25 @@ describe('Agent Function-Based Templates', () => {
       let outerCounter = 0;
       let innerCounter = 0;
 
-      const agent = new Agent().system('Nested loops').loop(
-        (outer) =>
-          outer.user(`Outer ${outerCounter + 1}`).loop(
-            (inner) => {
-              innerCounter++;
-              return inner.user(`Inner ${innerCounter}`);
-            },
-            () => innerCounter < 2,
-            10, // maxIterations for inner loop
-          ),
-        () => {
-          outerCounter++;
-          innerCounter = 0;
-          return outerCounter < 2;
-        },
-        2, // maxIterations for outer loop
-      );
+      const agent = Agent.create()
+        .system('Nested loops')
+        .loop(
+          (outer) =>
+            outer.user(`Outer ${outerCounter + 1}`).loop(
+              (inner) => {
+                innerCounter++;
+                return inner.user(`Inner ${innerCounter}`);
+              },
+              () => innerCounter < 2,
+              10, // maxIterations for inner loop
+            ),
+          () => {
+            outerCounter++;
+            innerCounter = 0;
+            return outerCounter < 2;
+          },
+          2, // maxIterations for outer loop
+        );
 
       const session = await agent.execute(createSession());
 
@@ -247,7 +255,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support mixed nested templates', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Mixed nesting')
         .subroutine(
           (sub) =>
@@ -280,7 +288,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Short method names', () => {
     it('should support short method names without add prefix', async () => {
-      const agent = new Agent()
+      const agent = Agent.create()
         .system('Test short methods')
         .user('User message')
         .assistant('Assistant response');
@@ -295,7 +303,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should work in function builders with short names', async () => {
-      const agent = new Agent().loop(
+      const agent = Agent.create().loop(
         (l) => l.user('Question').assistant(new LiteralSource('Answer')),
         (s) => s.messages.length < 4, // Stop after 2 iterations
       );

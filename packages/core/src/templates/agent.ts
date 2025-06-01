@@ -37,7 +37,7 @@ import { ISubroutineTemplateOptions } from './template_types';
  * It is a key component of the template system, enabling the creation
  * of dynamic and interactive conversational experiences.
  * @example
- * const agent = new Agent()
+ * const agent = Agent.create()
  *   .system('System message')
  *   .user('User message')
  *   .assistant('Assistant message')
@@ -47,7 +47,9 @@ import { ISubroutineTemplateOptions } from './template_types';
 export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   implements Template<TM, TC>, Fluent<TM, TC>
 {
-  constructor(private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>()) {}
+  private constructor(
+    private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
+  ) {}
 
   /** Static factory methods -------------------------------------------------- */
 
@@ -71,10 +73,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
-    return new Agent<TC, TM>().assistant(
-      contentOrSource,
-      validatorOrOptions,
-    );
+    return new Agent<TC, TM>().assistant(contentOrSource, validatorOrOptions);
   }
 
   /** fluent helpers -------------------------------------------------- */
@@ -102,7 +101,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.add(new Transform(transform));
     return this;
@@ -118,7 +116,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-
   /** Function-based template builders -------------------------------------------------- */
 
   loop(
@@ -126,7 +123,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     loopIf: boolean | ((s: Session<TC, TM>) => boolean),
     maxIterations?: number,
   ) {
-    const innerAgent = new Agent<TC, TM>();
+    const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
 
@@ -147,12 +144,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
     elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
   ) {
-    const thenAgent = new Agent<TC, TM>();
+    const thenAgent = Agent.create<TC, TM>();
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
     let elseTemplate: Template<TM, TC> | undefined;
     if (elseBuilderFn) {
-      const elseAgent = new Agent<TC, TM>();
+      const elseAgent = Agent.create<TC, TM>();
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
@@ -170,7 +167,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
     opts?: ISubroutineTemplateOptions<TM, TC>,
   ) {
-    const innerAgent = new Agent<TC, TM>();
+    const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
@@ -179,7 +176,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
-    const innerAgent = new Agent<TC, TM>();
+    const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const sequenceTemplate = builtAgent.build();
 

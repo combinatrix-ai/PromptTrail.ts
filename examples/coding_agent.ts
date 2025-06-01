@@ -149,22 +149,25 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = new Agent().add(new System(systemPrompt)).conditional(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
-      // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
-      agent => agent.user(initialPrompt as string).assistant(this.llm),
-      // Otherwise, this is interactive mode
-      agent => agent.loop(
-        innerAgent => innerAgent.user(userCliSource).assistant(this.llm),
-        (session) => {
-          const lastUserMessage = session
-            .getMessagesByType('user')
-            .slice(-1)[0];
-          return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
-        },
-      ),
-    );
+    const agent = Agent.create()
+      .add(new System(systemPrompt))
+      .conditional(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
+        // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
+        (agent) => agent.user(initialPrompt as string).assistant(this.llm),
+        // Otherwise, this is interactive mode
+        (agent) =>
+          agent.loop(
+            (innerAgent) => innerAgent.user(userCliSource).assistant(this.llm),
+            (session) => {
+              const lastUserMessage = session
+                .getMessagesByType('user')
+                .slice(-1)[0];
+              return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
+            },
+          ),
+      );
 
     // Execute the interactive template
     await agent.execute(session);

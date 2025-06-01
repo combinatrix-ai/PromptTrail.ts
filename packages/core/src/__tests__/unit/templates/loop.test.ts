@@ -237,7 +237,7 @@ describe('Loop Template', () => {
   it('should update and use session metadata in the exit condition', async () => {
     // Create the loop template with a metadata-based exit condition
     const loopTemplate = new Loop({
-      bodyTemplate: new Agent()
+      bodyTemplate: Agent.create()
         .add(new User('Adding to counter'))
         .transform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
@@ -273,14 +273,15 @@ describe('Loop Template', () => {
 
     // Create the loop template with a conditional branch
     const loopTemplate = new Loop({
-      bodyTemplate: new Agent()
+      bodyTemplate: Agent.create()
         .add(new User('User input'))
         .conditional(
           // Condition based on iteration count
           () => counter % 2 === 0, // True on even iterations
-          agent => agent.add(new System('This is an even iteration')),
-          agent => agent.add(new System('This is an odd iteration')),
-        ).build(),
+          (agent) => agent.add(new System('This is an even iteration')),
+          (agent) => agent.add(new System('This is an odd iteration')),
+        )
+        .build(),
       loopIf: () => {
         counter++;
         return counter < 3; // Continue until 3 iterations

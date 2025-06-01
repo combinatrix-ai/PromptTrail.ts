@@ -10,7 +10,7 @@ describe('Agent', () => {
   // Original functionality tests
 
   it('should support short methods', async () => {
-    const sequence = new Agent()
+    const sequence = Agent.create()
       .system('You are a helpful assistant.')
       .user('Hello, who are you?')
       .assistant('I am an AI assistant.');
@@ -28,13 +28,13 @@ describe('Agent', () => {
   });
 
   it('should support conditional method', async () => {
-    const sequence = new Agent()
+    const sequence = Agent.create()
       .system('You are a helpful assistant.')
       .user('Hello')
       .conditional(
         (session) => session.getLastMessage()?.content === 'Hello',
-        agent => agent.assistant('Hello there!'),
-        agent => agent.assistant('I did not understand.'),
+        (agent) => agent.assistant('Hello there!'),
+        (agent) => agent.assistant('I did not understand.'),
       );
 
     const session = await sequence.execute(createSession());
@@ -47,13 +47,13 @@ describe('Agent', () => {
     expect(messages[2].type).toBe('assistant');
     expect(messages[2].content).toBe('Hello there!');
 
-    const sequence2 = new Agent()
+    const sequence2 = Agent.create()
       .system('You are a helpful assistant.')
       .user('Goodbye')
       .conditional(
         (session) => session.getLastMessage()?.content === 'Hello',
-        agent => agent.assistant('Hello there!'),
-        agent => agent.assistant('I did not understand.'),
+        (agent) => agent.assistant('Hello there!'),
+        (agent) => agent.assistant('I did not understand.'),
       );
 
     const session2 = await sequence2.execute(createSession());
@@ -64,12 +64,12 @@ describe('Agent', () => {
   it('should support loop method with function builder', async () => {
     let counter = 0;
 
-    const sequence = new Agent()
+    const sequence = Agent.create()
       .system('You are a helpful assistant.')
       .user('Start the loop')
       .loop(
         // Use function-based loop
-        agent => agent.user('This is iteration message'),
+        (agent) => agent.user('This is iteration message'),
         (session) => {
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
@@ -97,15 +97,18 @@ describe('Agent', () => {
   it('should support loop method with function builder (alternative)', async () => {
     let counter = 0;
 
-    const sequence = new Agent()
+    const sequence = Agent.create()
       .system('You are a helpful assistant.')
       .user('Start the loop')
-      .loop(agent => agent.user('This is iteration message'), (session) => {
-        // Use function-based loop
-        counter++;
-        // Exit condition should be true *after* the 3rd iteration completes
-        return counter <= 3;
-      });
+      .loop(
+        (agent) => agent.user('This is iteration message'),
+        (session) => {
+          // Use function-based loop
+          counter++;
+          // Exit condition should be true *after* the 3rd iteration completes
+          return counter <= 3;
+        },
+      );
 
     const session = await sequence.execute(createSession());
 
@@ -123,11 +126,11 @@ describe('Agent', () => {
   });
 
   it('should support nested linear sequences', async () => {
-    const nestedSequence = new Agent()
+    const nestedSequence = Agent.create()
       .user('Nested message 1')
       .user('Nested message 2');
 
-    const mainSequence = new Agent()
+    const mainSequence = Agent.create()
       .system('You are a helpful assistant.')
       .add(nestedSequence)
       .user('Final message');
@@ -152,20 +155,24 @@ describe('Agent', () => {
     let innerCounter = 0;
 
     // Define the main sequence containing nested loops
-    const mainSequence = new Agent()
+    const mainSequence = Agent.create()
       .system('You are a helpful assistant.')
-      .loop(agent => 
-        agent
-          .user('Outer loop start')
-          .loop(innerAgent => innerAgent.user('Inner loop message'), (session) => {
-            // Inner loop definition
-            innerCounter++;
-            // Exit inner loop when counter *exceeds* 2 (after 2 iterations)
-            const shouldLoopInner = innerCounter <= 2;
-            // Reset logic removed from here
-            return shouldLoopInner;
-          })
-          .user('Outer loop end'),
+      .loop(
+        (agent) =>
+          agent
+            .user('Outer loop start')
+            .loop(
+              (innerAgent) => innerAgent.user('Inner loop message'),
+              (session) => {
+                // Inner loop definition
+                innerCounter++;
+                // Exit inner loop when counter *exceeds* 2 (after 2 iterations)
+                const shouldLoopInner = innerCounter <= 2;
+                // Reset logic removed from here
+                return shouldLoopInner;
+              },
+            )
+            .user('Outer loop end'),
         (session) => {
           // Outer loop definition
           outerCounter++;
@@ -173,7 +180,7 @@ describe('Agent', () => {
           innerCounter = 0;
           // Exit outer loop when counter *exceeds* 2 (after 2 iterations)
           return outerCounter <= 2;
-        }
+        },
       )
       .user('All done');
 

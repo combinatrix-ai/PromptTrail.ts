@@ -11,7 +11,7 @@ describe('Source.llm().mock() examples', () => {
     });
 
     // Use it in an Agent
-    const agent = new Agent()
+    const agent = Agent.create()
       .system('You are a helpful assistant')
       .assistant(mockSource);
 
@@ -33,7 +33,7 @@ describe('Source.llm().mock() examples', () => {
     // The configuration is available for assertions
     const lastCall = mockSource.getCallHistory()[0];
 
-    const agent = new Agent().assistant(mockSource);
+    const agent = Agent.create().assistant(mockSource);
     const session = await agent.execute(createSession());
 
     // After execution, we can check what configuration was used
@@ -52,7 +52,7 @@ describe('Source.llm().mock() examples', () => {
         { content: 'Third response' },
       );
 
-    const agent = new Agent()
+    const agent = Agent.create()
       .assistant(mockSource)
       .assistant(mockSource)
       .assistant(mockSource)
@@ -82,7 +82,7 @@ describe('Source.llm().mock() examples', () => {
         };
       });
 
-    const agent = new Agent().assistant(mockSource);
+    const agent = Agent.create().assistant(mockSource);
 
     const session = await agent.execute(
       createSession({ context: { userName: 'Alice' } }),
@@ -111,7 +111,7 @@ describe('Source.llm().mock() examples', () => {
         ],
       });
 
-    const agent = new Agent().assistant(mockSource);
+    const agent = Agent.create().assistant(mockSource);
     const session = await agent.execute(createSession());
 
     const lastMessage = session.messages[0];
@@ -126,7 +126,7 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Valid response text' });
 
-    const agent = new Agent().assistant(mockSource);
+    const agent = Agent.create().assistant(mockSource);
     const session = await agent.execute(createSession());
 
     // The response passes validation
@@ -139,7 +139,7 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Too short' });
 
-    const invalidAgent = new Agent().assistant(invalidMock);
+    const invalidAgent = Agent.create().assistant(invalidMock);
 
     // This should throw because content is too short
     await expect(invalidAgent.execute(createSession())).rejects.toThrow();
