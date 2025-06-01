@@ -1,63 +1,30 @@
-import {
-  Sequence,
-  Loop,
-  User,
-  Assistant,
-  System,
-  createSession,
-  createGenerateOptions,
-  CLISource,
-} from '../packages/core/src/index';
-
-const apiKey = process.env.OPENAI_API_KEY!;
+import { Agent, Session, Source } from '../packages/core/src/index';
 
 async function main() {
-  // Create an interactive CLI source to get user input
-  const userCliSource = new CLISource('Your message (type "exit" to end): ');
-
-  // Create generateOptions for the OpenAI model
-  const generateOptions = createGenerateOptions({
-    provider: {
-      type: 'openai',
-      apiKey: apiKey as string,
-      modelName: 'gpt-4o-mini',
+  // Create the main conversation flow using the new function-based API
+  const chatAgent = Agent.system(
+    'You are a helpful AI assistant. Be concise and friendly in your responses.',
+  ).loop(
+    // Function-based loop body
+    (agent) =>
+      agent
+        // User message from CLI with custom prompt
+        .user(Source.cli('Your message (type "exit" to end): '))
+        // Assistant message using the default model
+        .assistant(),
+    // Loop condition: continue until user types "exit"
+    (session) => {
+      const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
+      return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
     },
-    temperature: 0.7,
-  });
-
-  // Create a template to get user input via the CLI source
-  const userTemplate = new User(userCliSource);
-
-  // Create the main conversation flow using a Sequence
-  const template = new Sequence()
-    .add(
-      new System(
-        'You are a helpful AI assistant. Be concise and friendly in your responses.',
-      ),
-    )
-    .add(
-      new Loop({
-        // The body of the loop is a Sequence containing the user turn and assistant turn
-        bodyTemplate: new Sequence([
-          userTemplate,
-          new Assistant(generateOptions),
-        ]),
-        exitCondition: (session) => {
-          const lastUserMessage = session
-            .getMessagesByType('user')
-            .slice(-1)[0];
-          // Exit the loop if the user types "exit"
-          return lastUserMessage?.content.toLowerCase().trim() === 'exit';
-        },
-      }),
-    );
+  );
 
   // Create an initial session, enabling 'print' to log messages to the console
-  const session = createSession({ print: true });
+  const session = Session.debug();
 
-  // Execute the template
+  // Execute the chat agent
   console.log('\nStarting chat with gpt-4o-mini (type "exit" to end)...\n');
-  await template.execute(session);
+  await chatAgent.execute(session);
   console.log('\nChat ended. Goodbye!\n');
 }
 

@@ -1,23 +1,34 @@
+// generate.ts
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
-  experimental_createMCPClient,
+  LanguageModelV1,
+  Output,
+  ToolSet,
 } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import type {
-  TMessage,
-  ISession,
-  TProviderConfig,
-  IMCPServerConfig,
-} from './types';
-import { createMetadata } from './metadata';
-import type { GenerateOptions } from './generate_options';
+import { z } from 'zod';
+import type { Message } from './message';
+import type { Session, Attrs, Vars } from './session';
+import type { LLMOptions } from './source';
+
+/**
+ * Schema generation options
+ */
+export interface SchemaGenerationOptions {
+  schema: z.ZodType;
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
+}
 
 /**
  * Convert Session to AI SDK compatible format
  */
-function convertSessionToAiSdkMessages(session: ISession): Array<{
+export function convertSessionToAiSdkMessages(
+  session: Session<any, any>,
+): Array<{
   role: string;
   content: string;
   tool_call_id?: string;
@@ -30,11 +41,18 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
     tool_calls?: Array<unknown>;
   }> = [];
 
-  // TODO: Check this implementation is sane?
-  // Filter out tool_result messages for now, as AI SDK doesn't support them directly
-  // We'll handle them separately
-  const toolResults: Array<{ content: string; toolCallId: string }> = [];
+  // Build a map of tool results by their tool call ID for easy lookup
+  const toolResultsMap = new Map<string, string>();
+  for (const msg of session.messages) {
+    if (msg.type === 'tool_result') {
+      const toolCallId = msg.attrs?.toolCallId as string;
+      if (toolCallId) {
+        toolResultsMap.set(toolCallId, msg.content);
+      }
+    }
+  }
 
+  // Process messages in order, but handle tool results immediately after their assistant message
   for (const msg of session.messages) {
     if (msg.type === 'system') {
       messages.push({ role: 'system', content: msg.content });
@@ -63,133 +81,116 @@ function convertSessionToAiSdkMessages(session: ISession): Array<{
       }
 
       messages.push(assistantMsg);
-    } else if (msg.type === 'tool_result') {
-      // Store tool results to process later
-      toolResults.push({
-        content: msg.content,
-        toolCallId:
-          (msg.metadata?.get('toolCallId') as string) || crypto.randomUUID(),
-      });
-    }
-  }
 
-  // Process tool results
-  if (toolResults.length > 0) {
-    for (const result of toolResults) {
-      messages.push({
-        role: 'tool',
-        content: result.content,
-        tool_call_id: result.toolCallId,
-      });
+      // Immediately add tool results for this assistant message
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const toolCall of msg.toolCalls) {
+          const toolResult = toolResultsMap.get(toolCall.id);
+          if (toolResult) {
+            messages.push({
+              role: 'tool',
+              content: toolResult,
+              tool_call_id: toolCall.id,
+            });
+          }
+        }
+      }
     }
+    // Skip tool_result messages as they're handled above
   }
 
   return messages;
 }
 
 /**
- * Create a provider based on configuration
+ * Create a provider based on the LLMOptions
  */
-function createProvider(config: TProviderConfig): unknown {
-  const options: Record<string, unknown> = {};
-  if (config.type === 'openai') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+export function createProvider(options: LLMOptions): LanguageModelV1 {
+  const providerConfig = options.provider;
+  const sdkProviderOptions: Record<string, unknown> = {}; // Options specifically for createOpenAI/createAnthropic
+
+  if (providerConfig.type === 'openai') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
     }
-    if (config.organization) {
-      options.organization = config.organization;
+    if (providerConfig.organization) {
+      sdkProviderOptions.organization = providerConfig.organization;
     }
-
-    options.apiKey = config.apiKey;
-
-    const openai = createOpenAI(options);
-
-    return openai(config.modelName);
-  } else if (config.type === 'anthropic') {
-    if (config.baseURL) {
-      options.baseURL = config.baseURL;
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
     }
 
-    options.apiKey = config.apiKey;
+    const openai = createOpenAI(sdkProviderOptions);
+    return openai(providerConfig.modelName);
+  } else if (providerConfig.type === 'anthropic') {
+    if (providerConfig.baseURL) {
+      sdkProviderOptions.baseURL = providerConfig.baseURL;
+    }
+    sdkProviderOptions.apiKey = providerConfig.apiKey;
+    // Pass browser flag if set (Anthropic might support this too)
+    if (options.dangerouslyAllowBrowser) {
+      sdkProviderOptions.dangerouslyAllowBrowser = true;
+    }
 
-    const anthropic = createAnthropic(options);
+    const anthropic = createAnthropic(sdkProviderOptions);
+    return anthropic(providerConfig.modelName);
+  } else if (providerConfig.type === 'google') {
+    const googleSdkOptions: {
+      apiKey?: string;
+      baseURL?: string;
+      dangerouslyAllowBrowser?: boolean;
+    } = {};
+    if (providerConfig.apiKey) {
+      googleSdkOptions.apiKey = providerConfig.apiKey;
+    }
+    if (providerConfig.baseURL) {
+      googleSdkOptions.baseURL = providerConfig.baseURL;
+    }
+    // Note: Check if @ai-sdk/google's createGoogleGenerativeAI supports dangerouslyAllowBrowser.
+    // The documentation for @ai-sdk/google didn't explicitly list it for createGoogleGenerativeAI.
+    // For now, assuming it might be a common option or handled by the core AI SDK.
+    // If it causes issues, it should be removed for the Google provider.
+    if (options.dangerouslyAllowBrowser) {
+      // googleSdkOptions.dangerouslyAllowBrowser = true; // Temporarily commenting out until confirmed
+    }
 
-    return anthropic(config.modelName, options);
+    const googleProvider = createGoogleGenerativeAI(googleSdkOptions);
+    return googleProvider(providerConfig.modelName);
   }
 
   throw new Error(
-    `Unsupported provider type: ${(config as { type: string }).type}`,
+    `Unsupported provider type: ${(providerConfig as { type: string }).type}`,
   );
-}
-
-/**
- * Initialize MCP client
- */
-async function initializeMCPClient(config: IMCPServerConfig): Promise<unknown> {
-  try {
-    const transport = {
-      url: config.url,
-      name: config.name || 'prompttrail-mcp-client',
-      version: config.version || '1.0.0',
-      headers: config.headers || {},
-    };
-
-    const mcpClient = await experimental_createMCPClient({
-      transport,
-    });
-
-    return mcpClient;
-  } catch (error) {
-    console.error(`Failed to initialize MCP client for ${config.name}:`, error);
-    throw error;
-  }
 }
 
 /**
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText(
-  session: ISession,
-  options: GenerateOptions,
-): Promise<TMessage> {
+export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions,
+): Promise<Message<TAttrs>> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
-
-  // Handle MCP tools if configured
-  const mcpClients = [];
-  if (options.mcpServers && options.mcpServers.length > 0) {
-    for (const server of options.mcpServers) {
-      try {
-        const mcpClient = await initializeMCPClient(server);
-        mcpClients.push(mcpClient);
-      } catch (error) {
-        console.error(
-          `Failed to initialize MCP client for ${server.name}:`,
-          error,
-        );
-      }
-    }
-  }
+  const provider = createProvider(options);
 
   // Generate text using AI SDK
   const result = await aiSdkGenerateText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as unknown, // TODO: Fix this assertion
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
-
-  // Create metadata for the response
-  const metadata = createMetadata();
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
@@ -214,40 +215,129 @@ export async function generateText(
     return {
       type: 'assistant',
       content: content,
-      metadata,
       toolCalls: formattedToolCalls,
-    };
+      toolResults: result.toolResults, // Include tool results from ai-sdk
+    } as any;
   }
 
   return {
     type: 'assistant',
     content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
-    metadata,
   };
+}
+
+/**
+ * Generate structured content using schema
+ */
+export async function generateWithSchema<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions,
+  schemaOptions: SchemaGenerationOptions,
+): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const messages = convertSessionToAiSdkMessages(session);
+  const provider = createProvider(options);
+
+  if (schemaOptions.mode === 'structured_output') {
+    // Use AI SDK's experimental_output for structured generation
+    const result = await aiSdkGenerateText({
+      model: provider as LanguageModelV1,
+      messages: messages as [],
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      topK: options.topK,
+      experimental_output: Output.object({
+        schema: schemaOptions.schema,
+      }),
+      ...options.sdkOptions,
+    });
+
+    // Validate the structured output
+    const parsedOutput = schemaOptions.schema.safeParse(
+      result.experimental_output,
+    );
+    if (!parsedOutput.success) {
+      throw new Error(
+        `Schema validation failed: ${parsedOutput.error.message}`,
+      );
+    }
+
+    return {
+      type: 'assistant',
+      content: JSON.stringify(parsedOutput.data, null, 2),
+      structuredOutput: parsedOutput.data,
+    };
+  } else {
+    // Use tool-based generation (existing SchemaSource logic)
+    const functionName =
+      schemaOptions.functionName || 'generateStructuredOutput';
+    const toolOptions: LLMOptions = {
+      ...options,
+      tools: {
+        ...options.tools,
+        [functionName]: {
+          name: functionName,
+          description: 'Generate structured output according to schema',
+          parameters: schemaOptions.schema,
+        },
+      },
+      toolChoice: 'required',
+    };
+
+    const response = await generateText(session, toolOptions);
+
+    if (response.toolCalls?.some((tc) => tc.name === functionName)) {
+      const toolCall = response.toolCalls.find(
+        (tc) => tc.name === functionName,
+      );
+
+      if (toolCall) {
+        const result = schemaOptions.schema.safeParse(toolCall.arguments);
+        if (result.success) {
+          return {
+            type: 'assistant',
+            content: response.content,
+            toolCalls: response.toolCalls,
+            structuredOutput: result.data,
+          };
+        } else {
+          throw new Error(`Schema validation failed: ${result.error.message}`);
+        }
+      }
+    }
+
+    throw new Error('No valid schema tool call found in response');
+  }
 }
 
 /**
  * Generate text stream using AI SDK
  */
-export async function* generateTextStream(
-  session: ISession,
-  options: GenerateOptions, // Fixed type to match generateText
-): AsyncGenerator<TMessage, void, unknown> {
+export async function* generateTextStream<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions,
+): AsyncGenerator<Message<TAttrs>, void, unknown> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
   // Create the provider
-  const provider = createProvider(options.provider);
+  const provider = createProvider(options);
 
   // Generate streaming text using AI SDK
   const stream = await aiSdkStreamText({
-    model: provider as unknown,
-    messages: messages as [], // Type assertion for AI SDK compatibility
+    model: provider as LanguageModelV1,
+    messages: messages as [],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools, // Use tools directly from options
+    tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
@@ -258,7 +348,6 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: chunk.textDelta || ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
       };
     } else if (chunk.type === 'tool-call') {
       // Add tool calls directly to the message
@@ -271,7 +360,6 @@ export async function* generateTextStream(
       yield {
         type: 'assistant',
         content: ' ', // Ensure content is never empty for Anthropic compatibility
-        metadata: createMetadata(),
         toolCalls: [toolCall],
       };
     }

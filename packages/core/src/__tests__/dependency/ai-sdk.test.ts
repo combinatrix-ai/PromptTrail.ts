@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
-import { tool, generateText, generateObject, streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { generateObject, generateText, Output, streamText, tool } from 'ai';
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 // These tests demonstrate the core APIs of Vercel's AI SDK
 // They serve as working documentation of how to use the AI SDK directly
@@ -238,6 +238,47 @@ describe('Tool Integration', () => {
           expect(err.cause).toBeDefined();
         }
       }
+    });
+
+    it('should demonstrate structured output with generateText', async () => {
+      const simplifiedSchema = z.object({
+        price: z.number().describe('The price of the product in USD'),
+        inStock: z.boolean().describe('Whether the product is in stock'),
+        description: z.string().describe('A short description of the product'),
+        name: z.string().describe('The name of the product'),
+      });
+
+      const result = await generateText({
+        model: openai('gpt-4o-mini', { structuredOutputs: true }),
+        experimental_output: Output.object({
+          schema: simplifiedSchema,
+        }),
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a product search AI assistant. Rerturn example product information in JSON format.',
+          },
+          {
+            role: 'user',
+            content: 'Get iPhone 14 product information.',
+          },
+          {
+            role: 'user',
+            content: 'Oops. I meant 15.',
+          },
+        ],
+      });
+
+      // Check the result
+      const parsedOutput = simplifiedSchema.safeParse(
+        result.experimental_output,
+      );
+      expect(parsedOutput.success).toBe(true);
+      expect(parsedOutput.data?.name).toBeDefined();
+      expect(parsedOutput.data?.price).toBeDefined();
+      expect(parsedOutput.data?.inStock).toBeDefined();
+      expect(parsedOutput.data?.description).toBeDefined();
     });
   });
 });

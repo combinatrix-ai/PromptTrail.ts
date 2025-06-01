@@ -19,9 +19,9 @@ const chatTemplate = new LinearTemplate()
         }),
         new AssistantTemplate({ model: 'gpt-4o-mini' }),
       ],
-      exitCondition: (session) => {
+      loopIf: (session) => {
         const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
-        return lastUserMessage?.content.toLowerCase().trim() === 'exit';
+        return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
       },
     }),
   );

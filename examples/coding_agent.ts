@@ -7,33 +7,33 @@
 
 // Import PromptTrail core components
 import {
-  createSession,
-  createGenerateOptions,
-  type GenerateOptions,
   Agent,
-  System,
   CLISource,
-} from '../packages/core/src/index.js';
+  Session,
+  Source,
+  System,
+} from '../packages/core/src/index';
 
-// Import tool definitions from ai SDK
-import { tool, type Tool } from 'ai';
+// Import Tool namespace from PromptTrail
 import { z } from 'zod';
+import { Tool } from '../packages/core/src/index';
 
 // Node.js modules for file and command operations
 import { exec } from 'child_process';
-import { promisify } from 'util';
 import { readFile, writeFile } from 'fs/promises';
+import { promisify } from 'util';
 // Convert exec to promise-based for async/await usage
 const execAsync = promisify(exec);
 
 // Define shell command tool
-const shellCommandTool = tool({
+const shellCommandTool = Tool.create({
   description: 'Execute a shell command',
   parameters: z.object({
     command: z.string().describe('Shell command to execute'),
   }),
-  execute: async (input: z.infer<z.ZodObject<{ command: z.ZodString }>>) => {
+  execute: async (input) => {
     try {
+      console.log(`[Debug] Executing command: ${input.command}`);
       const { stdout, stderr } = await execAsync(input.command);
       return { stdout, stderr };
     } catch (error: unknown) {
@@ -44,14 +44,19 @@ const shellCommandTool = tool({
 });
 
 // Define file reading tool
-const readFileTool = tool({
+const readFileTool = Tool.create({
   description: 'Read content from a file',
   parameters: z.object({
     path: z.string().describe('Path to the file to read'),
   }),
-  execute: async (input: z.infer<z.ZodObject<{ path: z.ZodString }>>) => {
+  execute: async (input) => {
     try {
       const content = await readFile(input.path, 'utf-8');
+      console.log(
+        `[Debug] Read content from ${input.path}:`,
+        content.substring(0, 10),
+        '...',
+      );
       return { content };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -61,16 +66,19 @@ const readFileTool = tool({
 });
 
 // Define file writing tool
-const writeFileTool = tool({
+const writeFileTool = Tool.create({
   description: 'Write content to a file',
   parameters: z.object({
     path: z.string().describe('Path to write the file'),
     content: z.string().describe('Content to write to the file'),
   }),
-  execute: async (
-    input: z.infer<z.ZodObject<{ path: z.ZodString; content: z.ZodString }>>,
-  ) => {
+  execute: async (input) => {
     try {
+      console.log(
+        `[Debug] Writing content to ${input.path}:`,
+        input.content.substring(0, 10),
+        '...',
+      );
       await writeFile(input.path, input.content, 'utf-8');
       return { success: true };
     } catch (error: unknown) {
@@ -89,7 +97,7 @@ type ToolsMap = Record<string, Tool>;
  */
 export class CodingAgent {
   private tools: ToolsMap;
-  private generateOptions: GenerateOptions;
+  private llm: Source;
 
   constructor(config: {
     provider: 'openai' | 'anthropic';
@@ -103,23 +111,24 @@ export class CodingAgent {
       write_file: writeFileTool,
     };
 
-    // Configure the LLM options
-    const baseOptions = {
-      provider: {
-        type: config.provider,
-        apiKey: config.apiKey,
-        modelName:
-          config.provider === 'openai'
-            ? 'gpt-4o-mini'
-            : 'claude-3-5-haiku-20240620',
-      },
-      temperature: 0.7,
-    };
+    // Configure the LLM with tools using the fluent API
+    let llmSource = Source.llm();
 
-    // Create options with tools using the fluent API
-    this.generateOptions = createGenerateOptions(baseOptions).addTools(
-      this.tools,
-    );
+    // Configure provider
+    if (config.provider === 'openai') {
+      llmSource = llmSource.openai({
+        apiKey: config.apiKey,
+        modelName: config.modelName || 'gpt-4o-mini',
+      });
+    } else {
+      llmSource = llmSource.anthropic({
+        apiKey: config.apiKey,
+        modelName: config.modelName || 'claude-3-5-haiku-latest',
+      });
+    }
+
+    // Add temperature and tools
+    this.llm = llmSource.temperature(0.7).withTools(this.tools);
   }
 
   /**
@@ -135,28 +144,30 @@ export class CodingAgent {
     const userCliSource = new CLISource('Your request (type "exit" to end): ');
 
     // Create session with console output
-    const session = createSession({ print: true });
+    const session = Session.debug();
 
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = new Agent().add(new System(systemPrompt)).addIf(
-      (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
-      // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
-      new Agent()
-        .addUser(initialPrompt as string)
-        .addAssistant(this.generateOptions),
-      // Otherwise, this is interactive mode
-      new Agent().addLoop(
-        new Agent().addUser(userCliSource).addAssistant(this.generateOptions),
-        (session) => {
-          const lastUserMessage = session
-            .getMessagesByType('user')
-            .slice(-1)[0];
-          return lastUserMessage?.content.toLowerCase().trim() === 'exit';
-        },
-      ),
-    );
+    const agent = Agent.create()
+      .add(new System(systemPrompt))
+      .conditional(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
+        // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
+        (agent) => agent.user(initialPrompt as string).assistant(this.llm),
+        // Otherwise, this is interactive mode
+        (agent) =>
+          agent.loop(
+            (innerAgent) => innerAgent.user(userCliSource).assistant(this.llm),
+            (session) => {
+              const lastUserMessage = session
+                .getMessagesByType('user')
+                .slice(-1)[0];
+              return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
+            },
+          ),
+      );
 
     // Execute the interactive template
     await agent.execute(session);

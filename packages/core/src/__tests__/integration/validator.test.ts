@@ -1,44 +1,31 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../session';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Session } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
-import { createMetadata } from '../../metadata';
-import { type ISession } from '../../types';
 
 vi.mock('../../generate');
 
 import { generateText } from '../../generate';
-import {
-  createGenerateOptions,
-  type GenerateOptions,
-} from '../../generate_options';
+import { Source, type LlmSource } from '../../source';
 import { Assistant } from '../../templates';
 
 describe('AssistantTemplate with Validator', () => {
-  let generateOptions: GenerateOptions;
+  let llm: LlmSource;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    generateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-      },
-      temperature: 0.7,
-    });
+    llm = Source.llm();
 
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'This is a test response',
-      metadata: createMetadata(),
     });
   });
 
   it('should pass validation when validator passes', async () => {
     const assistantTemplate = new Assistant('This is a test response');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });
@@ -50,14 +37,13 @@ describe('AssistantTemplate with Validator', () => {
       return {
         type: 'assistant',
         content: `Response attempt ${attempts}`,
-        metadata: createMetadata(),
       };
     });
 
     const conditionalValidator: IValidator = {
       validate: async (
         content,
-        _context: ISession,
+        _context: Session,
       ): Promise<TValidationResult> => {
         return content.includes('2')
           ? { isValid: true }
@@ -69,7 +55,7 @@ describe('AssistantTemplate with Validator', () => {
 
     const assistantTemplate = new Assistant('Response attempt 2');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     // Since we're using a static string now, we don't have attempts anymore
     // expect(attempts).toBe(2);
@@ -89,7 +75,7 @@ describe('AssistantTemplate with Validator', () => {
       .fn()
       .mockRejectedValue(new Error('Validation failed'));
 
-    await expect(assistantTemplate.execute(createSession())).rejects.toThrow(
+    await expect(assistantTemplate.execute()).rejects.toThrow(
       'Validation failed',
     );
   });
@@ -97,7 +83,7 @@ describe('AssistantTemplate with Validator', () => {
   it('should not throw when validation fails and raiseError is false', async () => {
     const assistantTemplate = new Assistant('This is a test response');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });

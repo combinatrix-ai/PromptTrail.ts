@@ -1,7 +1,7 @@
 /**
  * Custom validator implementation
  */
-import { type ISession } from '../types';
+import { type Session } from '../session';
 import { BaseValidator, type TValidationResult } from './base';
 
 /**
@@ -10,13 +10,13 @@ import { BaseValidator, type TValidationResult } from './base';
 export class CustomValidator extends BaseValidator {
   private validateFn: (
     content: string,
-    context?: ISession,
+    context?: Session,
   ) => Promise<TValidationResult> | TValidationResult;
 
   constructor(
     validateFn: (
       content: string,
-      context?: ISession,
+      context?: Session,
     ) => Promise<TValidationResult> | TValidationResult,
     options?: {
       description?: string;
@@ -34,7 +34,7 @@ export class CustomValidator extends BaseValidator {
 
   async validate(
     content: string,
-    context: ISession,
+    context: Session,
   ): Promise<TValidationResult> {
     return this.validateFn(content, context);
   }

@@ -1,15 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../session';
-import { Sequence, System, User, Assistant } from '../../templates';
-import { createMetadata } from '../../metadata';
-import type { GenerateOptions } from '../../generate_options';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Session } from '../../session';
+import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules
 vi.mock('../../generate');
 
 // Import mocked modules after mocking
 import { generateText } from '../../generate';
-import { createGenerateOptions } from '../../generate_options';
+import { Source } from '../../source';
 
 describe('Browser Compatibility', () => {
   beforeEach(() => {
@@ -27,22 +25,12 @@ describe('Browser Compatibility', () => {
         type: 'assistant',
         content:
           'This is a response from the OpenAI API in a browser environment.',
-        metadata: createMetadata(),
       };
     });
   });
 
   it('should work with templates in browser context', async () => {
-    // Define generateOptions with browser flag
-    const generateOptions: GenerateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-        dangerouslyAllowBrowser: true,
-      },
-      temperature: 0.7,
-    });
+    const llm: Source = Source.llm();
 
     // Create a template
     const template = new Sequence()
@@ -55,7 +43,7 @@ describe('Browser Compatibility', () => {
       );
 
     // Execute the template
-    const result = await template.execute(createSession());
+    const result = await template.execute();
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);

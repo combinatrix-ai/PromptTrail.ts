@@ -1,22 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateText } from '../../../generate';
+import { Session } from '../../../session';
+import { Source, type LlmSource } from '../../../source';
 import {
-  // Sequence as LinearTemplate, // Remove alias
+  Assistant,
+  Conditional,
   Loop,
+  Sequence,
   System,
   User,
-  Assistant, // Ensure AssistantTemplate is imported
-  // SubroutineTemplate, // Keep import commented out as tests are skipped
-  Conditional,
-  Sequence, // Import Sequence directly
-} from '../../../templates'; // Check path and export in index.ts
-import { createSession } from '../../../session';
-import { createMetadata } from '../../../metadata';
-import { generateText } from '../../../generate';
-import {
-  createGenerateOptions,
-  type GenerateOptions,
-} from '../../../generate_options';
-import type { ISession } from '../../../types';
+} from '../../../templates';
 
 // Mock the generateText function
 vi.mock('../../../generate', () => {
@@ -26,7 +19,7 @@ vi.mock('../../../generate', () => {
 });
 
 describe('Nested Templates', () => {
-  let generateOptions: GenerateOptions;
+  let llm: LlmSource;
   let responseIndex: number;
   const mockResponses = [
     'Response to first question',
@@ -43,14 +36,7 @@ describe('Nested Templates', () => {
     responseIndex = 0;
 
     // Create generateOptions
-    generateOptions = createGenerateOptions({
-      provider: {
-        type: 'openai',
-        apiKey: 'test-api-key',
-        modelName: 'gpt-4o-mini',
-      },
-      temperature: 0.7,
-    });
+    llm = Source.llm();
 
     // Setup mock implementation for generateText
     vi.mocked(generateText).mockImplementation(async () => {
@@ -59,7 +45,6 @@ describe('Nested Templates', () => {
       return {
         type: 'assistant',
         content: response,
-        metadata: createMetadata(),
       };
     });
   });
@@ -73,7 +58,7 @@ describe('Nested Templates', () => {
       condition: () => true, // Always true for this test
       thenTemplate: new Sequence() // Use Sequence
         .add(new User('First question')) // Use add()
-        .add(new Assistant(generateOptions)), // Use add()
+        .add(new Assistant(llm)), // Use add()
       elseTemplate: new System('Condition was false'),
     });
 
@@ -81,10 +66,10 @@ describe('Nested Templates', () => {
       // Use constructor options
       bodyTemplate: new Sequence() // Use Sequence for body
         .add(new User('Second question')) // Use add()
-        .add(new Assistant(generateOptions)) // Removed comma
+        .add(new Assistant(llm)) // Removed comma
         .add(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
-      exitCondition: (session: ISession) => {
+      loopIf: (session: Session) => {
         // Exit after one iteration
         const messages = Array.from(session.messages);
         return messages.length >= 5; // System + First Q&A + Second Q&A
@@ -104,7 +89,7 @@ describe('Nested Templates', () => {
     ]); // Removed potential syntax error after array
 
     // Execute the template
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     // Verify the conversation flow
     const messages = Array.from(session.messages);
@@ -140,9 +125,9 @@ describe('Nested Templates', () => {
     responseIndex = 3; // Index for 'Response with metadata'
 
     // Create a session with metadata
-    const session = createSession();
-    session.metadata.set('username', 'Alice');
-    session.metadata.set('topic', 'TypeScript');
+    const session = Session.create();
+    const sessionWithUsername = session.withVar('username', 'Alice');
+    const sessionWithBoth = sessionWithUsername.withVar('topic', 'TypeScript');
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped
@@ -156,7 +141,7 @@ describe('Nested Templates', () => {
     ]);
 
     // Execute the template
-    const result = await template.execute(session);
+    const result = await template.execute(sessionWithBoth);
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);
@@ -178,8 +163,8 @@ describe('Nested Templates', () => {
     responseIndex = 4; // Index for 'Response A' and 'Response B'
 
     // Create a session with a condition flag
-    const session = createSession();
-    session.metadata.set('condition', true);
+    const session = Session.create();
+    const updatedSession = session.withVar('condition', true);
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
@@ -188,18 +173,18 @@ describe('Nested Templates', () => {
       .add(
         new Conditional({
           // Use add()
-          condition: (session) => Boolean(session.metadata.get('condition')),
+          condition: (session) => Boolean(session.getVar('condition')),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
-            .add(new Assistant(generateOptions)) // Removed comma
+            .add(new Assistant(llm)) // Removed comma
             // Nested condition
             .add(
               new Conditional({
                 // Use add()
                 condition: (session) => {
                   // Check if the last message contains a specific text
-                  const lastMessage = session.getLastMessage();
-                  return lastMessage?.content.includes('Response A') ?? false;
+                  const lasMessage = session.getLastMessage();
+                  return lasMessage?.content.includes('Response A') ?? false;
                 },
                 thenTemplate: new User(
                   'Follow-up when response contains "Response A"',
@@ -209,12 +194,12 @@ describe('Nested Templates', () => {
             ), // Close inner addIf
           elseTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is false')) // Use add()
-            .add(new Assistant(generateOptions)), // Use add()
+            .add(new Assistant(llm)), // Use add()
         }),
       ); // Close outer addIf
 
     // Execute the template
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);
@@ -235,10 +220,10 @@ describe('Nested Templates', () => {
     );
 
     // Now test with condition = false
-    const session2 = createSession();
-    session2.metadata.set('condition', false);
+    const session2 = Session.create();
+    const updatedSession2 = session2.withVar('condition', false);
 
-    const result2 = await template.execute(session2);
+    const result2 = await template.execute(updatedSession2);
     const messages2 = Array.from(result2.messages);
 
     // Check the number of messages

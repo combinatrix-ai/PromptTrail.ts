@@ -1,80 +1,9 @@
-import type {
-  TMessage,
-  ISystemMessage,
-  IUserMessage,
-  IAssistantMessage,
-  IToolResultMessage,
-  IToolResultMetadata,
-} from '../types';
-import { createMetadata } from '../metadata';
+import type { Message, MessageRole } from '../message';
 
 import { tool } from 'ai';
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { Message, MessageRole } from '@core/types';
-
-/**
- * Create a system message for testing
- */
-export const createSystemMessage = (content: string): ISystemMessage => ({
-  type: 'system',
-  content,
-  metadata: createMetadata(),
-});
-
-/**
- * Create a user message for testing
- */
-export const createUserMessage = (content: string): IUserMessage => ({
-  type: 'user',
-  content,
-  metadata: createMetadata(),
-});
-
-/**
- * Create an assistant message for testing
- */
-export const createAssistantMessage = (content: string): IAssistantMessage => ({
-  type: 'assistant',
-  content,
-  metadata: createMetadata(),
-});
-
-/**
- * Create a tool result message for testing
- */
-export const createToolResultMessage = (
-  content: string,
-  result: unknown,
-): IToolResultMessage => ({
-  type: 'tool_result',
-  content,
-  result,
-  metadata: createMetadata<IToolResultMetadata>({
-    initial: { toolCallId: 'test-id' },
-  }),
-});
-
-/**
- * Create a message of any type for testing
- */
-export const createMessage = (
-  type: TMessage['type'],
-  content: string,
-): TMessage => {
-  switch (type) {
-    case 'system':
-      return createSystemMessage(content);
-    case 'user':
-      return createUserMessage(content);
-    case 'assistant':
-      return createAssistantMessage(content);
-    case 'tool_result':
-      return createToolResultMessage(content, {});
-    default:
-      throw new Error(`Unknown message type: ${type}`);
-  }
-};
+import { Attrs } from '../session';
 
 /**
  * Create a weather tool for testing
@@ -107,7 +36,7 @@ export function createWeatherTool() {
  * Test function for message types
  */
 export function expect_types(
-  messages: Message[],
+  messages: Message<Attrs>[],
   expectedtypes: MessageRole[],
 ) {
   expect(messages.length).toBe(expectedtypes.length);
@@ -117,21 +46,11 @@ export function expect_types(
 }
 
 /**
- * Test function for message content
- */
-export function expect_content(messages: Message[], expectedContent: string[]) {
-  expect(messages.length).toBe(expectedContent.length);
-  messages.forEach((message, index) => {
-    expect(message.content).toBe(expectedContent[index]);
-  });
-}
-
-/**
  * Test function for both types and content
  */
 export function expect_messages(
-  messages: Message[],
-  expectedMessages: Message[],
+  messages: Message<Attrs>[],
+  expectedMessages: Message<Attrs>[],
 ) {
   expect(messages.length).toBe(expectedMessages.length);
   messages.forEach((message, index) => {

@@ -1,16 +1,15 @@
-import type { Metadata } from '../metadata';
+import type { Session } from '../session';
+import type { Attrs, Vars } from '../session';
 
 /**
- * Type guard for Metadata interface
+ * Type guard for Session interface
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isMetadata(value: unknown): value is Metadata<any> {
+function isSession(value: unknown): value is Session<any, any> {
   return (
     value !== null &&
     typeof value === 'object' &&
-    'get' in value &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    typeof (value as Metadata<any>).get === 'function'
+    'geTVarsValue' in value &&
+    typeof (value as any).geTVarsValue === 'function'
   );
 }
 
@@ -24,33 +23,61 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Interpolates template strings with metadata values
  * @param template The template string with ${variable} syntax
- * @param metadata The metadata containing values for interpolation
+ * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<T extends Record<string, unknown>>(
+export function interpolateTemplate<TVars extends Vars, TAttrs extends Attrs>(
   template: string,
-  metadata: Metadata<T>,
+  session: Session<TVars, TAttrs> | Vars | Record<string, unknown>,
 ): string {
-  return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
-    const keys = path.split('.');
-    let current: unknown = metadata;
+  // TODO: Simplify the logic here
+  if ('vars' in session && session.vars) {
+    // If it's a Session object, use its context
+    return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
+      const keys = path.split('.');
+      let current: unknown = session.vars;
 
-    // Navigate through nested objects
-    for (const key of keys) {
-      if (current === undefined || current === null) {
-        return '';
+      // Navigate through nested objects
+      for (const key of keys) {
+        if (current === undefined || current === null) {
+          return '';
+        }
+
+        if (isSession(current)) {
+          current = current.getVar(key);
+        } else if (isRecord(current)) {
+          current = current[key];
+        } else {
+          return '';
+        }
       }
 
-      if (isMetadata(current)) {
-        current = current.get(key);
-      } else if (isRecord(current)) {
-        current = current[key];
-      } else {
-        return '';
-      }
-    }
+      // Convert value to string or empty string if undefined/null
+      return current !== undefined && current !== null ? String(current) : '';
+    });
+  } else {
+    // If it's a Context object or something else, use the original approach
+    return template.replace(/\${([\w.]+)}/g, (match, path: string) => {
+      const keys = path.split('.');
+      let current: unknown = session;
 
-    // Convert value to string or empty string if undefined/null
-    return current !== undefined && current !== null ? String(current) : '';
-  });
+      // Navigate through nested objects
+      for (const key of keys) {
+        if (current === undefined || current === null) {
+          return '';
+        }
+
+        if (isSession(current)) {
+          current = current.getVar(key);
+        } else if (isRecord(current)) {
+          current = current[key];
+        } else {
+          return '';
+        }
+      }
+
+      // Convert value to string or empty string if undefined/null
+      return current !== undefined && current !== null ? String(current) : '';
+    });
+  }
 }

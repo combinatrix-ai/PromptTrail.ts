@@ -1,4 +1,4 @@
-import { type ISession } from '../types';
+import { type Session } from '../session';
 
 /**
  * Represents a successful validation result
@@ -26,17 +26,17 @@ export type TValidationResult =
  * Function type for handling validation failures
  */
 export type TValidationFailHandler = (
-  session: ISession,
+  session: Session,
   result: TValidationResult,
   attempt: number,
   maxAttempts: number,
-) => Promise<ISession>;
+) => Promise<Session>;
 
 /**
  * Interface for validator implementations
  */
 export interface IValidator {
-  validate(content: string, context: ISession): Promise<TValidationResult>;
+  validate(content: string, context: Session): Promise<TValidationResult>;
   getDescription(): string;
   getErrorMessage(): string;
 }
@@ -92,6 +92,6 @@ export abstract class BaseValidator {
    */
   abstract validate(
     content: string,
-    context: ISession,
+    context: Session,
   ): Promise<TValidationResult>;
 }

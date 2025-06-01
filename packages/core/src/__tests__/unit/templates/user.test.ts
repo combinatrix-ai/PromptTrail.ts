@@ -1,12 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
-import {
-  CallbackSource,
-  CLISource,
-  StaticSource,
-} from '../../../content_source';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Session } from '../../../session';
+import { Source } from '../../../source';
+import { User } from '../../../templates/primitives/user';
 import { CustomValidator } from '../../../validators/custom';
-import { User } from '../../../templates/user';
 
 // Mock the readline module
 vi.mock('node:readline/promises', () => {
@@ -26,7 +22,7 @@ describe('UserTemplate', () => {
   });
   it('should handle ContentSource on constructor', async () => {
     // Create a mock static source
-    const mockSource = new StaticSource('User query from source');
+    const mockSource = Source.literal('User query from source');
 
     // Create a UserTemplate with the source
     const template = new User(mockSource);
@@ -35,7 +31,7 @@ describe('UserTemplate', () => {
     expect(template.getContentSource()).toBeDefined();
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('User query from source');
   });
@@ -45,7 +41,7 @@ describe('UserTemplate', () => {
     const template = new User('User static message');
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('User static message');
   });
@@ -55,21 +51,24 @@ describe('UserTemplate', () => {
     const template = new User();
 
     // Expect the execute method to throw an error
-    await expect(template.execute(createSession())).rejects.toThrow(
+    await expect(template.execute()).rejects.toThrow(
       'Content source required for UserTemplate',
     );
   });
 
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
-    const session = createSession();
-    session.metadata.set('query', 'weather');
+    const session = Session.create();
+    console.log('Before setting context value:', session);
+    const updatedSession = session.withVar('query', 'weather');
+    console.log('After setting context value:', updatedSession);
+    console.log('Original session after setting context value:', session);
 
     // Create a UserTemplate with interpolated text
     const template = new User('What is the ${query} like today?');
 
     // Execute the template and verify the result
-    const result = await template.execute(session);
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );
@@ -77,27 +76,36 @@ describe('UserTemplate', () => {
 
   it('should support interpolation in content source', async () => {
     // Create a session with metadata
-    const session = createSession();
-    session.metadata.set('query', 'weather');
-
-    const template = new User(
-      new StaticSource('What is the ${query} like today?'),
+    const session = Session.create();
+    console.log('Before setting context value (content source):', session);
+    const updatedSession = session.withVar('query', 'weather');
+    console.log(
+      'After setting context value (content source):',
+      updatedSession,
+    );
+    console.log(
+      'Original session after setting context value (content source):',
+      session,
     );
 
-    const result = await template.execute(session);
+    const template = new User(
+      Source.literal('What is the ${query} like today?'),
+    );
+
+    const result = await template.execute(updatedSession);
     expect(result.getLastMessage()?.content).toBe(
       'What is the weather like today?',
     );
   });
   it('should work with CLISource', async () => {
     // Create a CLISource
-    const cliSource = new CLISource('Enter your query: ');
+    const cliSource = Source.cli('Enter your query: ');
 
     // Create a UserTemplate with the CLI source
     const template = new User(cliSource);
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('CLI user input');
 
@@ -110,18 +118,18 @@ describe('UserTemplate', () => {
     const callback = vi.fn().mockResolvedValue('Callback user input');
 
     // Create a CallbackSource
-    const callbackSource = new CallbackSource(callback);
+    const callbackSource = Source.callback(callback);
 
     // Create a UserTemplate with the callback source
     const template = new User(callbackSource);
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('Callback user input');
 
-    // Verify the callback was called with the session metadata
-    expect(callback).toHaveBeenCalledWith({ metadata: expect.anything() });
+    // Verify the callback was called with the session context
+    expect(callback).toHaveBeenCalledWith({ context: expect.anything() });
   });
 
   it('should validate content with a custom validator', async () => {
@@ -136,7 +144,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with validation
-    const validSource = new StaticSource('This is valid user input', {
+    const validSource = Source.literal('This is valid user input', {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -146,7 +154,7 @@ describe('UserTemplate', () => {
     const validTemplate = new User(validSource);
 
     // Execute the template and verify it passes validation
-    const validResult = await validTemplate.execute(createSession());
+    const validResult = await validTemplate.execute();
     expect(validResult.getLastMessage()?.content).toBe(
       'This is valid user input',
     );
@@ -179,7 +187,7 @@ describe('UserTemplate', () => {
     const callback = vi.fn().mockResolvedValue('This is valid user input');
 
     // Create a CallbackSource with validation options
-    const callbackSource = new CallbackSource(callback, {
+    const callbackSource = Source.callback(callback, {
       validator,
       maxAttempts: 1,
       raiseError: true,
@@ -189,7 +197,7 @@ describe('UserTemplate', () => {
     const template = new User(callbackSource);
 
     // Execute the template and verify it succeeds
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is valid user input');
     expect(callback).toHaveBeenCalledTimes(1);
 
@@ -214,7 +222,7 @@ describe('UserTemplate', () => {
     });
 
     // Create a static source with invalid content and raiseError set to false
-    const invalidSource = new StaticSource('This is invalid', {
+    const invalidSource = Source.literal('This is invalid', {
       validator,
       maxAttempts: 1,
       raiseError: false,
@@ -224,7 +232,7 @@ describe('UserTemplate', () => {
     const template = new User(invalidSource);
 
     // Execute the template and verify it doesn't throw an error
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is invalid');
   });
 });

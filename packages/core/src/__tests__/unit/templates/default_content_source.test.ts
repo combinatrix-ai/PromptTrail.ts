@@ -1,17 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Assistant } from '../../../templates/assistant';
-import { createSession } from '../../../session';
-import type { ISession } from '../../../types'; // Import ISession from types
-import { StaticSource, CallbackSource } from '../../../content_source'; // Added CallbackSource
-import { createGenerateOptions } from '../../../generate_options';
-import { createMetadata } from '../../../metadata';
-import type { Metadata } from '../../../metadata'; // Use type-only import for Metadata
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Sequence } from '../../../templates/sequence';
-import { User } from '../../../templates/user';
-import { Loop } from '../../../templates/loop';
-import { Subroutine } from '../../../templates/subroutine'; // Added import
-// Removed duplicate imports
+import { Session } from '../../../session';
+import { Source } from '../../../source';
+import { Loop } from '../../../templates/composite/loop';
+import { Sequence } from '../../../templates/composite/sequence';
+import { Subroutine } from '../../../templates/composite/subroutine';
+import { Assistant } from '../../../templates/primitives/assistant';
+import { User } from '../../../templates/primitives/user';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
@@ -26,7 +21,6 @@ describe('Default Content Source', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Response from LLM',
-      metadata: createMetadata(),
     });
   });
 
@@ -36,7 +30,7 @@ describe('Default Content Source', () => {
   describe('Sequence with default content sources', () => {
     it('should set and pass default UserTemplate content source', async () => {
       // Create a StaticSource to be used as default for UserTemplate
-      const defaultUserSource = new StaticSource('Default user message');
+      const defaultUserSource = Source.literal('Default user message');
 
       // Create a Sequence with a default UserTemplate source
       // Sequence constructor takes an array of templates, not default sources
@@ -48,7 +42,7 @@ describe('Default Content Source', () => {
       sequence.add(new User(defaultUserSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default source was used
       const messages = Array.from(session.messages);
@@ -59,13 +53,7 @@ describe('Default Content Source', () => {
 
     it('should set and pass default AssistantTemplate content source', async () => {
       // Create a GenerateOptions to be used as default for AssistantTemplate
-      const defaultGenerateOptions = createGenerateOptions({
-        provider: {
-          type: 'openai',
-          apiKey: 'test-api-key',
-          modelName: 'gpt-4',
-        },
-      });
+      const defaultLLM = Source.llm();
 
       // Create a Sequence with a default AssistantTemplate source
       // Sequence constructor takes an array of templates, not default sources
@@ -74,10 +62,10 @@ describe('Default Content Source', () => {
 
       // Add an AssistantTemplate without specifying a content source
       // Explicitly provide the source intended as default
-      sequence.add(new Assistant(defaultGenerateOptions));
+      sequence.add(new Assistant(defaultLLM));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default source was used (generateText was called with the options)
       const messages = Array.from(session.messages);
@@ -91,7 +79,7 @@ describe('Default Content Source', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'openai',
-            modelName: 'gpt-4',
+            modelName: 'gpt-4o-mini',
           }),
         }),
       );
@@ -99,14 +87,14 @@ describe('Default Content Source', () => {
 
     it('should override the default source with explicit source', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
       // Create explicit sources that will override the defaults
-      const explicitUserSource = new StaticSource('Explicit user message');
-      const explicitAssistantSource = new StaticSource(
+      const explicitUserSource = Source.literal('Explicit user message');
+      const explicitAssistantSource = Source.literal(
         'Explicit assistant message',
       );
 
@@ -120,7 +108,7 @@ describe('Default Content Source', () => {
       sequence.add(new Assistant(explicitAssistantSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the explicit sources were used, not the defaults
       const messages = Array.from(session.messages);
@@ -133,8 +121,8 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to convenience methods', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
@@ -151,7 +139,7 @@ describe('Default Content Source', () => {
         .add(new Assistant(defaultAssistantSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default sources were used
       const messages = Array.from(session.messages);
@@ -164,8 +152,8 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to nested sequences', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
@@ -185,7 +173,7 @@ describe('Default Content Source', () => {
       mainSequence.add(nestedSequence);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the default sources were passed to the nested sequence
       const messages = Array.from(session.messages);
@@ -203,16 +191,16 @@ describe('Default Content Source', () => {
   describe('LoopTemplate with default content sources', () => {
     it('should set and pass default sources in loop body', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
       // Create a simple counter for the loop condition
       let counter = 0;
-      const exitCondition = () => {
+      const loopIfCondition = () => {
         counter++;
-        return counter >= 2; // Exit after 2 iterations
+        return counter < 2; // Exit after 2 iterations
       };
 
       // Create a loop body that uses templates without sources
@@ -225,12 +213,12 @@ describe('Default Content Source', () => {
       // LoopTemplate constructor doesn't take default sources
       const loopTemplate = new Loop({
         bodyTemplate: bodyTemplate,
-        exitCondition: exitCondition,
+        loopIf: loopIfCondition,
         // How are defaults meant to be set? Assuming implicit context for now.
       });
 
       // Execute the loop
-      const session = await loopTemplate.execute(createSession());
+      const session = await loopTemplate.execute();
 
       // Verify the default sources were used in the single iteration (exit condition counter >= 2)
       const messages = Array.from(session.messages);
@@ -247,16 +235,16 @@ describe('Default Content Source', () => {
 
     it('should pass default sources to convenience methods in loop', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
       // Create a counter for the loop condition
       let counter = 0;
-      const exitCondition = () => {
+      const loopIfCondition = () => {
         counter++;
-        return counter >= 2; // Exit after 2 iterations
+        return counter < 2; // Exit after 2 iterations
       };
 
       // Create a LoopTemplate with default sources
@@ -270,12 +258,12 @@ describe('Default Content Source', () => {
       // The convenience methods addUser/addAssistant were incorrectly chained
       const loopTemplate = new Loop({
         bodyTemplate: loopBody, // Use the sequence defined above
-        exitCondition: exitCondition,
+        loopIf: loopIfCondition,
         // How are defaults meant to be set? Assuming implicit context for now.
       });
 
       // Execute the loop
-      const session = await loopTemplate.execute(createSession());
+      const session = await loopTemplate.execute();
 
       // Verify the default sources were used in the single iteration (exit condition counter >= 2)
       const messages = Array.from(session.messages);
@@ -290,16 +278,16 @@ describe('Default Content Source', () => {
 
     it('should pass parent default sources to nested loop', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
       // Create a counter for the loop condition
       let counter = 0;
-      const exitCondition = () => {
+      const loopIfCondition = () => {
         counter++;
-        return counter >= 2; // Exit *after* 1 iteration (counter becomes 1, check fails; counter becomes 2, check passes)
+        return counter < 2; // Exit *after* 1 iteration (counter becomes 1, check fails; counter becomes 2, check passes)
       };
 
       // Create a nested loop without default sources
@@ -308,7 +296,7 @@ describe('Default Content Source', () => {
           // Explicitly provide the sources intended as default
           .add(new User(defaultUserSource))
           .add(new Assistant(defaultAssistantSource)),
-        exitCondition: exitCondition,
+        loopIf: loopIfCondition,
       });
 
       // Create a main sequence with default sources
@@ -320,7 +308,7 @@ describe('Default Content Source', () => {
       mainSequence.add(nestedLoop);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the default sources were passed to the nested loop
       const messages = Array.from(session.messages);
@@ -338,8 +326,8 @@ describe('Default Content Source', () => {
   describe('SubroutineTemplate with default content sources', () => {
     it('should set and pass default sources in subroutine', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Default user message');
+      const defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
@@ -358,7 +346,7 @@ describe('Default Content Source', () => {
       );
 
       // Execute the subroutine
-      const session = await subroutine.execute(createSession());
+      const session = await subroutine.execute();
 
       // Verify the default sources were used
       const messages = Array.from(session.messages);
@@ -371,8 +359,8 @@ describe('Default Content Source', () => {
 
     it('should inherit default sources from parent template', async () => {
       // Create default sources
-      const defaultUserSource = new StaticSource('Parent default user message');
-      const defaultAssistantSource = new StaticSource(
+      const defaultUserSource = Source.literal('Parent default user message');
+      const defaultAssistantSource = Source.literal(
         'Parent default assistant message',
       );
 
@@ -394,7 +382,7 @@ describe('Default Content Source', () => {
       mainSequence.add(subroutine);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the parent's default sources were passed to the subroutine
       const messages = Array.from(session.messages);
@@ -407,16 +395,16 @@ describe('Default Content Source', () => {
 
     it('should override parent default sources with its own defaults', async () => {
       // Create parent default sources
-      const parentUserSource = new StaticSource('Parent default user message');
-      const parentAssistantSource = new StaticSource(
+      const parentUserSource = Source.literal('Parent default user message');
+      const parentAssistantSource = Source.literal(
         'Parent default assistant message',
       );
 
       // Create subroutine default sources
-      const subroutineUserSource = new StaticSource(
+      const subroutineUserSource = Source.literal(
         'Subroutine default user message',
       );
-      const subroutineAssistantSource = new StaticSource(
+      const subroutineAssistantSource = Source.literal(
         'Subroutine default assistant message',
       );
 
@@ -442,7 +430,7 @@ describe('Default Content Source', () => {
       mainSequence.add(subroutine);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the subroutine's own default sources were used, not the parent's
       const messages = Array.from(session.messages);
@@ -460,32 +448,31 @@ describe('Default Content Source', () => {
   describe('Complex nested templates with default content sources', () => {
     it('should handle default sources in deeply nested templates', async () => {
       // Create default sources at different levels
-      const topLevelUserSource = new StaticSource('Top-level user message');
-      const topLevelAssistantSource = new StaticSource(
+      const topLevelUserSource = Source.literal('Top-level user message');
+      const topLevelAssistantSource = Source.literal(
         'Top-level assistant message',
       );
 
-      const midLevelUserSource = new StaticSource('Mid-level user message');
-      const midLevelAssistantSource = new StaticSource(
+      const midLevelUserSource = Source.literal('Mid-level user message');
+      const midLevelAssistantSource = Source.literal(
         'Mid-level assistant message',
       );
 
-      const innerLevelUserSource = new StaticSource('Inner-level user message');
-      const innerLevelAssistantSource = new StaticSource(
+      const innerLevelUserSource = Source.literal('Inner-level user message');
+      const innerLevelAssistantSource = Source.literal(
         'Inner-level assistant message',
       );
 
       // Create a counter for loop conditions
       let counter = 0;
-      const exitCondition = () => {
+      const loopIfCondition = () => {
         counter++;
-        return counter >= 2; // Exit *after* 1 iteration
+        return counter < 2; // Exit *after* 1 iteration
       };
 
       // Create the inner-most template with its own default sources
       // Sequence constructor doesn't take default sources
       const innerTemplate = new Sequence()
-        // How are defaults meant to be set? Assuming implicit context for now.
         // Explicitly provide the inner-level sources
         .add(new User(innerLevelUserSource))
         .add(new Assistant(innerLevelAssistantSource));
@@ -498,7 +485,7 @@ describe('Default Content Source', () => {
           .add(new User(midLevelUserSource))
           .add(innerTemplate) // innerTemplate uses its own explicit sources now
           .add(new Assistant(midLevelAssistantSource)),
-        exitCondition: exitCondition,
+        loopIf: loopIfCondition,
         // How are defaults meant to be set? Assuming implicit context for now.
       });
 
@@ -512,7 +499,7 @@ describe('Default Content Source', () => {
         .add(new Assistant(topLevelAssistantSource));
 
       // Execute the complex nested structure
-      const session = await topSequence.execute(createSession());
+      const session = await topSequence.execute();
 
       // Verify the correct sources were used at each level
       const messages = Array.from(session.messages);
@@ -544,13 +531,13 @@ describe('Default Content Source', () => {
     it('should maintain separate default sources for multiple template instances', async () => {
       // Create two different sets of default sources
       const sourceSetA = {
-        user: new StaticSource('User from set A'),
-        assistant: new StaticSource('Assistant from set A'),
+        user: Source.literal('User from set A'),
+        assistant: Source.literal('Assistant from set A'),
       };
 
       const sourceSetB = {
-        user: new StaticSource('User from set B'),
-        assistant: new StaticSource('Assistant from set B'),
+        user: Source.literal('User from set B'),
+        assistant: Source.literal('Assistant from set B'),
       };
 
       // Create two separate sequences with different default sources
@@ -570,7 +557,7 @@ describe('Default Content Source', () => {
       const mainSequence = new Sequence().add(sequenceA).add(sequenceB);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify each sequence used its own default sources
       const messages = Array.from(session.messages);
@@ -588,66 +575,74 @@ describe('Default Content Source', () => {
       expect(messages[3].type).toBe('assistant');
       expect(messages[3].content).toBe('Assistant from set B');
     });
+  });
 
-    it('should allow default sources to be dynamically determined', async () => {
-      // Create a function that generates content based on the session state
-      const dynamicContentFn = (metadata: Metadata) => {
-        // Accept Metadata instead of ISession
-        const count = metadata.get('messageCount') || 0; // Use metadata directly
-        // Provide default for count before adding
-        // Explicitly cast count to number | undefined before using ??
-        // Explicitly cast count to number | undefined before using ??
-        const numCount = (count as number | undefined) ?? 0;
-        return `Dynamic message #${numCount + 1}`;
-      };
+  describe('RandomSource and ListSource', () => {
+    it('RandomSource should return a random element from the list', async () => {
+      const contentList = ['message1', 'message2', 'message3'];
+      const randomSource = Source.random(contentList);
+      const session = Session.create();
+      const content = await randomSource.getContent(session);
+      expect(contentList).toContain(content);
+    });
 
-      // Wrap the dynamic logic in a CallbackSource
-      // CallbackSource expects context object { metadata? } not full session
-      const dynamicSource = new CallbackSource(
-        async (context: { metadata?: Metadata }) => {
-          // Expect Metadata type
-          // Pass the context to dynamicContentFn if it needs it, or just metadata
-          // Assuming dynamicContentFn needs metadata, let's adjust its signature too if needed
-          // For now, let's assume dynamicContentFn can work with just the context object
-          const metadataToPass = context.metadata ?? createMetadata(); // Handle undefined metadata
-          const content = dynamicContentFn(metadataToPass); // Pass potentially created metadata
-          // Update the message count - This should not happen inside the source callback.
-          // The source's job is to provide content based on context.
-          // Session modification should happen at the template level after execution.
-          // Removing the expectation of metadata update within the source.
-          return content; // CallbackSource expects string return
-        },
+    it('ListSource should return elements sequentially and error when exhausted by default', async () => {
+      const contentList = ['item1', 'item2'];
+      const listSource = Source.list(contentList);
+      const session = Session.create();
+
+      expect(await listSource.getContent(session)).toBe('item1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false);
+
+      expect(await listSource.getContent(session)).toBe('item2');
+      expect(listSource.getIndex()).toBe(2);
+      expect(listSource.atEnd()).toBe(true);
+
+      // Should throw error when called again
+      await expect(listSource.getContent(session)).rejects.toThrow(
+        'No more content in the ListSource.',
       );
+      expect(listSource.getIndex()).toBe(2); // Index remains at the end
+      expect(listSource.atEnd()).toBe(true);
+    });
 
-      // Define the static source for the assistant
-      const staticAssistantSource = new StaticSource('Static assistant reply');
+    it('ListSource should loop when loop option is true', async () => {
+      const contentList = ['loop1', 'loop2'];
+      const listSource = Source.list(contentList, { loop: true });
+      const session = Session.create();
 
-      // Create a sequence with the dynamic source as default
-      // Sequence constructor takes an array of templates, not default sources
-      const sequence = new Sequence()
-        // How are defaults meant to be set? Assuming implicit context for now.
-        // Explicitly provide the dynamic/static sources
-        // Explicitly provide the dynamic/static sources
-        .add(new User(dynamicSource))
-        .add(new Assistant(staticAssistantSource))
-        .add(new User(dynamicSource))
-        .add(new Assistant(staticAssistantSource));
+      expect(await listSource.getContent(session)).toBe('loop1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false); // atEnd is false when looping
 
-      // Execute the sequence
-      const session = await sequence.execute(createSession());
+      expect(await listSource.getContent(session)).toBe('loop2');
+      expect(listSource.getIndex()).toBe(2);
+      expect(listSource.atEnd()).toBe(false);
 
-      // Verify the dynamic source was used and updated for each message
-      const messages = Array.from(session.messages);
-      expect(messages).toHaveLength(4);
+      // Should loop back
+      expect(await listSource.getContent(session)).toBe('loop1');
+      expect(listSource.getIndex()).toBe(1);
+      expect(listSource.atEnd()).toBe(false);
 
-      // Each dynamic message should be generated based on the initial metadata (count=0)
-      expect(messages[0].content).toBe('Dynamic message #1'); // User 1
-      expect(messages[1].content).toBe('Static assistant reply'); // Assistant 1
-      expect(messages[2].content).toBe('Dynamic message #1'); // User 2 (CallbackSource is stateless here)
-      expect(messages[3].content).toBe('Static assistant reply'); // Assistant 2
+      expect(await listSource.getContent(session)).toBe('loop2');
+      expect(listSource.getIndex()).toBe(2);
+    });
 
-      // Final message count should remain unchanged as CallbackSource doesn't modify it
-      expect(session.metadata.get('messageCount')).toBeUndefined(); // Or 0 if initialized
+    it('ListSource should handle empty list correctly', async () => {
+      const listSourceNoLoop = Source.list([]);
+      const listSourceLoop = Source.list([], { loop: true });
+      const session = Session.create();
+
+      await expect(listSourceNoLoop.getContent(session)).rejects.toThrow(
+        'No more content in the ListSource.',
+      );
+      expect(listSourceNoLoop.atEnd()).toBe(true);
+
+      await expect(listSourceLoop.getContent(session)).rejects.toThrow(
+        'ListSource is empty.', // Error message when looping an empty list
+      );
+      expect(listSourceLoop.atEnd()).toBe(false); // atEnd is always false when looping
     });
   });
 });
