@@ -10,8 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
-import type { Session } from '../../session';
-import { createSession } from '../../session';
+import { Session } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
 import { Attrs, Vars } from '../../tagged_record';
 import {
@@ -56,7 +55,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new User('Hello, how are you?'))
       .add(new Assistant(openAILLMSource));
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -69,7 +68,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new User('Hello, how are you?'))
       .add(new Assistant(anthropicLLMSource));
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -88,7 +87,7 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Execute the template with print mode enabled
     // We only care about the side effect of console.log being called
-    await chat.execute(createSession({ print: true }));
+    await chat.execute(Session.create({ print: true }));
 
     // Verify console.log was called at least once for each message type
     // The actual format of the log calls may vary
@@ -124,7 +123,7 @@ describe('End-to-End Workflows with Real APIs', () => {
             ...m,
             attrs: Attrs.set(m.attrs, { timestamp: date }),
           }));
-          const next = createSession<UserContext, MessageMetadata>({
+          const next = Session.create<UserContext, MessageMetadata>({
             context: session.vars,
             messages: msgs,
             print: session.print,
@@ -132,9 +131,9 @@ describe('End-to-End Workflows with Real APIs', () => {
           return next.withVar('username', 'Bob');
         }),
       );
-    // Pass the raw initialContext object to createSession
+    // Pass the raw initialContext object to Session.create
     const session = await template.execute(
-      createSession<UserContext>({ context: initialContext }),
+      Session.create<UserContext>({ vars: initialContext }),
     );
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -157,7 +156,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
       .add(new Assistant(openAILLMSource));
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'user', 'assistant']);
@@ -168,7 +167,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
       .add(new Assistant(openAILLMSource));
-    const agentSession = await agent.execute(createSession());
+    const agentSession = await agent.execute();
     const agenMessages = Array.from(agentSession.messages) as Message[];
     expect(agenMessages).toHaveLength(3);
     expect_types(agenMessages, ['system', 'user', 'assistant']);
@@ -181,7 +180,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User(new LiteralSource('123456789')))
       .add(new Assistant(openAILLMSource));
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
     expect_types(messages, ['system', 'user', 'assistant']);
@@ -206,7 +205,7 @@ describe('End-to-End Workflows with Real APIs', () => {
         }),
       );
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
     expect_types(messages, ['system', 'user', 'assistant', 'user']);
@@ -228,7 +227,7 @@ describe('End-to-End Workflows with Real APIs', () => {
           elseTemplate: new User('You did not say YES'),
         }),
       );
-    const session2 = await template2.execute(createSession());
+    const session2 = await template2.execute();
     const messages2 = Array.from(session2.messages);
     expect(messages2).toHaveLength(4);
     expect_types(messages2, ['system', 'user', 'assistant', 'user']);
@@ -250,7 +249,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       )
       .add(new Assistant('Loop ended'));
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
     expect_types(messages, ['user', 'user', 'user', 'assistant']);
@@ -270,7 +269,7 @@ describe('End-to-End Workflows with Real APIs', () => {
           }),
       )
       .add(new Assistant('Loop ended'));
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
     expect_types(messages, ['user', 'user', 'user', 'assistant']);
@@ -296,7 +295,7 @@ describe('End-to-End Workflows with Real APIs', () => {
         (agent) => agent.user('YES'),
         (agent) => agent.user('NO'),
       );
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
     expect_types(messages, ['system', 'user', 'assistant', 'user']);
@@ -351,7 +350,7 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Execute the loop, starting context count at 0
     const session2 = await loop.execute(
-      createSession({ context: { count: 0 } }),
+      Session.create({ vars: { count: 0 } }),
     );
     const messages2 = Array.from(session2.messages);
 
@@ -393,7 +392,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const subroutine = new Subroutine(subroutineBody);
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the result
     const messages = Array.from(session.messages);
@@ -419,7 +418,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(new User('What is the weather in Tokyo?'))
       .add(new Assistant(openAIgenerateOptionsWith));
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
@@ -459,7 +458,7 @@ describe('End-to-End Workflows with Real APIs', () => {
         }),
       );
 
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(7);

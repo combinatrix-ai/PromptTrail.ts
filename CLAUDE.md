@@ -197,7 +197,7 @@ pnpm install -w -D <package-name>
 ### Sources
 
 - **Source.llm()**: Generate via LLM
-- **Source.cli()**: User input from terminal  
+- **Source.cli()**: User input from terminal
 - **Source.literal()**: Fixed content
 - **Source.callback()**: Custom logic
 - **Source.random()**: Random from list

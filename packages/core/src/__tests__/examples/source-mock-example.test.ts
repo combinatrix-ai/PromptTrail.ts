@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Agent } from '../../templates';
-import { createSession } from '../../session';
+import { Session } from '../../session';
 import { Source } from '../../source';
 
 describe('Source.llm().mock() examples', () => {
@@ -15,7 +15,7 @@ describe('Source.llm().mock() examples', () => {
       .system('You are a helpful assistant')
       .assistant(mockSource);
 
-    const session = await agent.execute(createSession());
+    const session = await agent.execute();
     const lastMessage = session.messages[session.messages.length - 1];
 
     expect(lastMessage.content).toBe('Hello from mock!');
@@ -34,7 +34,7 @@ describe('Source.llm().mock() examples', () => {
     const lastCall = mockSource.getCallHistory()[0];
 
     const agent = Agent.create().assistant(mockSource);
-    const session = await agent.execute(createSession());
+    const session = await agent.execute();
 
     // After execution, we can check what configuration was used
     const history = mockSource.getCallHistory();
@@ -58,7 +58,7 @@ describe('Source.llm().mock() examples', () => {
       .assistant(mockSource)
       .assistant(mockSource); // This will cycle back to first
 
-    const session = await agent.execute(createSession());
+    const session = await agent.execute();
 
     expect(session.messages[0].content).toBe('First response');
     expect(session.messages[1].content).toBe('Second response');
@@ -85,7 +85,7 @@ describe('Source.llm().mock() examples', () => {
     const agent = Agent.create().assistant(mockSource);
 
     const session = await agent.execute(
-      createSession({ context: { userName: 'Alice' } }),
+      Session.withVars({ userName: 'Alice' }),
     );
 
     expect(session.messages[0].content).toBe("Hello Alice, I'm using claude-3");
@@ -112,7 +112,7 @@ describe('Source.llm().mock() examples', () => {
       });
 
     const agent = Agent.create().assistant(mockSource);
-    const session = await agent.execute(createSession());
+    const session = await agent.execute();
 
     const lastMessage = session.messages[0];
     expect(lastMessage.content).toBe('Let me check the weather for you.');
@@ -127,7 +127,7 @@ describe('Source.llm().mock() examples', () => {
       .mockResponse({ content: 'Valid response text' });
 
     const agent = Agent.create().assistant(mockSource);
-    const session = await agent.execute(createSession());
+    const session = await agent.execute();
 
     // The response passes validation
     expect(session.messages[0].content).toBe('Valid response text');
@@ -142,7 +142,7 @@ describe('Source.llm().mock() examples', () => {
     const invalidAgent = Agent.create().assistant(invalidMock);
 
     // This should throw because content is too short
-    await expect(invalidAgent.execute(createSession())).rejects.toThrow();
+    await expect(invalidAgent.execute()).rejects.toThrow();
   });
 });
 

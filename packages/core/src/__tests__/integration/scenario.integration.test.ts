@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as generateModule from '../../generate';
-import { createSession } from '../../session';
+import { Session } from '../../session';
 import { Scenario, StepTemplates } from '../../templates/scenario';
 
 // Mock the generate module
@@ -74,7 +74,7 @@ describe('Scenario Integration Tests', () => {
         'Complete a simple task',
       );
 
-      const session = createSession();
+      const session = Session.create();
       const result = await scenario.execute(session);
 
       // Should have system message and assistant messages
@@ -201,7 +201,7 @@ describe('Scenario Integration Tests', () => {
         .step('Get user name', { allow_interaction: true })
         .step('Get user email', { allow_interaction: true });
 
-      const result = await scenario.execute(createSession());
+      const result = await scenario.execute();
 
       expect(result.messages.length).toBeGreaterThan(0);
       expect(llmCallCount).toBeGreaterThan(0);
@@ -246,7 +246,7 @@ describe('Scenario Integration Tests', () => {
         max_attempts: 3,
       });
 
-      const result = await scenario.execute(createSession());
+      const result = await scenario.execute();
 
       // Should stop after 3 attempts
       expect(attemptCount).toBe(3);
@@ -322,7 +322,7 @@ describe('Scenario Integration Tests', () => {
         is_satisfied: customValidation,
       });
 
-      await scenario.execute(createSession());
+      await scenario.execute();
 
       expect(validationCalled).toBe(true);
       expect(callCount).toBe(2);
@@ -384,7 +384,7 @@ describe('Scenario Integration Tests', () => {
         StepTemplates.collectInfo(fields),
       );
 
-      const result = await scenario.execute(createSession());
+      const result = await scenario.execute();
 
       expect(satisfied).toBe(true);
       expect(result.messages.length).toBeGreaterThan(0);
@@ -440,7 +440,7 @@ describe('Scenario Integration Tests', () => {
         ),
       );
 
-      const result = await scenario.execute(createSession());
+      const result = await scenario.execute();
 
       expect(result.messages.length).toBeGreaterThanOrEqual(targetCount);
     });
@@ -543,7 +543,7 @@ describe('Scenario Integration Tests', () => {
         .interact('Step 2: Get confirmation')
         .step('Step 3: Finalize', StepTemplates.quick());
 
-      await scenario.execute(createSession());
+      await scenario.execute();
 
       expect(steps).toContain('step1');
       expect(steps).toContain('step2');

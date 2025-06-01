@@ -1,6 +1,5 @@
 import type { Message } from '../../message';
-import type { Session } from '../../session';
-import { createSession } from '../../session';
+import { Session } from '../../session';
 import { Attrs, Vars } from '../../tagged_record';
 import type { Template } from '../base';
 import type { ISubroutineTemplateOptions } from '../template_types';
@@ -58,14 +57,14 @@ export class Subroutine<
       ): Session<TVars, TAttrs> => {
         if (this.isolatedContext) {
           // Create a completely new, empty session for isolated context
-          return createSession<TVars, TAttrs>({});
+          return Session.create<TVars, TAttrs>({});
         }
 
         // Default: Clone parent session messages and context
         const clonedContextObject =
           parentSession.getVarsObject() as unknown as TVars;
-        let clonedSession = createSession<TVars, TAttrs>({
-          context: clonedContextObject,
+        let clonedSession = Session.create<TVars, TAttrs>({
+          vars: clonedContextObject,
         });
 
         // Add messages immutably
@@ -108,8 +107,8 @@ export class Subroutine<
         }
 
         // Create a new session with the merged state
-        let mergedSession = createSession<TVars, TAttrs>({
-          context: finalMetadata as TVars,
+        let mergedSession = Session.create<TVars, TAttrs>({
+          vars: finalMetadata as TVars,
         });
 
         // Add messages one by one

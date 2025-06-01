@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 
@@ -35,7 +35,7 @@ describe('Agent Function-Based Templates', () => {
           },
         );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(8); // 2 initial + 3 iterations * 2 messages each
@@ -75,7 +75,7 @@ describe('Agent Function-Based Templates', () => {
           5, // maxIterations
         );
 
-      const session = await limitedAgent.execute(createSession());
+      const session = await limitedAgent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(6); // 1 system + 5 iterations
@@ -96,7 +96,7 @@ describe('Agent Function-Based Templates', () => {
           counter < 3, // This is evaluated once at build time!
         );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       // Since boolean is evaluated at build time when counter is 0,
       // it will be true and loop forever (or until maxIterations)
@@ -105,7 +105,7 @@ describe('Agent Function-Based Templates', () => {
         .system('Boolean loop test')
         .loop((l) => l.user('Should execute once'), false);
 
-      const session2 = await agent2.execute(createSession());
+      const session2 = await agent2.execute();
       const messages2 = Array.from(session2.messages);
       expect(messages2).toHaveLength(1); // Only system message, loop doesn't execute
     });
@@ -124,7 +124,7 @@ describe('Agent Function-Based Templates', () => {
         )
         .user('Back to main');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(6); // All messages retained by default
@@ -150,8 +150,8 @@ describe('Agent Function-Based Templates', () => {
         .user('Back to main');
 
       const session = await agent.execute(
-        createSession({
-          context: { mainVar: 'value' },
+        Session.create({
+          vars: { mainVar: 'value' },
         }),
       );
 
@@ -182,7 +182,7 @@ describe('Agent Function-Based Templates', () => {
           Source.callback(({ context }) => `The result is ${context.result}`),
         );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(2);
@@ -203,7 +203,7 @@ describe('Agent Function-Based Templates', () => {
         )
         .assistant('Final response');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(5);
@@ -240,7 +240,7 @@ describe('Agent Function-Based Templates', () => {
           2, // maxIterations for outer loop
         );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       // 1 system + (1 outer + 10 inner) * 1 outer iteration = 1 + 11 = 12
@@ -273,7 +273,7 @@ describe('Agent Function-Based Templates', () => {
           seq.user('In sequence').assistant('Sequence response'),
         );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(6);
@@ -293,7 +293,7 @@ describe('Agent Function-Based Templates', () => {
         .user('User message')
         .assistant('Assistant response');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(3);
@@ -308,7 +308,7 @@ describe('Agent Function-Based Templates', () => {
         (s) => s.messages.length < 4, // Stop after 2 iterations
       );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(4); // 2 iterations * 2 messages
@@ -321,7 +321,7 @@ describe('Agent Function-Based Templates', () => {
         .user('User message')
         .assistant('Response');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(3);
@@ -333,7 +333,7 @@ describe('Agent Function-Based Templates', () => {
         .assistant('Response')
         .user('Second user message');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(3);
@@ -346,7 +346,7 @@ describe('Agent Function-Based Templates', () => {
         'User response',
       );
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(2);
@@ -357,7 +357,7 @@ describe('Agent Function-Based Templates', () => {
     it('should create empty agent with Agent.create', async () => {
       const agent = Agent.create().system('Added system').user('Added user');
 
-      const session = await agent.execute(createSession());
+      const session = await agent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(2);
@@ -378,7 +378,7 @@ describe('Agent Function-Based Templates', () => {
         (s) => s.messages.length < 5,
       );
 
-      const session = await testableAgent.execute(createSession());
+      const session = await testableAgent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages[0].content).toBe('You are a helpful assistant.');
@@ -411,7 +411,7 @@ describe('Agent Function-Based Templates', () => {
         3, // maxIterations
       );
 
-      const session = await testableAgent.execute(createSession());
+      const session = await testableAgent.execute();
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(4); // 1 system + 3 user messages

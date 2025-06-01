@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { CustomValidator } from '../../../validators/custom';
@@ -14,14 +14,14 @@ describe('AssistantTemplate', () => {
     const mockSource = Source.literal('This is a test response');
     const template = new Assistant(mockSource);
     expect(template.getContentSource()).toBeDefined();
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is a test response');
   });
 
   it('should handle text on constructor', async () => {
     const template = new Assistant('This is static content');
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is static content');
   });
@@ -33,7 +33,7 @@ describe('AssistantTemplate', () => {
     });
 
     const template = new Assistant(llm);
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('Generated content');
 
@@ -51,7 +51,7 @@ describe('AssistantTemplate', () => {
     const template = new Assistant(mockSource);
 
     // Execute should work with the mock source
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     expect(session.getLastMessage()?.type).toBe('assistant');
     expect(session.getLastMessage()?.content).toBe('Default LLM response');
@@ -59,7 +59,7 @@ describe('AssistantTemplate', () => {
   });
 
   it('should support interpolation in static content', async () => {
-    const session = createSession();
+    const session = Session.create();
     const updatedSession = session.withVar('username', 'Alice');
     const template = new Assistant('Hello, ${username}!');
     const result = await template.execute(updatedSession);
@@ -81,7 +81,7 @@ describe('AssistantTemplate', () => {
     const validTemplate = new Assistant('This is valid content', validator);
 
     // Execute the template and verify it passes validation
-    const validResult = await validTemplate.execute(createSession());
+    const validResult = await validTemplate.execute();
     expect(validResult.getLastMessage()?.content).toBe('This is valid content');
   });
 
@@ -110,7 +110,7 @@ describe('AssistantTemplate', () => {
       .mockImplementation(() => {});
 
     // Execute the template
-    const invalidResult = await invalidTemplate.execute(createSession());
+    const invalidResult = await invalidTemplate.execute();
 
     // Verify that the invalid content was still returned despite failing validation
     expect(invalidResult.getLastMessage()?.content).toBe('This is not pass');
@@ -141,7 +141,7 @@ describe('AssistantTemplate', () => {
     const template = new Assistant(options);
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('assistant');
     expect(session.getLastMessage()?.content).toBe(
       'I need to check the weather',
@@ -179,7 +179,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Execute the template and verify it succeeds
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is valid content');
   });
 
@@ -207,7 +207,7 @@ describe('AssistantTemplate', () => {
     });
 
     // Execute the template and verify it doesn't throw an error
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is invalid');
   });
 });

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Session } from '../../../session';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Parallel } from '../../../templates/composite/parallel';
 
@@ -92,7 +91,7 @@ describe('Parallel Template', () => {
   describe('Execution', () => {
     it('should return original session when no sources are configured', async () => {
       const parallel = new Parallel();
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       expect(result).toBe(session);
@@ -100,7 +99,7 @@ describe('Parallel Template', () => {
 
     it('should execute single source and add assistant message', async () => {
       const parallel = new Parallel().addSource(mockLlmSource1);
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       expect(mockLlmSource1.getContent).toHaveBeenCalledTimes(1);
@@ -121,7 +120,7 @@ describe('Parallel Template', () => {
         .addSource(mockLlmSource2)
         .setStrategy('keep_all');
 
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       expect(mockLlmSource1.getContent).toHaveBeenCalledTimes(1);
@@ -141,7 +140,7 @@ describe('Parallel Template', () => {
         .addSource(mockLlmSource1, 2)
         .addSource(mockLlmSource2, 1);
 
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       expect(mockLlmSource1.getContent).toHaveBeenCalledTimes(2);
@@ -163,7 +162,7 @@ describe('Parallel Template', () => {
         .addSource(failingSource)
         .addSource(mockLlmSource2);
 
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       expect(warnSpy).toHaveBeenCalledWith(
@@ -212,7 +211,7 @@ describe('Parallel Template', () => {
         )
         .setStrategy('best');
 
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       const messages = Array.from(result.messages);
@@ -228,7 +227,7 @@ describe('Parallel Template', () => {
         .addSource(mockLlmSource2)
         .setStrategy('best');
 
-      const session = createSession();
+      const session = Session.create();
 
       await expect(parallel.execute(session)).rejects.toThrow(
         'Scoring function is required when using "best" aggregation strategy',
@@ -257,7 +256,7 @@ describe('Parallel Template', () => {
         .addSource(mockLlmSource2)
         .setStrategy(customStrategy);
 
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       const messages = Array.from(result.messages);
@@ -302,7 +301,7 @@ describe('Parallel Template', () => {
         .addSource(mockLlmSource1)
         .setStrategy('unknown_strategy' as any);
 
-      const session = createSession();
+      const session = Session.create();
 
       await expect(parallel.execute(session)).rejects.toThrow(
         'Unknown aggregation strategy: unknown_strategy',
@@ -320,7 +319,7 @@ describe('Parallel Template', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const parallel = new Parallel().addSource(alwaysFailingSource);
-      const session = createSession();
+      const session = Session.create();
       const result = await parallel.execute(session);
 
       // Should return original session when all sources fail
@@ -330,7 +329,7 @@ describe('Parallel Template', () => {
     });
 
     it('should handle session with existing messages', async () => {
-      const sessionWithMessages = createSession().addMessage({
+      const sessionWithMessages = Session.create().addMessage({
         type: 'user',
         content: 'Existing message',
       });

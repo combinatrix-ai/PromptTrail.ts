@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import {
   Scenario,
@@ -191,7 +191,7 @@ describe('Scenario', () => {
     it('should execute a simple scenario', async () => {
       const scenario = Scenario.system('Test assistant').step('Process data');
 
-      const session = createSession();
+      const session = Session.create();
 
       // Mock the execution to avoid actual LLM calls
       vi.spyOn(scenario as any, 'compile').mockReturnValue({

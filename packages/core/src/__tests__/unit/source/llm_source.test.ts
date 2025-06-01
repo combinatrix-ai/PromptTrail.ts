@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { LlmSource, Source } from '../../../source';
 import { CustomValidator } from '../../../validators/custom';
 
@@ -26,7 +26,7 @@ describe('LlmSource', () => {
 
     it('should use OpenAI as default provider', async () => {
       const source = Source.llm();
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -42,7 +42,7 @@ describe('LlmSource', () => {
     it('should use environment variable for API key', async () => {
       process.env.OPENAI_API_KEY = 'test-key';
       const source = Source.llm();
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -56,7 +56,7 @@ describe('LlmSource', () => {
 
     it('should use default temperature 0.7', async () => {
       const source = Source.llm();
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -70,7 +70,7 @@ describe('LlmSource', () => {
   describe('Fluent API - Model configuration', () => {
     it('should change model name', async () => {
       const source = Source.llm().model('gpt-4');
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -84,7 +84,7 @@ describe('LlmSource', () => {
 
     it('should set API key explicitly', async () => {
       const source = Source.llm().apiKey('explicit-key');
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -103,7 +103,7 @@ describe('LlmSource', () => {
         .temperature(0.5)
         .maxTokens(1000);
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -127,7 +127,7 @@ describe('LlmSource', () => {
         organization: 'org-123',
       });
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -146,7 +146,7 @@ describe('LlmSource', () => {
       process.env.ANTHROPIC_API_KEY = 'anthropic-key';
       const source = Source.llm().anthropic();
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -167,7 +167,7 @@ describe('LlmSource', () => {
         baseURL: 'https://custom.anthropic.com',
       });
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -186,7 +186,7 @@ describe('LlmSource', () => {
       process.env.GOOGLE_API_KEY = 'google-key';
       const source = Source.llm().google();
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -206,7 +206,7 @@ describe('LlmSource', () => {
         .openai({ modelName: 'gpt-4' })
         .google({ modelName: 'gemini-pro' });
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -223,7 +223,7 @@ describe('LlmSource', () => {
   describe('Fluent API - Generation parameters', () => {
     it('should set temperature', async () => {
       const source = Source.llm().temperature(0.9);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -235,7 +235,7 @@ describe('LlmSource', () => {
 
     it('should set maxTokens', async () => {
       const source = Source.llm().maxTokens(2000);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -247,7 +247,7 @@ describe('LlmSource', () => {
 
     it('should set topP and topK', async () => {
       const source = Source.llm().topP(0.9).topK(40);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -268,7 +268,7 @@ describe('LlmSource', () => {
       };
 
       const source = Source.llm().addTool('weather', weatherTool);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -282,7 +282,7 @@ describe('LlmSource', () => {
 
     it('should set tool choice', async () => {
       const source = Source.llm().toolChoice('required');
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -301,7 +301,7 @@ describe('LlmSource', () => {
         .addTool('calculator', calculatorTool)
         .toolChoice('auto');
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -323,7 +323,7 @@ describe('LlmSource', () => {
       };
 
       const source = Source.llm().withTool('weather', weatherTool);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -343,7 +343,7 @@ describe('LlmSource', () => {
       };
 
       const source = Source.llm().withTools(tools);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -365,7 +365,7 @@ describe('LlmSource', () => {
 
       const source = Source.llm().withTools(firstTools).withTools(secondTools);
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -390,7 +390,7 @@ describe('LlmSource', () => {
 
       const source = Source.llm().withTools(firstTools).withTools(secondTools);
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -415,7 +415,7 @@ describe('LlmSource', () => {
         .withTools(tools)
         .withTool('search', searchTool);
 
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -432,7 +432,7 @@ describe('LlmSource', () => {
   describe('Browser compatibility', () => {
     it('should enable browser compatibility', async () => {
       const source = Source.llm().dangerouslyAllowBrowser();
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -447,7 +447,7 @@ describe('LlmSource', () => {
 
     it('should disable browser compatibility explicitly', async () => {
       const source = Source.llm().dangerouslyAllowBrowser(false);
-      await source.getContent(createSession());
+      await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -466,7 +466,7 @@ describe('LlmSource', () => {
       });
 
       const source = Source.llm();
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result).toEqual({
         content: 'Generated response',
@@ -487,7 +487,7 @@ describe('LlmSource', () => {
       });
 
       const source = Source.llm();
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result).toEqual({
         content: 'I need to check the weather',
@@ -504,7 +504,7 @@ describe('LlmSource', () => {
 
       const source = Source.llm();
 
-      await expect(source.getContent(createSession())).rejects.toThrow(
+      await expect(source.getContent(Session.create())).rejects.toThrow(
         'LLM generation failed after 1 attempts: Did not return assistant response.',
       );
     });
@@ -524,7 +524,7 @@ describe('LlmSource', () => {
       });
 
       const source = new LlmSource({}, { validator });
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result.content).toBe('This is a valid response');
     });
@@ -547,7 +547,7 @@ describe('LlmSource', () => {
         });
 
       const source = new LlmSource({}, { validator, maxAttempts: 2 });
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result.content).toBe('This is a valid response');
       expect(generateText).toHaveBeenCalledTimes(2);
@@ -573,7 +573,7 @@ describe('LlmSource', () => {
         },
       );
 
-      await expect(source.getContent(createSession())).rejects.toThrow(
+      await expect(source.getContent(Session.create())).rejects.toThrow(
         'Validation failed after 2 attempts: Always fails',
       );
     });
@@ -598,7 +598,7 @@ describe('LlmSource', () => {
         },
       );
 
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
       expect(result.content).toBe('Invalid but returned');
     });
   });
@@ -620,7 +620,7 @@ describe('LlmSource', () => {
       });
 
       // Since it's the same instance, the last configuration wins
-      await anthropicSource.getContent(createSession());
+      await anthropicSource.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
         expect.anything(),
@@ -641,7 +641,7 @@ describe('LlmSource', () => {
       const source = Source.llm();
 
       // 実際には元のエラーがそのまま投げられる
-      await expect(source.getContent(createSession())).rejects.toThrow(
+      await expect(source.getContent(Session.create())).rejects.toThrow(
         'API Error',
       );
     });
@@ -655,7 +655,7 @@ describe('LlmSource', () => {
         });
 
       const source = new LlmSource({}, { maxAttempts: 2 });
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result.content).toBe('Success on retry');
       expect(generateText).toHaveBeenCalledTimes(2);
@@ -665,7 +665,7 @@ describe('LlmSource', () => {
       // maxAttempts が 0 の場合など、予期しない状態での動作をテスト
       const source = new LlmSource({}, { maxAttempts: 0, raiseError: true });
 
-      await expect(source.getContent(createSession())).rejects.toThrow(
+      await expect(source.getContent(Session.create())).rejects.toThrow(
         'LLM content generation failed unexpectedly after 0 attempts.',
       );
     });
@@ -674,7 +674,7 @@ describe('LlmSource', () => {
       vi.mocked(generateText).mockRejectedValue(new Error('API Error'));
 
       const source = new LlmSource({}, { maxAttempts: 1, raiseError: false });
-      const result = await source.getContent(createSession());
+      const result = await source.getContent(Session.create());
 
       expect(result.content).toBe('');
     });
@@ -698,7 +698,7 @@ describe('LlmSource', () => {
       process.env.PROMPTTRAIL_DEBUG = 'false';
 
       const source = Source.llm().maxCalls(2);
-      const session = createSession();
+      const session = Session.create();
 
       // Make 3 calls (more than the limit)
       await source.getContent(session);
@@ -714,7 +714,7 @@ describe('LlmSource', () => {
       process.env.PROMPTTRAIL_MAX_LLM_CALLS = '2';
 
       const source = Source.llm();
-      const session = createSession();
+      const session = Session.create();
 
       // First two calls should succeed
       await source.getContent(session);
@@ -730,7 +730,7 @@ describe('LlmSource', () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
 
       const source = Source.llm().maxCalls(3);
-      const session = createSession();
+      const session = Session.create();
 
       // First three calls should succeed
       await source.getContent(session);
@@ -748,7 +748,7 @@ describe('LlmSource', () => {
 
       const source1 = Source.llm().maxCalls(2);
       const source2 = Source.llm().maxCalls(2);
-      const session = createSession();
+      const session = Session.create();
 
       // Each source should have its own counter
       await source1.getContent(session);
@@ -770,7 +770,7 @@ describe('LlmSource', () => {
 
       const original = Source.llm().maxCalls(2);
       const cloned = original.temperature(0.5);
-      const session = createSession();
+      const session = Session.create();
 
       // Calls on both instances should count together
       await original.getContent(session);
@@ -786,7 +786,7 @@ describe('LlmSource', () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
 
       const source = Source.llm().maxCalls(1);
-      const session = createSession();
+      const session = Session.create();
 
       await source.getContent(session);
       await expect(source.getContent(session)).rejects.toThrow(
@@ -805,7 +805,7 @@ describe('LlmSource', () => {
 
       const source = Source.llm();
       const instanceId = source.getInstanceId();
-      const session = createSession();
+      const session = Session.create();
 
       expect(Source.getCallCount(instanceId)).toBe(0);
 
@@ -821,7 +821,7 @@ describe('LlmSource', () => {
       delete process.env.PROMPTTRAIL_MAX_LLM_CALLS;
 
       const source = Source.llm();
-      const session = createSession();
+      const session = Session.create();
 
       // Make 99 calls
       for (let i = 0; i < 99; i++) {
@@ -841,7 +841,7 @@ describe('LlmSource', () => {
       process.env.PROMPTTRAIL_DEBUG = 'true';
 
       const source = Source.llm().maxCalls(1);
-      const session = createSession();
+      const session = Session.create();
 
       await source.getContent(session);
 

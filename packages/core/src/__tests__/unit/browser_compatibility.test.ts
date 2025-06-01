@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../session';
+import { Session } from '../../session';
 import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules
@@ -43,7 +43,7 @@ describe('Browser Compatibility', () => {
       );
 
     // Execute the template
-    const result = await template.execute(createSession());
+    const result = await template.execute();
 
     // Verify the conversation flow
     const messages = Array.from(result.messages);

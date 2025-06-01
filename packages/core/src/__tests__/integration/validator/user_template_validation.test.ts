@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { User } from '../../../templates';
 import { CustomValidator } from '../../../validators/custom';
 
@@ -43,7 +43,7 @@ describe('UserTemplate with real API validation', () => {
 
       // No need to override getContent since we're using a static string
 
-      const session = await template.execute(createSession());
+      const session = await template.execute();
 
       const messages = session.getMessagesByType('user');
       expect(messages.length).toBe(1);

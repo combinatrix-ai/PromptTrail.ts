@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import type { Session } from '../../../session';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source, type LlmSource } from '../../../source';
 import {
   Assistant,
@@ -90,7 +89,7 @@ describe('Nested Templates', () => {
     ]); // Removed potential syntax error after array
 
     // Execute the template
-    const session = await template.execute(createSession());
+    const session = await template.execute();
 
     // Verify the conversation flow
     const messages = Array.from(session.messages);
@@ -126,7 +125,7 @@ describe('Nested Templates', () => {
     responseIndex = 3; // Index for 'Response with metadata'
 
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     const sessionWithUsername = session.withVar('username', 'Alice');
     const sessionWithBoth = sessionWithUsername.withVar('topic', 'TypeScript');
 
@@ -164,7 +163,7 @@ describe('Nested Templates', () => {
     responseIndex = 4; // Index for 'Response A' and 'Response B'
 
     // Create a session with a condition flag
-    const session = createSession();
+    const session = Session.create();
     const updatedSession = session.withVar('condition', true);
 
     // Create a template with nested conditional templates
@@ -221,7 +220,7 @@ describe('Nested Templates', () => {
     );
 
     // Now test with condition = false
-    const session2 = createSession();
+    const session2 = Session.create();
     const updatedSession2 = session2.withVar('condition', false);
 
     const result2 = await template.execute(updatedSession2);

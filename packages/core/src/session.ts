@@ -153,30 +153,6 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     return JSON.stringify(this.toJSON(), null, 2);
   }
 
-  /**
-   * Create a new session from a JSON representation
-   */
-  static fromJSON<TVars extends Vars, TAttrs extends Attrs>(
-    json: Record<string, unknown>,
-  ): Session<TVars, TAttrs> {
-    if (!json.messages || !Array.isArray(json.messages)) {
-      throw new ValidationError(
-        'Invalid session JSON: messages must be an array',
-      );
-    }
-
-    if (json.context && typeof json.context !== 'object') {
-      throw new ValidationError(
-        'Invalid session JSON: context must be an object',
-      );
-    }
-
-    return createSession<TVars, TAttrs>({
-      messages: json.messages as Message<TAttrs>[],
-      context: json.context as TVars,
-      print: json.print ? (json.print as boolean) : false,
-    });
-  }
 }
 
 /**
@@ -198,4 +174,190 @@ export function createSession<
     ctx,
     options.print ?? false,
   );
+}
+
+/**
+ * Session namespace providing factory methods for creating sessions
+ * Provides a consistent API with other PromptTrail components
+ */
+export namespace Session {
+  /**
+   * Create a new empty session
+   * @param options Optional configuration
+   * @returns A new session instance
+   * @example
+   * ```typescript
+   * const session = Session.create();
+   * const sessionWithVars = Session.create({ vars: { name: 'test' } });
+   * ```
+   */
+  export function create<
+    TVars extends Record<string, unknown> = {},
+    TAttrs extends Record<string, unknown> = {},
+  >(options?: {
+    vars?: TVars;
+    messages?: Message<Attrs<TAttrs>>[];
+    print?: boolean;
+  }): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({
+      context: options?.vars,
+      messages: options?.messages,
+      print: options?.print,
+    });
+  }
+
+  /**
+   * Create a new session from a JSON representation
+   * @param json JSON object containing session data
+   * @returns A new session instance
+   * @example
+   * ```typescript
+   * const session = Session.fromJSON({
+   *   messages: [{ type: 'user', content: 'Hello' }],
+   *   context: { name: 'test' },
+   *   print: false
+   * });
+   * ```
+   */
+  export function fromJSON<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(json: Record<string, unknown>): Session<TVars, TAttrs> {
+    if (!json.messages || !Array.isArray(json.messages)) {
+      throw new ValidationError(
+        'Invalid session JSON: messages must be an array',
+      );
+    }
+
+    if (json.context && typeof json.context !== 'object') {
+      throw new ValidationError(
+        'Invalid session JSON: context must be an object',
+      );
+    }
+
+    return createSession<TVars, TAttrs>({
+      messages: json.messages as Message<TAttrs>[],
+      context: json.context as TVars,
+      print: json.print ? (json.print as boolean) : false,
+    });
+  }
+
+  /**
+   * Create a new empty session
+   * @returns A new session instance with no messages or vars
+   * @example
+   * ```typescript
+   * const session = Session.empty();
+   * ```
+   */
+  export function empty<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(): Session<TVars, TAttrs> {
+    return createSession<TVars, TAttrs>({});
+  }
+
+  /**
+   * Create a new session with initial vars
+   * @param vars Initial session vars
+   * @param options Optional configuration
+   * @returns A new session instance
+   * @example
+   * ```typescript
+   * const session = Session.withVars({ userId: '123', name: 'John' });
+   * ```
+   */
+  export function withVars<TVars extends Record<string, unknown>>(
+    vars: TVars,
+    options?: {
+      messages?: Message<Attrs>[];
+      print?: boolean;
+    },
+  ): Session<Vars<TVars>, Attrs> {
+    return createSession<TVars, {}>({
+      context: vars,
+      messages: options?.messages,
+      print: options?.print,
+    });
+  }
+
+  /**
+   * Create a new session with initial messages
+   * @param messages Initial messages
+   * @param options Optional configuration
+   * @returns A new session instance
+   * @example
+   * ```typescript
+   * const session = Session.withMessages([
+   *   { type: 'system', content: 'You are a helpful assistant' }
+   * ]);
+   * ```
+   */
+  export function withMessages<TAttrs extends Record<string, unknown> = {}>(
+    messages: Message<Attrs<TAttrs>>[],
+    options?: {
+      vars?: Record<string, unknown>;
+      print?: boolean;
+    },
+  ): Session<Vars, Attrs<TAttrs>> {
+    return createSession<{}, TAttrs>({
+      context: options?.vars,
+      messages: messages,
+      print: options?.print,
+    });
+  }
+
+  /**
+   * Create a new session with both vars and messages
+   * @param vars Initial session vars
+   * @param messages Initial messages
+   * @param options Optional configuration
+   * @returns A new session instance
+   * @example
+   * ```typescript
+   * const session = Session.withVarsAndMessages(
+   *   { userId: '123' },
+   *   [{ type: 'user', content: 'Hello' }]
+   * );
+   * ```
+   */
+  export function withVarsAndMessages<
+    TVars extends Record<string, unknown>,
+    TAttrs extends Record<string, unknown> = {},
+  >(
+    vars: TVars,
+    messages: Message<Attrs<TAttrs>>[],
+    options?: {
+      print?: boolean;
+    },
+  ): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({
+      context: vars,
+      messages: messages,
+      print: options?.print,
+    });
+  }
+
+  /**
+   * Create a new session with print enabled for debugging
+   * @param options Optional configuration
+   * @returns A new session instance with print enabled
+   * @example
+   * ```typescript
+   * const session = Session.debug({ vars: { debug: true } });
+   * ```
+   */
+  export function debug<
+    TVars extends Record<string, unknown> = {},
+    TAttrs extends Record<string, unknown> = {},
+  >(options?: {
+    vars?: TVars;
+    messages?: Message<Attrs<TAttrs>>[];
+  }): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({
+      context: options?.vars,
+      messages: options?.messages,
+      print: true,
+    });
+  }
 }

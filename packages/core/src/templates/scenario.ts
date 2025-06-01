@@ -1,7 +1,6 @@
 import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
-import type { Session } from '../session';
-import { createSession } from '../session';
+import { Session } from '../session';
 import { LlmSource, Source } from '../source';
 import { Attrs, Vars } from '../tagged_record';
 import { Agent } from './agent';
@@ -427,7 +426,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
 
         // Get user input with validation
         // Create a temporary session for the source if needed
-        const tempSession = createSession();
+        const tempSession = Session.create();
         let userResponse = await source.getContent(tempSession);
 
         console.log(`   User said: "${userResponse}"`);

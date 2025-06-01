@@ -1,5 +1,4 @@
-import type { Session } from '../session';
-import { createSession } from '../session';
+import { Session } from '../session';
 import type { LlmSource, ModelOutput } from '../source';
 import { LiteralSource, Source } from '../source';
 import { Attrs, Vars } from '../tagged_record';
@@ -34,7 +33,7 @@ export abstract class TemplateBase<
   protected ensureSession(
     session?: Session<TVars, TAttrs>,
   ): Session<TVars, TAttrs> {
-    return session || createSession<TVars, TAttrs>();
+    return session || Session.create<TVars, TAttrs>();
   }
 
   getContentSource(): Source<unknown> | undefined {

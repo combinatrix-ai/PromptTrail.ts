@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Loop } from '../../../templates/composite/loop';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -42,7 +42,7 @@ describe('Default Content Source', () => {
       sequence.add(new User(defaultUserSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default source was used
       const messages = Array.from(session.messages);
@@ -65,7 +65,7 @@ describe('Default Content Source', () => {
       sequence.add(new Assistant(defaultLLM));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default source was used (generateText was called with the options)
       const messages = Array.from(session.messages);
@@ -108,7 +108,7 @@ describe('Default Content Source', () => {
       sequence.add(new Assistant(explicitAssistantSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the explicit sources were used, not the defaults
       const messages = Array.from(session.messages);
@@ -139,7 +139,7 @@ describe('Default Content Source', () => {
         .add(new Assistant(defaultAssistantSource));
 
       // Execute the sequence
-      const session = await sequence.execute(createSession());
+      const session = await sequence.execute();
 
       // Verify the default sources were used
       const messages = Array.from(session.messages);
@@ -173,7 +173,7 @@ describe('Default Content Source', () => {
       mainSequence.add(nestedSequence);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the default sources were passed to the nested sequence
       const messages = Array.from(session.messages);
@@ -218,7 +218,7 @@ describe('Default Content Source', () => {
       });
 
       // Execute the loop
-      const session = await loopTemplate.execute(createSession());
+      const session = await loopTemplate.execute();
 
       // Verify the default sources were used in the single iteration (exit condition counter >= 2)
       const messages = Array.from(session.messages);
@@ -263,7 +263,7 @@ describe('Default Content Source', () => {
       });
 
       // Execute the loop
-      const session = await loopTemplate.execute(createSession());
+      const session = await loopTemplate.execute();
 
       // Verify the default sources were used in the single iteration (exit condition counter >= 2)
       const messages = Array.from(session.messages);
@@ -308,7 +308,7 @@ describe('Default Content Source', () => {
       mainSequence.add(nestedLoop);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the default sources were passed to the nested loop
       const messages = Array.from(session.messages);
@@ -346,7 +346,7 @@ describe('Default Content Source', () => {
       );
 
       // Execute the subroutine
-      const session = await subroutine.execute(createSession());
+      const session = await subroutine.execute();
 
       // Verify the default sources were used
       const messages = Array.from(session.messages);
@@ -359,9 +359,7 @@ describe('Default Content Source', () => {
 
     it('should inherit default sources from parent template', async () => {
       // Create default sources
-      const defaultUserSource = Source.literal(
-        'Parent default user message',
-      );
+      const defaultUserSource = Source.literal('Parent default user message');
       const defaultAssistantSource = Source.literal(
         'Parent default assistant message',
       );
@@ -384,7 +382,7 @@ describe('Default Content Source', () => {
       mainSequence.add(subroutine);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the parent's default sources were passed to the subroutine
       const messages = Array.from(session.messages);
@@ -432,7 +430,7 @@ describe('Default Content Source', () => {
       mainSequence.add(subroutine);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify the subroutine's own default sources were used, not the parent's
       const messages = Array.from(session.messages);
@@ -460,9 +458,7 @@ describe('Default Content Source', () => {
         'Mid-level assistant message',
       );
 
-      const innerLevelUserSource = Source.literal(
-        'Inner-level user message',
-      );
+      const innerLevelUserSource = Source.literal('Inner-level user message');
       const innerLevelAssistantSource = Source.literal(
         'Inner-level assistant message',
       );
@@ -503,7 +499,7 @@ describe('Default Content Source', () => {
         .add(new Assistant(topLevelAssistantSource));
 
       // Execute the complex nested structure
-      const session = await topSequence.execute(createSession());
+      const session = await topSequence.execute();
 
       // Verify the correct sources were used at each level
       const messages = Array.from(session.messages);
@@ -561,7 +557,7 @@ describe('Default Content Source', () => {
       const mainSequence = new Sequence().add(sequenceA).add(sequenceB);
 
       // Execute the main sequence
-      const session = await mainSequence.execute(createSession());
+      const session = await mainSequence.execute();
 
       // Verify each sequence used its own default sources
       const messages = Array.from(session.messages);
@@ -585,7 +581,7 @@ describe('Default Content Source', () => {
     it('RandomSource should return a random element from the list', async () => {
       const contentList = ['message1', 'message2', 'message3'];
       const randomSource = Source.random(contentList);
-      const session = createSession();
+      const session = Session.create();
       const content = await randomSource.getContent(session);
       expect(contentList).toContain(content);
     });
@@ -593,7 +589,7 @@ describe('Default Content Source', () => {
     it('ListSource should return elements sequentially and error when exhausted by default', async () => {
       const contentList = ['item1', 'item2'];
       const listSource = Source.list(contentList);
-      const session = createSession();
+      const session = Session.create();
 
       expect(await listSource.getContent(session)).toBe('item1');
       expect(listSource.getIndex()).toBe(1);
@@ -614,7 +610,7 @@ describe('Default Content Source', () => {
     it('ListSource should loop when loop option is true', async () => {
       const contentList = ['loop1', 'loop2'];
       const listSource = Source.list(contentList, { loop: true });
-      const session = createSession();
+      const session = Session.create();
 
       expect(await listSource.getContent(session)).toBe('loop1');
       expect(listSource.getIndex()).toBe(1);
@@ -636,7 +632,7 @@ describe('Default Content Source', () => {
     it('ListSource should handle empty list correctly', async () => {
       const listSourceNoLoop = Source.list([]);
       const listSourceLoop = Source.list([], { loop: true });
-      const session = createSession();
+      const session = Session.create();
 
       await expect(listSourceNoLoop.getContent(session)).rejects.toThrow(
         'No more content in the ListSource.',

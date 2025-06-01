@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { System } from '../../../templates/primitives/system';
 import { CustomValidator } from '../../../validators/custom';
@@ -17,7 +17,7 @@ describe('SystemTemplate', () => {
     expect(template.getContentSource()).toBeDefined();
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('system');
     expect(session.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
@@ -29,7 +29,7 @@ describe('SystemTemplate', () => {
     const template = new System('You are a helpful assistant.');
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('system');
     expect(session.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
@@ -49,7 +49,7 @@ describe('SystemTemplate', () => {
 
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     const sessionWithRole = session.withVar('role', 'coding assistant');
     const sessionWithBoth = sessionWithRole.withVar(
       'rules',
@@ -80,7 +80,7 @@ describe('SystemTemplate', () => {
     const template = new System(callbackSource);
 
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     const updatedSession = session.withVar('role', 'financial expert');
 
     // Execute the template and verify the result
@@ -121,7 +121,7 @@ describe('SystemTemplate', () => {
     const validTemplate = new System(validSource);
 
     // Execute the template and verify it passes validation
-    const validResult = await validTemplate.execute(createSession());
+    const validResult = await validTemplate.execute();
     expect(validResult.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
     );
@@ -137,7 +137,7 @@ describe('SystemTemplate', () => {
     const invalidTemplate = new System(invalidSource);
 
     // Execute the template and verify it fails validation
-    await expect(invalidTemplate.execute(createSession())).rejects.toThrow();
+    await expect(invalidTemplate.execute()).rejects.toThrow();
   });
 
   it('should retry validation when maxAttempts > 1', async () => {
@@ -173,7 +173,7 @@ describe('SystemTemplate', () => {
     const template = new System(callbackSource);
 
     // Execute the template and verify it succeeds on the second attempt
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
     );
@@ -207,14 +207,14 @@ describe('SystemTemplate', () => {
     const template = new System(invalidSource);
 
     // Execute the template and verify it doesn't throw an error
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()!.content).toBe('You are an AI.');
   });
 
   it('should handle a session with existing messages', async () => {
     // Create a session with an existing message
     // Create session and assign the result of addMessage back
-    let session = createSession();
+    let session = Session.create();
     session = session.addMessage({
       type: 'user',
       content: 'Hello',
@@ -238,13 +238,13 @@ describe('SystemTemplate', () => {
   it('should properly initialize with various constructor inputs', async () => {
     // Test with string constructor
     const template1 = new System('String initialization');
-    const result1 = await template1.execute(createSession());
+    const result1 = await template1.execute();
     expect(result1.getLastMessage()!.content).toBe('String initialization');
 
     // Test with StaticSource constructor
     const source = Source.literal('Source initialization');
     const template2 = new System(source);
-    const result2 = await template2.execute(createSession());
+    const result2 = await template2.execute();
     expect(result2.getLastMessage()!.content).toBe('Source initialization');
   });
 });

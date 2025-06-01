@@ -179,7 +179,7 @@ yarn add github:combinatrix-ai/PromptTrail.ts
 
 ```typescript
 // Usually all imports are from @prompttrail/core
-import { Agent, Source, createSession } from '@prompttrail/core';
+import { Agent, Source, Session } from '@prompttrail/core';
 
 // Create a simple conversation template using the Agent builder
 const chat = Agent.create()
@@ -195,9 +195,7 @@ const chat = Agent.create()
 
 // Execute the template
 const session = await chat.execute(
-  createSession({
-    print: true, // Enable console logging of the conversation
-  }),
+  Session.debug(), // Enable console logging of the conversation
 );
 // Console Output:
 //     System: I'm a helpful assistant.
@@ -228,7 +226,7 @@ console.log('last message:', session.getLastMessage()?.content);
   - ```
       type UserVars = { userName: string; userId: string; } extends Vars;
       type UserAttrs = { timestamp: number; customRole: string; } extends Attrs;
-      const session = createSession<UserVars, UserAttrs>();
+      const session = Session.create<UserVars, UserAttrs>();
     ```
 
 ### API Convention
@@ -256,9 +254,9 @@ console.log('last message:', session.getLastMessage()?.content);
 
 - **Session**: Represents a conversation with `vars` and `messages`. Immutable.
   ```typescript
-  import { createSession } from '@prompttrail/core';
-  const session = createSession(); // Creates an empty session
-  const sessionWithContext = createSession({ context: { userName: 'Alice' } });
+  import { Session } from '@prompttrail/core';
+  const session = Session.create(); // Creates an empty session
+  const sessionWithContext = Session.withVars({ userName: 'Alice' });
   ```
   - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
     ```typescript
@@ -276,7 +274,7 @@ console.log('last message:', session.getLastMessage()?.content);
       { type: 'user', content: 'Hello!' },
       { type: 'assistant', content: 'Hi there!' },
     ];
-    const sessionWithMessages = createSession({ messages });
+    const sessionWithMessages = Session.withMessages(messages);
     ```
     - **Attrs**: Optional read-only data (`Attrs<T>`) attached to messages. Used for storing additional information (e.g., non-default roles, timestamps).
       ```typescript
@@ -319,7 +317,7 @@ console.log('last message:', session.getLastMessage()?.content);
 ```typescript
 import {
   Agent,
-  createSession,
+  Session,
   createGenerateOptions,
   Source,
 } from '@prompttrail/core';
@@ -331,13 +329,10 @@ const simpleTemplate = Agent.create()
   .assistant(Source.literal('TypeScript is a typed superset of JavaScript.')); // Use Source.literal() for fixed response
 
 const session = await simpleTemplate.execute(
-  createSession({
-    context: {
-      // Vars are type-safe if generics are provided
-      userId: 'user-123',
-      language: 'TypeScript',
-    },
-    print: true,
+  Session.debug().withVars({
+    // Vars are type-safe if generics are provided
+    userId: 'user-123',
+    language: 'TypeScript',
   }),
 );
 ```
@@ -347,7 +342,7 @@ const session = await simpleTemplate.execute(
 PromptTrail leverages TypeScript for strong typing, better IDE support, and a robust development experience.
 
 ```typescript
-import { createSession, Vars, Attrs } from '@prompttrail/core';
+import { Session, Vars, Attrs } from '@prompttrail/core';
 
 // Define types for context and metadata
 interface MyVars extends Vars {
@@ -362,13 +357,11 @@ interface MyAttrs extends Attrs {
 }
 
 // Type-safe session creation
-const session = createSession<MyVars, MyAttrs>({
-  context: {
-    name: 'Alice',
-    preferences: {
-      theme: 'dark',
-      language: 'TypeScript',
-    },
+const session = Session.withVars<MyVars, MyAttrs>({
+  name: 'Alice',
+  preferences: {
+    theme: 'dark',
+    language: 'TypeScript',
   },
 });
 
@@ -398,7 +391,7 @@ Use the `Agent` builder for fluent template composition:
 ```typescript
 import {
   Agent,
-  createSession,
+  Session,
   createGenerateOptions,
   User,
   Assistant,
@@ -433,12 +426,9 @@ const techSupportFlow = new Agent<UserInfo>()
 
 // Execute with initial context
 const session = await techSupportFlow.execute(
-  createSession<UserInfo>({
-    context: {
-      name: 'Alice',
-      language: 'TypeScript',
-    },
-    print: true, // Enable console output
+  Session.debug<UserInfo>().withVars({
+    name: 'Alice',
+    language: 'TypeScript',
   }),
 );
 
@@ -465,7 +455,7 @@ import {
   User,
   Assistant,
   Source,
-  createSession,
+  Session,
   createGenerateOptions,
   Vars,
   Attrs,
@@ -539,7 +529,7 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
   );
 
 // Execute the quiz
-const session = await quiz.execute(createSession<QuizVars>({ print: true }));
+const session = await quiz.execute(Session.debug<QuizVars>());
 
 console.log('Final Vars:', session.getVarsObject());
 ```
@@ -598,7 +588,7 @@ const anthropicMcpOptions = createGenerateOptions({
 
 ```typescript
 import {
-  createSession,
+  Session,
   Agent,
   System,
   User,
@@ -618,14 +608,11 @@ interface MyAttrsSession extends Attrs {
 }
 
 // Create a session with initial context
-const initialSession = createSession<MyVarsSession, MyAttrsSession>({
-  context: {
-    userId: 'user-123',
-    language: 'TypeScript',
-    tone: 'professional',
-    topics: ['generics', 'type inference', 'utility types'],
-  },
-  print: true,
+const initialSession = Session.debug<MyVarsSession, MyAttrsSession>().withVars({
+  userId: 'user-123',
+  language: 'TypeScript',
+  tone: 'professional',
+  topics: ['generics', 'type inference', 'utility types'],
 });
 
 // Templates use ${variable} syntax for context interpolation
@@ -671,11 +658,11 @@ console.log('Session JSON:', JSON.stringify(json, null, 2));
 Process model responses chunk by chunk using `generateTextStream`:
 
 ```typescript
-import { createSession, generateTextStream } from '@prompttrail/core';
+import { Session, generateTextStream } from '@prompttrail/core';
 // Assuming openAIgenerateOptions is defined
 
 // Define session locally for this example
-const session = createSession().addMessage({
+const session = Session.create().addMessage({
   type: 'user',
   content: 'Explain streaming in 2 sentences.',
 });
@@ -704,7 +691,7 @@ console.log('\n--- End of Stream ---');
 Modify session vars during template execution using the `Transform` template:
 
 ```typescript
-import { Agent, Transform, createSession } from '@prompttrail/core';
+import { Agent, Transform, Session } from '@prompttrail/core';
 import type { Vars } from '@prompttrail/core';
 
 interface ServerInfoVars extends Vars {
@@ -745,7 +732,7 @@ const dataExtractionAgent = new Agent<ServerInfoVars>()
 
 // Execute the agent
 const dataSession =
-  await dataExtractionAgent.execute(createSession<ServerInfoVars>());
+  await dataExtractionAgent.execute(Session.create<ServerInfoVars>());
 
 // Access the extracted data from the final session context
 console.log('IP:', dataSession.getVar('ipAddress')); // "192.168.1.100"
@@ -768,7 +755,7 @@ import {
   KeywordValidator,
   AllValidator,
   CustomValidator,
-  createSession,
+  Session,
   createGenerateOptions,
   ValidationOptions,
 } from '@prompttrail/core';
@@ -821,7 +808,7 @@ const petNameAgent = Agent.create()
 
 // Execute (will retry/error if LLM response fails validation)
 try {
-  const petNameSession = await petNameAgent.execute(createSession());
+  const petNameSession = await petNameAgent.execute();
   console.log('Validated pet name:', petNameSession.getLastMessage()?.content);
 } catch (error) {
   console.error('Pet name validation failed:', error);
@@ -857,7 +844,7 @@ const shortAnswerAgent = Agent.create()
 // Execute
 try {
   const shortAnswerSession = await shortAnswerAgent.execute(
-    createSession({ context: { maxWords: 10 } }),
+    Session.withVars({ maxWords: 10 }),
   ); // Set maxWords in context
   console.log('Short answer:', shortAnswerSession.getLastMessage()?.content);
 } catch (error) {
@@ -877,7 +864,7 @@ import { z } from 'zod';
 import {
   Agent,
   Structured,
-  createSession,
+  Session,
   createGenerateOptions,
 } from '@prompttrail/core';
 // Assuming openAIgenerateOptions is defined
@@ -912,7 +899,7 @@ const productExtractorAgent = Agent.create()
 
 // Execute the agent
 try {
-  const session = await productExtractorAgent.execute(createSession());
+  const session = await productExtractorAgent.execute();
 
   // The structured data is attached to the last assistant message
   const lastMessage = session.getLastMessage();
@@ -940,7 +927,7 @@ Leverage the `ai-sdk`'s tool integration by adding tools to `GenerateOptions`. P
 ```typescript
 import { z } from 'zod';
 import { tool } from 'ai'; // Import from ai-sdk
-import { Agent, createSession, createGenerateOptions } from '@prompttrail/core';
+import { Agent, Session, createGenerateOptions } from '@prompttrail/core';
 // Assuming openAIgenerateOptions is defined
 
 // Define a weather forecast tool using ai-sdk's `tool` helper
@@ -979,7 +966,7 @@ const weatherAgent = Agent.create()
   .assistant(toolEnhancedOptions);
 
 // Execute the agent
-const session = await weatherAgent.execute(createSession());
+const session = await weatherAgent.execute();
 
 // Check the last message for potential tool calls
 const lastMessage = session.getLastMessage();
@@ -1000,7 +987,7 @@ Integrate with Anthropic's Model Context Protocol (MCP) servers by configuring t
 ```typescript
 import {
   Agent,
-  createSession,
+  Session,
   createGenerateOptions,
   generateText,
 } from '@prompttrail/core';
@@ -1039,7 +1026,7 @@ const mcpAgent = Agent.create()
 try {
   // Note: This requires an MCP server running at the specified URL (localhost:8080)
   // providing the 'searchPapers' tool.
-  const session = await mcpAgent.execute(createSession());
+  const session = await mcpAgent.execute();
   console.log('MCP Agent Response:', session.getLastMessage()?.content);
 } catch (error) {
   console.error(
@@ -1054,7 +1041,7 @@ try {
 PromptTrail is designed to work in browser environments. Set the `dangerouslyAllowBrowser` flag in your provider configuration.
 
 ```typescript
-import { Agent, createSession, createGenerateOptions } from '@prompttrail/core';
+import { Agent, Session, createGenerateOptions } from '@prompttrail/core';
 
 // Browser-compatible configuration for OpenAI
 const browserOptions = createGenerateOptions({
@@ -1076,7 +1063,7 @@ const browserAgent = Agent.create()
 // Example execution (within an async function in your frontend code)
 async function runBrowserAgent() {
   try {
-    const session = await browserAgent.execute(createSession());
+    const session = await browserAgent.execute();
     console.log('Browser Agent Response:', session.getLastMessage()?.content);
     // Update your UI with the response
   } catch (error) {

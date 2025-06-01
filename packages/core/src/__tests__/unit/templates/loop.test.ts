@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import type { Session } from '../../../session';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 import { Loop } from '../../../templates/composite/loop';
@@ -46,7 +45,7 @@ describe('Loop Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have executed the body template 2 times due to exit condition check before execution
     const messages = Array.from(session.messages);
@@ -63,7 +62,7 @@ describe('Loop Template', () => {
     const template = new Loop();
 
     // Expect the execute method to throw an error
-    await expect(template.execute(createSession())).rejects.toThrow(
+    await expect(template.execute()).rejects.toThrow(
       'LoopTemplate requires a bodyTemplate.',
     );
   });
@@ -88,7 +87,7 @@ describe('Loop Template', () => {
       .setMaxIterations(10);
 
     // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have executed the body template 2 times due to exit condition check before execution
     const messages = Array.from(session.messages);
@@ -125,7 +124,7 @@ describe('Loop Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await outerLoopTemplate.execute(createSession());
+    const session = await outerLoopTemplate.execute();
 
     // Should have executed based on check-before-execute logic:
     // 1. Outer loop check (outerCounter=1, false) -> Execute body
@@ -154,7 +153,7 @@ describe('Loop Template', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     // Execute the template
-    const session = createSession();
+    const session = Session.create();
     const result = await template.execute(session);
 
     // Should have executed the body template exactly once
@@ -189,7 +188,7 @@ describe('Loop Template', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     // Execute the template
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have executed the body template exactly 5 times (maxIterations)
     const messages = Array.from(session.messages);
@@ -224,7 +223,7 @@ describe('Loop Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have used the first two messages from the StaticListSource (exit condition counter >= 3)
     const messages = Array.from(session.messages);
@@ -254,7 +253,7 @@ describe('Loop Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have executed 3 iterations (since counter starts at undefined/0)
     const messages = Array.from(session.messages);
@@ -289,7 +288,7 @@ describe('Loop Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await loopTemplate.execute(createSession());
+    const session = await loopTemplate.execute();
 
     // Should have 4 messages: 2 user inputs + 2 conditional system messages (exit condition counter >= 3)
     const messages = Array.from(session.messages);

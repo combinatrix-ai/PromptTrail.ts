@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Agent, Assistant, User } from '../../../templates';
 
 describe('Agent', () => {
@@ -15,7 +15,7 @@ describe('Agent', () => {
       .user('Hello, who are you?')
       .assistant('I am an AI assistant.');
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -37,7 +37,7 @@ describe('Agent', () => {
         (agent) => agent.assistant('I did not understand.'),
       );
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -56,7 +56,7 @@ describe('Agent', () => {
         (agent) => agent.assistant('I did not understand.'),
       );
 
-    const session2 = await sequence2.execute(createSession());
+    const session2 = await sequence2.execute();
     const messages2 = Array.from(session2.messages);
     expect(messages2[2].content).toBe('I did not understand.');
   });
@@ -78,7 +78,7 @@ describe('Agent', () => {
         },
       );
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(5); // 2 initial messages + 3 loop iterations
@@ -110,7 +110,7 @@ describe('Agent', () => {
         },
       );
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(5); // 2 initial messages + 3 loop iterations
@@ -135,7 +135,7 @@ describe('Agent', () => {
       .add(nestedSequence)
       .user('Final message');
 
-    const session = await mainSequence.execute(createSession());
+    const session = await mainSequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
@@ -184,7 +184,7 @@ describe('Agent', () => {
       )
       .user('All done');
 
-    const session = await mainSequence.execute(createSession());
+    const session = await mainSequence.execute();
 
     // Expected messages: System, (Outer Start, Inner, Inner, Outer End) x 2, All Done
     // Total: 1 + (1 + 2 + 1) * 2 + 1 = 1 + 8 + 1 = 10 messages

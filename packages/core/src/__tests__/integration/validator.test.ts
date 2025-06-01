@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession, type Session } from '../../session';
+import { Session } from '../../session';
 import { type IValidator, type TValidationResult } from '../../validators/base';
 
 vi.mock('../../generate');
@@ -25,7 +25,7 @@ describe('AssistantTemplate with Validator', () => {
   it('should pass validation when validator passes', async () => {
     const assistantTemplate = new Assistant('This is a test response');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });
@@ -55,7 +55,7 @@ describe('AssistantTemplate with Validator', () => {
 
     const assistantTemplate = new Assistant('Response attempt 2');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     // Since we're using a static string now, we don't have attempts anymore
     // expect(attempts).toBe(2);
@@ -75,7 +75,7 @@ describe('AssistantTemplate with Validator', () => {
       .fn()
       .mockRejectedValue(new Error('Validation failed'));
 
-    await expect(assistantTemplate.execute(createSession())).rejects.toThrow(
+    await expect(assistantTemplate.execute()).rejects.toThrow(
       'Validation failed',
     );
   });
@@ -83,7 +83,7 @@ describe('AssistantTemplate with Validator', () => {
   it('should not throw when validation fails and raiseError is false', async () => {
     const assistantTemplate = new Assistant('This is a test response');
 
-    const session = await assistantTemplate.execute(createSession());
+    const session = await assistantTemplate.execute();
 
     expect(session.getLastMessage()?.content).toBe('This is a test response');
   });

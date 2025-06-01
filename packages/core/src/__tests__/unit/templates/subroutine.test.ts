@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import type { Session } from '../../../session';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Attrs, Vars } from '../../../tagged_record';
 import {
@@ -42,7 +41,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the messages were added
     const messages = Array.from(session.messages);
@@ -69,7 +68,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the context was merged
     expect(session.getVar('extractedData')).toEqual({
@@ -90,7 +89,7 @@ describe('SubroutineTemplate', () => {
 
     // Execute the subroutine
     const hideMessagesSession =
-      await hideMessagesSubroutine.execute(createSession());
+      await hideMessagesSubroutine.execute();
 
     // Verify no messages were retained (default merge logic keeps parent messages)
     const hideMessages = Array.from(hideMessagesSession.messages);
@@ -106,7 +105,7 @@ describe('SubroutineTemplate', () => {
 
     // Execute the subroutine
     const showMessagesSession =
-      await showMessagesSubroutine.execute(createSession());
+      await showMessagesSubroutine.execute();
 
     // Verify messages were retained
     const showMessages = Array.from(showMessagesSession.messages);
@@ -116,7 +115,7 @@ describe('SubroutineTemplate', () => {
   it('should use parent session context by default', async () => {
     type SharedContext = Vars<{ userName: string }>;
     // Create a parent session with context
-    const parentSession = createSession<SharedContext, Attrs>().withVars({
+    const parentSession = Session.create<SharedContext, Attrs>().withVars({
       userName: 'Bob',
     });
 
@@ -187,7 +186,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the messages
     const messages = Array.from(session.messages);
@@ -228,7 +227,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the nested subroutines
-    const session = await outerSubroutine.execute(createSession());
+    const session = await outerSubroutine.execute();
 
     // Verify the messages (all should be retained by default)
     const messages = Array.from(session.messages);
@@ -245,7 +244,7 @@ describe('SubroutineTemplate', () => {
 
   it('should support isolatedContext mode', async () => {
     // Use Session<any> for parent to allow checking dynamic keys later if needed
-    const parentSession = createSession().withVars({
+    const parentSession = Session.create().withVars({
       parentData: 'visible',
     });
 
@@ -316,8 +315,8 @@ describe('SubroutineTemplate', () => {
       .fn()
       .mockImplementation((parentSession: Session<any>) => {
         // Create a new session with the context values we need
-        return createSession({
-          context: {
+        return Session.create({
+          vars: {
             userName: parentSession.getVar('userName'),
             customInit: true,
           },
@@ -325,7 +324,7 @@ describe('SubroutineTemplate', () => {
       });
 
     // Create a parent session with various context
-    const parentSession = createSession()
+    const parentSession = Session.create()
       .withVars({ userName: 'Charlie' })
       .withVars({ sensitiveData: 'should not be copied' });
 
@@ -366,7 +365,7 @@ describe('SubroutineTemplate', () => {
 
   it('should use the squashWith function when provided', async () => {
     // Create a parent session with nested context
-    let parentSession = createSession().withVars({
+    let parentSession = Session.create().withVars({
       user: { name: 'Dave', age: 30 },
     });
     parentSession = parentSession.withVars({
@@ -409,7 +408,7 @@ describe('SubroutineTemplate', () => {
         }
 
         // Create final session - use merged context object
-        let finalSession = createSession({ context: mergedMetadataObject });
+        let finalSession = Session.create({ vars: mergedMetadataObject });
         // Add parent messages (as per this test's custom logic)
         parent.messages.forEach(
           (msg) => (finalSession = finalSession.addMessage(msg)),
@@ -463,7 +462,7 @@ describe('SubroutineTemplate', () => {
       .assistant('I am an AI assistant.');
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the messages were added
     const messages = Array.from(session.messages);
@@ -485,7 +484,7 @@ describe('SubroutineTemplate', () => {
     ]);
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify the messages were added
     const messages = Array.from(session.messages);
@@ -520,7 +519,7 @@ describe('SubroutineTemplate', () => {
         }),
     );
     // Execute the nested subroutines
-    const session = await outerSubroutine.execute(createSession());
+    const session = await outerSubroutine.execute();
 
     // Verify the messages (all should be retained by default)
     const messages = Array.from(session.messages);
@@ -550,7 +549,7 @@ describe('SubroutineTemplate', () => {
       .user('Message after nested subroutine');
 
     // Execute the sequence
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     // Verify the messages from both the sequence and the subroutine are present
     const messages = Array.from(session.messages);
@@ -585,7 +584,7 @@ describe('SubroutineTemplate', () => {
 
     // Execute the loop, starting context count at 0
     const session = await loopTemplate.execute(
-      createSession({ context: { count: 0 } }),
+      Session.create({ vars: { count: 0 } }),
     );
 
     // Should have executed the loop body (subroutine) 2 times (exit condition counter >= 2)
@@ -617,7 +616,7 @@ describe('SubroutineTemplate', () => {
       },
     });
 
-    const initialSession = createSession<CounterContext, Attrs>();
+    const initialSession = Session.create<CounterContext, Attrs>();
     const session = await loop.execute(initialSession);
 
     // Verify the count was incremented to 3
@@ -629,7 +628,7 @@ describe('SubroutineTemplate', () => {
     const subroutine = new Subroutine([]);
 
     // Execute the subroutine
-    const session = await subroutine.execute(createSession());
+    const session = await subroutine.execute();
 
     // Verify no messages were added
     expect(session.messages).toHaveLength(0);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Validation } from '../../../validators';
 
@@ -106,7 +106,7 @@ describe('Source.llm().mock()', () => {
 
   describe('Mock functionality', () => {
     it('should return mock response', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm().mock().mockResponse({
         content: 'Test response',
       });
@@ -116,7 +116,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should cycle through multiple mock responses', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm()
         .mock()
         .mockResponses(
@@ -135,7 +135,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should use callback for dynamic responses', async () => {
-      const session = createSession({ context: { name: 'Alice' } });
+      const session = Session.withVars({ name: 'Alice' });
       const mockSource = Source.llm()
         .temperature(0.9)
         .mock()
@@ -148,7 +148,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should track call history', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm()
         .model('gpt-4')
         .temperature(0.7)
@@ -170,7 +170,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should support reset', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm().mock().mockResponse({ content: 'Test' });
 
       await mockSource.getContent(session);
@@ -181,7 +181,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should include tool calls and structured output in response', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm()
         .mock()
         .mockResponse({
@@ -207,7 +207,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should apply validation to mock responses', async () => {
-      const session = createSession();
+      const session = Session.create();
       const validator = Validation.length({ min: 20 });
 
       const mockSource = Source.llm()
@@ -222,7 +222,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should respect validation settings', async () => {
-      const session = createSession();
+      const session = Session.create();
       const validator = Validation.length({ min: 20 });
 
       // With raiseError = false, should return content even if invalid
@@ -237,7 +237,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should return default mock response when none is set', async () => {
-      const session = createSession();
+      const session = Session.create();
       const mockSource = Source.llm().mock();
 
       const result = await mockSource.getContent(session);
@@ -245,7 +245,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should maintain immutability', async () => {
-      const session = createSession();
+      const session = Session.create();
       const original = Source.llm()
         .mock()
         .mockResponse({ content: 'Original' });

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { LlmSource, Source } from '../../../source';
 import { Structured } from '../../../templates/primitives/structured';
 
@@ -44,7 +44,7 @@ describe('SchemaTemplate API Integration', () => {
       maxAttempts: 2, // Test the retry logic with a smaller number of attempts
     });
 
-    const session = createSession({
+    const session = Session.create({
       messages: [
         {
           type: 'user',
@@ -73,7 +73,7 @@ describe('SchemaTemplate API Integration', () => {
       maxAttempts: 2,
     });
 
-    const session = createSession({
+    const session = Session.create({
       messages: [
         {
           type: 'user',
@@ -102,7 +102,7 @@ describe('SchemaTemplate API Integration', () => {
       maxAttempts: 5,
     });
 
-    const session = createSession({
+    const session = Session.create({
       messages: [
         {
           type: 'user',
@@ -129,7 +129,7 @@ describe('SchemaTemplate API Integration', () => {
       maxAttempts: 2,
     });
 
-    const session = createSession({
+    const session = Session.create({
       messages: [
         {
           type: 'user',
@@ -168,7 +168,7 @@ describe('SchemaTemplate API Integration', () => {
       maxAttempts: 2, // Set a small number to make the test faster
     });
 
-    const session = createSession({
+    const session = Session.create({
       messages: [
         {
           type: 'user',

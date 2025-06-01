@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { User } from '../../../templates/primitives/user';
 import { CustomValidator } from '../../../validators/custom';
@@ -31,7 +31,7 @@ describe('UserTemplate', () => {
     expect(template.getContentSource()).toBeDefined();
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('User query from source');
   });
@@ -41,7 +41,7 @@ describe('UserTemplate', () => {
     const template = new User('User static message');
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('User static message');
   });
@@ -51,14 +51,14 @@ describe('UserTemplate', () => {
     const template = new User();
 
     // Expect the execute method to throw an error
-    await expect(template.execute(createSession())).rejects.toThrow(
+    await expect(template.execute()).rejects.toThrow(
       'Content source required for UserTemplate',
     );
   });
 
   it('should support interpolation in static content', async () => {
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     console.log('Before setting context value:', session);
     const updatedSession = session.withVar('query', 'weather');
     console.log('After setting context value:', updatedSession);
@@ -76,7 +76,7 @@ describe('UserTemplate', () => {
 
   it('should support interpolation in content source', async () => {
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     console.log('Before setting context value (content source):', session);
     const updatedSession = session.withVar('query', 'weather');
     console.log(
@@ -105,7 +105,7 @@ describe('UserTemplate', () => {
     const template = new User(cliSource);
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('CLI user input');
 
@@ -124,7 +124,7 @@ describe('UserTemplate', () => {
     const template = new User(callbackSource);
 
     // Execute the template and verify the result
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.type).toBe('user');
     expect(session.getLastMessage()?.content).toBe('Callback user input');
 
@@ -154,7 +154,7 @@ describe('UserTemplate', () => {
     const validTemplate = new User(validSource);
 
     // Execute the template and verify it passes validation
-    const validResult = await validTemplate.execute(createSession());
+    const validResult = await validTemplate.execute();
     expect(validResult.getLastMessage()?.content).toBe(
       'This is valid user input',
     );
@@ -197,7 +197,7 @@ describe('UserTemplate', () => {
     const template = new User(callbackSource);
 
     // Execute the template and verify it succeeds
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is valid user input');
     expect(callback).toHaveBeenCalledTimes(1);
 
@@ -232,7 +232,7 @@ describe('UserTemplate', () => {
     const template = new User(invalidSource);
 
     // Execute the template and verify it doesn't throw an error
-    const session = await template.execute(createSession());
+    const session = await template.execute();
     expect(session.getLastMessage()?.content).toBe('This is invalid');
   });
 });

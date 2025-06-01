@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -29,7 +29,7 @@ describe('Sequence Template', () => {
       .add(new User('Hello, who are you?'))
       .add(new Assistant('I am an AI assistant.'));
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -51,7 +51,7 @@ describe('Sequence Template', () => {
       assistantTemplate,
     ]);
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -65,7 +65,7 @@ describe('Sequence Template', () => {
       .add(new System('You are a helpful assistant.'))
       .add(new User('Default user message'));
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(2);
@@ -88,7 +88,7 @@ describe('Sequence Template', () => {
       .add(new User('Hello, assistant'))
       .add(new Assistant(llm));
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -125,7 +125,7 @@ describe('Sequence Template', () => {
       )
       .add(new User('Nice to meet you, ${userName}'));
 
-    const session = await sequence.execute(createSession());
+    const session = await sequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -141,7 +141,7 @@ describe('Sequence Template', () => {
   it('should execute an empty sequence without errors', async () => {
     const emptySequence = new Sequence();
 
-    const session = await emptySequence.execute(createSession());
+    const session = await emptySequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(0);
@@ -172,7 +172,7 @@ describe('Sequence Template', () => {
       // Note: Template interpolation uses `${metadataKey}` syntax
       .add(new User('Counter value: ${counter}'));
 
-    const session = await mainSequence.execute(createSession());
+    const session = await mainSequence.execute();
 
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);

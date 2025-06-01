@@ -1,6 +1,7 @@
 export { tool } from 'ai';
 export * from './generate';
 export * from './message';
+/** @deprecated Use Session.create() instead for consistency with other factory patterns */
 export { createSession } from './session';
 export * from './source';
 export * from './tagged_record';

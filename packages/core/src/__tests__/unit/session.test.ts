@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
-import { createSession } from '../../session';
-import { Vars } from '../../tagged_record';
+import { createSession, Session } from '../../session';
+import { Vars, Attrs } from '../../tagged_record';
 
 function createUserMessage(content: string): Message {
   return {
@@ -202,5 +202,106 @@ describe('Session', () => {
     const session = createSession({ print: true });
     const json = session.toJSON();
     expect(json).toHaveProperty('print', true);
+  });
+});
+
+describe('Session Namespace', () => {
+  it('should create empty session using Session.create()', () => {
+    const session = Session.create();
+    expect(session.messages).toHaveLength(0);
+    expect(session.varsSize).toBe(0);
+    expect(session.print).toBe(false);
+  });
+
+  it('should create session with vars using Session.create()', () => {
+    const session = Session.create({
+      vars: { userId: '123', name: 'John' }
+    });
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('name')).toBe('John');
+    expect(session.varsSize).toBe(2);
+  });
+
+  it('should create empty session using Session.empty()', () => {
+    const session = Session.empty();
+    expect(session.messages).toHaveLength(0);
+    expect(session.varsSize).toBe(0);
+    expect(session.print).toBe(false);
+  });
+
+  it('should create session with vars using Session.withVars()', () => {
+    const session = Session.withVars({ userId: '123', name: 'John' });
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('name')).toBe('John');
+    expect(session.varsSize).toBe(2);
+  });
+
+  it('should create session with messages using Session.withMessages()', () => {
+    const messages = [
+      createSystemMessage('System message'),
+      createUserMessage('User message'),
+    ];
+    const session = Session.withMessages(messages);
+    expect(session.messages).toHaveLength(2);
+    expect(session.messages[0].content).toBe('System message');
+    expect(session.messages[1].content).toBe('User message');
+  });
+
+  it('should create session with both vars and messages using Session.withVarsAndMessages()', () => {
+    const vars = { userId: '123', name: 'John' };
+    const messages = [createUserMessage('Hello')];
+    const session = Session.withVarsAndMessages(vars, messages);
+    
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('name')).toBe('John');
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].content).toBe('Hello');
+  });
+
+  it('should create debug session using Session.debug()', () => {
+    const session = Session.debug({ vars: { debug: true } });
+    expect(session.print).toBe(true);
+    expect(session.getVar('debug')).toBe(true);
+  });
+
+  it('should deserialize from JSON using Session.fromJSON()', () => {
+    const jsonData = {
+      messages: [createSystemMessage('Test')],
+      context: { key: 'value' },
+      print: false
+    };
+    
+    const session = Session.fromJSON(jsonData);
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].content).toBe('Test');
+    expect(session.getVar('key')).toBe('value');
+    expect(session.print).toBe(false);
+  });
+
+  it('should handle invalid JSON gracefully in Session.fromJSON()', () => {
+    // Test error handling for invalid JSON
+    expect(() => Session.fromJSON({
+      messages: 'not an array',
+      context: { key: 'value' }
+    })).toThrow('Invalid session JSON: messages must be an array');
+    
+    expect(() => Session.fromJSON({
+      messages: [],
+      context: 'not an object'
+    })).toThrow('Invalid session JSON: context must be an object');
+  });
+
+  it('should provide consistent API with proper type inference', () => {
+    // Test type inference works correctly
+    const session = Session.withVars({ 
+      count: 42, 
+      name: 'test',
+      settings: { theme: 'dark' }
+    });
+    
+    // These should be properly typed
+    expect(session.getVar('count')).toBe(42);
+    expect(session.getVar('name')).toBe('test');
+    expect(session.getVar('settings')).toEqual({ theme: 'dark' });
   });
 });

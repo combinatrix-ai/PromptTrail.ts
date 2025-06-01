@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import type { Session } from '../../../session';
-import { createSession } from '../../../session';
+import { Session } from '../../../session';
 import { Vars } from '../../../tagged_record';
 import { Agent } from '../../../templates';
 import { Assistant } from '../../../templates/primitives/assistant';
@@ -40,7 +39,7 @@ describe('If Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await ifTemplate.execute(createSession());
+    const session = await ifTemplate.execute();
 
     // Verify the then branch was executed
     const messages = Array.from(session.messages);
@@ -65,7 +64,7 @@ describe('If Template', () => {
     });
 
     // Execute the template and verify the result
-    const session = await ifTemplate.execute(createSession());
+    const session = await ifTemplate.execute();
 
     // Verify the else branch was executed
     const messages = Array.from(session.messages);
@@ -89,7 +88,7 @@ describe('If Template', () => {
     });
 
     // Create a session with an existing message
-    const initialSession = createSession().addMessage({
+    const initialSession = Session.create().addMessage({
       type: 'system',
       content: 'Initial message',
     });
@@ -111,10 +110,10 @@ describe('If Template', () => {
       }> {}
 
     // Create a session with context
-    const adminSession = createSession({
-      context: Vars.create({
+    const adminSession = Session.create({
+      vars: {
         userRole: 'admin',
-      }),
+      },
     });
 
     // Create a condition that checks metadata
@@ -143,7 +142,7 @@ describe('If Template', () => {
     expect(messages[0].content).toBe('Admin access granted');
 
     // Now test with a different role
-    const userSession = createSession().withVar('userRole', 'user');
+    const userSession = Session.create().withVar('userRole', 'user');
 
     // Execute the template with user role
     const userResultSession = await ifTemplate.execute(userSession);
@@ -156,7 +155,7 @@ describe('If Template', () => {
 
   it('should handle conditions based on message content', async () => {
     // Create a session with a message
-    const session = createSession().addMessage({
+    const session = Session.create().addMessage({
       type: 'user',
       content: 'Hello, how are you?',
     });
@@ -189,7 +188,7 @@ describe('If Template', () => {
     expect(messages[1].content).toBe('Hello! I am an AI assistant.');
 
     // Now test with a non-greeting message
-    const questionSession = createSession().addMessage({
+    const questionSession = Session.create().addMessage({
       type: 'user',
       content: 'What is the weather today?',
     });
@@ -226,7 +225,7 @@ describe('If Template', () => {
     });
 
     // Execute the template and verify the result
-    const resultSession = await ifTemplate.execute(createSession());
+    const resultSession = await ifTemplate.execute();
 
     // Verify the then branch sequence was executed
     const messages = Array.from(resultSession.messages);
@@ -245,7 +244,7 @@ describe('If Template', () => {
       elseTemplate,
     });
 
-    const elseResultSession = await elseIfTemplate.execute(createSession());
+    const elseResultSession = await elseIfTemplate.execute();
 
     // Verify the else branch sequence was executed
     const elseMessages = Array.from(elseResultSession.messages);
@@ -258,7 +257,7 @@ describe('If Template', () => {
 
   it('should handle nested if templates', async () => {
     // Create a session with metadata
-    const session = createSession();
+    const session = Session.create();
     session.withVar('userRole', 'admin');
     session.withVar('isAuthenticated', true);
 
@@ -286,7 +285,7 @@ describe('If Template', () => {
     expect(messages[0].content).toBe('Not an admin');
 
     // Test with different metadata combinations
-    const unauthSession = createSession();
+    const unauthSession = Session.create();
     unauthSession.withVar('userRole', 'admin');
     unauthSession.withVar('isAuthenticated', false);
 
@@ -295,7 +294,7 @@ describe('If Template', () => {
     expect(unauthMessages).toHaveLength(1);
     expect(unauthMessages[0].content).toBe('Not an admin');
 
-    const nonAdminSession = createSession();
+    const nonAdminSession = Session.create();
     nonAdminSession.withVar('userRole', 'user');
     nonAdminSession.withVar('isAuthenticated', true);
 
@@ -332,7 +331,7 @@ describe('If Template', () => {
     });
 
     // Execute the template and verify the result
-    const resultSession = await ifTemplate.execute(createSession());
+    const resultSession = await ifTemplate.execute();
 
     // Verify both the message and metadata updates
     const messages = Array.from(resultSession.messages);
@@ -349,14 +348,14 @@ describe('If Template', () => {
       elseTemplate,
     });
 
-    const elseResultSession = await elseIfTemplate.execute(createSession());
+    const elseResultSession = await elseIfTemplate.execute();
 
     expect(elseResultSession.getVar('branchTaken')).toBe('else');
   });
 
   it('should handle dynamically determined template paths', async () => {
     // Create a session with a message type parameter
-    const session = createSession();
+    const session = Session.create();
     session.withVar('messageType', 'greeting');
 
     // Create templates for different message types
@@ -384,7 +383,7 @@ describe('If Template', () => {
     expect(messages[0].content).toBe('Here is some information.');
 
     // Try with a different message type
-    const questionSession = createSession();
+    const questionSession = Session.create();
     questionSession.withVar('messageType', 'question');
 
     const questionResultSession =
@@ -393,7 +392,7 @@ describe('If Template', () => {
     expect(questionMessages[0].content).toBe('Here is some information.');
 
     // Try with an undefined message type (should use the default)
-    const defaultSession = createSession();
+    const defaultSession = Session.create();
     defaultSession.withVar('messageType', 'unknown');
 
     const defaultResultSession =
