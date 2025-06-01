@@ -179,7 +179,6 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   toString(): string {
     return JSON.stringify(this.toJSON(), null, 2);
   }
-
 }
 
 /**
@@ -209,7 +208,7 @@ export function createSession<
  */
 export class SessionBuilder<
   TVars extends Record<string, unknown> = {},
-  TAttrs extends Record<string, unknown> = {}
+  TAttrs extends Record<string, unknown> = {},
 > {
   /**
    * Add vars type specification to the builder (type-only, no runtime values)
@@ -222,7 +221,10 @@ export class SessionBuilder<
    *   .create();
    * ```
    */
-  withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<TNewVars, TAttrs> {
+  withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<
+    TNewVars,
+    TAttrs
+  > {
     return new SessionBuilder<TNewVars, TAttrs>();
   }
 
@@ -237,7 +239,10 @@ export class SessionBuilder<
    *   .create();
    * ```
    */
-  withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<TVars, TNewAttrs> {
+  withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<
+    TVars,
+    TNewAttrs
+  > {
     return new SessionBuilder<TVars, TNewAttrs>();
   }
 
@@ -494,7 +499,9 @@ export namespace Session {
    * const session = Session.withVarsType<UserContext>().create();
    * ```
    */
-  export function withVarsType<TVars extends Record<string, unknown>>(): SessionBuilder<TVars, {}> {
+  export function withVarsType<
+    TVars extends Record<string, unknown>,
+  >(): SessionBuilder<TVars, {}> {
     return new SessionBuilder<TVars, {}>();
   }
 
@@ -507,7 +514,9 @@ export namespace Session {
    * const session = Session.withAttrsType<MessageMeta>().create();
    * ```
    */
-  export function withAttrsType<TAttrs extends Record<string, unknown>>(): SessionBuilder<{}, TAttrs> {
+  export function withAttrsType<
+    TAttrs extends Record<string, unknown>,
+  >(): SessionBuilder<{}, TAttrs> {
     return new SessionBuilder<{}, TAttrs>();
   }
 }

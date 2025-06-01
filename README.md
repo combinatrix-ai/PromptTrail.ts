@@ -250,17 +250,19 @@ console.log('last message:', session.getLastMessage()?.content);
       - `Source.cli().prompt(...)` // Modern factory API
 
 - **Session**: Represents a conversation with `vars` and `messages`. Immutable.
+
   ```typescript
   import { Session } from '@prompttrail/core';
   const session = Session.create(); // Creates an empty session
   const sessionWithVars = Session.create({ vars: { userName: 'Alice' } });
-  
+
   // With type safety for complex applications
   type UserContext = { userId: string; role: string };
   const typedSession = Session.create<UserContext>({
-    vars: { userId: '123', role: 'admin' }
+    vars: { userId: '123', role: 'admin' },
   });
   ```
+
   - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
     ```typescript
     import { Assistant } from '@prompttrail/core';
@@ -291,6 +293,7 @@ console.log('last message:', session.getLastMessage()?.content);
       };
       // Access: messageWithMeta.attrs.timestamp
       ```
+
 - **Template**: A reusable piece of conversation logic (`System`, `User`, `Assistant`, `Conditional`, `Loop`, `Transform`, `Structured`, `Subroutine`, `Sequence`, `Agent`).
   ```typescript
   import { System } from '@prompttrail/core';
@@ -352,7 +355,7 @@ import { Session, Agent, Source } from '@prompttrail/core';
 const session = Session.create({ vars: { userName: 'Alice', level: 1 } });
 
 console.log(session.getVar('userName')); // Alice
-console.log(session.getVar('level'));    // 1
+console.log(session.getVar('level')); // 1
 ```
 
 #### Adding Structure with Type Inference
@@ -363,12 +366,12 @@ const gameSession = Session.withVars({
   playerId: 'player123',
   score: 0,
   inventory: ['sword', 'potion'],
-  settings: { difficulty: 'normal', sound: true }
+  settings: { difficulty: 'normal', sound: true },
 });
 
 // Full type safety with auto-completion
-const currentScore = gameSession.getVar('score');      // number
-const items = gameSession.getVar('inventory');         // string[]
+const currentScore = gameSession.getVar('score'); // number
+const items = gameSession.getVar('inventory'); // string[]
 const difficulty = gameSession.getVar('settings').difficulty; // string
 ```
 
@@ -393,19 +396,22 @@ type MessageMeta = {
 };
 
 // Specify types for session variables
-const typedSession = Session.withVarsType<UserProfile>()
-  .create({
-    vars: {
-      userId: 'user123',
-      role: 'admin',
-      preferences: { theme: 'dark', notifications: true }
-    }
-  });
+const typedSession = Session.withVarsType<UserProfile>().create({
+  vars: {
+    userId: 'user123',
+    role: 'admin',
+    preferences: { theme: 'dark', notifications: true },
+  },
+});
 
 // Add message metadata types when needed
 const fullSession = Session.withVarsType<UserProfile>()
   .withAttrsType<MessageMeta>()
-  .create({ vars: { /* ... */ } });
+  .create({
+    vars: {
+      /* ... */
+    },
+  });
 
 // Or add types to existing sessions
 const existingSession = Session.withVars({ count: 42, name: 'test' });
@@ -771,8 +777,9 @@ const dataExtractionAgent = new Agent<ServerInfoVars>()
   });
 
 // Execute the agent
-const dataSession =
-  await dataExtractionAgent.execute(Session.create<ServerInfoVars>());
+const dataSession = await dataExtractionAgent.execute(
+  Session.create<ServerInfoVars>(),
+);
 
 // Access the extracted data from the final session context
 console.log('IP:', dataSession.getVar('ipAddress')); // "192.168.1.100"

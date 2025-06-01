@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import type { Attrs, Vars } from "../session"
+import type { Attrs, Vars } from '../session';
 
 /**
  * Type guard for Session interface

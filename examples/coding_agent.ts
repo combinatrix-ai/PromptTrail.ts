@@ -9,7 +9,7 @@
 import {
   Agent,
   CLISource,
-  createSession,
+  Session,
   Source,
   System,
 } from '../packages/core/src/index';
@@ -144,7 +144,7 @@ export class CodingAgent {
     const userCliSource = new CLISource('Your request (type "exit" to end): ');
 
     // Create session with console output
-    const session = createSession({ print: true });
+    const session = Session.debug();
 
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';

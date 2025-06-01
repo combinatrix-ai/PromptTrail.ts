@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
-import { Attrs, Vars } from "../../../session"
+import { Attrs, Vars } from '../../../session';
 import {
   Agent,
   Assistant,
@@ -88,8 +88,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    const hideMessagesSession =
-      await hideMessagesSubroutine.execute();
+    const hideMessagesSession = await hideMessagesSubroutine.execute();
 
     // Verify no messages were retained (default merge logic keeps parent messages)
     const hideMessages = Array.from(hideMessagesSession.messages);
@@ -104,8 +103,7 @@ describe('SubroutineTemplate', () => {
     );
 
     // Execute the subroutine
-    const showMessagesSession =
-      await showMessagesSubroutine.execute();
+    const showMessagesSession = await showMessagesSubroutine.execute();
 
     // Verify messages were retained
     const showMessages = Array.from(showMessagesSession.messages);

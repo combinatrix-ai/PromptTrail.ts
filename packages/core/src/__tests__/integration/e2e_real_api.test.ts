@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
 import { Session } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
-import { Attrs, Vars } from "../../session"
+import { Attrs, Vars } from '../../session';
 import {
   Agent,
   Assistant,
@@ -349,9 +349,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     });
 
     // Execute the loop, starting context count at 0
-    const session2 = await loop.execute(
-      Session.create({ vars: { count: 0 } }),
-    );
+    const session2 = await loop.execute(Session.create({ vars: { count: 0 } }));
     const messages2 = Array.from(session2.messages);
 
     // The loop will execute twice (count 0, 1) before the exit condition is true (2>=2)

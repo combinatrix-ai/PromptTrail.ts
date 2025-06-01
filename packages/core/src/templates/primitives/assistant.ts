@@ -2,7 +2,7 @@
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
-import { Attrs, Vars } from "../../session"
+import { Attrs, Vars } from '../../session';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 
@@ -151,9 +151,9 @@ export class Assistant<
             updatedSession = updatedSession.addMessage({
               type: 'tool_result',
               content: JSON.stringify(toolResult.result),
-              attrs: ({
+              attrs: {
                 toolCallId: toolResult.toolCallId,
-              } as unknown as TAttrs),
+              } as unknown as TAttrs,
             });
           }
         }

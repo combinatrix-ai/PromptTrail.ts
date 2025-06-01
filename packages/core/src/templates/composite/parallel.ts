@@ -1,6 +1,6 @@
 import type { Session } from '../../session';
 import { LlmSource } from '../../source';
-import { Attrs, Vars } from "../../session"
+import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
 /**

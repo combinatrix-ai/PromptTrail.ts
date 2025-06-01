@@ -2,7 +2,7 @@ import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
 import { Session } from '../session';
 import { LlmSource, Source } from '../source';
-import { Attrs, Vars } from "../session"
+import { Attrs, Vars } from '../session';
 import { Agent } from './agent';
 import type { Template } from './base';
 

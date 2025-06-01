@@ -1,4 +1,4 @@
-import { Scenario, Source, Tool, createSession } from '@prompttrail/core';
+import { Scenario, Source, Tool, Session } from '@prompttrail/core';
 import { z } from 'zod';
 
 /**
@@ -237,9 +237,9 @@ async function runAutonomousResearch() {
     const scenario = await createAutonomousResearcher();
 
     // Create session with research tracking
-    const session = createSession({
+    const session = Session.create({
       print: true,
-      context: {
+      vars: {
         researchStartTime: Date.now(),
         researchDepth: 0,
         topicsExplored: [],
@@ -366,7 +366,7 @@ async function runWithMinimumRequirements() {
     })
     .process('Provide comprehensive findings');
 
-  await scenario.execute(createSession({ print: true }));
+  await scenario.execute(Session.debug());
 
   console.log('\n📈 Final Research Depth:');
   console.log(`  - Has Overview: ${researchTracker.hasOverview ? '✓' : '✗'}`);

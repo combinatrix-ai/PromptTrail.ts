@@ -1,7 +1,7 @@
 import type { SystemMessage } from '../../message';
 import type { Session } from '../../session';
 import type { Source } from '../../source';
-import { Attrs, Vars } from "../../session"
+import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
 export class System<

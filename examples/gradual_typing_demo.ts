@@ -1,6 +1,6 @@
 /**
  * Gradual Typing API Demo
- * 
+ *
  * This example demonstrates the new gradual typing API for Session creation.
  * It shows how to specify types explicitly when needed while maintaining
  * backward compatibility with existing code.
@@ -31,7 +31,9 @@ async function main() {
   // 1. Existing API (unchanged - backward compatible)
   console.log('1. Existing API (unchanged):');
   const session1 = Session.create({ vars: { name: 'Alice', age: 30 } });
-  console.log(`   User: ${session1.getVar('name')}, Age: ${session1.getVar('age')}\n`);
+  console.log(
+    `   User: ${session1.getVar('name')}, Age: ${session1.getVar('age')}\n`,
+  );
 
   // 2. Type-only vars specification
   console.log('2. Type-only vars specification:');
@@ -41,9 +43,9 @@ async function main() {
       role: 'admin',
       preferences: {
         theme: 'dark',
-        notifications: true
-      }
-    }
+        notifications: true,
+      },
+    },
   });
   console.log(`   User ID: ${session2.getVar('userId')}`);
   console.log(`   Role: ${session2.getVar('role')}`);
@@ -65,13 +67,15 @@ async function main() {
         role: 'user',
         preferences: {
           theme: 'light',
-          notifications: false
-        }
-      }
+          notifications: false,
+        },
+      },
     });
   console.log(`   User ID: ${session4.getVar('userId')}`);
   console.log(`   Role: ${session4.getVar('role')}`);
-  console.log(`   Notifications: ${session4.getVar('preferences').notifications}\n`);
+  console.log(
+    `   Notifications: ${session4.getVar('preferences').notifications}\n`,
+  );
 
   // 5. Chaining with existing session
   console.log('5. Chaining attrs type to existing vars session:');
@@ -80,8 +84,8 @@ async function main() {
     role: 'guest' as const,
     preferences: {
       theme: 'dark' as const,
-      notifications: true
-    }
+      notifications: true,
+    },
   }).withAttrsType<MessageMetadata>();
   console.log(`   User ID: ${session5.getVar('userId')}`);
   console.log(`   Role: ${session5.getVar('role')}`);
@@ -97,17 +101,16 @@ async function main() {
 
   // 7. Debug session with types
   console.log('7. Debug session with types:');
-  const session7 = Session.withVarsType<UserContext>()
-    .debug({
-      vars: {
-        userId: 'debug-user',
-        role: 'admin',
-        preferences: {
-          theme: 'dark',
-          notifications: true
-        }
-      }
-    });
+  const session7 = Session.withVarsType<UserContext>().debug({
+    vars: {
+      userId: 'debug-user',
+      role: 'admin',
+      preferences: {
+        theme: 'dark',
+        notifications: true,
+      },
+    },
+  });
   console.log(`   Print enabled: ${session7.print}`);
   console.log(`   User ID: ${session7.getVar('userId')}\n`);
 
@@ -121,9 +124,9 @@ async function main() {
         role: 'user',
         preferences: {
           theme: 'light',
-          notifications: false
-        }
-      }
+          notifications: false,
+        },
+      },
     });
   console.log(`   User ID: ${session8.getVar('userId')}`);
   console.log(`   Role: ${session8.getVar('role')}\n`);
@@ -131,16 +134,22 @@ async function main() {
   // 9. Adding attrs type to existing session instance
   console.log('9. Adding attrs type to existing session:');
   const originalSession = Session.create({
-    vars: { userId: 'original-user', score: 42 }
+    vars: { userId: 'original-user', score: 42 },
   });
   const typedSession = originalSession.withAttrsType<MessageMetadata>();
-  console.log(`   Original - User ID: ${originalSession.getVar('userId')}, Score: ${originalSession.getVar('score')}`);
-  console.log(`   Typed - User ID: ${typedSession.getVar('userId')}, Score: ${typedSession.getVar('score')}\n`);
+  console.log(
+    `   Original - User ID: ${originalSession.getVar('userId')}, Score: ${originalSession.getVar('score')}`,
+  );
+  console.log(
+    `   Typed - User ID: ${typedSession.getVar('userId')}, Score: ${typedSession.getVar('score')}\n`,
+  );
 
   console.log('✅ All examples completed successfully!');
   console.log('\n📝 Key Benefits:');
   console.log('   • Backward compatible - existing code unchanged');
-  console.log('   • Explicit typing - withVarsType vs withAttrsType (no confusion)');
+  console.log(
+    '   • Explicit typing - withVarsType vs withAttrsType (no confusion)',
+  );
   console.log('   • Flexible - support both value inference and type-only');
   console.log('   • Chainable - compose types step by step');
   console.log('   • Gradual adoption - use when you need better typing');

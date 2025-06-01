@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Attrs, Vars } from "../../session"
+import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 import type { TransformFn } from '../template_types';
 

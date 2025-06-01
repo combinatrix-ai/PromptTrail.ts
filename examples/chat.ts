@@ -1,4 +1,4 @@
-import { Agent, createSession, Source } from '../packages/core/src/index';
+import { Agent, Session, Source } from '../packages/core/src/index';
 
 async function main() {
   // Create the main conversation flow using the new function-based API
@@ -20,7 +20,7 @@ async function main() {
   );
 
   // Create an initial session, enabling 'print' to log messages to the console
-  const session = createSession({ print: true });
+  const session = Session.debug();
 
   // Execute the chat agent
   console.log('\nStarting chat with gpt-4o-mini (type "exit" to end)...\n');

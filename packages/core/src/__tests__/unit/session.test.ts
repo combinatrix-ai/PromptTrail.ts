@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
 import { createSession, Session } from '../../session';
-import { Vars, Attrs } from "../../session"
+import { Vars, Attrs } from '../../session';
 
 function createUserMessage(content: string): Message {
   return {
@@ -212,7 +212,7 @@ describe('Session Namespace', () => {
 
   it('should create session with vars using Session.create()', () => {
     const session = Session.create({
-      vars: { userId: '123', name: 'John' }
+      vars: { userId: '123', name: 'John' },
     });
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('name')).toBe('John');
@@ -248,7 +248,7 @@ describe('Session Namespace', () => {
     const vars = { userId: '123', name: 'John' };
     const messages = [createUserMessage('Hello')];
     const session = Session.withVarsAndMessages(vars, messages);
-    
+
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('name')).toBe('John');
     expect(session.messages).toHaveLength(1);
@@ -265,9 +265,9 @@ describe('Session Namespace', () => {
     const jsonData = {
       messages: [createSystemMessage('Test')],
       context: { key: 'value' },
-      print: false
+      print: false,
     };
-    
+
     const session = Session.fromJSON(jsonData);
     expect(session.messages).toHaveLength(1);
     expect(session.messages[0].content).toBe('Test');
@@ -277,25 +277,29 @@ describe('Session Namespace', () => {
 
   it('should handle invalid JSON gracefully in Session.fromJSON()', () => {
     // Test error handling for invalid JSON
-    expect(() => Session.fromJSON({
-      messages: 'not an array',
-      context: { key: 'value' }
-    })).toThrow('Invalid session JSON: messages must be an array');
-    
-    expect(() => Session.fromJSON({
-      messages: [],
-      context: 'not an object'
-    })).toThrow('Invalid session JSON: context must be an object');
+    expect(() =>
+      Session.fromJSON({
+        messages: 'not an array',
+        context: { key: 'value' },
+      }),
+    ).toThrow('Invalid session JSON: messages must be an array');
+
+    expect(() =>
+      Session.fromJSON({
+        messages: [],
+        context: 'not an object',
+      }),
+    ).toThrow('Invalid session JSON: context must be an object');
   });
 
   it('should provide consistent API with proper type inference', () => {
     // Test type inference works correctly
-    const session = Session.withVars({ 
-      count: 42, 
+    const session = Session.withVars({
+      count: 42,
       name: 'test',
-      settings: { theme: 'dark' }
+      settings: { theme: 'dark' },
     });
-    
+
     // These should be properly typed
     expect(session.getVar('count')).toBe(42);
     expect(session.getVar('name')).toBe('test');
@@ -310,15 +314,15 @@ describe('Session New API - Gradual Typing', () => {
       role: 'admin' | 'user';
       settings: { theme: string };
     };
-    
+
     const session = Session.withVarsType<UserContext>().create({
       vars: {
         userId: '123',
         role: 'admin',
-        settings: { theme: 'dark' }
-      }
+        settings: { theme: 'dark' },
+      },
     });
-    
+
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('role')).toBe('admin');
     expect(session.getVar('settings')).toEqual({ theme: 'dark' });
@@ -330,9 +334,9 @@ describe('Session New API - Gradual Typing', () => {
       hidden: boolean;
       priority: number;
     };
-    
+
     const session = Session.withAttrsType<MessageMeta>().create();
-    
+
     expect(session.messages).toHaveLength(0);
     expect(session.varsSize).toBe(0);
   });
@@ -342,21 +346,21 @@ describe('Session New API - Gradual Typing', () => {
       userId: string;
       role: 'admin' | 'user';
     };
-    
+
     type MessageMeta = {
       role: string;
       hidden: boolean;
     };
-    
+
     const session = Session.withVarsType<UserContext>()
       .withAttrsType<MessageMeta>()
       .create({
         vars: {
           userId: '123',
-          role: 'admin'
-        }
+          role: 'admin',
+        },
       });
-    
+
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('role')).toBe('admin');
     expect(session.messages).toHaveLength(0);
@@ -367,10 +371,12 @@ describe('Session New API - Gradual Typing', () => {
       role: string;
       hidden: boolean;
     };
-    
-    const session = Session.withVars({ userId: '123', name: 'John' })
-      .withAttrsType<MessageMeta>();
-    
+
+    const session = Session.withVars({
+      userId: '123',
+      name: 'John',
+    }).withAttrsType<MessageMeta>();
+
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('name')).toBe('John');
     expect(session.messages).toHaveLength(0);
@@ -379,26 +385,25 @@ describe('Session New API - Gradual Typing', () => {
   it('should create empty session with types', () => {
     type UserContext = { userId: string };
     type MessageMeta = { role: string };
-    
+
     const session = Session.withVarsType<UserContext>()
       .withAttrsType<MessageMeta>()
       .empty();
-    
+
     expect(session.messages).toHaveLength(0);
     expect(session.varsSize).toBe(0);
   });
 
   it('should create debug session with types', () => {
     type UserContext = { userId: string; debug: boolean };
-    
-    const session = Session.withVarsType<UserContext>()
-      .debug({
-        vars: {
-          userId: '123',
-          debug: true
-        }
-      });
-    
+
+    const session = Session.withVarsType<UserContext>().debug({
+      vars: {
+        userId: '123',
+        debug: true,
+      },
+    });
+
     expect(session.print).toBe(true);
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('debug')).toBe(true);
@@ -407,34 +412,34 @@ describe('Session New API - Gradual Typing', () => {
   it('should support mixed chaining starting with attrs', () => {
     type UserContext = { userId: string; role: string };
     type MessageMeta = { priority: number };
-    
+
     const session = Session.withAttrsType<MessageMeta>()
       .withVarsType<UserContext>()
       .create({
         vars: {
           userId: '123',
-          role: 'admin'
-        }
+          role: 'admin',
+        },
       });
-    
+
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('role')).toBe('admin');
   });
 
   it('should allow adding attrs type to existing session instance', () => {
     type MessageMeta = { role: string; hidden: boolean };
-    
+
     const originalSession = Session.create({
-      vars: { userId: '123', name: 'John' }
+      vars: { userId: '123', name: 'John' },
     });
-    
+
     const typedSession = originalSession.withAttrsType<MessageMeta>();
-    
+
     // Should preserve existing data
     expect(typedSession.getVar('userId')).toBe('123');
     expect(typedSession.getVar('name')).toBe('John');
     expect(typedSession.messages).toHaveLength(0);
-    
+
     // Original session should be unchanged
     expect(originalSession.getVar('userId')).toBe('123');
     expect(originalSession.getVar('name')).toBe('John');
