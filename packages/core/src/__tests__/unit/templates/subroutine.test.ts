@@ -36,9 +36,9 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine template with a simple sequence
     const subroutine = new Subroutine(
       new Agent()
-        .addSystem('You are a helpful assistant.')
-        .addUser('What is your name?')
-        .addAssistant('I am an AI assistant.'),
+        .system('You are a helpful assistant.')
+        .user('What is your name?')
+        .assistant('I am an AI assistant.'),
     );
 
     // Execute the subroutine
@@ -59,9 +59,9 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine that updates context
     const subroutine = new Subroutine(
       new Agent()
-        .addUser('Extract information')
-        .addAssistant('Information extracted')
-        .addTransform((session: Session<any>) => {
+        .user('Extract information')
+        .assistant('Information extracted')
+        .transform((session: Session<any>) => {
           return session.withVars({
             extractedData: { name: 'Alice', age: 30 },
           }) as Session<any>;
@@ -82,9 +82,9 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with retainMessages = false
     const hideMessagesSubroutine = new Subroutine(
       new Agent()
-        .addSystem('Internal system message')
-        .addUser('Internal user message')
-        .addAssistant('Internal assistant message'),
+        .system('Internal system message')
+        .user('Internal user message')
+        .assistant('Internal assistant message'),
       { retainMessages: false },
     );
 
@@ -99,9 +99,9 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with retainMessages = true (default)
     const showMessagesSubroutine = new Subroutine(
       new Agent()
-        .addSystem('Visible system message')
-        .addUser('Visible user message')
-        .addAssistant('Visible assistant message'),
+        .system('Visible system message')
+        .user('Visible user message')
+        .assistant('Visible assistant message'),
     );
 
     // Execute the subroutine
@@ -129,14 +129,14 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine that uses parent context (via default initWith)
     const subroutine = new Subroutine<Attrs, SharedContext>(
       new Agent<SharedContext>()
-        .addUser(
+        .user(
           new (class extends Source<string> {
             async getContent(session: Session<SharedContext>) {
               return `Hello, ${session.getVar('userName')}!`;
             }
           })(),
         )
-        .addAssistant('Nice to meet you!'),
+        .assistant('Nice to meet you!'),
     );
 
     // Execute the subroutine with the parent session
@@ -165,9 +165,9 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with a transformer *inside* the Sequence
     const subroutine = new Subroutine(
       new Agent()
-        .addUser('What is the weather in Tokyo?')
-        .addAssistant(Source.llm())
-        .addTransform((session: Session<any>) => {
+        .user('What is the weather in Tokyo?')
+        .assistant(Source.llm())
+        .transform((session: Session<any>) => {
           const lasMessage = session.getLastMessage();
           const content = lasMessage?.content || '';
           const tempMatch = content.match(/(\d+)°C/);
@@ -205,9 +205,9 @@ describe('SubroutineTemplate', () => {
     // Create an inner subroutine
     const innerSubroutine = new Subroutine(
       new Agent()
-        .addUser('Inner subroutine question')
-        .addAssistant('Inner subroutine answer')
-        .addTransform((session: Session<any>) => {
+        .user('Inner subroutine question')
+        .assistant('Inner subroutine answer')
+        .transform((session: Session<any>) => {
           return session.withVars({
             inner: 'completed',
           }) as Session<any>;
@@ -217,10 +217,10 @@ describe('SubroutineTemplate', () => {
     // Create an outer subroutine that includes the inner one
     const outerSubroutine = new Subroutine(
       new Agent()
-        .addUser('Outer subroutine start')
+        .user('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
-        .addUser('Outer subroutine end')
-        .addTransform((session: Session<any>) => {
+        .user('Outer subroutine end')
+        .transform((session: Session<any>) => {
           return session.withVars({
             outer: 'completed',
           }) as Session<any>;
@@ -252,8 +252,8 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with isolatedContext = true
     const isolatedSubroutine = new Subroutine<any, any>(
       new Agent()
-        .addUser('Testing isolated context')
-        .addTransform((session: Session<any>) => {
+        .user('Testing isolated context')
+        .transform((session: Session<any>) => {
           // Try to access parent context (should be undefined due to isolated context)
           const parentData = session.getVar('parentData');
           // Set new context in the isolated context
@@ -285,8 +285,8 @@ describe('SubroutineTemplate', () => {
     // --- Test shared context (default) ---
     const sharedSubroutine = new Subroutine<any, any>(
       new Agent()
-        .addUser('Testing shared context')
-        .addTransform((session: Session<any>) => {
+        .user('Testing shared context')
+        .transform((session: Session<any>) => {
           // Try to access parent context (should be visible via default initWith)
           const parentData = session.getVar('parentData');
           // Set new context in the shared context
@@ -331,7 +331,7 @@ describe('SubroutineTemplate', () => {
 
     // Create a subroutine with the custom initWith function
     const subroutine = new Subroutine(
-      new Agent().addUser(
+      new Agent().user(
         new (class extends Source<string> {
           async getContent(session: Session) {
             const userName = session.getVar('userName');
@@ -421,8 +421,8 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine with the custom squashWith function
     const subroutine = new Subroutine(
       new Agent()
-        .addUser('Updating user profile')
-        .addTransform((session: Session) => {
+        .user('Updating user profile')
+        .transform((session: Session) => {
           // This context will be processed by squashWith
           return session.withVars({
             user: { age: 31, occupation: 'Engineer' }, // Update age, add occupation
@@ -458,9 +458,9 @@ describe('SubroutineTemplate', () => {
   it('should support adding multiple templates via method chaining', async () => {
     // Create a subroutine template with method chaining
     const subroutine = new Agent()
-      .addSystem('You are a helpful assistant.')
-      .addUser('What is your name?')
-      .addAssistant('I am an AI assistant.');
+      .system('You are a helpful assistant.')
+      .user('What is your name?')
+      .assistant('I am an AI assistant.');
 
     // Execute the subroutine
     const session = await subroutine.execute(createSession());
@@ -502,9 +502,9 @@ describe('SubroutineTemplate', () => {
     // Create an inner subroutine with method chaining
     const innerSubroutine = new Subroutine(
       new Agent()
-        .addUser('Inner subroutine question')
-        .addAssistant('Inner subroutine answer')
-        .addTransform((session: Session<any>) => {
+        .user('Inner subroutine question')
+        .assistant('Inner subroutine answer')
+        .transform((session: Session<any>) => {
           return session.withVars({ inner: 'completed' });
         }),
     );
@@ -512,10 +512,10 @@ describe('SubroutineTemplate', () => {
     // Create an outer subroutine that includes the inner one via method chaining
     const outerSubroutine = new Subroutine(
       new Agent()
-        .addUser('Outer subroutine start')
+        .user('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
-        .addUser('Outer subroutine end')
-        .addTransform((session: Session<any>) => {
+        .user('Outer subroutine end')
+        .transform((session: Session<any>) => {
           return session.withVars({ outer: 'completed' });
         }),
     );
@@ -539,15 +539,15 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine
     const nestedSubroutine = new Subroutine(
       new Agent()
-        .addUser('Message from nested subroutine')
-        .addAssistant('Response from nested subroutine'),
+        .user('Message from nested subroutine')
+        .assistant('Response from nested subroutine'),
     );
 
     // Create a sequence that includes the subroutine
     const sequence = new Agent()
-      .addSystem('Main sequence system message')
+      .system('Main sequence system message')
       .add(nestedSubroutine) // Add the subroutine
-      .addUser('Message after nested subroutine');
+      .user('Message after nested subroutine');
 
     // Execute the sequence
     const session = await sequence.execute(createSession());
@@ -565,8 +565,8 @@ describe('SubroutineTemplate', () => {
     // Create a subroutine to be used in the loop body
     const loopSubroutine = new Subroutine(
       new Agent()
-        .addUser('Message from loop subroutine')
-        .addTransform((session: Session<any>) => {
+        .user('Message from loop subroutine')
+        .transform((session: Session<any>) => {
           return session.withVars({
             // count at the end of agent is 1, 2, 3...
             count: session.getVar('count', 0) + 1,

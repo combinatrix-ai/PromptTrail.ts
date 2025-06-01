@@ -5,10 +5,12 @@ import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
 import { Loop } from './composite/loop';
+import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
 import { Assistant } from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
+import { Structured } from './primitives/structured';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
 import { User } from './primitives/user';
@@ -36,11 +38,11 @@ import { ISubroutineTemplateOptions } from './template_types';
  * of dynamic and interactive conversational experiences.
  * @example
  * const agent = new Agent()
- *   .addSystem('System message')
- *   .addUser('User message')
- *   .addAssistant('Assistant message')
- *   .addLoop(userInput => userInput !== 'exit', userInputTemplate)
- *   .addSubroutine(subroutineTemplate);
+ *   .system('System message')
+ *   .user('User message')
+ *   .assistant('Assistant message')
+ *   .loop(agent => agent.user('Input'), condition)
+ *   .subroutine(agent => agent.user('Sub'));
  */
 export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   implements Template<TM, TC>, Fluent<TM, TC>
@@ -56,20 +58,20 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     content: string,
   ) {
-    return new Agent<TC, TM>().addSystem(content);
+    return new Agent<TC, TM>().system(content);
   }
 
   static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     contentOrSource?: string | Source<string>,
   ) {
-    return new Agent<TC, TM>().addUser(contentOrSource);
+    return new Agent<TC, TM>().user(contentOrSource);
   }
 
   static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
-    return new Agent<TC, TM>().addAssistant(
+    return new Agent<TC, TM>().assistant(
       contentOrSource,
       validatorOrOptions,
     );
@@ -82,29 +84,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  addSystem(content: string) {
+  system(content: string) {
     this.root.add(new System(content));
     return this;
   }
 
-  system(content: string) {
-    return this.addSystem(content);
-  }
-
-  addUser(contentOrSource?: string | Source<string>) {
-    this.root.add(new User(contentOrSource));
-    return this;
-  }
-
   user(contentOrSource?: string | Source<string>) {
-    return this.addUser(contentOrSource);
-  }
-
-  addAssistant(
-    contentOrSource?: string | Source<ModelOutput> | Source<string>,
-    validatorOrOptions?: IValidator | ValidationOptions,
-  ) {
-    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
+    this.root.add(new User(contentOrSource));
     return this;
   }
 
@@ -112,46 +98,26 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
-    return this.addAssistant(contentOrSource, validatorOrOptions);
-  }
-
-  addConditional(
-    condition: (s: Session<TC, TM>) => boolean,
-    thenTemplate: Template<TM, TC>,
-    elseTemplate?: Template<TM, TC>,
-  ) {
-    this.root.add(
-      new Conditional({
-        condition: condition,
-        thenTemplate: thenTemplate,
-        elseTemplate: elseTemplate,
-      }),
-    );
+    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
     return this;
   }
 
-  addTransform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
+
+  transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.add(new Transform(transform));
     return this;
   }
 
-  addLoop(body: Template<TM, TC>, loopIf: (s: Session<TC, TM>) => boolean) {
-    this.root.add(new Loop({ bodyTemplate: body, loopIf: loopIf }));
+  parallel(template: Parallel<TM, TC>) {
+    this.root.add(template);
     return this;
   }
 
-  addSubroutine(
-    tpl: Template<TM, TC> | Template<TM, TC>[],
-    opts?: ISubroutineTemplateOptions<TM, TC>,
-  ) {
-    this.root.add(new Subroutine(tpl, opts));
+  structured(template: Structured<TM, TC>) {
+    this.root.add(template);
     return this;
   }
 
-  addSequence(parts: Template<TM, TC>[]) {
-    this.root.add(new Sequence(parts));
-    return this;
-  }
 
   /** Function-based template builders -------------------------------------------------- */
 
@@ -174,6 +140,30 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   loopForever(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
     return this.loop(builderFn, true);
+  }
+
+  conditional(
+    condition: (s: Session<TC, TM>) => boolean,
+    thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+  ) {
+    const thenAgent = new Agent<TC, TM>();
+    const thenTemplate = thenBuilderFn(thenAgent).build();
+
+    let elseTemplate: Template<TM, TC> | undefined;
+    if (elseBuilderFn) {
+      const elseAgent = new Agent<TC, TM>();
+      elseTemplate = elseBuilderFn(elseAgent).build();
+    }
+
+    this.root.add(
+      new Conditional({
+        condition: condition,
+        thenTemplate: thenTemplate,
+        elseTemplate: elseTemplate,
+      }),
+    );
+    return this;
   }
 
   subroutine(

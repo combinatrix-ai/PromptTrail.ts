@@ -239,7 +239,7 @@ describe('Loop Template', () => {
     const loopTemplate = new Loop({
       bodyTemplate: new Agent()
         .add(new User('Adding to counter'))
-        .addTransform((session) => {
+        .transform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
             (session.getVar('counter') as number | undefined) ?? 0;
@@ -273,12 +273,14 @@ describe('Loop Template', () => {
 
     // Create the loop template with a conditional branch
     const loopTemplate = new Loop({
-      bodyTemplate: new Agent().add(new User('User input')).addConditional(
-        // Condition based on iteration count
-        () => counter % 2 === 0, // True on even iterations
-        new System('This is an even iteration'),
-        new System('This is an odd iteration'),
-      ),
+      bodyTemplate: new Agent()
+        .add(new User('User input'))
+        .conditional(
+          // Condition based on iteration count
+          () => counter % 2 === 0, // True on even iterations
+          agent => agent.add(new System('This is an even iteration')),
+          agent => agent.add(new System('This is an odd iteration')),
+        ).build(),
       loopIf: () => {
         counter++;
         return counter < 3; // Continue until 3 iterations

@@ -183,9 +183,9 @@ import { Agent, Source, createSession } from '@prompttrail/core';
 
 // Create a simple conversation template using the Agent builder
 const chat = new Agent()
-  .addSystem("I'm a helpful assistant.")
-  .addUser("What's TypeScript?")
-  .addAssistant(
+  .system("I'm a helpful assistant.")
+  .user("What's TypeScript?")
+  .assistant(
     Source.llm()
       .openai()
       .apiKey(process.env.OPENAI_API_KEY!)
@@ -246,7 +246,7 @@ console.log('last message:', session.getLastMessage()?.content);
     - For example, `session.setVars({ userName: 'Alice' })` or `session.extendVars({ userName: 'Alice' })`
       - `extend` lets you append to existing values.
   - Build templates with `Agent.create()`.
-    - The fluent API lets you compose templates: `Agent.create().addSystem(...).loopIf(...)`.
+    - The fluent API lets you compose templates: `Agent.create().system(...).loop(...)`.
     - You can also write `Agent(new Loop([System(...), User(...), Assistant(...)]))`.
   - Text generation functions work the same way.
     - `Source.create().useLLM().useOpenAI().setTemperature(...)`
@@ -299,8 +299,8 @@ console.log('last message:', session.getLastMessage()?.content);
 - **Agent**: A fluent builder (`new Agent()`) for composing templates sequentially.
   ```typescript
   import { Agent } from '@prompttrail/core';
-  const myAgent = new Agent().addSystem('System prompt').addUser('User query');
-  // .addAssistant(...) etc.
+  const myAgent = new Agent().system('System prompt').user('User query');
+  // .assistant(...) etc.
   ```
 - **Source**: Defines where content comes from (`StaticSource`, `LlmSource`, `SchemaSource`, `CLISource`, `CallbackSource`, `RandomSource`, `ListSource`). Passed to templates like `User` or `Assistant`.
   ```typescript
@@ -326,9 +326,9 @@ import {
 
 // Example of a simple template execution using Agent
 const simpleTemplate = new Agent()
-  .addSystem('Welcome to the conversation!')
-  .addUser('Tell me about TypeScript.')
-  .addAssistant(
+  .system('Welcome to the conversation!')
+  .user('Tell me about TypeScript.')
+  .assistant(
     new StaticSource('TypeScript is a typed superset of JavaScript.'),
   ); // Use StaticSource for fixed response
 
@@ -425,13 +425,13 @@ interface UserInfo extends Vars {
 
 // Create a personalized chat using Agent
 const techSupportFlow = new Agent<UserInfo>()
-  .addSystem("You're a helpful programming assistant.")
+  .system("You're a helpful programming assistant.")
   // Interpolate context: ${name}, ${language}
-  .addAssistant(`Hello, \${name}! Ready to dive into \${language}?`)
-  // Add a user message directly
-  .addUser("What's tricky about type inference?")
+  .assistant(`Hello, \${name}! Ready to dive into \${language}?`)
+  // User message directly
+  .user("What's tricky about type inference?")
   // Generate response using LLM
-  .addAssistant(openAIgenerateOptions);
+  .assistant(openAIgenerateOptions);
 
 // Execute with initial context
 const session = await techSupportFlow.execute(
@@ -481,18 +481,17 @@ interface QuizVars extends Vars {
 }
 
 const quiz = new Agent<QuizVars>() // Use Agent as the main builder
-  .addSystem("You're a TypeScript quiz bot.")
-  // Greet based on time using addConditional
-  .addConditional(
+  .system("You're a TypeScript quiz bot.")
+  // Greet based on time using conditional
+  .conditional(
     (session) => new Date().getHours() < 12,
-    new Assistant('Good morning!'),
-    new Assistant('Good afternoon!'),
+    (agent) => agent.assistant('Good morning!'),
+    (agent) => agent.assistant('Good afternoon!'),
   )
-  // Quiz loop using addLoop
-  .addLoop(
-    // Body of the loop is another Agent
-    new Agent()
-      .addUser(
+  // Quiz loop
+  .loop(
+    (agent) => agent
+      .user(
         new ListSource([
           // Use ListSource for predefined questions/statements
           "What's TypeScript?",
@@ -500,7 +499,7 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
           "I'm satisfied now.", // Loop exit trigger
         ]),
       )
-      .addAssistant(openAIgenerateOptions), // LLM answers the question
+      .assistant(openAIgenerateOptions), // LLM answers the question
     // Loop condition: Continue as long as the last user message doesn't indicate satisfaction
     (session) => {
       const lastUserMessage = session.getMessagesByType('user').pop();
@@ -509,13 +508,12 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
     },
   )
   // Subroutine to summarize the quiz
-  .addSubroutine(
-    // Subroutine body (an Agent)
-    new Agent()
-      .addSystem(
+  .subroutine(
+    (agent) => agent
+      .system(
         'You are an educational coach. Write a three-sentence summary of the conversation and suggest one topic for further study.',
       )
-      .addAssistant(openAIgenerateOptions), // LLM generates the summary
+      .assistant(openAIgenerateOptions), // LLM generates the summary
     {
       // Subroutine options
       // initWith: (optional) Customize how the subroutine session starts. Default clones parent.
@@ -535,11 +533,9 @@ const quiz = new Agent<QuizVars>() // Use Agent as the main builder
     },
   )
   // Final message, potentially using the summary from context
-  .addAssistant(
-    new Assistant(
-      (session) =>
-        `Quiz finished! 🚀\n**Summary:**\n${session.getVar('summary', 'No summary generated.')}`,
-    ),
+  .assistant(
+    (session) =>
+      `Quiz finished! 🚀\n**Summary:**\n${session.getVar('summary', 'No summary generated.')}`,
   );
 
 // Execute the quiz
@@ -634,9 +630,9 @@ const initialSession = createSession<MyVarsSession, MyAttrsSession>({
 
 // Templates use ${variable} syntax for context interpolation
 const template = new Agent<MyVarsSession, MyAttrsSession>() // Specify types for Agent
-  .addSystem(`I'll use \${tone} language to explain \${topics[0]}`)
-  .addAssistant(`Let me explain \${topics[0]} in \${language}`)
-  .addUser(`Can you also cover \${topics[1]}?`);
+  .system(`I'll use \${tone} language to explain \${topics[0]}`)
+  .assistant(`Let me explain \${topics[0]} in \${language}`)
+  .user(`Can you also cover \${topics[1]}?`);
 
 // Execute the template with the initial session
 const sessionAfterTemplate = await template.execute(initialSession);
@@ -719,9 +715,9 @@ interface ServerInfoVars extends Vars {
 
 // Example: Extract data using regex and update context
 const dataExtractionAgent = new Agent<ServerInfoVars>()
-  .addUser('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
-  // Add a transform step
-  .addTransform((session) => {
+  .user('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
+  // Transform step
+  .transform((session) => {
     const lastMessageContent = session.getLastMessage()?.content || '';
     const updatedVars: Partial<ServerInfoVars> = {}; // Store updates
 
@@ -818,10 +814,10 @@ const validationOptions: ValidationOptions = {
 
 // Create an Agent that asks for a pet name and validates the response
 const petNameAgent = new Agent()
-  .addSystem('You are a helpful assistant that suggests pet names.')
-  .addUser('Suggest a single, short, appropriate name for a pet cat.')
-  // Add assistant with validation options
-  .addAssistant(openAIgenerateOptions, validationOptions);
+  .system('You are a helpful assistant that suggests pet names.')
+  .user('Suggest a single, short, appropriate name for a pet cat.')
+  // Assistant with validation options
+  .assistant(openAIgenerateOptions, validationOptions);
 
 // Execute (will retry/error if LLM response fails validation)
 try {
@@ -851,9 +847,9 @@ const customValidator = new CustomValidator(
 
 // Use custom validator with Assistant
 const shortAnswerAgent = new Agent()
-  .addSystem('Answer concisely.')
-  .addUser('Explain quantum physics briefly.')
-  .addAssistant(openAIgenerateOptions, {
+  .system('Answer concisely.')
+  .user('Explain quantum physics briefly.')
+  .assistant(openAIgenerateOptions, {
     validator: customValidator,
     maxAttempts: 2,
   });
@@ -904,13 +900,13 @@ const structuredProductTemplate = new Structured({
 
 // Use the Structured template within an Agent
 const productExtractorAgent = new Agent()
-  .addSystem(
+  .system(
     'Extract product information from the user query into the provided schema.',
   )
-  .addUser(
+  .user(
     'Tell me about the Pixel 8. It costs $699, is in stock, and has a great camera and AI features.',
   )
-  // Add the Structured template - it will generate an assistant message
+  // The Structured template - it will generate an assistant message
   // containing the structured data if successful.
   .add(structuredProductTemplate);
 
@@ -977,10 +973,10 @@ const toolEnhancedOptions = openAIgenerateOptions
 
 // Create an Agent that might use the tool
 const weatherAgent = new Agent()
-  .addSystem("I'm a weather assistant. Use the available tools.")
-  .addUser("What's the weather like in New York?")
+  .system("I'm a weather assistant. Use the available tools.")
+  .user("What's the weather like in New York?")
   // The assistant might respond directly or make a tool call
-  .addAssistant(toolEnhancedOptions);
+  .assistant(toolEnhancedOptions);
 
 // Execute the agent
 const session = await weatherAgent.execute(createSession());
@@ -1035,11 +1031,11 @@ const optionsWithMCP = createGenerateOptions({
 
 // Create an Agent that might leverage the MCP tool
 const mcpAgent = new Agent()
-  .addSystem(
+  .system(
     'You are a helpful assistant with access to research tools via MCP.',
   )
-  .addUser('Can you search for the latest papers on LLM reasoning?')
-  .addAssistant(optionsWithMCP); // Use the options with MCP configured
+  .user('Can you search for the latest papers on LLM reasoning?')
+  .assistant(optionsWithMCP); // Use the options with MCP configured
 
 // Execute the agent
 try {
@@ -1075,9 +1071,9 @@ const browserOptions = createGenerateOptions({
 
 // Use with templates as normal in your frontend code
 const browserAgent = new Agent()
-  .addSystem('You are a helpful assistant running in the browser.')
-  .addUser('Hello from the browser!')
-  .addAssistant(browserOptions);
+  .system('You are a helpful assistant running in the browser.')
+  .user('Hello from the browser!')
+  .assistant(browserOptions);
 
 // Example execution (within an async function in your frontend code)
 async function runBrowserAgent() {

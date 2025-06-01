@@ -5,6 +5,7 @@ export { Composite } from './composite/composite';
 
 // Export concrete template implementations
 export { Loop } from './composite/loop';
+export { Parallel } from './composite/parallel';
 export { Sequence } from './composite/sequence';
 export { Subroutine } from './composite/subroutine';
 export { Assistant } from './primitives/assistant';
@@ -30,3 +31,11 @@ export type {
   NonInteractiveStepOptions,
   ScenarioConfig,
 } from './scenario';
+
+// Export Parallel template types
+export type {
+  ScoringFunction,
+  AggregationStrategy,
+  BuiltInStrategy,
+  Strategy,
+} from './composite/parallel';

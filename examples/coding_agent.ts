@@ -149,14 +149,14 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = new Agent().add(new System(systemPrompt)).addConditional(
+    const agent = new Agent().add(new System(systemPrompt)).conditional(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
       // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
-      new Agent().addUser(initialPrompt as string).addAssistant(this.llm),
+      agent => agent.user(initialPrompt as string).assistant(this.llm),
       // Otherwise, this is interactive mode
-      new Agent().addLoop(
-        new Agent().addUser(userCliSource).addAssistant(this.llm),
+      agent => agent.loop(
+        innerAgent => innerAgent.user(userCliSource).assistant(this.llm),
         (session) => {
           const lastUserMessage = session
             .getMessagesByType('user')

@@ -131,9 +131,9 @@ pnpm install -w -D <package-name>
 
    ```typescript
    const agent = new Agent()
-     .addSystem('...')
-     .addUser('...')
-     .addAssistant('...');
+     .system('...')
+     .user('...')
+     .assistant('...');
    ```
 
 3. **Factory Methods**: Use `.create()` pattern for object creation

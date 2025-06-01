@@ -283,18 +283,18 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should Agent have addXXXX methods', async () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
-    // Each have addSystem, addUser, addAssistant, addIf
+    // Each have system, user, assistant, conditional
     const sequence = new Agent()
-      .addSystem('This is automated API testing. Repeat what user says.')
-      .addUser('123456789')
-      .addAssistant(openAILLMSource)
-      .addConditional(
+      .system('This is automated API testing. Repeat what user says.')
+      .user('123456789')
+      .assistant(openAILLMSource)
+      .conditional(
         (session) => {
           const lastMessage = session.getLastMessage();
           return lastMessage!.content.toLowerCase().includes('123456789');
         },
-        new User('YES'),
-        new User('NO'),
+        agent => agent.user('YES'),
+        agent => agent.user('NO'),
       );
     const session = await sequence.execute(createSession());
     const messages = Array.from(session.messages);
@@ -308,21 +308,21 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Define the body of the loop as a Agent
     const loopBodySequence = new Agent<Vars<{ count: number }>>()
-      .addSystem('This is automated API testing. Repeat what user says.')
-      .addUser(userContentSource)
-      .addAssistant(openAILLMSource)
-      .addConditional((session: Session) => {
+      .system('This is automated API testing. Repeat what user says.')
+      .user(userContentSource)
+      .assistant(openAILLMSource)
+      .conditional((session: Session) => {
         // Add type annotation
         const lastMessage = session.getLastMessage();
         // Safely check lastMessage and its content
         return (
           lastMessage?.content?.toLowerCase().includes('123456789') ?? false
         );
-      }, new User('Condition MET: User said 123456789'));
+      }, agent => agent.user('Condition MET: User said 123456789'));
 
     // Define the exit condition for the loop
     // Add a transform to increment count in the loop body
-    const loopBodySequenceWithTransform = loopBodySequence.addTransform(
+    const loopBodySequenceWithTransform = loopBodySequence.transform(
       (session: Session<Vars<{ count: number }>>) => {
         const currentCount =
           (session.getVar('count') as number | undefined) ?? 0;
