@@ -1,163 +1,10 @@
 # 🚀 PromptTrail
 
-A type-safe, composable framework for building structured LLM conversations with various LLMs and tools.
+Type-safe, composable framework for building LLM conversations in TypeScript.
 
-PromptTrail helps TypeScript developers build robust, maintainable LLM applications with incremental strong typing, composable templates, and powerful validation tools. Built on Vercel's widely-adopted [ai-sdk](https://github.com/vercel/ai), PromptTrail leverages its ecosystem for LLM and tool interactions, enabling seamless integration with a broad range of language models and function calling capabilities.
-
-You can write agents with multigranular level templates, from simple chatbots to complex workflows, using a fluent API.
-PromptTrail is designed to be extensible and adaptable, allowing you to create custom templates and integrate with various LLMs and tools.
-
-You can write turn-by-turn conversation management (Agent Level):
-
-```typescript
-import { Agent } from '@prompttrail/core';
-const agent = Agent.system('You are a helpful assistant.')
-  .loop(
-    (l) =>
-      l
-        .user() // Use CLI for user input
-        .assistant(), // Use LLM for assistant responses
-    true, // Forever loop (You can also use `.loopForever()`)
-  )
-  .execute();
-```
-
-(Default: `OpenAI GPT-4o-mini` model for assistant, `CLI` for user input)
-
-Or, you can automate the conversation by defining the steps (Scenario Level):
-
-```typescript
-import { Scenario, Source } from '@prompttrail/core';
-import { tool } from 'ai';
-import { z } from 'zod';
-
-// Define your research tools
-const researchTools = {
-  searchDocs: tool({
-    description: 'Search documentation',
-    parameters: z.object({ query: z.string() }),
-    execute: async ({ query }) => ({ results: ['...'] }),
-  }),
-};
-
-const scenario = Scenario.system(
-  'You are a research assistant. Help users find information.',
-  {
-    tools: researchTools,
-    llmSource: Source.llm().openai({ model: 'gpt-4' }),
-  },
-)
-  .step('Ask the user for their question', { allow_interaction: true })
-  .step('Research the question using tools 2-3 times', { max_attempts: 6 })
-  .step('Provide a comprehensive answer')
-  .execute();
-```
-
-### How Scenario API Works
-
-The Scenario API provides a high-level, goal-oriented interface for building autonomous agents. Each step represents a goal that the LLM must accomplish using available tools:
-
-1. **Interactive Steps** (`allow_interaction: true`): The LLM must use the `ask_user` tool to get user input
-2. **Processing Steps**: The LLM uses provided tools autonomously to achieve the goal
-3. **Goal Validation**: Each step includes an automatic `check_goal` tool that the LLM uses to self-evaluate completion
-
-Behind the scenes, Scenario compiles to Agent-based subroutines with loops that continue until goals are satisfied or max attempts are reached.
-
-### Key Features
-
-- **Built-in Tools**:
-  - `ask_user`: Get user input (only in interactive steps)
-  - `check_goal`: LLM self-evaluates goal completion
-  - Custom tools: Your domain-specific tools
-- **Step Control**:
-  - `max_attempts`: Limit iterations per step (default: 10)
-  - `is_satisfied`: Custom validation function
-  - `interaction_prompt`: Custom prompt for user interaction
-- **Convenience Methods**:
-  - `.interact()`: Interactive step shorthand
-  - `.process()`: Processing step shorthand
-  - `.collect()`: Collect specific information
-  - `.decide()`: Make decisions with branches
-
-We're focusing on providing sensible defaults for the most common use cases, but you can customize everything.
-
-```typescript
-  .assistant() // Uses default Source.llm() with OpenAI GPT-4o-mini
-```
-
-You can pass `Source` objects, which yield ModelOutput or string content:
-
-```typescript
-  .assistant(Source.llm()) // Explicit default LLM source
-```
-
-You can impersonate the assistant with user input:
-
-```typescript
-  .assistant(Source.cli()) // Use CLI response to impersonate the assistant
-```
-
-You can customize LLM settings with the `Source` object:
-
-```typescript
-  .assistant(
-    Source.llm()
-      .openai()
-      .apiKey(process.env.OPENAI_API_KEY!)
-      .modelName('gpt-4o-mini')
-      .temperature(0.7)
-  )
-```
-
-Or, you can use `ai-sdk` style configuration to set up everything at once:
-
-```typescript
-  .assistant(Source.llm(
-    {
-      provider: {
-        type: 'openai',
-        apiKey: process.env.OPENAI_API_KEY!,
-        modelName: 'gpt-4o-mini',
-      },
-      temperature: 0.7,
-    }
-  ))
-```
-
-This also applies to `User` templates:
-
-```typescript
-  .assistant("Hello!")
-  .user(Source.cli().prompt('What\'s your name?')) // CLI prompt for user input
-```
-
-This will appear like this in the terminal:
-
-```bash
-Assistant: Hello!
-What's your name? >
-```
-
-You can interact with the user in a more structured way, by defining the data structure of the conversation:
-
-## ✨ Features
-
-- 🔒 [**TypeScript-First**](#-typescript-first-design) - Full TypeScript support with inference and generics
-- 📝 [**Template-Based**](#%EF%B8%8F-building-templates) - Composable conversation building blocks
-- 🧩 [**Composable Patterns**](#-complex-control-flow) - Mix and match templates for complex flows using the `Agent` builder
-- 🔌 [**Multi-Provider**](#-model-configuration) - Works with OpenAI, Anthropic, and extensible for more
-- 🔄 [**Stateless Architecture**](#-session-management) - Immutable sessions for predictable state management
-- 🌊 [**Streaming Support**](#-streaming-responses) - Real-time response streaming
-- 📊 [**Vars Transformation**](#-vars-transformation) - Modify session vars during execution using `Transform`
-- 🛡️ [**Validation**](#%EF%B8%8F-validation) - Validate both user input and LLM responses using `Source` options or `Assistant` parameters
-- 🧪 [**Structured Output**](#-structured-output) - Force LLMs to produce structured outputs using the `Structured` template and Zod schemas
-- 🛠️ [**Tool Integration**](#%EF%B8%8F-tool-integration) - First-class support for function calling via `ai-sdk`
-- 🔌 [**MCP Support**](#-mcp-support) - Integration with Anthropic's Model Context Protocol via `generateOptions`
-- 🌐 [**Browser Compatible**](#-browser-support) - Works in both Node.js and browser environments
+Built on [Vercel's ai-sdk](https://github.com/vercel/ai), PromptTrail provides a fluent API for creating structured conversations with immutable state management.
 
 ## 🔧 Installation
-
-> **Note:** This package is not yet published on npm. Install directly from GitHub:
 
 ```bash
 # Using pnpm (recommended)
@@ -165,223 +12,206 @@ pnpm add github:combinatrix-ai/PromptTrail.ts
 
 # Using npm
 npm install github:combinatrix-ai/PromptTrail.ts
-
-# Using yarn
-yarn add github:combinatrix-ai/PromptTrail.ts
 ```
-
-## Package Structure
-
-- `@prompttrail/core`: Core library for building LLM applications.
-- `@prompttrail/react`: React components for building LLM applications (coming soon)
 
 ## 🚀 Quick Start
 
-```typescript
-// Usually all imports are from @prompttrail/core
-import { Agent, Source, Session } from '@prompttrail/core';
+### 30-Second Example
 
-// Create a simple conversation template using the Agent builder
+```typescript
+import { Agent } from '@prompttrail/core';
+
 const chat = Agent.create()
-  .system("I'm a helpful assistant.")
+  .system("You're a helpful assistant.")
   .user("What's TypeScript?")
+  .assistant(); // Uses OpenAI GPT-4o-mini by default
+
+const session = await chat.execute();
+console.log(session.getLastMessage()?.content);
+```
+
+### Interactive Chat Loop
+
+```typescript
+import { Agent } from '@prompttrail/core';
+
+const agent = Agent.create()
+  .system('You are a helpful assistant.')
+  .loop(
+    (l) =>
+      l
+        .user() // CLI input from user
+        .assistant(), // LLM response
+  );
+
+await agent.execute(); // Runs forever until user exits
+```
+
+### Customizing the LLM
+
+```typescript
+import { Agent, Source } from '@prompttrail/core';
+
+const agent = Agent.create()
+  .system('You are a creative writer.')
+  .user('Write a haiku about TypeScript.')
   .assistant(
     Source.llm()
       .openai()
-      .apiKey(process.env.OPENAI_API_KEY!)
-      .model('gpt-4o-mini')
-      .temperature(0.7),
+      .model('gpt-4')
+      .temperature(0.9)
+      .apiKey(process.env.OPENAI_API_KEY),
   );
 
-// Execute the template
-const session = await chat.execute(
-  Session.debug(), // Enable console logging of the conversation
-);
-// Console Output:
-//     System: I'm a helpful assistant.
-//     User: What's TypeScript?
-//     Assistant: TypeScript is a superset of JavaScript that ...
-
-// Access the conversation state with the session object
-console.log('last message:', session.getLastMessage()?.content);
-//     last message: TypeScript is a superset of JavaScript that ...
+await agent.execute();
 ```
 
-## 📘 Usage
+## ✨ Key Features
 
-### Core Concepts
+- **🔒 TypeScript-First** - Full type safety with inference
+- **🧩 Composable** - Mix and match conversation patterns
+- **🔄 Immutable** - Predictable state management
+- **🔌 Multi-Provider** - OpenAI, Anthropic, Google support
+- **🛠️ Tool Integration** - Function calling via ai-sdk
+- **🌊 Streaming** - Real-time response streaming
+- **🛡️ Validation** - Input/output validation with retries
+- **🧪 Structured Output** - Force LLMs to return typed data
 
-- In PromptTrail, all conversation state is stored in a `Session` object.
-  - `Session` is an immutable object with `vars` and `messages`.
-    - `vars` is a structured object that holds conversation state.
-      - You can store formatted LLM responses or external data for later use.
-        - For example, if `session.vars == { userName: 'Alice' }`, writing `Hi ${userName}!` becomes `Hi Alice!`.
-        - We'll show how to save data to `vars` later.
-    - `messages` is an immutable array of conversation history.
-      - For example, `[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`.
-      - Messages can include `attrs` metadata.
-        - For instance `{ role: 'user', content: 'Hello!', attrs: { timestamp: "2025-03-25T12:00:00Z" } }` attaches a timestamp.
-        - We'll cover how to save data to `attrs` later.
-- Because `Session` uses `vars` and `attrs` types, TypeScript can safely infer conversation state.
-  - ```
-      type UserVars = { userName: string; userId: string; } extends Vars;
-      type UserAttrs = { timestamp: number; customRole: string; } extends Attrs;
-      const session = Session.create<UserVars, UserAttrs>();
-    ```
+## 📘 Core Concepts
 
-### API Convention
+### Session & Variables
 
-- PromptTrail is designed so typing the object name gives autocompletion.
-
-  - Every object has a `[Thing].create()` factory method.
-    - For example, `Session.create()`, `Agent.create()`.
-  - Use `withVar()` or `withVars()` to update Session vars (returns new immutable session).
-    - `withVar()` sets a single key-value pair
-    - `withVars()` merges multiple key-value pairs
-      - `session.withVar('userName', 'Bob')` // Sets userName to 'Bob'
-      - `session.withVars({ userName: 'Alice', age: 20 })` // Merges multiple values
-  - Build templates with `Agent.create()`.
-    - The fluent API lets you compose templates: `Agent.create().system(...).loop(...)`.
-    - You can also write `Agent.create(new Loop([System(...), User(...), Assistant(...)])).
-  - Text generation functions work the same way.
-    - `Source.create().useLLM().useOpenAI().setTemperature(...)`
-    - Or:
-      - `Source.llm().openai().temperature(...)` // Modern factory API
-      - `Source.cli().prompt(...)` // Modern factory API
-
-- **Session**: Represents a conversation with `vars` and `messages`. Immutable.
-
-  ```typescript
-  import { Session } from '@prompttrail/core';
-  const session = Session.create(); // Creates an empty session
-  const sessionWithVars = Session.create({ vars: { userName: 'Alice' } });
-
-  // With type safety for complex applications
-  type UserContext = { userId: string; role: string };
-  const typedSession = Session.create<UserContext>({
-    vars: { userId: '123', role: 'admin' },
-  });
-  ```
-
-  - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
-    ```typescript
-    import { Assistant } from '@prompttrail/core';
-    type UserVars = { userName: string; userId: string };
-    // Usage in interpolation:
-    const greeting = new Assistant('Hi ${userName}!'); // Resolves to "Hi Alice!" if vars has userName: 'Alice'
-    // Accessing values: session.getVar('userId')
-    ```
-  - **Messages**: An immutable array of conversation history. `[{role: 'user', content: 'Hello!'}, {role: 'assistant', content: 'Hi!'}...]`.
-    ```typescript
-    const messages = [
-      { type: 'system', content: 'You are helpful.' },
-      { type: 'user', content: 'Hello!' },
-      { type: 'assistant', content: 'Hi there!' },
-    ];
-    const sessionWithMessages = Session.create({ messages });
-    ```
-    - **Attrs**: Optional read-only data (`Attrs<T>`) attached to messages. Used for storing additional information (e.g., non-default roles, timestamps).
-      ```typescript
-      type MessageAttrs = { timestamp: number; customRole: string };
-      const messageWithMeta = {
-        type: 'user',
-        content: 'User input',
-        attrs: {
-          timestamp: Date.now(),
-          customRole: 'tester',
-        },
-      };
-      // Access: messageWithMeta.attrs.timestamp
-      ```
-
-- **Template**: A reusable piece of conversation logic (`System`, `User`, `Assistant`, `Conditional`, `Loop`, `Transform`, `Structured`, `Subroutine`, `Sequence`, `Agent`).
-  ```typescript
-  import { System } from '@prompttrail/core';
-  const systemPrompt = new System('You are a helpful AI assistant.');
-  ```
-- **Agent**: A fluent builder (`Agent.create()`) for composing templates sequentially.
-  ```typescript
-  import { Agent } from '@prompttrail/core';
-  const myAgent = Agent.create().system('System prompt').user('User query');
-  // .assistant(...) etc.
-  ```
-- **Source**: Defines where content comes from. Use the `Source` namespace for factory methods (`Source.literal()`, `Source.llm()`, `Source.cli()`, `Source.callback()`, `Source.random()`, `Source.list()`). Passed to templates like `User` or `Assistant`.
-  ```typescript
-  import { Source, User } from '@prompttrail/core';
-  const staticUserMessage = new User(
-    Source.literal('This is a fixed user message.'),
-  );
-  ```
-- **GenerateOptions**: Configuration for LLM generation (provider, model, temperature, tools, etc.). Used by `LlmSource` and `SchemaSource`.
-  ```typescript
-  import { createGenerateOptions, Assistant } from '@prompttrail/core';
-  const options = createGenerateOptions({ provider: { type: 'openai', ... } });
-  const assistantResponse = new Assistant(options); // Uses LlmSource internally
-  ```
+Sessions store conversation state with type-safe variables:
 
 ```typescript
-import {
-  Agent,
-  Session,
-  createGenerateOptions,
-  Source,
-} from '@prompttrail/core';
+import { Session } from '@prompttrail/core';
 
-// Example of a simple template execution using Agent
-const simpleTemplate = Agent.create()
-  .system('Welcome to the conversation!')
-  .user('Tell me about TypeScript.')
-  .assistant(Source.literal('TypeScript is a typed superset of JavaScript.')); // Use Source.literal() for fixed response
-
-const session = await simpleTemplate.execute(
-  Session.debug().withVars({
-    // Vars are type-safe if generics are provided
-    userId: 'user-123',
-    language: 'TypeScript',
-  }),
-);
-```
-
-### 🔒 TypeScript-First Design
-
-PromptTrail provides a natural progression from simple scripts to fully-typed applications. Start simple and add types as your application grows.
-
-#### Getting Started (No Types Required)
-
-```typescript
-import { Session, Agent, Source } from '@prompttrail/core';
-
-// Start simple - types are inferred automatically
-const session = Session.create({ vars: { userName: 'Alice', level: 1 } });
-
-console.log(session.getVar('userName')); // Alice
-console.log(session.getVar('level')); // 1
-```
-
-#### Adding Structure with Type Inference
-
-```typescript
-// Session infers types from your data
-const gameSession = Session.withVars({
-  playerId: 'player123',
-  score: 0,
-  inventory: ['sword', 'potion'],
-  settings: { difficulty: 'normal', sound: true },
+// Variables for interpolation and state
+const session = Session.create({
+  vars: { userName: 'Alice', language: 'TypeScript' },
 });
 
-// Full type safety with auto-completion
-const currentScore = gameSession.getVar('score'); // number
-const items = gameSession.getVar('inventory'); // string[]
-const difficulty = gameSession.getVar('settings').difficulty; // string
+// Use variables in templates with ${variable} syntax
+const agent = Agent.create()
+  .system('Help ${userName} learn ${language}')
+  .user('Explain generics')
+  .assistant();
+
+await agent.execute(session);
 ```
 
-#### Explicit Types for Complex Applications
-
-When you need precise type control, specify your types explicitly:
+### Sources - Where Content Comes From
 
 ```typescript
-// Define your application types
-type UserProfile = {
+import { Source } from '@prompttrail/core';
+
+// Different content sources
+.user(Source.literal('Fixed text'))      // Static content
+.user(Source.cli())                      // User input from terminal
+.user(Source.random(['A', 'B', 'C']))    // Random selection
+.user(Source.callback(session => '...')) // Custom logic
+
+.assistant(Source.llm())                 // LLM generation (default)
+.assistant(Source.cli())                 // Manual assistant input
+```
+
+### Control Flow
+
+PromptTrail offers two ways to build agents with sophisticated control flow:
+
+#### 1. Agent Builder (Template-Level Control)
+
+```typescript
+import { Agent } from '@prompttrail/core';
+
+const agent = Agent.create()
+  .system('You are helpful.')
+
+  // Conditional logic
+  .conditional(
+    (session) => session.getVar('isVip'),
+    (agent) => agent.assistant('Welcome VIP!'),
+    (agent) => agent.assistant('Welcome!'),
+  )
+
+  // Loops with conditions
+  .loop(
+    (agent) => agent.user().assistant(),
+    (session) => session.getVar('continue', true),
+  )
+
+  // Subroutines with isolation
+  .subroutine(
+    (agent) =>
+      agent
+        .user('Process this data')
+        .assistant()
+        .transform((session) => session.withVar('processed', true)),
+    {
+      isolatedContext: true, // Fresh context
+      retainMessages: false, // Don't keep internal messages
+      squashWith: (parent, sub) =>
+        parent.withVar('result', sub.getVar('processed')),
+    },
+  )
+
+  // Parallel execution
+  .add(
+    new Parallel()
+      .addSource(Source.llm().openai(), 2) // Run OpenAI twice
+      .addSource(Source.llm().anthropic(), 1) // Run Anthropic once
+      .setStrategy('best'), // Keep best result
+  );
+```
+
+#### 2. Scenario API (Goal-Oriented Flow)
+
+```typescript
+import { Scenario } from '@prompttrail/core';
+
+const scenario = Scenario.system(
+  'You are a research assistant with access to tools.',
+)
+  .step("Get the user's research question", {
+    allow_interaction: true, // Uses built-in ask_user tool
+  })
+  .step('Research the topic thoroughly', {
+    max_attempts: 6,
+    is_satisfied: (session, goal) => {
+      // Custom validation for goal completion
+      const toolCalls = getToolCallsFromSession(session);
+      return toolCalls.length >= 3;
+    },
+  })
+  .step('Provide a comprehensive answer');
+```
+
+**Key Differences:**
+
+- **Agent**: Low-level template composition, full control
+- **Scenario**: High-level goal tracking with built-in tools (`ask_user`, `check_goal`)
+
+## 🛠️ Advanced Features
+
+### Session Typing
+
+PromptTrail provides **gradual typing** - start simple and add types as your app grows:
+
+```typescript
+// 1. Start simple - types inferred automatically
+const session = Session.create({
+  vars: { userName: 'Alice', score: 100 },
+});
+
+// 2. Convenience method with type inference
+const sessionWithVars = Session.withVars({
+  userId: 'user123',
+  role: 'admin',
+  preferences: { theme: 'dark', notifications: true },
+});
+
+// 3. Add explicit types when you need them
+type UserContext = {
   userId: string;
   role: 'admin' | 'user' | 'guest';
   preferences: {
@@ -391,749 +221,348 @@ type UserProfile = {
 };
 
 type MessageMeta = {
-  priority: 'low' | 'medium' | 'high';
   timestamp: number;
+  priority: 'low' | 'medium' | 'high';
+  source: 'user' | 'system';
 };
 
-// Specify types for session variables
-const typedSession = Session.withVarsType<UserProfile>().create({
-  vars: {
-    userId: 'user123',
-    role: 'admin',
-    preferences: { theme: 'dark', notifications: true },
-  },
-});
-
-// Add message metadata types when needed
-const fullSession = Session.withVarsType<UserProfile>()
+// 4. Type-only specification (no runtime values)
+const typedSession = Session.withVarsType<UserContext>()
   .withAttrsType<MessageMeta>()
   .create({
     vars: {
-      /* ... */
+      userId: 'user123',
+      role: 'admin',
+      preferences: { theme: 'dark', notifications: true },
     },
   });
 
-// Or add types to existing sessions
-const existingSession = Session.withVars({ count: 42, name: 'test' });
-const withMetadata = existingSession.withAttrsType<MessageMeta>();
+// 5. Mix and match approaches
+const session1 = Session.withVarsType<UserContext>().debug();
+const session2 = Session.withAttrsType<MessageMeta>().empty();
+const session3 = Session.withVars({ count: 42 }).withAttrsType<MessageMeta>();
+
+// 6. Type-safe access with full IntelliSense
+const userId = typedSession.getVar('userId'); // string
+const role = typedSession.getVar('role'); // 'admin' | 'user' | 'guest'
+const theme = typedSession.getVar('preferences').theme; // 'light' | 'dark'
+
+// 7. Template with typed interpolation
+const typedAgent = Agent.create<UserContext>()
+  .system('Welcome ${role} user ${userId}')
+  .user('My theme is ${preferences.theme}')
+  .assistant();
 ```
 
-#### Type-Safe Template Building
+### Tool Integration
 
 ```typescript
-const personalizedAgent = Agent.create()
-  .system('You are a helpful assistant for ${role} users')
-  .user('My name is ${userId}. Help me with TypeScript.')
-  .assistant(Source.llm().openai());
+import { tool } from 'ai';
+import { z } from 'zod';
 
-// Execute with typed session - variables are interpolated safely
-const result = await personalizedAgent.execute(typedSession);
-```
-
-### 🏗️ Building Templates
-
-Use the `Agent` builder for fluent template composition:
-
-```typescript
-import {
-  Agent,
-  Session,
-  createGenerateOptions,
-  User,
-  Assistant,
-  Vars,
-} from '@prompttrail/core';
-
-// Define generateOptions for OpenAI
-let openAIgenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY!,
-    modelName: 'gpt-4o-mini',
+const weatherTool = tool({
+  description: 'Get weather info',
+  parameters: z.object({
+    location: z.string(),
+  }),
+  execute: async ({ location }) => {
+    return { temp: 72, condition: 'sunny' };
   },
-  temperature: 0.7,
 });
 
-// Define vars type
-interface UserInfo extends Vars {
-  name: string;
-  language: string;
-}
-
-// Create a personalized chat using Agent
-const techSupportFlow = new Agent<UserInfo>()
-  .system("You're a helpful programming assistant.")
-  // Interpolate context: ${name}, ${language}
-  .assistant(`Hello, \${name}! Ready to dive into \${language}?`)
-  // User message directly
-  .user("What's tricky about type inference?")
-  // Generate response using LLM
-  .assistant(openAIgenerateOptions);
-
-// Execute with initial context
-const session = await techSupportFlow.execute(
-  Session.debug<UserInfo>().withVars({
-    name: 'Alice',
-    language: 'TypeScript',
-  }),
-);
-
-// Console Output:
-//     System: You're a helpful programming assistant.
-//     Assistant: Hello, Alice! Ready to dive into TypeScript?
-//     User: What's tricky about type inference?
-//     Assistant: Alice, one tricky part of type inference is when unions are involved—TypeScript can lose precision. Want me to walk you through an example?
+const agent = Agent.create()
+  .system('You can check weather.')
+  .user('Weather in SF?')
+  .assistant(Source.llm().openai().addTool('weather', weatherTool));
 ```
 
-#### 🔄 Complex control flow
-
-Combine `Agent`, `Conditional`, `Loop`, `Subroutine`, and `Transform` for intricate logic:
+### Structured Output
 
 ```typescript
-import {
-  Agent,
-  Sequence,
-  Loop,
-  Conditional,
-  Subroutine,
-  Transform,
-  System,
-  User,
-  Assistant,
-  Source,
-  Session,
-  createGenerateOptions,
-  Vars,
-  Attrs,
-} from '@prompttrail/core';
+import { Structured } from '@prompttrail/core';
+import { z } from 'zod';
 
-// Define generateOptions (assuming openAIgenerateOptions is defined elsewhere)
+const userSchema = z.object({
+  name: z.string(),
+  age: z.number(),
+  interests: z.array(z.string()),
+});
 
-interface QuizVars extends Vars {
-  quizComplete?: boolean;
-  summary?: string;
-}
+const agent = Agent.create()
+  .system('Extract user info from text.')
+  .user("Hi, I'm Alice, 25, love coding and music.")
+  .add(
+    new Structured({
+      schema: userSchema,
+      source: Source.llm().openai(),
+    }),
+  );
 
-const quiz = new Agent<QuizVars>() // Use Agent as the main builder
-  .system("You're a TypeScript quiz bot.")
-  // Greet based on time using conditional
-  .conditional(
-    (session) => new Date().getHours() < 12,
-    (agent) => agent.assistant('Good morning!'),
-    (agent) => agent.assistant('Good afternoon!'),
+const session = await agent.execute();
+const userData = session.getLastMessage()?.structuredContent;
+// userData is typed as { name: string, age: number, interests: string[] }
+```
+
+### Validation
+
+PromptTrail provides comprehensive validation for all content sources with automatic retry:
+
+```typescript
+import { Validation } from '@prompttrail/core';
+
+// Simple validation with Source.llm()
+const simpleValidation = Source.llm()
+  .openai()
+  .validate(Validation.length({ max: 100 }))
+  .withMaxAttempts(3)
+  .withRaiseError(true);
+
+// Complex multi-criteria validation
+const complexValidation = Source.llm()
+  .openai()
+  .validate(
+    Validation.all([
+      Validation.length({ min: 10, max: 500 }),
+      Validation.keyword(['explanation', 'example'], { mode: 'include' }),
+      Validation.regex(/^\w+.*\w+$/), // Must start and end with word characters
+    ]),
   )
-  // Quiz loop
-  .loop(
-    (agent) =>
-      agent
-        .user(
-          Source.list([
-            // Use Source.list() for predefined questions/statements
-            "What's TypeScript?",
-            'Explain type inference.',
-            "I'm satisfied now.", // Loop exit trigger
-          ]),
-        )
-        .assistant(openAIgenerateOptions), // LLM answers the question
-    // Loop condition: Continue as long as the last user message doesn't indicate satisfaction
-    (session) => {
-      const lastUserMessage = session.getMessagesByType('user').pop();
-      // Loop if no user message yet OR if the last user message doesn't contain 'satisfied'
-      return !lastUserMessage?.content.toLowerCase().includes('satisfied');
-    },
+  .withMaxAttempts(5);
+
+// Use in templates
+const agent = Agent.create()
+  .system('Explain concepts clearly with examples.')
+  .user('What is TypeScript?')
+  .assistant(complexValidation);
+
+// CLI validation with retries
+const userInput = Source.cli('Enter your name (2-50 chars):')
+  .validate(
+    Validation.all([
+      Validation.length({ min: 2, max: 50 }),
+      Validation.regex(/^[a-zA-Z\s]+$/), // Only letters and spaces
+    ]),
   )
-  // Subroutine to summarize the quiz
+  .withMaxAttempts(3)
+  .withRaiseError(false); // Don't throw, just warn
+
+// Schema validation for structured data
+const structuredResponse = Source.schema(
+  z.object({
+    answer: z.string(),
+    confidence: z.number().min(0).max(1),
+    reasoning: z.array(z.string()),
+  }),
+  {
+    mode: 'structured_output',
+    maxAttempts: 3,
+  },
+);
+
+// Custom validation with context access
+const contextAwareValidation = Source.llm()
+  .validate(
+    Validation.custom((content, session) => {
+      const maxWords = session?.getVar('maxWords', 50);
+      const wordCount = content.split(/\s+/).length;
+
+      if (wordCount <= maxWords) {
+        return { isValid: true };
+      }
+
+      return {
+        isValid: false,
+        instruction: `Response must be ${maxWords} words or less (got ${wordCount})`,
+      };
+    }),
+  )
+  .withMaxAttempts(2);
+```
+
+**Validation Features:**
+
+- **Automatic retry** - Failed validations trigger new attempts
+- **Rich feedback** - Validation instructions help LLMs improve
+- **All sources** - Works with LLM, CLI, callback, and literal sources
+- **Composable** - Combine multiple validators with AND/OR logic
+- **Context-aware** - Access session state in custom validators
+
+### Advanced Control Flow
+
+Beyond basic patterns, PromptTrail offers sophisticated control structures:
+
+```typescript
+// Nested subroutines for memory management
+const agent = Agent.create()
+  .system('Complex data processor')
   .subroutine(
     (agent) =>
       agent
-        .system(
-          'You are an educational coach. Write a three-sentence summary of the conversation and suggest one topic for further study.',
+        .user('Stage 1: Parse data')
+        .assistant()
+        .subroutine(
+          (innerAgent) =>
+            innerAgent.user('Sub-process: Validate format').assistant(),
+          {
+            isolatedContext: true, // Clean slate for validation
+            retainMessages: false, // Don't pollute main conversation
+          },
         )
-        .assistant(openAIgenerateOptions), // LLM generates the summary
+        .transform((session) => session.withVar('stage1Complete', true)),
     {
-      // Subroutine options
-      // initWith: (optional) Customize how the subroutine session starts. Default clones parent.
-      // squashWith: Customize how the subroutine result merges back.
-      squashWith: (parentSession, subroutineSession) => {
-        const summaryMessage = subroutineSession.getLastMessage();
-        if (summaryMessage?.type === 'assistant') {
-          // Add the summary to the parent context instead of as a message
-          return parentSession.withVars({
-            summary: summaryMessage.content,
-          });
-        }
-        return parentSession; // Return parent unchanged if no summary
-      },
-      retainMessages: false, // Don't add the subroutine's internal messages to the final history
-      // isolatedContext: true, // Optionally run subroutine with empty context
+      squashWith: (parent, sub) =>
+        parent.withVars({
+          processed: sub.getVar('stage1Complete'),
+          result: sub.getLastMessage()?.content,
+        }),
     },
-  )
-  // Final message, potentially using the summary from context
-  .assistant(
-    (session) =>
-      `Quiz finished! 🚀\n**Summary:**\n${session.getVar('summary', 'No summary generated.')}`,
   );
 
-// Execute the quiz
-const session = await quiz.execute(Session.debug<QuizVars>());
+// Multi-LLM parallel processing
+const researchAgent = Agent.create()
+  .system('Research assistant')
+  .user('Compare machine learning frameworks')
+  .add(
+    new Parallel()
+      .addSource(Source.llm().openai().temperature(0.2), 1) // Conservative
+      .addSource(Source.llm().anthropic().temperature(0.8), 1) // Creative
+      .addSource(Source.llm().google().temperature(0.5), 1) // Balanced
+      .setAggregationFunction(
+        (session) => session.getLastMessage()?.content?.length || 0,
+      )
+      .setStrategy('best'), // Keep longest response
+  );
 
-console.log('Final Vars:', session.getVarsObject());
+// Goal-oriented research with custom satisfaction
+const smartScenario = Scenario.system('You are an expert researcher.')
+  .step('Understand research requirements', { allow_interaction: true })
+  .step('Gather comprehensive information', {
+    max_attempts: 8,
+    is_satisfied: (session, goal) => {
+      const messages = session.getMessagesByType('assistant');
+      const hasToolCalls = messages.some((m) => m.toolCalls?.length > 0);
+      const hasDetailedAnalysis = messages.some(
+        (m) => m.content?.length > 500 && m.content.includes('analysis'),
+      );
+      return hasToolCalls && hasDetailedAnalysis;
+    },
+  })
+  .step('Synthesize findings and provide recommendations');
+
+// Dynamic flow with error handling
+const robustAgent = Agent.create()
+  .system('Fault-tolerant processor')
+  .transform((session) => session.withVar('retryCount', 0))
+  .loop(
+    (agent) =>
+      agent.conditional(
+        (session) => session.getVar('retryCount') < 3,
+        (agent) =>
+          agent
+            .user('Attempt operation')
+            .assistant()
+            .transform((session) => {
+              const success = session
+                .getLastMessage()
+                ?.content?.includes('success');
+              return session.withVars({
+                success,
+                retryCount: session.getVar('retryCount') + 1,
+              });
+            }),
+        (agent) =>
+          agent.transform((session) => session.withVar('failed', true)),
+      ),
+    (session) => !session.getVar('success') && !session.getVar('failed'),
+  );
 ```
 
-### 🤖 Model Configuration
+**Advanced Patterns:**
 
-Configure LLM interactions via `GenerateOptions`:
+- **Nested isolation** - Subroutines within subroutines for memory management
+- **Multi-provider consensus** - Run multiple LLMs and aggregate results
+- **Custom goal validation** - Define complex satisfaction criteria for scenarios
+- **Error recovery** - Retry logic with fallback strategies
 
-```typescript
-import { createGenerateOptions, MCPServerConfig } from '@prompttrail/core';
-
-// OpenAI configuration
-const openAIgenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: process.env.OPENAI_API_KEY!,
-    modelName: 'gpt-4o-mini',
-  },
-  temperature: 0.7,
-  maxTokens: 1000,
-});
-
-// Anthropic configuration
-const anthropicGenerateOptions = createGenerateOptions({
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY!,
-    modelName: 'claude-3-5-haiku-latest', // Use claude-3-5-haiku-latest
-  },
-  temperature: 0.5,
-});
-
-// Anthropic with MCP integration
-const mcpServer: MCPServerConfig = {
-  type: 'mcp', // Required field for MCP config
-  url: 'http://localhost:8080', // Your MCP server URL
-  name: 'github-mcp-server', // Optional name
-  version: '1.0.0', // Optional version
-  toolName: 'mcp-tool-name', // Specify the tool name the MCP server provides
-  serverName: 'unique-server-identifier', // A unique name for this server instance
-};
-
-const anthropicMcpOptions = createGenerateOptions({
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY!,
-    modelName: 'claude-3-5-haiku-latest',
-  },
-  temperature: 0.7,
-}).addMCPServer(mcpServer); // Use fluent API to add MCP server
-```
-
-### 💾 Session Management
-
-`Session` objects are immutable records of the conversation state (`messages` and `context`).
+### Streaming Responses
 
 ```typescript
-import {
-  Session,
-  Agent,
-  System,
-  User,
-  Assistant,
-  Sequence,
-} from '@prompttrail/core';
-import type { Vars, Attrs } from '@prompttrail/core';
+import { generateTextStream } from '@prompttrail/core';
 
-interface MyVarsSession extends Vars {
-  userId: string;
-  language: string;
-  tone: string;
-  topics: string[];
-}
-interface MyAttrsSession extends Attrs {
-  timestamp?: number;
-}
-
-// Create a session with initial context
-const initialSession = Session.debug<MyVarsSession, MyAttrsSession>().withVars({
-  userId: 'user-123',
-  language: 'TypeScript',
-  tone: 'professional',
-  topics: ['generics', 'type inference', 'utility types'],
-});
-
-// Templates use ${variable} syntax for context interpolation
-const template = new Agent<MyVarsSession, MyAttrsSession>() // Specify types for Agent
-  .system(`I'll use \${tone} language to explain \${topics[0]}`)
-  .assistant(`Let me explain \${topics[0]} in \${language}`)
-  .user(`Can you also cover \${topics[1]}?`);
-
-// Execute the template with the initial session
-const sessionAfterTemplate = await template.execute(initialSession);
-
-// Sessions are immutable - operations return new instances
-const sessionWithMessage = sessionAfterTemplate.addMessage({
-  type: 'user',
-  content: 'Hello!',
-  metadata: { timestamp: Date.now() }, // Add metadata
-});
-
-// Query session state
-const lastMessage = sessionWithMessage.getLastMessage();
-const userMessages = sessionWithMessage.getMessagesByType('user');
-console.log(
-  `Last message type: ${lastMessage?.type}, content: ${lastMessage?.content}`,
-);
-
-// Update context (returns a new session instance)
-const sessionWithNewTone = sessionWithMessage.withVars({
-  tone: 'casual', // Update existing key
-  lastInteraction: Date.now(), // Add new key
-});
-
-console.log('Original tone:', sessionWithMessage.getVar('tone')); // professional
-console.log('New tone:', sessionWithNewTone.getVar('tone')); // casual
-
-// Serialize/deserialize (useful for saving/loading state)
-const json = sessionWithNewTone.toJSON();
-console.log('Session JSON:', JSON.stringify(json, null, 2));
-// const loadedSession = Session.fromJSON<MyVarsSession, MyAttrsSession>(json); // Deserialize
-```
-
-### 🌊 Streaming Responses
-
-Process model responses chunk by chunk using `generateTextStream`:
-
-```typescript
-import { Session, generateTextStream } from '@prompttrail/core';
-// Assuming openAIgenerateOptions is defined
-
-// Define session locally for this example
 const session = Session.create().addMessage({
   type: 'user',
-  content: 'Explain streaming in 2 sentences.',
+  content: 'Explain async/await',
 });
 
-// Stream responses chunk by chunk
-console.log('\nStreaming response:');
-try {
-  for await (const chunk of generateTextStream(
-    session,
-    openAIgenerateOptions,
-  )) {
-    // chunk is a Message object, typically with type 'assistant' and partial content
-    if (chunk.content) {
-      process.stdout.write(chunk.content);
-    }
-    // Handle tool calls if needed: if (chunk.toolCalls) { ... }
-  }
-} catch (error) {
-  console.error('\nStream failed:', error);
-}
-console.log('\n--- End of Stream ---');
-```
-
-### 📊 Vars Transformation
-
-Modify session vars during template execution using the `Transform` template:
-
-```typescript
-import { Agent, Transform, Session } from '@prompttrail/core';
-import type { Vars } from '@prompttrail/core';
-
-interface ServerInfoVars extends Vars {
-  ipAddress?: string;
-  uptime?: number;
-  status?: string;
-}
-
-// Example: Extract data using regex and update context
-const dataExtractionAgent = new Agent<ServerInfoVars>()
-  .user('Server status: IP 192.168.1.100, Uptime 99.99%, Status: Running')
-  // Transform step
-  .transform((session) => {
-    const lastMessageContent = session.getLastMessage()?.content || '';
-    const updatedVars: Partial<ServerInfoVars> = {}; // Store updates
-
-    // Extract IP Address
-    const ipMatch = lastMessageContent.match(/IP ([\d\.]+)/);
-    if (ipMatch) {
-      updatedVars.ipAddress = ipMatch[1];
-    }
-
-    // Extract and transform Uptime
-    const uptimeMatch = lastMessageContent.match(/Uptime ([\d\.]+)%/);
-    if (uptimeMatch) {
-      updatedVars.uptime = parseFloat(uptimeMatch[1]) / 100;
-    }
-
-    // Extract Status
-    const statusMatch = lastMessageContent.match(/Status: (\w+)/);
-    if (statusMatch) {
-      updatedVars.status = statusMatch[1];
-    }
-
-    // Return a new session with the updated vars values
-    return session.withVars(updatedVars);
-  });
-
-// Execute the agent
-const dataSession = await dataExtractionAgent.execute(
-  Session.create<ServerInfoVars>(),
-);
-
-// Access the extracted data from the final session context
-console.log('IP:', dataSession.getVar('ipAddress')); // "192.168.1.100"
-console.log('Uptime:', dataSession.getVar('uptime')); // 0.9999
-console.log('Status:', dataSession.getVar('status')); // "Running"
-```
-
-### 🛡️ Validation
-
-Ensure the quality of LLM responses or user input using validators. Validators can be attached to `Assistant` templates or used within `Source` options.
-
-```typescript
-import {
-  Agent,
-  Assistant,
-  User,
-  System,
-  RegexMatchValidator,
-  LengthValidator,
-  KeywordValidator,
-  AllValidator,
-  CustomValidator,
-  Session,
-  createGenerateOptions,
-  ValidationOptions,
-} from '@prompttrail/core';
-// Assuming openAIgenerateOptions is defined
-
-// --- Built-in Validators ---
-
-// Regex validator: Must be a single word
-const singleWordValidator = new RegexMatchValidator({
-  regex: /^[A-Za-z]+$/,
-  description: 'Response must be a single word with only letters',
-});
-
-// Length validator: 3-10 characters
-const lengthValidator = new LengthValidator({
-  min: 3,
-  max: 10,
-  description: 'Response must be between 3 and 10 characters',
-});
-
-// Keyword validator: Exclude certain words
-const appropriateValidator = new KeywordValidator({
-  keywords: ['inappropriate', 'offensive'],
-  mode: 'exclude', // 'include' is also an option
-  description: 'Response must not contain inappropriate words',
-  caseSensitive: false, // Default
-});
-
-// Combine validators: All must pass
-const combinedValidator = new AllValidator(
-  [singleWordValidator, lengthValidator, appropriateValidator],
-  { description: 'Combined validation for pet names' },
-);
-
-// --- Using Validators with Assistant ---
-
-// Define validation options for the Assistant
-const validationOptions: ValidationOptions = {
-  validator: combinedValidator,
-  maxAttempts: 3, // Retry up to 3 times if validation fails
-  raiseError: true, // Throw an error if validation fails after max attempts
-};
-
-// Create an Agent that asks for a pet name and validates the response
-const petNameAgent = Agent.create()
-  .system('You are a helpful assistant that suggests pet names.')
-  .user('Suggest a single, short, appropriate name for a pet cat.')
-  // Assistant with validation options
-  .assistant(openAIgenerateOptions, validationOptions);
-
-// Execute (will retry/error if LLM response fails validation)
-try {
-  const petNameSession = await petNameAgent.execute();
-  console.log('Validated pet name:', petNameSession.getLastMessage()?.content);
-} catch (error) {
-  console.error('Pet name validation failed:', error);
-}
-
-// --- Custom Validator ---
-
-const customValidator = new CustomValidator(
-  (content, session) => {
-    // Validation logic can access session context
-    const wordCount = content.split(/\s+/).filter(Boolean).length;
-    const maxWords = session?.getVar('maxWords', 5); // Example: Get limit from context
-    return wordCount <= maxWords
-      ? { isValid: true } // Success
-      : {
-          // Failure
-          isValid: false,
-          instruction: `Answer must be ${maxWords} words or less (current: ${wordCount} words)`,
-        };
-  },
-  { description: 'Ensure answer is short' }, // Description for the validator
-);
-
-// Use custom validator with Assistant
-const shortAnswerAgent = Agent.create()
-  .system('Answer concisely.')
-  .user('Explain quantum physics briefly.')
-  .assistant(openAIgenerateOptions, {
-    validator: customValidator,
-    maxAttempts: 2,
-  });
-
-// Execute
-try {
-  const shortAnswerSession = await shortAnswerAgent.execute(
-    Session.withVars({ maxWords: 10 }),
-  ); // Set maxWords in context
-  console.log('Short answer:', shortAnswerSession.getLastMessage()?.content);
-} catch (error) {
-  console.error('Short answer validation failed:', error);
-}
-
-// Note: Validators can also be applied to all Source factory methods
-// Example: Source.cli("Enter name:", undefined, { validator: lengthValidator })
-```
-
-### 🧪 Structured Output
-
-Force LLMs to produce structured outputs matching a Zod schema using the `Structured` template. This is useful for reliable data extraction.
-
-```typescript
-import { z } from 'zod';
-import {
-  Agent,
-  Structured,
-  Session,
-  createGenerateOptions,
-} from '@prompttrail/core';
-// Assuming openAIgenerateOptions is defined
-
-// Define a Zod schema for the desired output structure
-const productSchema = z.object({
-  name: z.string().describe('The name of the product'),
-  price: z.number().describe('The price of the product in USD'),
-  inStock: z.boolean().describe('Whether the product is in stock'),
-  features: z.array(z.string()).describe('List of key features'),
-});
-
-// Create the Structured template
-const structuredProductTemplate = new Structured({
-  generateOptions: openAIgenerateOptions, // LLM configuration
-  schema: productSchema, // The Zod schema to enforce
-  maxAttempts: 3, // Retry attempts if output doesn't match schema
-  // functionName: 'extractProductInfo' // Optional: Name for the underlying tool call
-});
-
-// Use the Structured template within an Agent
-const productExtractorAgent = Agent.create()
-  .system(
-    'Extract product information from the user query into the provided schema.',
-  )
-  .user(
-    'Tell me about the Pixel 8. It costs $699, is in stock, and has a great camera and AI features.',
-  )
-  // The Structured template - it will generate an assistant message
-  // containing the structured data if successful.
-  .add(structuredProductTemplate);
-
-// Execute the agent
-try {
-  const session = await productExtractorAgent.execute();
-
-  // The structured data is attached to the last assistant message
-  const lastMessage = session.getLastMessage();
-  if (lastMessage?.type === 'assistant' && lastMessage.structuredContent) {
-    // Access the validated, typed structured output
-    const productData = lastMessage.structuredContent as z.infer<
-      typeof productSchema
-    >;
-    console.log('Structured Product Data:', productData);
-    console.log(`Product: ${productData.name} - $${productData.price}`);
-    console.log(`In Stock: ${productData.inStock}`);
-    console.log(`Features: ${productData.features.join(', ')}`);
-  } else {
-    console.log('Structured output not found in the last message.');
-  }
-} catch (error) {
-  console.error('Structured output generation failed:', error);
+for await (const chunk of generateTextStream(session, Source.llm().openai())) {
+  process.stdout.write(chunk.content);
 }
 ```
 
-### 🛠️ Tool Integration
+## 🔧 Provider Configuration
 
-Leverage the `ai-sdk`'s tool integration by adding tools to `GenerateOptions`. PromptTrail handles the underlying message formatting.
+### OpenAI
 
 ```typescript
-import { z } from 'zod';
-import { tool } from 'ai'; // Import from ai-sdk
-import { Agent, Session, createGenerateOptions } from '@prompttrail/core';
-// Assuming openAIgenerateOptions is defined
-
-// Define a weather forecast tool using ai-sdk's `tool` helper
-const weatherTool = tool({
-  description: 'Get weather information for a specific location',
-  parameters: z.object({
-    location: z
-      .string()
-      .describe('The city and state, e.g., San Francisco, CA'),
-  }),
-  execute: async ({ location }: { location: string }) => {
-    // In a real scenario, call a weather API here
-    console.log(`Tool execution: Getting weather for ${location}`);
-    const forecast = ['Today: Sunny', 'Tomorrow: Cloudy', 'Day after: Rainy'];
-    return {
-      // Return data matching the tool's expected output
-      location,
-      temperature: Math.floor(Math.random() * 30 + 50), // Random temp for example
-      condition: forecast[0].split(': ')[1],
-      forecast,
-    };
-  },
-});
-
-// Add the tool to GenerateOptions
-const toolEnhancedOptions = openAIgenerateOptions
-  .clone() // Clone to avoid modifying the original options
-  .addTool('getWeather', weatherTool) // Add the tool with a name
-  .setToolChoice('auto'); // Let the model decide when to use the tool
-
-// Create an Agent that might use the tool
-const weatherAgent = Agent.create()
-  .system("I'm a weather assistant. Use the available tools.")
-  .user("What's the weather like in New York?")
-  // The assistant might respond directly or make a tool call
-  .assistant(toolEnhancedOptions);
-
-// Execute the agent
-const session = await weatherAgent.execute();
-
-// Check the last message for potential tool calls
-const lastMessage = session.getLastMessage();
-if (lastMessage?.type === 'assistant' && lastMessage.toolCalls) {
-  console.log('Assistant requested tool call(s):', lastMessage.toolCalls);
-  // In a real application, you would execute the tool here based on toolCalls
-  // and add a 'tool_result' message back to the session before continuing.
-  // PromptTrail currently expects manual handling of tool execution results.
-} else {
-  console.log('Assistant response (no tool call):', lastMessage?.content);
-}
+const openaiConfig = Source.llm()
+  .openai()
+  .model('gpt-4')
+  .temperature(0.7)
+  .maxTokens(1000)
+  .apiKey(process.env.OPENAI_API_KEY);
 ```
 
-### 🔌 MCP Support
-
-Integrate with Anthropic's Model Context Protocol (MCP) servers by configuring them in `GenerateOptions`.
+### Anthropic
 
 ```typescript
-import {
-  Agent,
-  Session,
-  createGenerateOptions,
-  generateText,
-} from '@prompttrail/core';
-import type { MCPServerConfig } from '@prompttrail/core';
-// Assuming anthropicGenerateOptions is defined
+const anthropicConfig = Source.llm()
+  .anthropic()
+  .model('claude-3-5-haiku-latest')
+  .temperature(0.5)
+  .apiKey(process.env.ANTHROPIC_API_KEY);
+```
 
-// Define MCP server configuration
-const mcpServerConfig: MCPServerConfig = {
-  type: 'mcp', // Required
-  url: 'http://localhost:8080', // URL of your running MCP server
-  serverName: 'research-mcp-server', // Unique identifier for this server
-  toolName: 'searchPapers', // The specific tool provided by the MCP server
-  // Optional fields:
-  // name: 'My Research Server',
-  // version: '1.0.1',
-  // headers: { 'Authorization': 'Bearer ...' }
-};
+### Google
 
-// Create options with MCP server configuration
-const optionsWithMCP = createGenerateOptions({
-  provider: {
-    type: 'anthropic',
-    apiKey: process.env.ANTHROPIC_API_KEY!,
-    modelName: 'claude-3-5-haiku-latest',
-  },
-  temperature: 0.7,
-}).addMCPServer(mcpServerConfig); // Add the MCP server config
-
-// Create an Agent that might leverage the MCP tool
-const mcpAgent = Agent.create()
-  .system('You are a helpful assistant with access to research tools via MCP.')
-  .user('Can you search for the latest papers on LLM reasoning?')
-  .assistant(optionsWithMCP); // Use the options with MCP configured
-
-// Execute the agent
-try {
-  // Note: This requires an MCP server running at the specified URL (localhost:8080)
-  // providing the 'searchPapers' tool.
-  const session = await mcpAgent.execute();
-  console.log('MCP Agent Response:', session.getLastMessage()?.content);
-} catch (error) {
-  console.error(
-    'MCP Example Failed (This is expected if no compatible MCP server is running at localhost:8080):',
-    error.message,
-  );
-}
+```typescript
+const googleConfig = Source.llm()
+  .google()
+  .model('gemini-pro')
+  .temperature(0.8)
+  .apiKey(process.env.GOOGLE_API_KEY);
 ```
 
 ## 🌐 Browser Support
 
-PromptTrail is designed to work in browser environments. Set the `dangerouslyAllowBrowser` flag in your provider configuration.
-
 ```typescript
-import { Agent, Session, createGenerateOptions } from '@prompttrail/core';
-
-// Browser-compatible configuration for OpenAI
-const browserOptions = createGenerateOptions({
-  provider: {
-    type: 'openai',
-    apiKey: 'YOUR_API_KEY', // IMPORTANT: In production, never expose keys directly. Fetch from your secure backend.
-    modelName: 'gpt-4o-mini',
-    dangerouslyAllowBrowser: true, // Required flag for browser usage
-  },
-  temperature: 0.7,
-});
-
-// Use with templates as normal in your frontend code
-const browserAgent = Agent.create()
-  .system('You are a helpful assistant running in the browser.')
-  .user('Hello from the browser!')
-  .assistant(browserOptions);
-
-// Example execution (within an async function in your frontend code)
-async function runBrowserAgent() {
-  try {
-    const session = await browserAgent.execute();
-    console.log('Browser Agent Response:', session.getLastMessage()?.content);
-    // Update your UI with the response
-  } catch (error) {
-    console.error('Browser agent failed:', error);
-    // Handle errors appropriately in the UI
-  }
-}
-
-// runBrowserAgent(); // Call this function in your frontend logic
+// Enable browser mode (⚠️ Don't expose API keys in production!)
+const browserConfig = Source.llm()
+  .openai()
+  .apiKey('sk-...')
+  .dangerouslyAllowBrowser(true);
 ```
 
-## 👥 Contributing
+## 📦 Package Structure
 
-Contributions are welcome! Here's how you can help:
+- `@prompttrail/core` - Main framework
+- `@prompttrail/react` - React integration (coming soon)
 
-- 🐛 Report bugs by opening issues
-- 💡 Suggest features and improvements
-- 🧪 Run tests with `cd packages/core && pnpm test` (uses Vitest)
-- 💅 Check formatting with `pnpm format:check` and fix with `pnpm format`
-- 👕 Check linting with `pnpm lint:check` and fix with `pnpm lint`
-- ✅ Check types with `pnpm -C packages/core typecheck`
-- 🏗️ Build all packages with `pnpm -r build`
-- 🔀 Submit pull requests
+## 💡 Examples
+
+Check the [`examples/`](./examples) directory for more:
+
+- [`chat.ts`](./examples/chat.ts) - Simple chat interface
+- [`coding_agent.ts`](./examples/coding_agent.ts) - AI coding assistant
+- [`autonomous_researcher.ts`](./examples/autonomous_researcher.ts) - Research agent
+- [`gradual_typing_demo.ts`](./examples/gradual_typing_demo.ts) - TypeScript typing patterns
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Run tests: `cd packages/core && pnpm test`
+3. Check types: `pnpm -C packages/core typecheck`
+4. Format code: `pnpm format`
+5. Submit a pull request
 
 ## 📄 License
 

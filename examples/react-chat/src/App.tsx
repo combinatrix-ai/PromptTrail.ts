@@ -3,7 +3,7 @@ import styled from '@emotion/styled';
 import {
   LinearTemplate,
   createGenerateOptions,
-  createSession,
+  Session,
   type GenerateOptions,
 } from '../../../packages/core/src/index';
 import type { Message } from '../../../packages/core/src/types';
@@ -130,7 +130,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [session, setSession] = useState(() => createSession());
+  const [session, setSession] = useState(() => Session.create());
 
   const sendMessage = async () => {
     if (!input.trim() || !apiKey.trim() || isLoading) return;

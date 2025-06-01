@@ -3,19 +3,9 @@ import { CoreMessage, streamText } from 'ai';
 import { NextResponse } from 'next/server';
 import {
   Agent,
-  createSession,
-  Vars as PromptTrailContext,
+  Session,
   Message as PromptTrailMessage,
-  System,
 } from '../../../../../../packages/core/src';
-
-// Define a type for our session context data (plain object)
-interface ChaTVarsData {
-  codeContext: string;
-}
-
-// This is the branded context type that will be used by Session and Agent
-type BrandedChaTVars = PromptTrailContext<ChaTVarsData>;
 
 // Ensure the GOOGLE_API_KEY is set in your environment variables
 // The @ai-sdk/google provider defaults to GOOGLE_GENERATIVE_AI_API_KEY,
@@ -33,22 +23,19 @@ export async function POST(req: Request) {
   try {
     const { messages: incomingMessages, codeContext } = await req.json();
 
-    // Let ptSession type be inferred. It will be Session<BrandedChaTVars, Metadata<unknown>>
-    let ptSession = createSession({
-      // Pass plain data type here, let createSession infer and handle branding
-      context: { codeContext: codeContext || 'No code context provided.' },
+    // Create session with context using Session.create()
+    let ptSession = Session.create({
+      vars: { codeContext: codeContext || 'No code context provided.' },
     });
 
-    // Agent should be typed with the BrandedChaTVars
-    // The System template will use 'codeContext' from ptSession.context
-    const trail = Agent.create<BrandedChaTVars>().add(
-      new System(
-        'You are a helpful AI assistant that discusses the provided code context. Code context: ${codeContext}',
-      ),
+    // Create agent with system message using context interpolation
+    const agent = Agent.create().system(
+      'You are a helpful AI assistant that discusses the provided code context. Code context: ${codeContext}',
     );
-    // The execute method of Agent<BrandedChaTVars> will expect/return Session<BrandedChaTVars, ...>
+
     console.log('[Chat API] Received codeContext:', codeContext); // Log received context
-    ptSession = await trail.execute(ptSession);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ptSession = (await agent.execute(ptSession as any)) as any;
 
     if (ptSession.messages.length > 0) {
       console.log(

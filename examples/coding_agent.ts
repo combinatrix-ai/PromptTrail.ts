@@ -15,8 +15,8 @@ import {
 } from '../packages/core/src/index';
 
 // Import Tool namespace from PromptTrail
-import { Tool } from '../packages/core/src/index';
 import { z } from 'zod';
+import { Tool } from '../packages/core/src/index';
 
 // Node.js modules for file and command operations
 import { exec } from 'child_process';
