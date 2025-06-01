@@ -7,8 +7,7 @@ import {
   generateWithSchema,
   SchemaGenerationOptions,
 } from './generate';
-import type { Session } from './session';
-import type { Vars } from './tagged_record';
+import type { Session, Vars } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
 import { createSession, Session } from '../../session';
-import { Vars, Attrs } from '../../tagged_record';
+import { Vars, Attrs } from "../../session"
 
 function createUserMessage(content: string): Message {
   return {
@@ -131,11 +131,8 @@ describe('Session', () => {
     expect(parsedJson).toHaveProperty('context');
     expect(parsedJson).toHaveProperty('print');
     expect(parsedJson.context).toEqual(context);
-    // Brand Symbol is not serialized, so we need to create a new Context object
-    // TODO: We need to use toMatchObject here. toEqual will fail on our current implementation
-    // because the context is created with spread operator,
-    // which changes the order of the properties
-    expect(Vars.create(parsedJson.context)).toMatchObject(Vars.create(context));
+    // With plain objects, we can directly compare
+    expect(parsedJson.context).toMatchObject(context);
     expect(parsedJson.messages).toEqual(session.messages);
 
     // Explicitly type the session to restore type information

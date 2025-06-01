@@ -234,15 +234,12 @@ console.log('last message:', session.getLastMessage()?.content);
 - PromptTrail is designed so typing the object name gives autocompletion.
 
   - Every object has a `[Thing].create()` factory method.
-    - For example, `Session.create()`, `Vars.create()`, `Attrs.create()`, `Agent.create()`.
-  - Use `set` or `extend` to update Session, Vars or Attrs.
-    - `set` overwrites values while `extend` adds keys and may change types.
-      - `Vars.create({ userName: 'Alice' }).set({ userName: 'Bob' })` // userName becomes `Bob` and returns `Vars<{ userName: string }>`
-      - `Vars.create({ userName: 'Alice' }).set({ age: '20' })` // TypeError
-      - `Vars.create({ userName: 'Alice' }).extend({ userName: 'Bob' })` // userName becomes `Bob` and returns `Vars<{ userName: string }>`
-      - `Vars.create({ userName: 'Alice' }).extend({ age: '20' })` // Works and returns `Vars<{ userName: string, age: string }>`
-    - For example, `session.setVars({ userName: 'Alice' })` or `session.extendVars({ userName: 'Alice' })`
-      - `extend` lets you append to existing values.
+    - For example, `Session.create()`, `Agent.create()`.
+  - Use `withVar()` or `withVars()` to update Session vars (returns new immutable session).
+    - `withVar()` sets a single key-value pair
+    - `withVars()` merges multiple key-value pairs
+      - `session.withVar('userName', 'Bob')` // Sets userName to 'Bob'
+      - `session.withVars({ userName: 'Alice', age: 20 })` // Merges multiple values
   - Build templates with `Agent.create()`.
     - The fluent API lets you compose templates: `Agent.create().system(...).loop(...)`.
     - You can also write `Agent.create(new Loop([System(...), User(...), Assistant(...)])).
@@ -256,17 +253,18 @@ console.log('last message:', session.getLastMessage()?.content);
   ```typescript
   import { Session } from '@prompttrail/core';
   const session = Session.create(); // Creates an empty session
-  const sessionWithContext = Session.withVars({ userName: 'Alice' });
+  const sessionWithVars = Session.create({ vars: { userName: 'Alice' } });
   
   // With type safety for complex applications
-  const typedSession = Session.withVarsType<UserContext>()
-    .create({ vars: { userId: '123', role: 'admin' } });
+  type UserContext = { userId: string; role: string };
+  const typedSession = Session.create<UserContext>({
+    vars: { userId: '123', role: 'admin' }
+  });
   ```
   - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
     ```typescript
-    import { Vars, Assistant } from '@prompttrail/core';
-    // Vars objects have a hidden brand property
-    const userVars = Vars.create({ userName: 'Alice', userId: 'u-123' });
+    import { Assistant } from '@prompttrail/core';
+    type UserVars = { userName: string; userId: string };
     // Usage in interpolation:
     const greeting = new Assistant('Hi ${userName}!'); // Resolves to "Hi Alice!" if vars has userName: 'Alice'
     // Accessing values: session.getVar('userId')
@@ -278,20 +276,20 @@ console.log('last message:', session.getLastMessage()?.content);
       { type: 'user', content: 'Hello!' },
       { type: 'assistant', content: 'Hi there!' },
     ];
-    const sessionWithMessages = Session.withMessages(messages);
+    const sessionWithMessages = Session.create({ messages });
     ```
     - **Attrs**: Optional read-only data (`Attrs<T>`) attached to messages. Used for storing additional information (e.g., non-default roles, timestamps).
       ```typescript
-      import { Attrs } from '@prompttrail/core';
+      type MessageAttrs = { timestamp: number; customRole: string };
       const messageWithMeta = {
         type: 'user',
         content: 'User input',
-        metadata: Attrs.create({
+        attrs: {
           timestamp: Date.now(),
           customRole: 'tester',
-        }),
+        },
       };
-      // Access: messageWithMeta.metadata.timestamp
+      // Access: messageWithMeta.attrs.timestamp
       ```
 - **Template**: A reusable piece of conversation logic (`System`, `User`, `Assistant`, `Conditional`, `Loop`, `Transform`, `Structured`, `Subroutine`, `Sequence`, `Agent`).
   ```typescript

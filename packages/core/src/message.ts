@@ -1,4 +1,4 @@
-import { Attrs } from './tagged_record';
+import type { Attrs } from './session';
 
 /**
  * Represents the role of a message in a conversation
@@ -93,7 +93,7 @@ export const Message = {
   ): Message<M> => {
     return {
       ...message,
-      attrs: Attrs.set<M, keyof M>(message.attrs, attrs),
+      attrs: { ...message.attrs, ...attrs } as M,
     };
   },
 
@@ -102,12 +102,12 @@ export const Message = {
     U extends Record<string, unknown>,
   >(
     message: Message<Attrs<M>>,
-    attrs: U | Attrs<U>,
+    attrs: U,
   ): Message<Attrs<Omit<M, keyof U> & U>> => {
-    const base: Attrs<M> = message.attrs ?? Attrs.create({} as M);
+    const base = message.attrs ?? ({} as M);
     return {
       ...message,
-      attrs: Attrs.extend(base, attrs),
+      attrs: { ...base, ...attrs } as Attrs<Omit<M, keyof U> & U>,
     };
   },
 

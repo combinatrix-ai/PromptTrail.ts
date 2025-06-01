@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { Session } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
-import { Attrs, Vars } from '../../tagged_record';
+import { Attrs, Vars } from "../../session"
 import { TemplateBase } from '../base';
 
 /**
@@ -107,7 +107,7 @@ export class Structured<
         content: output.content,
         toolCalls: output.toolCalls,
         structuredContent: output.structuredOutput,
-        attrs: Attrs.create<TAttrs>(output.metadata as TAttrs),
+        attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
       });
     } catch (error) {
       const err = error as Error;

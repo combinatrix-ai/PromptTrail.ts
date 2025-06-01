@@ -11,9 +11,8 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import type { Message } from './message';
-import type { Session } from './session';
+import type { Session, Attrs, Vars } from './session';
 import type { LLMOptions } from './source';
-import { Attrs, Vars } from './tagged_record';
 
 /**
  * Schema generation options

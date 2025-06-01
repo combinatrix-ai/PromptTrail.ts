@@ -1,6 +1,15 @@
 import { ValidationError } from './errors';
 import type { Message } from './message';
-import { Attrs, Vars } from './tagged_record';
+
+/**
+ * Session variables - readonly object for conversation state
+ */
+export type Vars<T extends Record<string, unknown> = {}> = Readonly<T>;
+
+/**
+ * Message attributes - readonly object for message metadata
+ */
+export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
 /**
  * Internal session implementation
  */
@@ -62,7 +71,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   withVar<K extends PropertyKey, V>(
     key: K,
     value: V,
-  ): Session<TVars & { [P in K]: V }, TAttrs> {
+  ): Session<Vars<TVars & { [P in K]: V }>, TAttrs> {
     const newContext = {
       ...this.vars,
       [key]: value,
@@ -73,7 +82,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
-  ): Session<TVars & U, TAttrs> {
+  ): Session<Vars<TVars & U>, TAttrs> {
     const newContext = { ...this.vars, ...vars } as TVars & U;
     return new Session([...this.messages], newContext, this.print);
   }
@@ -177,16 +186,15 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
  * Create a new session with type inference
  */
 export function createSession<
-  C extends Record<string, unknown> | Vars<Record<string, unknown>> = Vars,
-  M extends Record<string, unknown> | Attrs<Record<string, unknown>> = Attrs,
+  C extends Record<string, unknown> = {},
+  M extends Record<string, unknown> = {},
 >(options?: {
   context?: C;
   messages?: Message<Attrs<M>>[];
   print?: boolean;
 }): Session<Vars<C>, Attrs<M>> {
   options = options ?? {};
-  const raw = options.context as any;
-  const ctx: Vars<C> = Vars.is(raw) ? raw : Vars.create(raw ?? {});
+  const ctx = (options.context ?? {}) as C;
   return new Session<Vars<C>, Attrs<M>>(
     options.messages ?? [],
     ctx,
@@ -336,9 +344,9 @@ export namespace Session {
    * ```
    */
   export function fromJSON<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(json: Record<string, unknown>): Session<TVars, TAttrs> {
+    TVars extends Record<string, unknown> = {},
+    TAttrs extends Record<string, unknown> = {},
+  >(json: Record<string, unknown>): Session<Vars<TVars>, Attrs<TAttrs>> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -352,7 +360,7 @@ export namespace Session {
     }
 
     return createSession<TVars, TAttrs>({
-      messages: json.messages as Message<TAttrs>[],
+      messages: json.messages as Message<Attrs<TAttrs>>[],
       context: json.context as TVars,
       print: json.print ? (json.print as boolean) : false,
     });
@@ -367,9 +375,9 @@ export namespace Session {
    * ```
    */
   export function empty<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(): Session<TVars, TAttrs> {
+    TVars extends Record<string, unknown> = {},
+    TAttrs extends Record<string, unknown> = {},
+  >(): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({});
   }
 
@@ -386,10 +394,10 @@ export namespace Session {
   export function withVars<TVars extends Record<string, unknown>>(
     vars: TVars,
     options?: {
-      messages?: Message<Attrs>[];
+      messages?: Message<Attrs<{}>>[];
       print?: boolean;
     },
-  ): Session<Vars<TVars>, Attrs> {
+  ): Session<Vars<TVars>, Attrs<{}>> {
     return createSession<TVars, {}>({
       context: vars,
       messages: options?.messages,
@@ -415,7 +423,7 @@ export namespace Session {
       vars?: Record<string, unknown>;
       print?: boolean;
     },
-  ): Session<Vars, Attrs<TAttrs>> {
+  ): Session<Vars<{}>, Attrs<TAttrs>> {
     return createSession<{}, TAttrs>({
       context: options?.vars,
       messages: messages,

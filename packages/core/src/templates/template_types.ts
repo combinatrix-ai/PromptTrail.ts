@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import { Attrs, Vars } from '../tagged_record';
+import { Attrs, Vars } from "../session"
 
 /**
  * Type definition for transform functions

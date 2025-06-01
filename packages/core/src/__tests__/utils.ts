@@ -3,7 +3,7 @@ import type { Message, MessageRole } from '../message';
 import { tool } from 'ai';
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { Attrs } from '../tagged_record';
+import { Attrs } from "../session"
 
 /**
  * Create a weather tool for testing

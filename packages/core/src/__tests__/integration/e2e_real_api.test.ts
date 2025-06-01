@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
 import { Session } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
-import { Attrs, Vars } from '../../tagged_record';
+import { Attrs, Vars } from "../../session"
 import {
   Agent,
   Assistant,
@@ -106,11 +106,11 @@ describe('End-to-End Workflows with Real APIs', () => {
   });
 
   it('should handle context and metadata correctly', async () => {
-    type UserContext = Vars<{ username: string }>;
-    type MessageMetadata = Attrs<{ timestamp?: Date }>;
-    const initialContext: UserContext = Vars.create({
+    type UserContext = { username: string };
+    type MessageMetadata = { timestamp?: Date };
+    const initialContext: UserContext = {
       username: 'Alice',
-    });
+    };
     const date = new Date();
     const template = new Sequence<MessageMetadata, UserContext>()
       .add(new System('You are a helpful assistant.'))
@@ -121,10 +121,10 @@ describe('End-to-End Workflows with Real APIs', () => {
         new Transform((session) => {
           const msgs = session.messages.map((m) => ({
             ...m,
-            attrs: Attrs.set(m.attrs, { timestamp: date }),
+            attrs: { ...m.attrs, timestamp: date },
           }));
           const next = Session.create<UserContext, MessageMetadata>({
-            context: session.vars,
+            vars: session.vars,
             messages: msgs,
             print: session.print,
           });

@@ -2,7 +2,7 @@
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
-import { Attrs, Vars } from '../../tagged_record';
+import { Attrs, Vars } from "../../session"
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 
@@ -140,7 +140,7 @@ export class Assistant<
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          attrs: Attrs.create<TAttrs>(currentOutput.metadata as TAttrs),
+          attrs: (currentOutput.metadata as TAttrs) ?? ({} as TAttrs),
           structuredContent: currentOutput.structuredOutput,
         };
         let updatedSession = validSession.addMessage(message);
@@ -151,9 +151,9 @@ export class Assistant<
             updatedSession = updatedSession.addMessage({
               type: 'tool_result',
               content: JSON.stringify(toolResult.result),
-              attrs: Attrs.create<TAttrs>({
+              attrs: ({
                 toolCallId: toolResult.toolCallId,
-              } as TAttrs),
+              } as unknown as TAttrs),
             });
           }
         }
@@ -195,7 +195,7 @@ export class Assistant<
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        attrs: Attrs.create<TAttrs>(lastOutput.metadata as TAttrs),
+        attrs: (lastOutput.metadata as TAttrs) ?? ({} as TAttrs),
         structuredContent: lastOutput.structuredOutput,
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);
