@@ -79,6 +79,24 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   }
 
   /**
+   * Create a new session with specified attrs type (type-only, no runtime changes)
+   * This is useful for adding type information to an existing session
+   * @returns A new session with the same data but specified attrs type
+   * @example
+   * ```typescript
+   * type MessageMeta = { role: string; hidden: boolean };
+   * const typedSession = session.withAttrsType<MessageMeta>();
+   * ```
+   */
+  withAttrsType<U extends Record<string, unknown>>(): Session<TVars, Attrs<U>> {
+    return new Session<TVars, Attrs<U>>(
+      [...this.messages] as Message<Attrs<U>>[],
+      { ...this.vars },
+      this.print,
+    );
+  }
+
+  /**
    * Get the size of the context
    */
   get varsSize(): number {
@@ -174,6 +192,104 @@ export function createSession<
     ctx,
     options.print ?? false,
   );
+}
+
+/**
+ * Session builder for chainable session creation with gradual typing
+ * @template TVars - The vars type
+ * @template TAttrs - The attrs type
+ */
+export class SessionBuilder<
+  TVars extends Record<string, unknown> = {},
+  TAttrs extends Record<string, unknown> = {}
+> {
+  /**
+   * Add vars type specification to the builder (type-only, no runtime values)
+   * @returns A new builder with the specified vars type
+   * @example
+   * ```typescript
+   * type UserContext = { userId: string; role: string };
+   * const session = Session.withAttrsType<MessageMeta>()
+   *   .withVarsType<UserContext>()
+   *   .create();
+   * ```
+   */
+  withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<TNewVars, TAttrs> {
+    return new SessionBuilder<TNewVars, TAttrs>();
+  }
+
+  /**
+   * Add attrs type specification to the builder (type-only, no runtime values)
+   * @returns A new builder with the specified attrs type
+   * @example
+   * ```typescript
+   * type MessageMeta = { role: string; hidden: boolean };
+   * const session = Session.withVarsType<UserContext>()
+   *   .withAttrsType<MessageMeta>()
+   *   .create();
+   * ```
+   */
+  withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<TVars, TNewAttrs> {
+    return new SessionBuilder<TVars, TNewAttrs>();
+  }
+
+  /**
+   * Create the session with the specified types
+   * @param options Optional configuration
+   * @returns A new session instance with the specified types
+   * @example
+   * ```typescript
+   * const session = Session.withVarsType<UserContext>()
+   *   .withAttrsType<MessageMeta>()
+   *   .create({ vars: { userId: '123', role: 'admin' } });
+   * ```
+   */
+  create(options?: {
+    vars?: TVars;
+    messages?: Message<Attrs<TAttrs>>[];
+    print?: boolean;
+  }): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({
+      context: options?.vars,
+      messages: options?.messages,
+      print: options?.print,
+    });
+  }
+
+  /**
+   * Create an empty session with the specified types
+   * @returns A new empty session instance with the specified types
+   * @example
+   * ```typescript
+   * const session = Session.withVarsType<UserContext>()
+   *   .withAttrsType<MessageMeta>()
+   *   .empty();
+   * ```
+   */
+  empty(): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({});
+  }
+
+  /**
+   * Create a debug session with the specified types
+   * @param options Optional configuration
+   * @returns A new session instance with print enabled and the specified types
+   * @example
+   * ```typescript
+   * const session = Session.withVarsType<UserContext>()
+   *   .debug({ vars: { userId: '123', role: 'admin' } });
+   * ```
+   */
+  debug(options?: {
+    vars?: TVars;
+    messages?: Message<Attrs<TAttrs>>[];
+  }): Session<Vars<TVars>, Attrs<TAttrs>> {
+    return createSession<TVars, TAttrs>({
+      context: options?.vars,
+      messages: options?.messages,
+      print: true,
+    });
+  }
 }
 
 /**
@@ -359,5 +475,31 @@ export namespace Session {
       messages: options?.messages,
       print: true,
     });
+  }
+
+  /**
+   * Create a session builder with specified vars type (type-only, no runtime values)
+   * @returns A chainable session builder
+   * @example
+   * ```typescript
+   * type UserContext = { userId: string; role: string };
+   * const session = Session.withVarsType<UserContext>().create();
+   * ```
+   */
+  export function withVarsType<TVars extends Record<string, unknown>>(): SessionBuilder<TVars, {}> {
+    return new SessionBuilder<TVars, {}>();
+  }
+
+  /**
+   * Create a session builder with specified attrs type (type-only, no runtime values)
+   * @returns A chainable session builder
+   * @example
+   * ```typescript
+   * type MessageMeta = { role: string; hidden: boolean };
+   * const session = Session.withAttrsType<MessageMeta>().create();
+   * ```
+   */
+  export function withAttrsType<TAttrs extends Record<string, unknown>>(): SessionBuilder<{}, TAttrs> {
+    return new SessionBuilder<{}, TAttrs>();
   }
 }

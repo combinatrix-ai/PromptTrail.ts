@@ -257,6 +257,10 @@ console.log('last message:', session.getLastMessage()?.content);
   import { Session } from '@prompttrail/core';
   const session = Session.create(); // Creates an empty session
   const sessionWithContext = Session.withVars({ userName: 'Alice' });
+  
+  // With type safety for complex applications
+  const typedSession = Session.withVarsType<UserContext>()
+    .create({ vars: { userId: '123', role: 'admin' } });
   ```
   - **Vars**: A read-only structured object (`Vars<T>`) holding conversation state (e.g., user info, settings). Used for interpolation (`Hi ${userName}`) or storing information (`vars.loopCounter`).
     ```typescript
@@ -339,50 +343,88 @@ const session = await simpleTemplate.execute(
 
 ### 🔒 TypeScript-First Design
 
-PromptTrail leverages TypeScript for strong typing, better IDE support, and a robust development experience.
+PromptTrail provides a natural progression from simple scripts to fully-typed applications. Start simple and add types as your application grows.
+
+#### Getting Started (No Types Required)
 
 ```typescript
-import { Session, Vars, Attrs } from '@prompttrail/core';
+import { Session, Agent, Source } from '@prompttrail/core';
 
-// Define types for context and metadata
-interface MyVars extends Vars {
-  name: string;
-  preferences: {
-    theme: 'light' | 'dark';
-    language: string;
-  };
-}
-interface MyAttrs extends Attrs {
-  timestamp: number;
-}
+// Start simple - types are inferred automatically
+const session = Session.create({ vars: { userName: 'Alice', level: 1 } });
 
-// Type-safe session creation
-const session = Session.withVars<MyVars, MyAttrs>({
-  name: 'Alice',
-  preferences: {
-    theme: 'dark',
-    language: 'TypeScript',
-  },
-});
-
-// Type-safe context access
-const userName = session.getVar('name'); // Type: string | undefined
-const theme = session.getVar('preferences')?.theme; // Type: 'light' | 'dark' | undefined
-
-// Immutable operations maintain type safety
-const updatedSession = session.addMessage({
-  type: 'user',
-  content: 'Hi',
-  metadata: { timestamp: Date.now() }, // Attrs match MyAttrs
-});
-const newSession = updatedSession.withVars({ name: 'Bob' }); // Updates context immutably
+console.log(session.getVar('userName')); // Alice
+console.log(session.getVar('level'));    // 1
 ```
 
-PromptTrail's immutable architecture ensures predictable state management:
+#### Adding Structure with Type Inference
 
-- Session operations (`addMessage`, `withVar`, `withVars`) return new `Session` instances.
-- Templates operate on sessions without side effects.
-- Consistent use of `Vars<T>` and `Attrs<T>` ensures type safety.
+```typescript
+// Session infers types from your data
+const gameSession = Session.withVars({
+  playerId: 'player123',
+  score: 0,
+  inventory: ['sword', 'potion'],
+  settings: { difficulty: 'normal', sound: true }
+});
+
+// Full type safety with auto-completion
+const currentScore = gameSession.getVar('score');      // number
+const items = gameSession.getVar('inventory');         // string[]
+const difficulty = gameSession.getVar('settings').difficulty; // string
+```
+
+#### Explicit Types for Complex Applications
+
+When you need precise type control, specify your types explicitly:
+
+```typescript
+// Define your application types
+type UserProfile = {
+  userId: string;
+  role: 'admin' | 'user' | 'guest';
+  preferences: {
+    theme: 'light' | 'dark';
+    notifications: boolean;
+  };
+};
+
+type MessageMeta = {
+  priority: 'low' | 'medium' | 'high';
+  timestamp: number;
+};
+
+// Specify types for session variables
+const typedSession = Session.withVarsType<UserProfile>()
+  .create({
+    vars: {
+      userId: 'user123',
+      role: 'admin',
+      preferences: { theme: 'dark', notifications: true }
+    }
+  });
+
+// Add message metadata types when needed
+const fullSession = Session.withVarsType<UserProfile>()
+  .withAttrsType<MessageMeta>()
+  .create({ vars: { /* ... */ } });
+
+// Or add types to existing sessions
+const existingSession = Session.withVars({ count: 42, name: 'test' });
+const withMetadata = existingSession.withAttrsType<MessageMeta>();
+```
+
+#### Type-Safe Template Building
+
+```typescript
+const personalizedAgent = Agent.create()
+  .system('You are a helpful assistant for ${role} users')
+  .user('My name is ${userId}. Help me with TypeScript.')
+  .assistant(Source.llm().openai());
+
+// Execute with typed session - variables are interpolated safely
+const result = await personalizedAgent.execute(typedSession);
+```
 
 ### 🏗️ Building Templates
 

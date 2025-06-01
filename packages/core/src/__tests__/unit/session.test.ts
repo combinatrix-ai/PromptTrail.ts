@@ -305,3 +305,141 @@ describe('Session Namespace', () => {
     expect(session.getVar('settings')).toEqual({ theme: 'dark' });
   });
 });
+
+describe('Session New API - Gradual Typing', () => {
+  it('should create session with vars type only', () => {
+    type UserContext = {
+      userId: string;
+      role: 'admin' | 'user';
+      settings: { theme: string };
+    };
+    
+    const session = Session.withVarsType<UserContext>().create({
+      vars: {
+        userId: '123',
+        role: 'admin',
+        settings: { theme: 'dark' }
+      }
+    });
+    
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('role')).toBe('admin');
+    expect(session.getVar('settings')).toEqual({ theme: 'dark' });
+  });
+
+  it('should create session with attrs type only', () => {
+    type MessageMeta = {
+      role: string;
+      hidden: boolean;
+      priority: number;
+    };
+    
+    const session = Session.withAttrsType<MessageMeta>().create();
+    
+    expect(session.messages).toHaveLength(0);
+    expect(session.varsSize).toBe(0);
+  });
+
+  it('should create session with both vars and attrs types', () => {
+    type UserContext = {
+      userId: string;
+      role: 'admin' | 'user';
+    };
+    
+    type MessageMeta = {
+      role: string;
+      hidden: boolean;
+    };
+    
+    const session = Session.withVarsType<UserContext>()
+      .withAttrsType<MessageMeta>()
+      .create({
+        vars: {
+          userId: '123',
+          role: 'admin'
+        }
+      });
+    
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('role')).toBe('admin');
+    expect(session.messages).toHaveLength(0);
+  });
+
+  it('should chain attrs type to existing vars session', () => {
+    type MessageMeta = {
+      role: string;
+      hidden: boolean;
+    };
+    
+    const session = Session.withVars({ userId: '123', name: 'John' })
+      .withAttrsType<MessageMeta>();
+    
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('name')).toBe('John');
+    expect(session.messages).toHaveLength(0);
+  });
+
+  it('should create empty session with types', () => {
+    type UserContext = { userId: string };
+    type MessageMeta = { role: string };
+    
+    const session = Session.withVarsType<UserContext>()
+      .withAttrsType<MessageMeta>()
+      .empty();
+    
+    expect(session.messages).toHaveLength(0);
+    expect(session.varsSize).toBe(0);
+  });
+
+  it('should create debug session with types', () => {
+    type UserContext = { userId: string; debug: boolean };
+    
+    const session = Session.withVarsType<UserContext>()
+      .debug({
+        vars: {
+          userId: '123',
+          debug: true
+        }
+      });
+    
+    expect(session.print).toBe(true);
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('debug')).toBe(true);
+  });
+
+  it('should support mixed chaining starting with attrs', () => {
+    type UserContext = { userId: string; role: string };
+    type MessageMeta = { priority: number };
+    
+    const session = Session.withAttrsType<MessageMeta>()
+      .withVarsType<UserContext>()
+      .create({
+        vars: {
+          userId: '123',
+          role: 'admin'
+        }
+      });
+    
+    expect(session.getVar('userId')).toBe('123');
+    expect(session.getVar('role')).toBe('admin');
+  });
+
+  it('should allow adding attrs type to existing session instance', () => {
+    type MessageMeta = { role: string; hidden: boolean };
+    
+    const originalSession = Session.create({
+      vars: { userId: '123', name: 'John' }
+    });
+    
+    const typedSession = originalSession.withAttrsType<MessageMeta>();
+    
+    // Should preserve existing data
+    expect(typedSession.getVar('userId')).toBe('123');
+    expect(typedSession.getVar('name')).toBe('John');
+    expect(typedSession.messages).toHaveLength(0);
+    
+    // Original session should be unchanged
+    expect(originalSession.getVar('userId')).toBe('123');
+    expect(originalSession.getVar('name')).toBe('John');
+  });
+});
