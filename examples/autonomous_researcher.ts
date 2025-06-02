@@ -1,4 +1,4 @@
-import { Scenario, Source, Tool, Session } from '@prompttrail/core';
+import { Scenario, Tool, Session } from '@prompttrail/core';
 import { z } from 'zod';
 
 /**
@@ -176,18 +176,19 @@ async function createAutonomousResearcher() {
     'This agent will explore until it feels it has enough information.\n',
   );
 
-  // Configure LLM source
-  const llmSource = Source.llm()
-    .openai()
-    .apiKey(process.env.OPENAI_API_KEY || '')
-    .model('gpt-4.1')
-    .temperature(0.7);
+  // Configure LLM
+  const llmConfig = {
+    provider: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: 'gpt-4.1',
+    temperature: 0.7,
+  };
 
   const scenario = Scenario.system(
     'You are a code research assistant. Help users understand codebases by researching and explaining code.',
     {
       tools: researchTools,
-      llmSource: llmSource,
+      llmConfig: llmConfig,
     },
   )
 

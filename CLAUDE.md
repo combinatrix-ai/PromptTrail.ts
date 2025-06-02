@@ -197,15 +197,22 @@ pnpm install -w -D <package-name>
 - **Transform**: Session state modification
 - **Structured**: Schema-validated output
 
-### Sources
+### Content Configuration
 
-- **Source.llm()**: Generate via LLM
-- **Source.cli()**: User input from terminal
-- **Source.literal()**: Fixed content
-- **Source.callback()**: Custom logic
-- **Source.random()**: Random from list
-- **Source.list()**: Sequential from list
-- **Source.schema()**: Structured generation
+**User Templates:**
+
+- **String**: `"Fixed content"` - Static text with interpolation
+- **Array**: `["A", "B", "C"]` - Sequential content with optional looping
+- **CLI Options**: `{ cli: "Enter name:" }` - User input from terminal
+- **Callback**: `async (session) => "..."` - Custom async logic
+
+**Assistant Templates:**
+
+- **LLM Config**: `{ provider: 'openai', model: 'gpt-4' }` - Direct LLM configuration
+- **String**: `"Static response"` - Fixed assistant content
+- **Callback**: `async (session) => ({ content: "...", toolCalls: [...] })` - Custom logic
+
+Under the hood, these templates are built using the `Source` API for maximum flexibility.
 
 ## Common Tasks
 

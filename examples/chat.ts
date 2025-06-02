@@ -1,7 +1,7 @@
-import { Agent, Session, Source } from '../packages/core/src/index';
+import { Agent, Session } from '../packages/core/src/index';
 
 async function main() {
-  // Create the main conversation flow using the new function-based API
+  // Create the main conversation flow using the new direct API
   const chatAgent = Agent.system(
     'You are a helpful AI assistant. Be concise and friendly in your responses.',
   ).loop(
@@ -9,9 +9,9 @@ async function main() {
     (agent) =>
       agent
         // User message from CLI with custom prompt
-        .user(Source.cli('Your message (type "exit" to end): '))
+        .user({ cli: 'Your message (type "exit" to end): ' })
         // Assistant message using the default model
-        .assistant(),
+        .assistant({ provider: 'openai', model: 'gpt-4o-mini' }),
     // Loop condition: continue until user types "exit"
     (session) => {
       const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];

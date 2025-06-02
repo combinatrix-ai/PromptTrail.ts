@@ -50,18 +50,17 @@ await agent.execute(); // Runs forever until user exits
 ### Customizing the LLM
 
 ```typescript
-import { Agent, Source } from '@prompttrail/core';
+import { Agent } from '@prompttrail/core';
 
 const agent = Agent.create()
   .system('You are a creative writer.')
   .user('Write a haiku about TypeScript.')
-  .assistant(
-    Source.llm()
-      .openai()
-      .model('gpt-4')
-      .temperature(0.9)
-      .apiKey(process.env.OPENAI_API_KEY),
-  );
+  .assistant({
+    provider: 'openai',
+    model: 'gpt-4',
+    temperature: 0.9,
+    apiKey: process.env.OPENAI_API_KEY,
+  });
 
 await agent.execute();
 ```
@@ -100,20 +99,38 @@ const agent = Agent.create()
 await agent.execute(session);
 ```
 
-### Sources - Where Content Comes From
+### Content Configuration
+
+PromptTrail supports both a **simple direct API** (recommended) and **powerful Source API** (for advanced users):
 
 ```typescript
+// 🆕 Direct API (Recommended) - Simple and intuitive
+.user('Fixed text')                      // Static content
+.user({ cli: 'Enter your message: ' })  // User input from terminal
+.user(['A', 'B', 'C'], { loop: true })  // Sequential/looping content
+.user(async (session) => '...')         // Custom async logic
+
+.assistant()                             // Default OpenAI GPT-4o-mini
+.assistant({ provider: 'anthropic' })    // Anthropic Claude
+.assistant('Static response')            // Fixed assistant content
+
+// ⚡ Source API (Power Users) - Advanced customization
 import { Source } from '@prompttrail/core';
 
-// Different content sources
-.user(Source.literal('Fixed text'))      // Static content
-.user(Source.cli())                      // User input from terminal
-.user(Source.random(['A', 'B', 'C']))    // Random selection
-.user(Source.callback(session => '...')) // Custom logic
+.user(Source.cli('Enter message:'))      // CLI with validation
+.user(Source.list(['A', 'B']))          // Sequential content
+.user(Source.callback(async () => '...')) // Custom logic
 
-.assistant(Source.llm())                 // LLM generation (default)
-.assistant(Source.cli())                 // Manual assistant input
+.assistant(Source.llm().openai())       // LLM with middleware
+.assistant(Source.llm().anthropic())    // Advanced configuration
 ```
+
+**When to use each approach:**
+
+- **Direct API**: 90% of use cases - simple, intuitive, covers most needs
+- **Source API**: Advanced features like middleware, complex validation, custom retry logic
+
+Both APIs can be mixed in the same agent for maximum flexibility!
 
 ### Control Flow
 
@@ -273,13 +290,16 @@ const weatherTool = tool({
 const agent = Agent.create()
   .system('You can check weather.')
   .user('Weather in SF?')
-  .assistant(Source.llm().openai().addTool('weather', weatherTool));
+  .assistant({
+    provider: 'openai',
+    tools: { weather: weatherTool },
+  });
 ```
 
 ### Structured Output
 
 ```typescript
-import { Structured } from '@prompttrail/core';
+import { Assistant } from '@prompttrail/core';
 import { z } from 'zod';
 
 const userSchema = z.object({
@@ -291,11 +311,13 @@ const userSchema = z.object({
 const agent = Agent.create()
   .system('Extract user info from text.')
   .user("Hi, I'm Alice, 25, love coding and music.")
-  .add(
-    new Structured({
-      schema: userSchema,
-      source: Source.llm().openai(),
-    }),
+  .assistant(
+    {
+      provider: 'openai',
+    },
+    {
+      schema: userSchema, // Schema validation built-in
+    },
   );
 
 const session = await agent.execute();
@@ -305,78 +327,88 @@ const userData = session.getLastMessage()?.structuredContent;
 
 ### Validation
 
-PromptTrail provides comprehensive validation for all content sources with automatic retry:
+PromptTrail provides comprehensive validation for all content with automatic retry:
 
 ```typescript
 import { Validation } from '@prompttrail/core';
 
-// Simple validation with Source.llm()
-const simpleValidation = Source.llm()
-  .openai()
-  .validate(Validation.length({ max: 100 }))
-  .withMaxAttempts(3)
-  .withRaiseError(true);
-
-// Complex multi-criteria validation
-const complexValidation = Source.llm()
-  .openai()
-  .validate(
-    Validation.all([
-      Validation.length({ min: 10, max: 500 }),
-      Validation.keyword(['explanation', 'example'], { mode: 'include' }),
-      Validation.regex(/^\w+.*\w+$/), // Must start and end with word characters
-    ]),
-  )
-  .withMaxAttempts(5);
-
-// Use in templates
+// Assistant validation with retry
 const agent = Agent.create()
   .system('Explain concepts clearly with examples.')
   .user('What is TypeScript?')
-  .assistant(complexValidation);
+  .assistant(
+    {
+      provider: 'openai',
+    },
+    {
+      validation: Validation.all([
+        Validation.length({ min: 10, max: 500 }),
+        Validation.keyword(['explanation', 'example'], { mode: 'include' }),
+        Validation.regex(/^\w+.*\w+$/), // Must start and end with word characters
+      ]),
+      maxAttempts: 5,
+    },
+  );
 
-// CLI validation with retries
-const userInput = Source.cli('Enter your name (2-50 chars):')
-  .validate(
-    Validation.all([
-      Validation.length({ min: 2, max: 50 }),
-      Validation.regex(/^[a-zA-Z\s]+$/), // Only letters and spaces
-    ]),
-  )
-  .withMaxAttempts(3)
-  .withRaiseError(false); // Don't throw, just warn
+// User input validation with retries
+const userAgent = Agent.create()
+  .system('Gather user information')
+  .user(
+    { cli: 'Enter your name (2-50 chars):' },
+    {
+      validation: Validation.all([
+        Validation.length({ min: 2, max: 50 }),
+        Validation.regex(/^[a-zA-Z\s]+$/), // Only letters and spaces
+      ]),
+      maxAttempts: 3,
+    },
+  );
 
 // Schema validation for structured data
-const structuredResponse = Source.schema(
-  z.object({
-    answer: z.string(),
-    confidence: z.number().min(0).max(1),
-    reasoning: z.array(z.string()),
-  }),
-  {
-    mode: 'structured_output',
-    maxAttempts: 3,
-  },
-);
+const structuredAgent = Agent.create()
+  .system('Extract structured data')
+  .user('Parse this information')
+  .assistant(
+    {
+      provider: 'openai',
+    },
+    {
+      validation: Validation.schema(
+        z.object({
+          answer: z.string(),
+          confidence: z.number().min(0).max(1),
+          reasoning: z.array(z.string()),
+        }),
+      ),
+      maxAttempts: 3,
+    },
+  );
 
 // Custom validation with context access
-const contextAwareValidation = Source.llm()
-  .validate(
-    Validation.custom((content, session) => {
-      const maxWords = session?.getVar('maxWords', 50);
-      const wordCount = content.split(/\s+/).length;
+const contextAgent = Agent.create()
+  .system('Respond appropriately')
+  .user('Tell me about AI')
+  .assistant(
+    {
+      provider: 'openai',
+    },
+    {
+      validation: Validation.custom((content, session) => {
+        const maxWords = session?.getVar('maxWords', 50);
+        const wordCount = content.split(/\s+/).length;
 
-      if (wordCount <= maxWords) {
-        return { isValid: true };
-      }
+        if (wordCount <= maxWords) {
+          return { isValid: true };
+        }
 
-      return {
-        isValid: false,
-        instruction: `Response must be ${maxWords} words or less (got ${wordCount})`,
-      };
-    }),
-  )
-  .withMaxAttempts(2);
+        return {
+          isValid: false,
+          instruction: `Response must be ${maxWords} words or less (got ${wordCount})`,
+        };
+      }),
+      maxAttempts: 2,
+    },
+  );
 ```
 
 **Validation Features:**
@@ -424,9 +456,9 @@ const researchAgent = Agent.create()
   .user('Compare machine learning frameworks')
   .add(
     new Parallel()
-      .addSource(Source.llm().openai().temperature(0.2), 1) // Conservative
-      .addSource(Source.llm().anthropic().temperature(0.8), 1) // Creative
-      .addSource(Source.llm().google().temperature(0.5), 1) // Balanced
+      .addSource({ provider: 'openai', temperature: 0.2 }, 1) // Conservative
+      .addSource({ provider: 'anthropic', temperature: 0.8 }, 1) // Creative
+      .addSource({ provider: 'google', temperature: 0.5 }, 1) // Balanced
       .setAggregationFunction(
         (session) => session.getLastMessage()?.content?.length || 0,
       )
@@ -494,7 +526,12 @@ const session = Session.create().addMessage({
   content: 'Explain async/await',
 });
 
-for await (const chunk of generateTextStream(session, Source.llm().openai())) {
+const llmConfig = {
+  provider: 'openai' as const,
+  model: 'gpt-4o-mini',
+};
+
+for await (const chunk of generateTextStream(session, llmConfig)) {
   process.stdout.write(chunk.content);
 }
 ```
@@ -504,42 +541,54 @@ for await (const chunk of generateTextStream(session, Source.llm().openai())) {
 ### OpenAI
 
 ```typescript
-const openaiConfig = Source.llm()
-  .openai()
-  .model('gpt-4')
-  .temperature(0.7)
-  .maxTokens(1000)
-  .apiKey(process.env.OPENAI_API_KEY);
+const openaiConfig = {
+  provider: 'openai' as const,
+  model: 'gpt-4',
+  temperature: 0.7,
+  maxTokens: 1000,
+  apiKey: process.env.OPENAI_API_KEY,
+};
+
+.assistant(openaiConfig)
 ```
 
 ### Anthropic
 
 ```typescript
-const anthropicConfig = Source.llm()
-  .anthropic()
-  .model('claude-3-5-haiku-latest')
-  .temperature(0.5)
-  .apiKey(process.env.ANTHROPIC_API_KEY);
+const anthropicConfig = {
+  provider: 'anthropic' as const,
+  model: 'claude-3-5-haiku-latest',
+  temperature: 0.5,
+  apiKey: process.env.ANTHROPIC_API_KEY,
+};
+
+.assistant(anthropicConfig)
 ```
 
 ### Google
 
 ```typescript
-const googleConfig = Source.llm()
-  .google()
-  .model('gemini-pro')
-  .temperature(0.8)
-  .apiKey(process.env.GOOGLE_API_KEY);
+const googleConfig = {
+  provider: 'google' as const,
+  model: 'gemini-pro',
+  temperature: 0.8,
+  apiKey: process.env.GOOGLE_API_KEY,
+};
+
+.assistant(googleConfig)
 ```
 
 ## 🌐 Browser Support
 
 ```typescript
 // Enable browser mode (⚠️ Don't expose API keys in production!)
-const browserConfig = Source.llm()
-  .openai()
-  .apiKey('sk-...')
-  .dangerouslyAllowBrowser(true);
+const browserConfig = {
+  provider: 'openai' as const,
+  apiKey: 'sk-...',
+  dangerouslyAllowBrowser: true,
+};
+
+.assistant(browserConfig)
 ```
 
 ## 📦 Package Structure

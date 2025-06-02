@@ -1,8 +1,5 @@
 import { Session } from '../session';
-import type { LlmSource, ModelOutput } from '../source';
-import { LiteralSource, Source } from '../source';
 import type { Attrs, Vars } from '../session';
-import { interpolateTemplate } from '../utils/template_interpolation';
 
 /**
  * Core template interface
@@ -24,8 +21,6 @@ export abstract class TemplateBase<
   TVars extends Vars = Vars,
 > implements Template<TAttrs, TVars>
 {
-  protected contentSource?: Source<unknown>;
-
   abstract execute(
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>>;
@@ -34,57 +29,5 @@ export abstract class TemplateBase<
     session?: Session<TVars, TAttrs>,
   ): Session<TVars, TAttrs> {
     return session || Session.create<TVars, TAttrs>();
-  }
-
-  getContentSource(): Source<unknown> | undefined {
-    return this.contentSource;
-  }
-
-  protected initializeContentSource(
-    input: string | Source<any> | LlmSource | Record<string, any> | undefined,
-    expectedSourceType: 'string' | 'model' | 'any' = 'any',
-  ): Source<any> | undefined {
-    if (input === undefined) {
-      return undefined;
-    }
-
-    if (input instanceof Source) {
-      return input;
-    }
-
-    if (typeof input === 'string') {
-      if (expectedSourceType === 'model') {
-        return {
-          async getContent(
-            session: Session<TVars, TAttrs>,
-          ): Promise<ModelOutput> {
-            const interpolatedContent = interpolateTemplate(
-              input,
-              session.vars,
-            );
-            return { content: interpolatedContent };
-          },
-        } as Source<ModelOutput>;
-      } else {
-        return new LiteralSource(input);
-      }
-    }
-
-    // Handle plain objects that might be LLMOptions
-    if (typeof input === 'object' && input !== null) {
-      if (expectedSourceType === 'string') {
-        throw new Error('Object cannot be used for a string-based source.');
-      }
-
-      // For Assistant templates, we no longer support GenerateOptions
-      // Users should use Source.llm() instead
-      throw new Error(
-        'Object parameters are no longer supported. Please use Source.llm() for LLM-based content generation.',
-      );
-    }
-
-    throw new Error(
-      `Unsupported input type for content source: ${typeof input}`,
-    );
   }
 }

@@ -1,19 +1,28 @@
 import type { Session } from '../session';
-import { ModelOutput, Source, ValidationOptions } from '../source';
 import type { Attrs, Vars } from '../session';
-import { IValidator } from '../validators';
+import type { IValidator } from '../validators/base';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
 import { Loop } from './composite/loop';
 import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
-import { Assistant } from './primitives/assistant';
+import {
+  Assistant,
+  type LLMConfig,
+  type AssistantTemplateOptions,
+  type AssistantContentInput,
+} from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
 import { Structured } from './primitives/structured';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
-import { User } from './primitives/user';
+import {
+  User,
+  type UserContentInput,
+  type UserTemplateOptions,
+  type CLIOptions,
+} from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
 
 /**
@@ -64,16 +73,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource?: string | Source<string>,
+    content?: UserContentInput,
+    options?: UserTemplateOptions,
   ) {
-    return new Agent<TC, TM>().user(contentOrSource);
+    return new Agent<TC, TM>().user(content, options);
   }
 
   static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource?: string | Source<ModelOutput> | Source<string>,
-    validatorOrOptions?: IValidator | ValidationOptions,
+    config?: AssistantContentInput,
+    options?: AssistantTemplateOptions,
   ) {
-    return new Agent<TC, TM>().assistant(contentOrSource, validatorOrOptions);
+    return new Agent<TC, TM>().assistant(config, options);
   }
 
   /** fluent helpers -------------------------------------------------- */
@@ -88,16 +98,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  user(contentOrSource?: string | Source<string>) {
-    this.root.add(new User(contentOrSource));
+  user(content?: UserContentInput, options?: UserTemplateOptions) {
+    this.root.add(new User(content, options));
     return this;
   }
 
   assistant(
-    contentOrSource?: string | Source<ModelOutput> | Source<string>,
-    validatorOrOptions?: IValidator | ValidationOptions,
+    config?: AssistantContentInput,
+    options?: AssistantTemplateOptions,
   ) {
-    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
+    this.root.add(new Assistant(config, options));
     return this;
   }
 
