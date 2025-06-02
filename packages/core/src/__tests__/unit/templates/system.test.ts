@@ -57,7 +57,7 @@ describe('SystemTemplate', () => {
     );
 
     // Create a SystemTemplate with interpolated text
-    const template = new System('You are a ${role}. Always ${rules}.');
+    const template = new System('You are a {{role}}. Always {{rules}}.');
 
     // Execute the template and verify the result
     const result = await template.execute(sessionWithBoth);

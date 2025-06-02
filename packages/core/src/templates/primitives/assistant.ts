@@ -2,7 +2,7 @@
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
-import { Attrs, Vars } from '../../session';
+import type { Attrs, Vars } from '../../session';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 

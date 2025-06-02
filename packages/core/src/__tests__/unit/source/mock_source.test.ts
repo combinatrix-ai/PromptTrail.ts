@@ -217,7 +217,7 @@ describe('Source.llm().mock()', () => {
         .mockResponse({ content: 'Too short' });
 
       await expect(mockSource.getContent(session)).rejects.toThrow(
-        'Validation failed after 1 attempts:',
+        'Validation failed:',
       );
     });
 

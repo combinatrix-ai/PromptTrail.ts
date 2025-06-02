@@ -123,7 +123,7 @@ describe('Sequence Template', () => {
           return session.withVars({ userName: name });
         }),
       )
-      .add(new User('Nice to meet you, ${userName}'));
+      .add(new User('Nice to meet you, {{userName}}'));
 
     const session = await sequence.execute();
 
@@ -169,8 +169,8 @@ describe('Sequence Template', () => {
     const mainSequence = new Sequence()
       .add(sequence1)
       .add(sequence2)
-      // Note: Template interpolation uses `${metadataKey}` syntax
-      .add(new User('Counter value: ${counter}'));
+      // Note: Template interpolation uses `{{metadataKey}}` syntax
+      .add(new User('Counter value: {{counter}}'));
 
     const session = await mainSequence.execute();
 

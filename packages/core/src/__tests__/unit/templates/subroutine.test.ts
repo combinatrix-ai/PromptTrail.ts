@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
-import { Attrs, Vars } from '../../../session';
+import type { Attrs, Vars } from '../../../session';
 import {
   Agent,
   Assistant,

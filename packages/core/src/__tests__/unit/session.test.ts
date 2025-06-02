@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
 import { createSession, Session } from '../../session';
-import { Vars, Attrs } from '../../session';
+import type { Vars, Attrs } from '../../session';
 
 function createUserMessage(content: string): Message {
   return {

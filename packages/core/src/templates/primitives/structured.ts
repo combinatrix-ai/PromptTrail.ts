@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { Session } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
-import { Attrs, Vars } from '../../session';
+import type { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
 /**

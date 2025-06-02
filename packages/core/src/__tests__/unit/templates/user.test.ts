@@ -65,7 +65,7 @@ describe('UserTemplate', () => {
     console.log('Original session after setting context value:', session);
 
     // Create a UserTemplate with interpolated text
-    const template = new User('What is the ${query} like today?');
+    const template = new User('What is the {{query}} like today?');
 
     // Execute the template and verify the result
     const result = await template.execute(updatedSession);
@@ -89,7 +89,7 @@ describe('UserTemplate', () => {
     );
 
     const template = new User(
-      Source.literal('What is the ${query} like today?'),
+      Source.literal('What is the {{query}} like today?'),
     );
 
     const result = await template.execute(updatedSession);

@@ -505,7 +505,7 @@ describe('LlmSource', () => {
       const source = Source.llm();
 
       await expect(source.getContent(Session.create())).rejects.toThrow(
-        'LLM generation failed after 1 attempts: Did not return assistant response.',
+        'LLM generation did not return assistant response',
       );
     });
   });
@@ -574,7 +574,7 @@ describe('LlmSource', () => {
       );
 
       await expect(source.getContent(Session.create())).rejects.toThrow(
-        'Validation failed after 2 attempts: Always fails',
+        'Validation failed: Always fails',
       );
     });
 
@@ -648,7 +648,7 @@ describe('LlmSource', () => {
 
     it('should retry on generateText errors', async () => {
       vi.mocked(generateText)
-        .mockRejectedValueOnce(new Error('API Error'))
+        .mockRejectedValueOnce(new Error('Network timeout error'))
         .mockResolvedValueOnce({
           type: 'assistant',
           content: 'Success on retry',
@@ -671,7 +671,9 @@ describe('LlmSource', () => {
     });
 
     it('should return empty content when raiseError is false', async () => {
-      vi.mocked(generateText).mockRejectedValue(new Error('API Error'));
+      vi.mocked(generateText).mockRejectedValue(
+        new Error('Non-retryable error'),
+      );
 
       const source = new LlmSource({}, { maxAttempts: 1, raiseError: false });
       const result = await source.getContent(Session.create());

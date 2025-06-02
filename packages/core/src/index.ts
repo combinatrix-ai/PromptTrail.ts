@@ -1,8 +1,10 @@
 export { tool } from 'ai';
 export * from './generate';
 export * from './message';
-export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
+export { createSession, Session, SessionBuilder } from './session';
+export type { Vars, Attrs } from './session';
 export * from './source';
+export * from './middleware';
 export * from './templates';
 export * from './templates/primitives/structured';
 export * from './tool';

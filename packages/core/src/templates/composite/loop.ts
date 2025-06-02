@@ -1,5 +1,5 @@
 import type { Session } from '../../session';
-import { Attrs, Vars } from '../../session';
+import type { Attrs, Vars } from '../../session';
 import type { Template } from '../base';
 import { Composite } from './composite';
 

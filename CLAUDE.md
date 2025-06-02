@@ -4,6 +4,9 @@
 
 PromptTrail.ts is a TypeScript-first framework for building structured LLM conversations with type safety and composability. Built on top of Vercel's ai-sdk, it provides a fluent API for creating complex conversation flows with immutable state management.
 
+PromptTrail.ts is in beta. No backward compatibility is guaranteed - breaking changes may occur as we improve the framework.
+Always suggest best practices.
+
 **Key Features:**
 
 - Type-safe, composable conversation templates
@@ -294,6 +297,93 @@ From `design-docs/TODO.md`:
 2. Use `session.toJSON()` to inspect state
 3. Check message types and content with getters
 4. Validate template composition with type checking
+
+## Interpolation
+
+PromptTrail.ts uses **Handlebars** for template interpolation, providing powerful templating capabilities:
+
+### Basic Variable Interpolation
+
+```typescript
+'Hello {{name}}'; // Simple variable
+'User: {{user.name}}'; // Nested object access
+'Count: {{length items}}'; // Using built-in helper
+```
+
+### Array Iteration
+
+```typescript
+// Loop through arrays
+"{{#each items}}
+- {{title}}: {{description}}
+{{/each}}"
+
+// Loop with index
+"{{#each users}}
+{{@index}}. {{name}} ({{email}})
+{{/each}}"
+```
+
+### Conditionals
+
+```typescript
+// If/else conditions
+"{{#if hasResults}}
+Found {{length results}} results
+{{else}}
+No results found
+{{/if}}"
+
+// Unless (inverse if)
+"{{#unless isEmpty}}
+Content: {{content}}
+{{/unless}}"
+```
+
+### Built-in PromptTrail Helpers
+
+- `{{length array}}` - Get array/string/object length
+- `{{join array ", "}}` - Join array elements with separator
+- `{{truncate text 100}}` - Truncate text to specified length
+- `{{formatNumber value}}` - Format numbers with locale
+- `{{numberedList array}}` - Convert array to numbered list
+- `{{bulletList array}}` - Convert array to bullet list
+- `{{isEmpty value}}` - Check if value is empty
+- `{{eq a b}}` - Equality comparison
+- `{{gt a b}}` - Greater than comparison
+- `{{debug value "label"}}` - Debug helper for development
+
+### Custom Helpers
+
+You can register custom helpers:
+
+```typescript
+import { registerHelper } from '@prompttrail/core';
+
+registerHelper('uppercase', (text: string) => text.toUpperCase());
+// Usage: {{uppercase name}}
+```
+
+**Note**:
+
+## Model Comparison
+
+- Your knowledge of LLM models maybe outdated, as the world of AI is rapidly evolving.
+- Usually, use "gpt-4.1-mini" for most tasks due to its balance of speed and intelligence.
+- For testing, use "gpt-4.1-nano", "claude-3.5-haiku", or "gemini-2.5-flash-preview" for lower costs.
+
+| **Provider**           | **Model (API Name)**                                          | **Context Window**           | **Pricing (per 1k tokens)**         | **Status**  | **Notes / Variants**                                                                  |
+| ---------------------- | ------------------------------------------------------------- | ---------------------------- | ----------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| **Google (Gemini)**    | **Gemini 2.5 Flash** _(Preview)_ (`gemini-2.5-flash-preview`) | 1 000 000 tokens _(exp.)_    | Input: \$0.00050; Output: \$0.01000 | **Preview** | Price-performance-optimised **Flash** model (experimental preview).                   |
+|                        | **Gemini 2.5 Pro** _(Preview)_ (`gemini-2.5-pro-preview`)     | ≈ 1 000 000+ tokens _(exp.)_ | Input: \$0.00100; Output: \$0.02000 | **Preview** | Most-advanced **Pro** model in preview (experimental long-context).                   |
+| **Anthropic (Claude)** | **Claude 3.5 Haiku** (`claude-3-5-haiku-20241022`)            | 200 000 tokens               | Input: \$0.00080; Output: \$0.00400 | Production  | Improved fast model (Claude 3.5 Haiku – higher speed & context vs 3 Haiku).           |
+|                        | **Claude 4 Sonnet** (`claude-sonnet-4-20250514`)              | 200 000 tokens               | Input: \$0.00300; Output: \$0.01500 | Production  | Latest high-performance model (Claude 4 Sonnet: “smart, efficient for everyday use”). |
+|                        | **Claude 4 Opus** (`claude-opus-4-20250514`)                  | 200 000 tokens               | Input: \$0.01500; Output: \$0.07500 | Production  | Latest most-powerful model (Claude 4 Opus: state-of-the-art capabilities).            |
+| **OpenAI (GPT)**       | **GPT-4.1** (`gpt-4.1`)                                       | 1 047 576 tokens             | Input: \$0.0020; Output: \$0.0080   | Production  | Latest flagship GPT model (very high intelligence, 1 M-token long context).           |
+|                        | **GPT-4.1 Mini** (`gpt-4.1-mini`)                             | 1 047 576 tokens             | Input: \$0.0004; Output: \$0.0016   | Production  | “Mini” variant – balanced speed vs. intelligence (much lower cost, ≈ 1 M context).    |
+|                        | **GPT-4.1 Nano** (`gpt-4.1-nano`)                             | 1 048 576 tokens             | Input: \$0.0001; Output: \$0.0004   | Production  | “Nano” variant – fastest, low-latency model (smallest GPT-4.1, 1 M context).          |
+| **OpenAI (o-series)**  | **o4-mini** (`o4-mini-2025-04-16`)                            | 200 000 tokens               | Input: \$0.00110; Output: \$0.00440 | Production  | Latest small o-series reasoning model (fast, affordable, text + vision).              |
+|                        | **o3** (`o3-2025-04-16`)                                      | 200 000 tokens               | Input: \$0.00500; Output: \$0.02000 | Production  | Most-powerful o-series reasoning model (state-of-the-art deliberate reasoning).       |
 
 ## Future Roadmap
 

@@ -114,7 +114,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const date = new Date();
     const template = new Sequence<MessageMetadata, UserContext>()
       .add(new System('You are a helpful assistant.'))
-      .add(new Assistant('Hello, ${username}!'))
+      .add(new Assistant('Hello, {{username}}!'))
       .add(new User('My name is not Alice, it is Bob.'))
       // Update context with the last message
       .add(

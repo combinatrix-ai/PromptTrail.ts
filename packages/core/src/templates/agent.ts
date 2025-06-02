@@ -1,6 +1,6 @@
 import type { Session } from '../session';
 import { ModelOutput, Source, ValidationOptions } from '../source';
-import { Attrs, Vars } from '../session';
+import type { Attrs, Vars } from '../session';
 import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';

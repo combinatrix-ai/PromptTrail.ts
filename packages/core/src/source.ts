@@ -7,6 +7,17 @@ import {
   generateWithSchema,
   SchemaGenerationOptions,
 } from './generate';
+import {
+  MiddlewarePipeline,
+  MiddlewareContext,
+  RequestContext,
+  ResponseContext,
+  RetryConfig,
+  DEFAULT_RETRY_CONFIG,
+  RequestInterceptor,
+  ResponseInterceptor,
+  Middleware,
+} from './middleware';
 import type { Session, Vars } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
@@ -129,11 +140,31 @@ export abstract class Source<T = unknown> {
   protected validator?: IValidator;
   protected maxAttempts: number;
   protected raiseError: boolean;
+  protected pipeline: MiddlewarePipeline<unknown, T>;
+  protected retryConfig: RetryConfig;
 
-  constructor(options?: ValidationOptions) {
+  constructor(
+    options?: ValidationOptions & {
+      retryConfig?: Partial<RetryConfig>;
+      middleware?: MiddlewarePipeline<unknown, T>;
+    },
+  ) {
     this.validator = options?.validator;
     this.maxAttempts = options?.maxAttempts ?? 1;
     this.raiseError = options?.raiseError ?? true;
+    this.pipeline =
+      options?.middleware?.clone() ?? new MiddlewarePipeline<unknown, T>();
+
+    // Sync maxAttempts from ValidationOptions to RetryConfig if not explicitly set
+    const retryMaxAttempts =
+      options?.retryConfig?.maxAttempts ??
+      options?.maxAttempts ??
+      DEFAULT_RETRY_CONFIG.maxAttempts;
+    this.retryConfig = {
+      ...DEFAULT_RETRY_CONFIG,
+      ...options?.retryConfig,
+      maxAttempts: retryMaxAttempts,
+    };
   }
 
   /**
@@ -173,6 +204,93 @@ export abstract class Source<T = unknown> {
   getValidator(): IValidator | undefined {
     return this.validator;
   }
+
+  /**
+   * Add middleware to this source's pipeline
+   */
+  useMiddleware(middleware: Middleware<unknown, T>): this {
+    this.pipeline.use(middleware);
+    return this;
+  }
+
+  /**
+   * Add request interceptor (for LLM sources)
+   */
+  interceptRequest(interceptor: RequestInterceptor): this {
+    this.pipeline.interceptRequest(interceptor);
+    return this;
+  }
+
+  /**
+   * Add response interceptor (for LLM sources)
+   */
+  interceptResponse(interceptor: ResponseInterceptor): this {
+    this.pipeline.interceptResponse(interceptor);
+    return this;
+  }
+
+  /**
+   * Configure retry behavior
+   */
+  withRetry(config: Partial<RetryConfig>): this {
+    this.retryConfig = { ...this.retryConfig, ...config };
+    return this;
+  }
+
+  /**
+   * Get the current middleware pipeline
+   */
+  getMiddlewarePipeline(): MiddlewarePipeline<unknown, T> {
+    return this.pipeline;
+  }
+
+  /**
+   * Execute content generation with full middleware pipeline and retry logic
+   */
+  protected async executeWithMiddleware(
+    session: Session<any, any>,
+    generateFn: (context: MiddlewareContext<unknown>) => Promise<T>,
+  ): Promise<T> {
+    const initialContext: MiddlewareContext<unknown> = {
+      session,
+      attempt: 1,
+      metadata: {},
+    };
+
+    try {
+      return await this.pipeline.executeWithRetry(
+        async (context) => {
+          // Check if we have a cached response from middleware
+          if ((context as any).cachedResponse !== undefined) {
+            return (context as any).cachedResponse;
+          }
+
+          // Execute the actual generation function
+          return generateFn(context);
+        },
+        initialContext,
+        this.retryConfig,
+      );
+    } catch (error) {
+      // Handle raiseError behavior at the source level
+      if (!this.raiseError) {
+        console.warn(
+          `${this.constructor.name}: Error occurred but raiseError is false. Returning default value.`,
+        );
+        // Return a default value based on the type T
+        return this.getDefaultValue();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get default value when errors occur and raiseError is false
+   */
+  protected getDefaultValue(): T {
+    // Default implementation returns empty content
+    return '' as T;
+  }
 }
 
 /**
@@ -187,6 +305,10 @@ export abstract class StringSource extends Source<string> {
  */
 export abstract class ModelSource extends Source<ModelOutput> {
   // Returns structured content with content, toolCalls, structuredOutput and metadata
+
+  protected getDefaultValue(): ModelOutput {
+    return { content: '' };
+  }
 }
 
 /**
@@ -554,16 +676,39 @@ export class LiteralSource extends StringSource {
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
-    const interpolatedContent = interpolateTemplate(this.content, session);
-    const validationResult = await this.validateContent(
-      interpolatedContent,
-      session,
-    );
-    if (!validationResult.isValid && this.raiseError) {
-      const errorMessage = `Validation failed: ${validationResult.instruction || ''}`;
-      throw new ValidationError(errorMessage);
-    }
-    return interpolatedContent;
+    // Use the enhanced middleware pipeline for content generation
+    return this.executeWithMiddleware(session, async (context) => {
+      const interpolatedContent = interpolateTemplate(
+        this.content,
+        context.session,
+      );
+
+      // Transform content through middleware
+      const transformedContent = await this.pipeline.transformContent(
+        interpolatedContent,
+        context,
+      );
+
+      // Validate the transformed content
+      const validationResult = await this.validateContent(
+        transformedContent,
+        session,
+      );
+
+      if (!validationResult.isValid) {
+        if (this.raiseError) {
+          throw new ValidationError(
+            `Validation failed: ${validationResult.instruction || ''}`,
+          );
+        } else {
+          console.warn(
+            'LiteralSource: Validation failed but raiseError is false. Returning content anyway.',
+          );
+        }
+      }
+
+      return transformedContent;
+    });
   }
 }
 
@@ -696,6 +841,8 @@ export class LlmSource extends ModelSource {
       validator: this.validator,
       maxAttempts: this.maxAttempts,
       raiseError: this.raiseError,
+      retryConfig: this.retryConfig,
+      middleware: this.pipeline,
     };
 
     const newSource = new LlmSource(mergedOptions, mergedValidationOptions);
@@ -970,103 +1117,92 @@ export class LlmSource extends ModelSource {
       throw new Error('_generateMockResponse called on non-mocked source');
     }
 
-    let attempts = 0;
-    let lastResult: ValidationResult | undefined;
+    // Use the enhanced middleware pipeline for mock generation too
+    return this.executeWithMiddleware(session, async (context) => {
+      // Create request context for interceptors
+      const requestContext: RequestContext = {
+        ...context,
+        options: this.options,
+        messages: undefined, // Will be filled by interceptors if needed
+      };
 
-    while (attempts < this.maxAttempts) {
-      attempts++;
+      // Execute request interceptors
+      const processedRequest =
+        await this.pipeline.executeRequestInterceptors(requestContext);
 
-      try {
-        // Generate mock response
-        let mockResponse: MockResponse;
+      // Generate mock response
+      let mockResponse: MockResponse;
 
-        if (this._mockState.mockCallback) {
-          mockResponse = await this._mockState.mockCallback(
-            session,
-            this.options,
-          );
-        } else if (this._mockState.mockResponses.length > 0) {
-          mockResponse =
-            this._mockState.mockResponses[this._mockState.currentResponseIndex];
-          this._mockState.currentResponseIndex =
-            (this._mockState.currentResponseIndex + 1) %
-            this._mockState.mockResponses.length;
-        } else {
-          mockResponse = { content: 'Mock LLM response' };
-        }
-
-        // Record the call
-        this._mockState.callHistory.push({
-          session,
-          options: this.options,
-          response: mockResponse,
-        });
-
-        const responseContent = mockResponse.content;
-
-        // Apply validation if configured (same as real LLM)
-        if (this.validator) {
-          lastResult = await this.validateContent(responseContent, session);
-
-          if (lastResult.isValid) {
-            return {
-              content: responseContent,
-              toolCalls: mockResponse.toolCalls,
-              toolResults: mockResponse.toolResults,
-              metadata: mockResponse.metadata,
-              structuredOutput: mockResponse.structuredOutput,
-            };
-          }
-
-          // Handle validation failure
-          const isLastAttempt = attempts >= this.maxAttempts;
-
-          if (isLastAttempt) {
-            if (this.raiseError) {
-              const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-              throw new ValidationError(errorMessage);
-            } else {
-              console.warn(
-                `MockSource: Validation failed after ${attempts} attempts. Returning last generated content.`,
-              );
-              return {
-                content: responseContent,
-                toolCalls: mockResponse.toolCalls,
-                toolResults: mockResponse.toolResults,
-                metadata: mockResponse.metadata,
-                structuredOutput: mockResponse.structuredOutput,
-              };
-            }
-          } else {
-            console.log(
-              `Mock validation attempt ${attempts} failed: ${lastResult?.instruction || 'Invalid input'}. Retrying...`,
-            );
-          }
-        } else {
-          // No validation, return directly
-          return {
-            content: responseContent,
-            toolCalls: mockResponse.toolCalls,
-            toolResults: mockResponse.toolResults,
-            metadata: mockResponse.metadata,
-            structuredOutput: mockResponse.structuredOutput,
-          };
-        }
-      } catch (error) {
-        if (attempts >= this.maxAttempts) {
-          if (this.raiseError) {
-            throw error;
-          } else {
-            return { content: '' };
-          }
-        }
-        console.log(`Mock generation attempt ${attempts} failed, retrying...`);
+      if (this._mockState!.mockCallback) {
+        mockResponse = await this._mockState!.mockCallback(
+          processedRequest.session,
+          processedRequest.options,
+        );
+      } else if (this._mockState!.mockResponses.length > 0) {
+        mockResponse =
+          this._mockState!.mockResponses[this._mockState!.currentResponseIndex];
+        this._mockState!.currentResponseIndex =
+          (this._mockState!.currentResponseIndex + 1) %
+          this._mockState!.mockResponses.length;
+      } else {
+        mockResponse = { content: 'Mock LLM response' };
       }
-    }
 
-    throw new Error(
-      `Mock content generation failed unexpectedly after ${this.maxAttempts} attempts.`,
-    );
+      // Record the call
+      this._mockState!.callHistory.push({
+        session: processedRequest.session,
+        options: processedRequest.options,
+        response: mockResponse,
+      });
+
+      // Create the model output
+      const modelOutput: ModelOutput = {
+        content: mockResponse.content,
+        toolCalls: mockResponse.toolCalls,
+        toolResults: mockResponse.toolResults,
+        metadata: mockResponse.metadata,
+        structuredOutput: mockResponse.structuredOutput,
+      };
+
+      // Create response context and execute response interceptors
+      const responseContext: ResponseContext = {
+        ...processedRequest,
+        response: modelOutput,
+      };
+
+      const processedResponse =
+        await this.pipeline.executeResponseInterceptors(responseContext);
+
+      // Transform content through middleware
+      const transformedContent = await this.pipeline.transformContent(
+        processedResponse.response.content,
+        context,
+      );
+
+      // Validate the transformed content
+      const validationResult = await this.validateContent(
+        transformedContent,
+        session,
+      );
+
+      if (!validationResult.isValid) {
+        if (this.raiseError) {
+          throw new ValidationError(
+            `Validation failed: ${validationResult.instruction || ''}`,
+          );
+        } else {
+          console.warn(
+            'MockSource: Validation failed but raiseError is false. Returning content anyway.',
+          );
+        }
+      }
+
+      // Return the final response with transformed content
+      return {
+        ...processedResponse.response,
+        content: transformedContent,
+      };
+    });
   }
 
   async getContent(session: Session<any, any>): Promise<ModelOutput> {
@@ -1088,97 +1224,90 @@ export class LlmSource extends ModelSource {
       llmCallCounter.set(this.instanceId, currentCalls + 1);
     }
 
-    let attempts = 0;
-    let lastResult: ValidationResult | undefined;
+    // Use the enhanced middleware pipeline for content generation
+    return this.executeWithMiddleware(session, async (context) => {
+      // Create request context for interceptors
+      const requestContext: RequestContext = {
+        ...context,
+        options: this.options,
+        messages: undefined, // Will be filled by interceptors if needed
+      };
 
-    while (attempts < this.maxAttempts) {
-      attempts++;
+      // Execute request interceptors
+      const processedRequest =
+        await this.pipeline.executeRequestInterceptors(requestContext);
 
-      try {
-        let response: any;
+      let response: any;
 
-        if (this.schemaConfig) {
-          // Use schema-based generation
-          response = await generateWithSchema(
-            session,
-            this.options,
-            this.schemaConfig,
-          );
-        } else {
-          // Use regular generation
-          response = await generateText(session, this.options);
-        }
-
-        const responseContent = response.content ?? '';
-
-        if (response.type && response.type !== 'assistant') {
-          console.warn(
-            `LLM generation did not return assistant response. Attempt ${attempts}.`,
-          );
-          if (attempts >= this.maxAttempts) {
-            if (this.raiseError) {
-              throw new Error(
-                `LLM generation failed after ${attempts} attempts: Did not return assistant response.`,
-              );
-            } else {
-              return { content: '' };
-            }
-          }
-          continue;
-        }
-
-        // Validate the string content using shared logic
-        lastResult = await this.validateContent(responseContent, session);
-
-        if (lastResult.isValid) {
-          return {
-            content: responseContent,
-            toolCalls: response.toolCalls,
-            toolResults: response.toolResults,
-            metadata: response.attrs,
-            structuredOutput: response.structuredOutput,
-          };
-        }
-
-        // Handle validation failure
-        const isLastAttempt = attempts >= this.maxAttempts;
-
-        if (isLastAttempt) {
-          if (this.raiseError) {
-            const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-            throw new ValidationError(errorMessage);
-          } else {
-            console.warn(
-              `LlmSource: Validation failed after ${attempts} attempts. Returning last generated content.`,
-            );
-            return {
-              content: responseContent,
-              toolCalls: response.toolCalls,
-              toolResults: response.toolResults,
-              metadata: response.attrs,
-              structuredOutput: response.structuredOutput,
-            };
-          }
-        } else {
-          console.log(
-            `Validation attempt ${attempts} failed: ${lastResult?.instruction || 'Invalid input'}. Retrying generation...`,
-          );
-        }
-      } catch (error) {
-        if (attempts >= this.maxAttempts) {
-          if (this.raiseError) {
-            throw error;
-          } else {
-            return { content: '' };
-          }
-        }
-        console.log(`Generation attempt ${attempts} failed, retrying...`);
+      if (this.schemaConfig) {
+        // Use schema-based generation
+        response = await generateWithSchema(
+          processedRequest.session,
+          processedRequest.options,
+          this.schemaConfig,
+        );
+      } else {
+        // Use regular generation
+        response = await generateText(
+          processedRequest.session,
+          processedRequest.options,
+        );
       }
-    }
 
-    throw new Error(
-      `LLM content generation failed unexpectedly after ${this.maxAttempts} attempts.`,
-    );
+      const responseContent = response.content ?? '';
+
+      if (response.type && response.type !== 'assistant') {
+        throw new Error('LLM generation did not return assistant response');
+      }
+
+      // Create the model output
+      const modelOutput: ModelOutput = {
+        content: responseContent,
+        toolCalls: response.toolCalls,
+        toolResults: response.toolResults,
+        metadata: response.attrs,
+        structuredOutput: response.structuredOutput,
+      };
+
+      // Create response context and execute response interceptors
+      const responseContext: ResponseContext = {
+        ...processedRequest,
+        response: modelOutput,
+      };
+
+      const processedResponse =
+        await this.pipeline.executeResponseInterceptors(responseContext);
+
+      // Transform content through middleware
+      const transformedContent = await this.pipeline.transformContent(
+        processedResponse.response.content,
+        context,
+      );
+
+      // Validate the transformed content
+      const validationResult = await this.validateContent(
+        transformedContent,
+        session,
+      );
+
+      if (!validationResult.isValid) {
+        if (this.raiseError) {
+          throw new ValidationError(
+            `Validation failed: ${validationResult.instruction || ''}`,
+          );
+        } else {
+          console.warn(
+            'LlmSource: Validation failed but raiseError is false. Returning content anyway.',
+          );
+        }
+      }
+
+      // Return the final response with transformed content
+      return {
+        ...processedResponse.response,
+        content: transformedContent,
+      };
+    });
   }
 }
 
