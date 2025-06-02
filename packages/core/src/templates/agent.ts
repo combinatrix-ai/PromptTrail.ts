@@ -14,7 +14,6 @@ import {
   type AssistantContentInput,
 } from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
-import { Structured } from './primitives/structured';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
 import {
@@ -24,6 +23,7 @@ import {
   type CLIOptions,
 } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
+import { z } from 'zod';
 
 /**
  * Agent class for building and executing templates
@@ -111,17 +111,54 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
+  /**
+   * Convenient method to create an Assistant with schema and auto-extract all fields to session variables
+   * @param config LLM configuration with schema
+   * @returns Agent instance for chaining
+   */
+  extract(config: LLMConfig & { schema: z.ZodType }): this;
+  /**
+   * Create Assistant with schema and extract only specific fields
+   * @param config LLM configuration with schema
+   * @param fields Array of field names to extract
+   * @returns Agent instance for chaining
+   */
+  extract(config: LLMConfig & { schema: z.ZodType }, fields: string[]): this;
+  /**
+   * Create Assistant with schema and custom field mapping
+   * @param config LLM configuration with schema
+   * @param mapping Map schema fields to custom variable names
+   * @returns Agent instance for chaining
+   */
+  extract(
+    config: LLMConfig & { schema: z.ZodType },
+    mapping: Record<string, string>,
+  ): this;
+  extract(
+    config: LLMConfig & { schema: z.ZodType },
+    extractConfig?: string[] | Record<string, string>,
+  ): this {
+    const { schema, mode, functionName, ...llmConfig } = config;
+
+    const extractToVars = extractConfig || true;
+
+    this.root.add(
+      new Assistant(llmConfig, {
+        schema,
+        mode: mode || 'structured_output',
+        functionName,
+        extractToVars,
+      }),
+    );
+    return this;
+  }
+
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.add(new Transform(transform));
     return this;
   }
 
   parallel(template: Parallel<TM, TC>) {
-    this.root.add(template);
-    return this;
-  }
-
-  structured(template: Structured<TM, TC>) {
     this.root.add(template);
     return this;
   }

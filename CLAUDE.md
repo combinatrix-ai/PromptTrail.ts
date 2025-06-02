@@ -195,7 +195,6 @@ pnpm install -w -D <package-name>
 - **Conditional**: Branching logic
 - **Subroutine**: Isolated sub-conversations
 - **Transform**: Session state modification
-- **Structured**: Schema-validated output
 
 ### Content Configuration
 
@@ -305,25 +304,75 @@ From `design-docs/TODO.md`:
 3. Check message types and content with getters
 4. Validate template composition with type checking
 
-## Interpolation
+## Template Interpolation
 
-PromptTrail.ts uses **Handlebars** for template interpolation, providing powerful templating capabilities:
+PromptTrail.ts uses **Handlebars** for powerful template interpolation with dynamic content insertion:
 
 ### Basic Variable Interpolation
 
 ```typescript
-'Hello {{name}}'; // Simple variable
+// Simple variables
+'Hello {{name}}';
 'User: {{user.name}}'; // Nested object access
-'Count: {{length items}}'; // Using built-in helper
+'Count: {{length items}}'; // Built-in helpers
+
+// Transform example: Recipe recommendation system
+const session = Session.create({
+  vars: {
+    dietaryRestrictions: ['vegetarian', 'gluten-free'],
+    availableTime: 30,
+    ingredients: ['tomatoes', 'pasta', 'cheese', 'herbs'],
+  },
+});
+
+const agent = Agent.create()
+  .system('You are a cooking assistant. Suggest recipes based on constraints.')
+  .user(
+    'I have {{availableTime}} minutes and these ingredients: {{join ingredients ", "}}. I follow these diets: {{join dietaryRestrictions " and "}}.',
+  )
+  .assistant()
+  .transform((session) => {
+    // Extract recipe info from LLM response
+    const response = session.getLastMessage()?.content || '';
+    const recipeMatch = response.match(/Recipe:\s*([^\n]+)/i);
+    const cookingTimeMatch = response.match(/(\d+)\s*minutes?/);
+
+    return session.withVars({
+      suggestedRecipe: recipeMatch?.[1] || 'Unknown Recipe',
+      estimatedTime: cookingTimeMatch?.[1] ? parseInt(cookingTimeMatch[1]) : 30,
+      recipeCount: session.getVar('recipeCount', 0) + 1,
+    });
+  })
+  .user(
+    'Great! For {{suggestedRecipe}}, what cooking tips do you have? (This is recipe #{{recipeCount}})',
+  )
+  .assistant();
+
+const result = await agent.execute(session);
+console.log('Suggested recipe:', result.getVar('suggestedRecipe'));
+console.log('Estimated time:', result.getVar('estimatedTime'), 'minutes');
 ```
 
 ### Array Iteration
 
 ```typescript
-// Loop through arrays
-"{{#each items}}
-- {{title}}: {{description}}
-{{/each}}"
+// Loop through arrays in templates
+const session = Session.create({
+  vars: {
+    tasks: [
+      { title: 'Learn TypeScript', status: 'complete' },
+      { title: 'Build app', status: 'pending' }
+    ]
+  }
+});
+
+const agent = Agent.create()
+  .system(`Current tasks:
+{{#each tasks}}
+- {{title}}: {{status}}
+{{/each}}`)
+  .user('Help me with the next task')
+  .assistant();
 
 // Loop with index
 "{{#each users}}
@@ -334,12 +383,15 @@ PromptTrail.ts uses **Handlebars** for template interpolation, providing powerfu
 ### Conditionals
 
 ```typescript
-// If/else conditions
-"{{#if hasResults}}
-Found {{length results}} results
+// If/else logic in templates
+const agent = Agent.create()
+  .system(`{{#if user.isPremium}}
+You have premium access to advanced features.
 {{else}}
-No results found
-{{/if}}"
+You have basic access. Upgrade for more features.
+{{/if}}`)
+  .user('What can I do?')
+  .assistant();
 
 // Unless (inverse if)
 "{{#unless isEmpty}}
@@ -349,29 +401,160 @@ Content: {{content}}
 
 ### Built-in PromptTrail Helpers
 
-- `{{length array}}` - Get array/string/object length
-- `{{join array ", "}}` - Join array elements with separator
-- `{{truncate text 100}}` - Truncate text to specified length
-- `{{formatNumber value}}` - Format numbers with locale
-- `{{numberedList array}}` - Convert array to numbered list
-- `{{bulletList array}}` - Convert array to bullet list
-- `{{isEmpty value}}` - Check if value is empty
-- `{{eq a b}}` - Equality comparison
-- `{{gt a b}}` - Greater than comparison
-- `{{debug value "label"}}` - Debug helper for development
+```typescript
+// PromptTrail includes useful helpers:
+'Items: {{length items}}'; // Get array length
+'List: {{join tags ", "}}'; // Join array with separator
+'Text: {{truncate description 100}}'; // Truncate to length
+'Number: {{formatNumber price}}'; // Format numbers
+'{{#unless isEmpty results}}Found {{length results}} items{{/unless}}';
+
+// List formatting helpers
+'{{numberedList items}}'; // 1. Item A\n2. Item B
+'{{bulletList items}}'; // • Item A\n• Item B
+
+// Comparison helpers
+'{{#if (eq status "complete")}}Done!{{/if}}';
+'{{#if (gt score 80)}}Great job!{{/if}}';
+'{{debug value "label"}}'; // Debug helper for development
+```
 
 ### Custom Helpers
 
-You can register custom helpers:
-
 ```typescript
+// Register your own helpers
 import { registerHelper } from '@prompttrail/core';
 
 registerHelper('uppercase', (text: string) => text.toUpperCase());
-// Usage: {{uppercase name}}
+registerHelper('currency', (amount: number) => `$${amount.toFixed(2)}`);
+
+// Use in templates
+('Welcome {{uppercase name}}!');
+('Total: {{currency total}}');
 ```
 
-**Note**:
+**Key Features:**
+
+- **Dynamic content insertion** - Variables, objects, arrays
+- **Control flow** - Conditionals and loops
+- **Built-in helpers** - Length, join, format, comparison functions
+- **Custom helpers** - Extend with your own template functions
+- **Nested access** - Deep object property access with dot notation
+
+## Structured Output & Variable Extraction
+
+PromptTrail.ts provides powerful structured output capabilities with automatic variable extraction:
+
+### Basic Structured Output
+
+```typescript
+import { z } from 'zod';
+
+const userSchema = z.object({
+  name: z.string(),
+  age: z.number(),
+  interests: z.array(z.string()),
+});
+
+const agent = Agent.create()
+  .system('Extract user info from text.')
+  .user("Hi, I'm Alice, 25, love coding and music.")
+  .assistant({
+    provider: 'openai',
+    schema: userSchema,
+  });
+
+const session = await agent.execute();
+const userData = session.getLastMessage()?.structuredContent;
+// userData is typed as { name: string, age: number, interests: string[] }
+```
+
+### Auto-Extract to Session Variables
+
+```typescript
+// Extract all schema fields to vars (Agent convenience method)
+const agentWithExtraction = Agent.create()
+  .system('Extract user info from text.')
+  .user("Hi, I'm Alice, 25, love coding and music.")
+  .extract({
+    provider: 'openai',
+    schema: userSchema,
+  }) // Agent.extract() - creates Assistant with schema + auto-extraction
+  .user(
+    'Hi {{name}}, you are {{age}} years old and like {{join interests ", "}}',
+  )
+  .assistant();
+
+// Custom field mapping (Agent convenience method)
+const agentWithMapping = Agent.create()
+  .system('Extract recipe details.')
+  .user('I want to make pasta with tomatoes in 30 minutes')
+  .extract(
+    {
+      provider: 'openai',
+      schema: z.object({
+        recipeName: z.string(),
+        cookingTime: z.number(),
+        difficulty: z.enum(['easy', 'medium', 'hard']),
+      }),
+    },
+    {
+      recipeName: 'suggestedRecipe',
+      cookingTime: 'estimatedTime',
+      difficulty: 'recipeComplexity',
+    },
+  )
+  .user(
+    'Great! {{suggestedRecipe}} takes {{estimatedTime}} minutes and is {{recipeComplexity}}',
+  )
+  .assistant();
+
+// Partial extraction (Agent convenience method)
+const agentPartial = Agent.create()
+  .system('Analyze the request.')
+  .user('Complex request with many details...')
+  .extract(
+    {
+      provider: 'openai',
+      schema: complexSchema,
+    },
+    ['title', 'priority'],
+  ); // Only extract specific fields
+```
+
+### Extract Methods
+
+**Agent.extract() (Recommended)**
+
+```typescript
+// Auto-extract all fields
+Agent.create().extract({ provider: 'openai', schema });
+
+// Extract specific fields
+Agent.create().extract({ provider: 'openai', schema }, ['field1', 'field2']);
+
+// Custom field mapping
+Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
+```
+
+**Assistant with Options (Alternative)**
+
+```typescript
+// Via constructor options
+.assistant({
+  provider: 'openai',
+  schema: userSchema,
+}, {
+  extractToVars: true | ['fields'] | { mapping }
+})
+```
+
+**Benefits:**
+
+- **No manual transforms** - Automatic extraction from structured output
+- **Type safety** - Full TypeScript inference for extracted variables
+- **Flexible mapping** - Direct extraction, partial fields, or custom names
+- **Clean API** - Agent.extract() provides the most convenient interface
 
 ## Model Comparison
 

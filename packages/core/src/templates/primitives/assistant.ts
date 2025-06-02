@@ -25,12 +25,26 @@ export interface LLMConfig {
   tools?: Record<string, unknown>;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
+  // Schema support
+  schema?: z.ZodType;
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
 }
+
+export type ExtractToVarsConfig =
+  | boolean // Extract all schema fields to vars
+  | string[] // Extract only specified fields
+  | Record<string, string>; // Map schema fields to var names
 
 export interface AssistantTemplateOptions {
   role?: 'user' | 'assistant' | 'system';
   validation?: IValidator;
   maxAttempts?: number;
+  // Schema support
+  schema?: z.ZodType;
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
+  extractToVars?: ExtractToVarsConfig;
 }
 
 export type AssistantContentInput =
@@ -48,6 +62,7 @@ export class Assistant<
   private content: AssistantContentInput;
   private options: AssistantTemplateOptions;
   private schemaConfig?: SchemaGenerationOptions;
+  private extractToVarsConfig?: ExtractToVarsConfig;
   private isSourceBased = false;
 
   constructor(
@@ -60,6 +75,37 @@ export class Assistant<
       model: 'gpt-4o-mini',
     };
     this.options = options;
+
+    // Set up schema configuration from content or options
+    const schema =
+      (content &&
+        typeof content === 'object' &&
+        'schema' in content &&
+        content.schema) ||
+      options.schema;
+
+    if (schema) {
+      this.schemaConfig = {
+        schema,
+        mode:
+          (content &&
+            typeof content === 'object' &&
+            'mode' in content &&
+            content.mode) ||
+          options.mode ||
+          'structured_output',
+        functionName:
+          (content &&
+            typeof content === 'object' &&
+            'functionName' in content &&
+            content.functionName) ||
+          options.functionName ||
+          'generateStructuredOutput',
+      };
+    }
+
+    // Set up variable extraction
+    this.extractToVarsConfig = options.extractToVars;
 
     // Check if this is a Source instance for backward compatibility
     this.isSourceBased = !!(
@@ -215,6 +261,14 @@ export class Assistant<
         }
       }
 
+      // Extract structured data to session variables if configured
+      if (this.extractToVarsConfig && output.structuredOutput) {
+        updatedSession = this.extractVariables(
+          updatedSession,
+          output.structuredOutput,
+        );
+      }
+
       return updatedSession;
     }
 
@@ -255,6 +309,14 @@ export class Assistant<
           }
         }
 
+        // Extract structured data to session variables if configured
+        if (this.extractToVarsConfig && output.structuredOutput) {
+          updatedSession = this.extractVariables(
+            updatedSession,
+            output.structuredOutput,
+          );
+        }
+
         return updatedSession;
       } catch (error) {
         if (attempts >= maxAttempts) {
@@ -268,5 +330,42 @@ export class Assistant<
     }
 
     throw new Error('Assistant template execution failed unexpectedly');
+  }
+
+  /**
+   * Extract structured data to session variables based on extractToVars configuration
+   */
+  private extractVariables(
+    session: Session<TVars, TAttrs>,
+    structuredOutput: any,
+  ): Session<TVars, TAttrs> {
+    if (!this.extractToVarsConfig || !structuredOutput) {
+      return session;
+    }
+
+    const newVars: Partial<TVars> = {};
+
+    if (this.extractToVarsConfig === true) {
+      // Extract all fields directly
+      Object.assign(newVars, structuredOutput);
+    } else if (Array.isArray(this.extractToVarsConfig)) {
+      // Extract only specified fields
+      for (const field of this.extractToVarsConfig) {
+        if (field in structuredOutput) {
+          (newVars as any)[field] = structuredOutput[field];
+        }
+      }
+    } else if (typeof this.extractToVarsConfig === 'object') {
+      // Map schema fields to var names
+      for (const [schemaField, varName] of Object.entries(
+        this.extractToVarsConfig,
+      )) {
+        if (schemaField in structuredOutput) {
+          (newVars as any)[varName] = structuredOutput[schemaField];
+        }
+      }
+    }
+
+    return session.withVars(newVars);
   }
 }

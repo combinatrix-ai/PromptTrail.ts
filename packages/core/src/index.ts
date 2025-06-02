@@ -6,11 +6,11 @@ export type { Vars, Attrs } from './session';
 export * from './source'; // Backward compatibility - Source available for power users
 export * from './middleware';
 export * from './templates';
-export * from './templates/primitives/structured';
 export type {
   LLMConfig,
   AssistantTemplateOptions,
   AssistantContentInput,
+  ExtractToVarsConfig,
 } from './templates/primitives/assistant';
 export type {
   UserContentInput,

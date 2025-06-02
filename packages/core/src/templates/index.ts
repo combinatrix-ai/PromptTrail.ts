@@ -10,7 +10,6 @@ export { Sequence } from './composite/sequence';
 export { Subroutine } from './composite/subroutine';
 export { Assistant } from './primitives/assistant';
 export { Conditional } from './primitives/conditional';
-export { Structured } from './primitives/structured';
 export { System } from './primitives/system';
 export { Transform } from './primitives/transform';
 export { User } from './primitives/user';

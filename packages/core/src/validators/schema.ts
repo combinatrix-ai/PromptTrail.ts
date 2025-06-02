@@ -1,8 +1,16 @@
 /**
  * Schema validators for structured data validation
  */
-import { type SchemaType } from '../templates/primitives/structured';
 import { BaseValidator, type TValidationResult } from './base';
+
+/**
+ * Schema type interface for defining JSON schema structures
+ * @deprecated Use Zod schemas directly instead
+ */
+export interface SchemaType {
+  properties: Record<string, { type: string; description: string }>;
+  required?: string[];
+}
 
 /**
  * Validator that checks if content is valid JSON

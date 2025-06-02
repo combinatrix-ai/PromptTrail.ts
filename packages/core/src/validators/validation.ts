@@ -12,7 +12,7 @@ import {
 import { JsonValidator, SchemaValidator } from './schema';
 import { CustomValidator } from './custom';
 import { AllValidator, AnyValidator } from './composite';
-import type { SchemaType } from '../templates/primitives/structured';
+import type { SchemaType } from './schema';
 import type { Session } from '../session';
 
 export interface RegexOptions {
