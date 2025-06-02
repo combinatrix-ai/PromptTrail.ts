@@ -10,10 +10,9 @@ describe('AssistantTemplate', () => {
     // No mocks to reset
   });
 
-  it('should handle ContentSource on constructor', async () => {
+  it('should handle Source on constructor for backward compatibility', async () => {
     const mockSource = Source.literal('This is a test response');
     const template = new Assistant(mockSource);
-    expect(template.getContentSource()).toBeDefined();
     const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is a test response');

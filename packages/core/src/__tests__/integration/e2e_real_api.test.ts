@@ -151,7 +151,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     ).toBe(true);
   });
 
-  it('should execute agent and sequence', async () => {
+  it('should execute agent and sequence', { timeout: 30000 }, async () => {
     const sequence = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
@@ -279,9 +279,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[3].content).toBe('Loop ended');
   });
 
-  it('should Agent have addXXXX methods', async () => {
-    // Increase the timeout for this test
-    vi.setConfig({ testTimeout: 15000 });
+  it('should Agent have addXXXX methods', { timeout: 30000 }, async () => {
     // Each have system, user, assistant, conditional
     const sequence = Agent.create()
       .system('This is automated API testing. Repeat what user says.')

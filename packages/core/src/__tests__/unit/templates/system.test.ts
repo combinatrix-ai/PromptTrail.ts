@@ -1,20 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Session } from '../../../session';
-import { Source } from '../../../source';
 import { System } from '../../../templates/primitives/system';
-import { CustomValidator } from '../../../validators/custom';
 import { expect_messages } from '../../utils';
 
 describe('SystemTemplate', () => {
-  it('should handle ContentSource on constructor', async () => {
-    // Create a mock static source
-    const mockSource = Source.literal('You are a helpful assistant.');
-
-    // Create a SystemTemplate with the source
-    const template = new System(mockSource);
-
-    // Verify the template has the content source
-    expect(template.getContentSource()).toBeDefined();
+  it('should handle Source.literal content', async () => {
+    // System template now only accepts strings, not Sources
+    // This test is no longer applicable as System template was simplified
+    const template = new System('You are a helpful assistant.');
 
     // Execute the template and verify the result
     const session = await template.execute();
@@ -66,18 +59,11 @@ describe('SystemTemplate', () => {
     );
   });
 
-  it('should work with CallbackSource', async () => {
-    // Create a callback function that uses context
-    const callback = vi.fn(({ context }) => {
-      const role = context?.role || 'assistant';
-      return Promise.resolve(`You are a ${role}. Be helpful and informative.`);
-    });
-
-    // Create a CallbackSource
-    const callbackSource = Source.callback(callback);
-
-    // Create a SystemTemplate with the callback source
-    const template = new System(callbackSource);
+  it('should support interpolation with variables', async () => {
+    // System template now uses string interpolation instead of CallbackSource
+    const template = new System(
+      'You are a {{role}}. Be helpful and informative.',
+    );
 
     // Create a session with metadata
     const session = Session.create();
@@ -89,124 +75,36 @@ describe('SystemTemplate', () => {
     expect(result.getLastMessage()!.content).toBe(
       'You are a financial expert. Be helpful and informative.',
     );
-
-    // Verify the callback was called with the session context
-    expect(callback).toHaveBeenCalledWith({ context: expect.anything() });
   });
 
-  it('should validate content with a custom validator', async () => {
-    // Create a custom validator that requires specific content
-    const validator = new CustomValidator((content) => {
-      // System prompt must contain "helpful" and "assistant"
-      const hasHelpful = content.toLowerCase().includes('helpful');
-      const hasAssistant = content.toLowerCase().includes('assistant');
-
-      return hasHelpful && hasAssistant
-        ? { isValid: true }
-        : {
-            isValid: false,
-            instruction:
-              'System prompt must contain the words "helpful" and "assistant"',
-          };
-    });
-
-    // Create a static source with validation
-    const validSource = Source.literal('You are a helpful assistant.', {
-      validator,
-      maxAttempts: 1,
-      raiseError: true,
-    });
-
-    // Create a SystemTemplate with valid source
-    const validTemplate = new System(validSource);
-
-    // Execute the template and verify it passes validation
+  it('should work with static text containing special words', async () => {
+    // System template now only accepts strings - validation should be done at a higher level
+    // This test verifies that the template can handle any string content
+    const validTemplate = new System('You are a helpful assistant.');
     const validResult = await validTemplate.execute();
     expect(validResult.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
     );
 
-    // Create a static source with invalid content
-    const invalidSource = Source.literal('You are an AI.', {
-      validator,
-      maxAttempts: 1,
-      raiseError: true,
-    });
-
-    // Create a SystemTemplate with invalid source
-    const invalidTemplate = new System(invalidSource);
-
-    // Execute the template and verify it fails validation
-    await expect(invalidTemplate.execute()).rejects.toThrow();
+    // Test with different content
+    const aiTemplate = new System('You are an AI.');
+    const aiResult = await aiTemplate.execute();
+    expect(aiResult.getLastMessage()!.content).toBe('You are an AI.');
   });
 
-  it('should retry validation when maxAttempts > 1', async () => {
-    // Create a validator
-    const validator = new CustomValidator((content) => {
-      // System prompt must contain "helpful" and "assistant"
-      const hasHelpful = content.toLowerCase().includes('helpful');
-      const hasAssistant = content.toLowerCase().includes('assistant');
-
-      return hasHelpful && hasAssistant
-        ? { isValid: true }
-        : {
-            isValid: false,
-            instruction:
-              'System prompt must contain the words "helpful" and "assistant"',
-          };
-    });
-
-    // Create a callback that returns different values on subsequent calls
-    const callback = vi
-      .fn()
-      .mockResolvedValueOnce('You are an AI.')
-      .mockResolvedValueOnce('You are a helpful assistant.');
-
-    // Create a CallbackSource with validation options
-    const callbackSource = Source.callback(callback, {
-      validator,
-      maxAttempts: 2,
-      raiseError: true,
-    });
-
-    // Create a SystemTemplate with the callback source
-    const template = new System(callbackSource);
-
-    // Execute the template and verify it succeeds on the second attempt
+  it('should handle static content without validation', async () => {
+    // System template is now simplified and doesn't support validation directly
+    // This test verifies basic functionality
+    const template = new System('You are a helpful assistant.');
     const session = await template.execute();
     expect(session.getLastMessage()!.content).toBe(
       'You are a helpful assistant.',
     );
-    expect(callback).toHaveBeenCalledTimes(2);
   });
 
-  it('should not throw error when validation fails and raiseError is false', async () => {
-    // Create a validator
-    const validator = new CustomValidator((content) => {
-      // System prompt must contain "helpful" and "assistant"
-      const hasHelpful = content.toLowerCase().includes('helpful');
-      const hasAssistant = content.toLowerCase().includes('assistant');
-
-      return hasHelpful && hasAssistant
-        ? { isValid: true }
-        : {
-            isValid: false,
-            instruction:
-              'System prompt must contain the words "helpful" and "assistant"',
-          };
-    });
-
-    // Create a static source with invalid content and raiseError set to false
-    const invalidSource = Source.literal('You are an AI.', {
-      validator,
-      maxAttempts: 1,
-      raiseError: false,
-    });
-
-    // Create a SystemTemplate with the invalid source
-    const template = new System(invalidSource);
-
-    // Execute the template and verify it doesn't throw an error
+  it('should handle any static content without errors', async () => {
+    // System template now accepts any string content
+    const template = new System('You are an AI.');
     const session = await template.execute();
     expect(session.getLastMessage()!.content).toBe('You are an AI.');
   });
@@ -241,10 +139,9 @@ describe('SystemTemplate', () => {
     const result1 = await template1.execute();
     expect(result1.getLastMessage()!.content).toBe('String initialization');
 
-    // Test with StaticSource constructor
-    const source = Source.literal('Source initialization');
-    const template2 = new System(source);
+    // Test with another string
+    const template2 = new System('Another initialization');
     const result2 = await template2.execute();
-    expect(result2.getLastMessage()!.content).toBe('Source initialization');
+    expect(result2.getLastMessage()!.content).toBe('Another initialization');
   });
 });

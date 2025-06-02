@@ -20,15 +20,12 @@ describe('UserTemplate', () => {
     // Reset all mocks
     vi.clearAllMocks();
   });
-  it('should handle ContentSource on constructor', async () => {
+  it('should handle Source on constructor for backward compatibility', async () => {
     // Create a mock static source
     const mockSource = Source.literal('User query from source');
 
-    // Create a UserTemplate with the source
+    // Create a UserTemplate with the source - still supported for backward compatibility
     const template = new User(mockSource);
-
-    // Verify the template has the content source
-    expect(template.getContentSource()).toBeDefined();
 
     // Execute the template and verify the result
     const session = await template.execute();
@@ -46,14 +43,14 @@ describe('UserTemplate', () => {
     expect(session.getLastMessage()?.content).toBe('User static message');
   });
 
-  it('should be instantiated without ContentSource, but be error on execute', async () => {
+  it('should be instantiated without content and use empty string', async () => {
     // Create an instance of the test template
     const template = new User();
 
-    // Expect the execute method to throw an error
-    await expect(template.execute()).rejects.toThrow(
-      'Content source required for UserTemplate',
-    );
+    // Should execute with empty string content
+    const session = await template.execute();
+    expect(session.getLastMessage()?.type).toBe('user');
+    expect(session.getLastMessage()?.content).toBe('');
   });
 
   it('should support interpolation in static content', async () => {
