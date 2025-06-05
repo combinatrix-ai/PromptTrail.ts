@@ -1,11 +1,12 @@
-import type { Attrs, Session, Vars } from '../../session';
+import type { Attrs, Vars } from '../../session';
+import { Session } from '../../session';
 import type { Template } from '../base';
 import { TemplateBase } from '../base';
 
 export class Conditional<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<any, any> {
+  TAttrs extends Attrs = Record<string, any>,
+  TVars extends Vars = Record<string, any>,
+> extends TemplateBase<TAttrs, TVars> {
   private condition: (session: Session<TVars, TAttrs>) => boolean;
   private thenTemplate: Template<TAttrs, TVars>;
   private elseTemplate?: Template<TAttrs, TVars>;

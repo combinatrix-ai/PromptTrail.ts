@@ -28,8 +28,8 @@ export type UserContentInput =
   | Source<string>; // Backward compatibility
 
 export class User<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Record<string, any>,
+  TVars extends Vars = Record<string, any>,
 > extends TemplateBase<TAttrs, TVars> {
   private content: UserContentInput;
   private options: UserTemplateOptions;

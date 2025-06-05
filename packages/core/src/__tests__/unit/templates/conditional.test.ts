@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Session, type Vars } from '../../../session';
+import { Session } from '../../../session';
 import { Agent } from '../../../templates';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { Conditional } from '../../../templates/primitives/conditional';
@@ -103,11 +103,6 @@ describe('If Template', () => {
   });
 
   it('should handle complex conditions using session data', async () => {
-    interface SessionContext
-      extends Vars<{
-        userRole: string;
-      }> {}
-
     // Create a session with context
     const adminSession = Session.create({
       vars: {
@@ -125,8 +120,7 @@ describe('If Template', () => {
     const elseTemplate = new User('Access denied');
 
     // Create an if template
-    // TODO: Fix any
-    const ifTemplate = new Conditional<any, any>({
+    const ifTemplate = new Conditional({
       condition,
       thenTemplate,
       elseTemplate,

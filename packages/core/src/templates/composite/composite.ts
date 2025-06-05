@@ -16,7 +16,7 @@ export abstract class Composite<
   extends TemplateBase<TAttrs, TVars>
   implements Fluent<TAttrs, TVars>
 {
-  protected templates: Template<any, any>[] = [];
+  protected templates: Template<TAttrs, TVars>[] = [];
   protected initFunction?: (
     session: Session<TVars, TAttrs>,
   ) => Session<TVars, TAttrs>;

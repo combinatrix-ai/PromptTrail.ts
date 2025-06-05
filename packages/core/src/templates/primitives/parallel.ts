@@ -88,8 +88,8 @@ interface ParallelSourceConfig {
  * @public
  */
 export class Parallel<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Record<string, any>,
+  TVars extends Vars = Record<string, any>,
 > extends TemplateBase<TAttrs, TVars> {
   private sources: ParallelSourceConfig[] = [];
   private scoringFunction?: ScoringFunction<TVars, TAttrs>;
@@ -142,7 +142,10 @@ export class Parallel<
    * );
    * ```
    */
-  static create<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+  static create<
+    TAttrs extends Attrs = Record<string, any>,
+    TVars extends Vars = Record<string, any>,
+  >(
     builderFn?: (parallel: Parallel<TAttrs, TVars>) => Parallel<TAttrs, TVars>,
   ): Parallel<TAttrs, TVars> {
     const parallel = new Parallel<TAttrs, TVars>();

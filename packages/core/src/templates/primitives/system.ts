@@ -5,8 +5,8 @@ import { interpolateTemplate } from '../../utils/template_interpolation';
 import { TemplateBase } from '../base';
 
 export class System<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Record<string, any>,
+  TVars extends Vars = Record<string, any>,
 > extends TemplateBase<TAttrs, TVars> {
   private content: string;
 

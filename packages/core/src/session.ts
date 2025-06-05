@@ -13,7 +13,10 @@ export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
 /**
  * Internal session implementation
  */
-export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
+export class Session<
+  TVars extends Vars = Record<string, any>,
+  TAttrs extends Attrs = Record<string, any>,
+> {
   constructor(
     public readonly messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
@@ -61,8 +64,15 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
    */
   getVar<K extends keyof TVars>(key: K): TVars[K];
   getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
-  getVar<K extends keyof TVars>(key: K, defaultValue?: TVars[K]): TVars[K] {
-    return this.vars[key] !== undefined ? this.vars[key] : defaultValue!;
+  getVar(key: string): any;
+  getVar(key: string, defaultValue: any): any;
+  getVar<K extends keyof TVars>(
+    key: K | string,
+    defaultValue?: TVars[K] | any,
+  ): TVars[K] | any {
+    return (this.vars as any)[key] !== undefined
+      ? (this.vars as any)[key]
+      : defaultValue!;
   }
 
   /**
@@ -185,8 +195,8 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
  * Create a new session with type inference
  */
 export function createSession<
-  C extends Record<string, unknown> = {},
-  M extends Record<string, unknown> = {},
+  C extends Record<string, unknown> = Record<string, any>,
+  M extends Record<string, unknown> = Record<string, any>,
 >(options?: {
   context?: C;
   messages?: Message<Attrs<M>>[];
@@ -321,8 +331,8 @@ export namespace Session {
    * ```
    */
   export function create<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
+    TVars extends Record<string, unknown> = Record<string, any>,
+    TAttrs extends Record<string, unknown> = Record<string, any>,
   >(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
