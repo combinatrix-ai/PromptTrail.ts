@@ -33,6 +33,7 @@ export namespace Tool {
     parameters: z.ZodType<TParams>;
     execute?: (input: TParams) => Promise<TResult>;
   }): AiSdkTool {
-    return aiTool(config);
+    // Use type assertion to resolve TypeScript overload issue
+    return aiTool(config as any) as AiSdkTool;
   }
 }

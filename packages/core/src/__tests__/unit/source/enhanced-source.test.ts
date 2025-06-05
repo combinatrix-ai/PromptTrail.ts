@@ -1,15 +1,13 @@
 // enhanced-source.test.ts - Tests for enhanced Source with middleware support
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSession } from '../../../session';
-import { Source, LlmSource, LiteralSource } from '../../../source';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  MiddlewarePipeline,
   BuiltinMiddleware,
   RequestInterceptor,
   ResponseInterceptor,
-  DEFAULT_RETRY_CONFIG,
 } from '../../../middleware';
-import type { ModelOutput } from '../../../source';
+import { createSession } from '../../../session';
+import type { MockedLlmSource, ModelOutput } from '../../../source';
+import { LiteralSource, Source } from '../../../source';
 
 describe('Enhanced Source with Middleware', () => {
   let session: ReturnType<typeof createSession>;
@@ -63,7 +61,7 @@ describe('Enhanced Source with Middleware', () => {
   });
 
   describe('LlmSource Enhanced Features', () => {
-    let mockSource: LlmSource;
+    let mockSource: MockedLlmSource;
 
     beforeEach(() => {
       // Create a mocked LLM source for testing
@@ -103,11 +101,13 @@ describe('Enhanced Source with Middleware', () => {
     it('should process content through middleware pipeline', async () => {
       mockSource.mockResponse({ content: 'original' });
 
-      // Add a transform middleware
+      // Add a transform middleware that works with ModelOutput
       mockSource.useMiddleware(
         BuiltinMiddleware.transform({
-          transformContent: async (content: string) =>
-            `transformed: ${content}`,
+          transformContent: async (response: ModelOutput) => ({
+            ...response,
+            content: `transformed: ${response.content}`,
+          }),
         }),
       );
 

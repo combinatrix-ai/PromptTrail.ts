@@ -251,7 +251,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
     for (const [index, step] of this.steps.entries()) {
       // Each step is a subroutine that loops until the goal is satisfied
       agent.subroutine(
-        (subAgent, parentSession) => {
+        (subAgent: Agent<TVars, TAttrs>) => {
           // Only add system message for the first step when retaining messages
           // For subsequent steps, the system context is preserved from the retained messages
           if (index === 0) {
@@ -281,10 +281,10 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
           let attempts = 0;
 
           // Create a reference to track the current session state
-          let currentSession: Session<any, any> = parentSession;
+          let currentSession: Session<any, any> | undefined;
 
           return subAgent.loop(
-            (loopAgent) => {
+            (loopAgent: Agent<TVars, TAttrs>) => {
               // Build the tools for this step
               const tools: Record<string, CoreTool> = {};
 
@@ -294,7 +294,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
                 tools.check_goal = this.createCheckGoalTool(
                   step.goal,
                   step.options.is_satisfied,
-                  () => currentSession,
+                  () => currentSession!,
                 );
               } else {
                 // For non-interactive steps, provide all tools
@@ -302,7 +302,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
                 tools.check_goal = this.createCheckGoalTool(
                   step.goal,
                   step.options.is_satisfied,
-                  () => currentSession,
+                  () => currentSession!,
                 );
               }
 
@@ -320,7 +320,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
               return loopAgent.assistant(llmSource);
             },
             // Continue loop while goal not satisfied and under attempt limit
-            (session) => {
+            (session: Session<TVars, TAttrs>) => {
               // Update the current session reference for tool access
               currentSession = session;
 
@@ -348,7 +348,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
                 // For interactive steps, complete when ask_user is successfully called
                 if (step.options.allow_interaction) {
                   const askUserCall = lastMessage.toolCalls.find(
-                    (tc) => tc.name === 'ask_user',
+                    (tc: any) => tc.name === 'ask_user',
                   );
                   if (askUserCall) {
                     console.log(
@@ -360,7 +360,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
 
                 // For other steps, check goal completion
                 const goalCheckCall = lastMessage.toolCalls.find(
-                  (tc) => tc.name === 'check_goal',
+                  (tc: any) => tc.name === 'check_goal',
                 );
                 if (goalCheckCall && goalCheckCall.arguments?.is_satisfied) {
                   console.log(`\n✅ Goal satisfied for: ${step.goal}`);

@@ -52,6 +52,28 @@ export class User<
     );
   }
 
+  /**
+   * Get the content source for this template
+   * Used by composite templates to manage default sources
+   */
+  getContentSource(): Source<string> | null {
+    if (this.isSourceBased) {
+      return this.content as Source<string>;
+    }
+    return null;
+  }
+
+  /**
+   * Set the content source for this template
+   * Used by composite templates to set default sources
+   */
+  set contentSource(source: Source<string> | undefined) {
+    if (source) {
+      this.content = source;
+      this.isSourceBased = true;
+    }
+  }
+
   private async getStringContent(
     session: Session<TVars, TAttrs>,
   ): Promise<string> {

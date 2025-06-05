@@ -187,15 +187,29 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         typeof extractToVars === 'boolean' ? undefined : extractToVars;
 
       if (extractConfig) {
-        return this.extract(
-          {
-            ...llmConfig,
-            schema,
-            mode,
-            functionName: options?.functionName,
-          },
-          extractConfig,
-        );
+        if (Array.isArray(extractConfig)) {
+          // Extract specific fields
+          return this.extract(
+            {
+              ...llmConfig,
+              schema,
+              mode,
+              functionName: options?.functionName,
+            },
+            extractConfig,
+          );
+        } else {
+          // Extract with mapping
+          return this.extract(
+            {
+              ...llmConfig,
+              schema,
+              mode,
+              functionName: options?.functionName,
+            },
+            extractConfig,
+          );
+        }
       } else {
         // Boolean true - extract all fields
         return this.extract({

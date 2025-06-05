@@ -116,6 +116,28 @@ export class Assistant<
     );
   }
 
+  /**
+   * Get the content source for this template
+   * Used by composite templates to manage default sources
+   */
+  getContentSource(): Source<ModelOutput> | null {
+    if (this.isSourceBased) {
+      return this.content as Source<ModelOutput>;
+    }
+    return null;
+  }
+
+  /**
+   * Set the content source for this template
+   * Used by composite templates to set default sources
+   */
+  set contentSource(source: Source<ModelOutput> | undefined) {
+    if (source) {
+      this.content = source;
+      this.isSourceBased = true;
+    }
+  }
+
   withSchema<T>(
     schema: z.ZodType<T>,
     options?: {

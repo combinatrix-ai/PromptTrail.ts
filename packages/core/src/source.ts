@@ -1164,15 +1164,15 @@ export class LlmSource extends ModelSource {
       const processedResponse =
         await this.pipeline.executeResponseInterceptors(responseContext);
 
-      // Transform content through middleware
-      const transformedContent = await this.pipeline.transformContent(
-        processedResponse.response.content,
+      // Transform the response through middleware
+      const transformedResponse = await this.pipeline.transformContent(
+        processedResponse.response,
         context,
       );
 
-      // Validate the transformed content
+      // Validate the content from the transformed response
       const validationResult = await this.validateContent(
-        transformedContent,
+        transformedResponse.content,
         session,
       );
 
@@ -1188,11 +1188,8 @@ export class LlmSource extends ModelSource {
         }
       }
 
-      // Return the final response with transformed content
-      return {
-        ...processedResponse.response,
-        content: transformedContent,
-      };
+      // Return the transformed response
+      return transformedResponse;
     });
   }
 
@@ -1269,15 +1266,15 @@ export class LlmSource extends ModelSource {
       const processedResponse =
         await this.pipeline.executeResponseInterceptors(responseContext);
 
-      // Transform content through middleware
-      const transformedContent = await this.pipeline.transformContent(
-        processedResponse.response.content,
+      // Transform the response through middleware
+      const transformedResponse = await this.pipeline.transformContent(
+        processedResponse.response,
         context,
       );
 
-      // Validate the transformed content
+      // Validate the content from the transformed response
       const validationResult = await this.validateContent(
-        transformedContent,
+        transformedResponse.content,
         session,
       );
 
@@ -1293,11 +1290,8 @@ export class LlmSource extends ModelSource {
         }
       }
 
-      // Return the final response with transformed content
-      return {
-        ...processedResponse.response,
-        content: transformedContent,
-      };
+      // Return the transformed response
+      return transformedResponse;
     });
   }
 }
