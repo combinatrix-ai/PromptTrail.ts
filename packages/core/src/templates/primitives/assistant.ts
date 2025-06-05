@@ -1,6 +1,7 @@
 import type { AssistantMessage } from '../../message';
 import type { Session } from '../../session';
 import type { Attrs, Vars } from '../../session';
+import type { Tool } from '../../tool';
 import type { IValidator } from '../../validators/base';
 import type { Source, ModelOutput, LlmSource } from '../../source';
 import { ValidationError } from '../../errors';
@@ -22,7 +23,7 @@ export interface LLMConfig {
   maxTokens?: number;
   topP?: number;
   topK?: number;
-  tools?: Record<string, unknown>;
+  tools?: Record<string, Tool>;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
   // Schema support

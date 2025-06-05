@@ -280,8 +280,8 @@ From `design-docs/TODO.md`:
 
 ### With MCP (Model Context Protocol)
 
-- MCP server configuration support
-- Tool registration for Anthropic models
+- MCP server configuration support (API ready, implementation pending ai-sdk updates)
+- Designed for tool registration across all providers
 
 ## Performance Considerations
 
@@ -582,6 +582,14 @@ Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
 - Enhanced caching mechanisms
 - Improved browser compatibility
 - More built-in validators and tools
+
+## AI SDK Documentation
+
+For comprehensive AI SDK documentation, see https://ai-sdk.dev/llms.txt
+
+The AI SDK is available as a dependency in `node_modules/ai/` with full TypeScript types and examples.
+
+For practical AI SDK usage examples and working tests, see `packages/core/src/__tests__/dependency/ai-sdk.test.ts` which demonstrates core APIs including text generation, tool usage, and structured output.
 
 ---
 

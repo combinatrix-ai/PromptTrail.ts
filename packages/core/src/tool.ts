@@ -1,11 +1,11 @@
 // tool.ts
-import { tool as aiTool, type Tool as AiTool } from 'ai';
+import { tool as aiTool, type Tool as AiSdkTool } from 'ai';
 import { z } from 'zod';
 
 /**
- * Type for AI SDK tools
+ * Re-export AI SDK Tool type for convenience
  */
-export type Tool<TParams = any, TResult = any> = AiTool<TParams, TResult>;
+export type Tool = AiSdkTool;
 
 /**
  * Tool namespace for creating tools in PromptTrail style
@@ -31,8 +31,8 @@ export namespace Tool {
   export function create<TParams, TResult>(config: {
     description: string;
     parameters: z.ZodType<TParams>;
-    execute: (input: TParams) => Promise<TResult>;
-  }): Tool<TParams, TResult> {
+    execute?: (input: TParams) => Promise<TResult>;
+  }): AiSdkTool {
     return aiTool(config);
   }
 }

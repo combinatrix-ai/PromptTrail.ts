@@ -8,17 +8,18 @@ import {
   SchemaGenerationOptions,
 } from './generate';
 import {
-  MiddlewarePipeline,
-  MiddlewareContext,
-  RequestContext,
-  ResponseContext,
-  RetryConfig,
   DEFAULT_RETRY_CONFIG,
-  RequestInterceptor,
-  ResponseInterceptor,
   Middleware,
+  MiddlewareContext,
+  MiddlewarePipeline,
+  RequestContext,
+  RequestInterceptor,
+  ResponseContext,
+  ResponseInterceptor,
+  RetryConfig,
 } from './middleware';
 import type { Session, Vars } from './session';
+import type { Tool } from './tool';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
@@ -96,7 +97,7 @@ export interface LLMOptions {
   maxTokens?: number;
   topP?: number;
   topK?: number;
-  tools?: Record<string, unknown>;
+  tools?: Record<string, Tool>;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
   sdkOptions?: Record<string, unknown>;
@@ -935,8 +936,7 @@ export class LlmSource extends ModelSource {
     return this.clone({ topK: value });
   }
 
-  // Tool configuration - all return new instances
-  addTool(name: string, tool: unknown): LlmSource {
+  withTool(name: string, tool: Tool): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
@@ -945,16 +945,7 @@ export class LlmSource extends ModelSource {
     });
   }
 
-  withTool(name: string, tool: unknown): LlmSource {
-    return this.clone({
-      tools: {
-        ...this.options.tools,
-        [name]: tool,
-      },
-    });
-  }
-
-  withTools(tools: Record<string, unknown>): LlmSource {
+  withTools(tools: Record<string, Tool>): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,

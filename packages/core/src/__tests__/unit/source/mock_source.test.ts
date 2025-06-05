@@ -20,7 +20,7 @@ describe('Source.llm().mock()', () => {
       expect(typeof mockSource.maxTokens).toBe(typeof llmSource.maxTokens);
       expect(typeof mockSource.topP).toBe(typeof llmSource.topP);
       expect(typeof mockSource.topK).toBe(typeof llmSource.topK);
-      expect(typeof mockSource.addTool).toBe(typeof llmSource.addTool);
+      expect(typeof mockSource.withTool).toBe(typeof llmSource.withTool);
       expect(typeof mockSource.withTool).toBe(typeof llmSource.withTool);
       expect(typeof mockSource.withTools).toBe(typeof llmSource.withTools);
       expect(typeof mockSource.toolChoice).toBe(typeof llmSource.toolChoice);

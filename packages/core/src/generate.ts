@@ -8,6 +8,7 @@ import {
   LanguageModelV1,
   Output,
   ToolSet,
+  tool as aiTool,
 } from 'ai';
 import { z } from 'zod';
 import type { Message } from './message';
@@ -274,15 +275,15 @@ export async function generateWithSchema<
     // Use tool-based generation (existing SchemaSource logic)
     const functionName =
       schemaOptions.functionName || 'generateStructuredOutput';
+    const schemaToolDefinition = aiTool({
+      description: 'Generate structured output according to schema',
+      parameters: schemaOptions.schema,
+    });
     const toolOptions: LLMOptions = {
       ...options,
       tools: {
         ...options.tools,
-        [functionName]: {
-          name: functionName,
-          description: 'Generate structured output according to schema',
-          parameters: schemaOptions.schema,
-        },
+        [functionName]: schemaToolDefinition,
       },
       toolChoice: 'required',
     };

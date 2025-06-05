@@ -10,9 +10,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
-import { Session } from '../../session';
+import { Session, type Vars } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
-import { Attrs, Vars } from '../../session';
 import {
   Agent,
   Assistant,
@@ -404,7 +403,7 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with weather tool', async () => {
     const weatherTool = createWeatherTool();
 
-    const openAIgenerateOptionsWith = openAILLMSource.addTool(
+    const openAIgenerateOptionsWith = openAILLMSource.withTool(
       'weather',
       weatherTool,
     );

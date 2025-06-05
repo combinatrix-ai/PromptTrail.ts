@@ -267,7 +267,7 @@ describe('LlmSource', () => {
         parameters: { type: 'object' },
       };
 
-      const source = Source.llm().addTool('weather', weatherTool);
+      const source = Source.llm().withTool('weather', weatherTool);
       await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(
@@ -297,8 +297,8 @@ describe('LlmSource', () => {
       const calculatorTool = { name: 'calculator' };
 
       const source = Source.llm()
-        .addTool('weather', weatherTool)
-        .addTool('calculator', calculatorTool)
+        .withTool('weather', weatherTool)
+        .withTool('calculator', calculatorTool)
         .toolChoice('auto');
 
       await source.getContent(Session.create());

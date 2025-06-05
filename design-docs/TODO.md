@@ -12,9 +12,9 @@ Areas for Improvement
 
 1. API Consistency
 
-Naming: Mixed patterns (withVar vs withVars, addTool vs withTool)
+Naming: Mixed patterns (withVar vs withVars, ~~addTool vs withTool~~) ✓ FIXED
 => withVar / withVars are singular/plural, thus consistent
-=> but addTool should be withTool, also add withTools for consistency
+=> ~~but addTool should be withTool, also add withTools for consistency~~ ✓ FIXED - removed addTool, kept withTool/withTools
 Builder patterns: Some use add(), others use specific methods
 => Should be looked deeper
 Static vs instance methods: Inconsistent factory patterns

@@ -123,7 +123,7 @@ describe('AssistantTemplate', () => {
 
     // Create mock source with tool calls
     const options = Source.llm()
-      .addTool('weather', weatherTool)
+      .withTool('weather', weatherTool)
       .mock()
       .mockResponse({
         content: 'I need to check the weather',

@@ -1,8 +1,8 @@
 import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
+import type { Attrs, Vars } from '../session';
 import { Session } from '../session';
 import { LlmSource, Source } from '../source';
-import type { Attrs, Vars } from '../session';
 import { Agent } from './agent';
 import type { Template } from './base';
 
@@ -314,7 +314,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
 
               // Add each tool individually
               for (const [name, tool] of Object.entries(tools)) {
-                llmSource = llmSource.addTool(name, tool);
+                llmSource = llmSource.withTool(name, tool);
               }
 
               return loopAgent.assistant(llmSource);
