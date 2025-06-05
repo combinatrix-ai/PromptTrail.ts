@@ -256,9 +256,9 @@ describe('If Template', () => {
 
   it('should handle nested if templates', async () => {
     // Create a session with metadata
-    const session = Session.create();
-    session.withVar('userRole', 'admin');
-    session.withVar('isAuthenticated', true);
+    const session = Session.create()
+      .withVar('userRole', 'admin')
+      .withVar('isAuthenticated', true);
 
     // Create a nested if template structure
     const innerIfTemplate = new Conditional({
@@ -280,22 +280,24 @@ describe('If Template', () => {
 
     // Verify the correct branches were executed
     const messages = Array.from(resultSession.messages);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].content).toBe('Not an admin');
+    expect(messages).toHaveLength(2);
+    expect(messages[0].content).toBe('Admin role detected');
+    expect(messages[1].content).toBe('User is authenticated');
 
     // Test with different metadata combinations
-    const unauthSession = Session.create();
-    unauthSession.withVar('userRole', 'admin');
-    unauthSession.withVar('isAuthenticated', false);
+    const unauthSession = Session.create()
+      .withVar('userRole', 'admin')
+      .withVar('isAuthenticated', false);
 
     const unauthResultSession = await outerIfTemplate.execute(unauthSession);
     const unauthMessages = Array.from(unauthResultSession.messages);
-    expect(unauthMessages).toHaveLength(1);
-    expect(unauthMessages[0].content).toBe('Not an admin');
+    expect(unauthMessages).toHaveLength(2);
+    expect(unauthMessages[0].content).toBe('Admin role detected');
+    expect(unauthMessages[1].content).toBe('User is not authenticated');
 
-    const nonAdminSession = Session.create();
-    nonAdminSession.withVar('userRole', 'user');
-    nonAdminSession.withVar('isAuthenticated', true);
+    const nonAdminSession = Session.create()
+      .withVar('userRole', 'user')
+      .withVar('isAuthenticated', true);
 
     const nonAdminResultSession =
       await outerIfTemplate.execute(nonAdminSession);
@@ -354,8 +356,7 @@ describe('If Template', () => {
 
   it('should handle dynamically determined template paths', async () => {
     // Create a session with a message type parameter
-    const session = Session.create();
-    session.withVar('messageType', 'greeting');
+    const session = Session.create().withVar('messageType', 'greeting');
 
     // Create templates for different message types
     const greetingTemplate = new User('Hello, nice to meet you!');
@@ -379,20 +380,18 @@ describe('If Template', () => {
     // Verify the greeting template was used
     const messages = Array.from(resultSession.messages);
     expect(messages).toHaveLength(1);
-    expect(messages[0].content).toBe('Here is some information.');
+    expect(messages[0].content).toBe('Hello, nice to meet you!');
 
     // Try with a different message type
-    const questionSession = Session.create();
-    questionSession.withVar('messageType', 'question');
+    const questionSession = Session.create().withVar('messageType', 'question');
 
     const questionResultSession =
       await messageTypeHandler.execute(questionSession);
     const questionMessages = Array.from(questionResultSession.messages);
-    expect(questionMessages[0].content).toBe('Here is some information.');
+    expect(questionMessages[0].content).toBe('I have a question for you.');
 
     // Try with an undefined message type (should use the default)
-    const defaultSession = Session.create();
-    defaultSession.withVar('messageType', 'unknown');
+    const defaultSession = Session.create().withVar('messageType', 'unknown');
 
     const defaultResultSession =
       await messageTypeHandler.execute(defaultSession);

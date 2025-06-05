@@ -13,7 +13,7 @@ async function testExample(filePath: string): Promise<boolean> {
     console.log(`Testing ${path.basename(filePath)}...`);
     const { stdout, stderr } = await execAsync(`bun ${filePath}`);
 
-    if (stderr && !stderr.includes('MCP Example Failed')) {
+    if (stderr) {
       console.error(`Error running ${path.basename(filePath)}:\n${stderr}`);
       return false;
     }

@@ -7,6 +7,8 @@ PromptTrail.ts is a TypeScript-first framework for building structured LLM conve
 PromptTrail.ts is in beta. No backward compatibility is guaranteed - breaking changes may occur as we improve the framework.
 Always suggest best practices.
 
+PromptTrail comes with a set of sensible defaults. And also allows users to override them for advanced use cases.
+
 **Key Features:**
 
 - Type-safe, composable conversation templates
@@ -237,16 +239,6 @@ Under the hood, these templates are built using the `Source` API for maximum fle
 - Use mock sources for deterministic tests
 - Test type inference with type assertions
 
-## Known Issues and TODOs
-
-From `design-docs/TODO.md`:
-
-- Support caching mechanisms
-- Multiple Source output types
-- Improve session creation ergonomics
-- Make Metadata and Context updatable with immer
-- Add `walk` method for template traversal
-
 ## Development Workflow
 
 1. **Before starting work**: Read relevant existing code
@@ -277,11 +269,6 @@ From `design-docs/TODO.md`:
 - Tool integration via `tool()` function
 - Provider configurations
 - Streaming support
-
-### With MCP (Model Context Protocol)
-
-- MCP server configuration support (API ready, implementation pending ai-sdk updates)
-- Designed for tool registration across all providers
 
 ## Performance Considerations
 
@@ -549,13 +536,6 @@ Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
 })
 ```
 
-**Benefits:**
-
-- **No manual transforms** - Automatic extraction from structured output
-- **Type safety** - Full TypeScript inference for extracted variables
-- **Flexible mapping** - Direct extraction, partial fields, or custom names
-- **Clean API** - Agent.extract() provides the most convenient interface
-
 ## Model Comparison
 
 - Your knowledge of LLM models maybe outdated, as the world of AI is rapidly evolving.
@@ -575,14 +555,6 @@ Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
 | **OpenAI (o-series)**  | **o4-mini** (`o4-mini-2025-04-16`)                            | 200 000 tokens               | Input: \$0.00110; Output: \$0.00440 | Production  | Latest small o-series reasoning model (fast, affordable, text + vision).              |
 |                        | **o3** (`o3-2025-04-16`)                                      | 200 000 tokens               | Input: \$0.00500; Output: \$0.02000 | Production  | Most-powerful o-series reasoning model (state-of-the-art deliberate reasoning).       |
 
-## Future Roadmap
-
-- React integration package (`@prompttrail/react`)
-- Additional provider support
-- Enhanced caching mechanisms
-- Improved browser compatibility
-- More built-in validators and tools
-
 ## AI SDK Documentation
 
 For comprehensive AI SDK documentation, see https://ai-sdk.dev/llms.txt
@@ -590,7 +562,3 @@ For comprehensive AI SDK documentation, see https://ai-sdk.dev/llms.txt
 The AI SDK is available as a dependency in `node_modules/ai/` with full TypeScript types and examples.
 
 For practical AI SDK usage examples and working tests, see `packages/core/src/__tests__/dependency/ai-sdk.test.ts` which demonstrates core APIs including text generation, tool usage, and structured output.
-
----
-
-Remember: This is a type-safe, immutable, composable framework. When in doubt, follow these principles and check existing implementations for patterns.

@@ -1,5 +1,4 @@
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { Attrs, Session, Vars } from '../../session';
 import type { Template } from '../base';
 import { TemplateBase } from '../base';
 
@@ -32,6 +31,6 @@ export class Conditional<
     } else if (this.elseTemplate) {
       return this.elseTemplate.execute(validSession);
     }
-    return validSession; // Return unchanged session if condition is false and no else branch
+    return validSession;
   }
 }

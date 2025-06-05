@@ -295,11 +295,11 @@ const agent = Agent.create()
   )
 
   // Parallel execution
-  .add(
+  .then(
     new Parallel()
-      .addSource(Source.llm().openai(), 2) // Run OpenAI twice
-      .addSource(Source.llm().anthropic(), 1) // Run Anthropic once
-      .setStrategy('best'), // Keep best result
+      .withSource(Source.llm().openai(), 2) // Run OpenAI twice
+      .withSource(Source.llm().anthropic(), 1) // Run Anthropic once
+      .withStrategy('best'), // Keep best result
   );
 ```
 
@@ -635,15 +635,15 @@ const agent = Agent.create()
 const researchAgent = Agent.create()
   .system('Research assistant')
   .user('Compare machine learning frameworks')
-  .add(
+  .then(
     new Parallel()
-      .addSource({ provider: 'openai', temperature: 0.2 }, 1) // Conservative
-      .addSource({ provider: 'anthropic', temperature: 0.8 }, 1) // Creative
-      .addSource({ provider: 'google', temperature: 0.5 }, 1) // Balanced
-      .setAggregationFunction(
+      .withSource({ provider: 'openai', temperature: 0.2 }, 1) // Conservative
+      .withSource({ provider: 'anthropic', temperature: 0.8 }, 1) // Creative
+      .withSource({ provider: 'google', temperature: 0.5 }, 1) // Balanced
+      .withAggregationFunction(
         (session) => session.getLastMessage()?.content?.length || 0,
       )
-      .setStrategy('best'), // Keep longest response
+      .withStrategy('best'), // Keep longest response
   );
 
 // Goal-oriented research with custom satisfaction

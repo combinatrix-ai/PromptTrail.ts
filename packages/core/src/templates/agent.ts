@@ -47,6 +47,7 @@ import { ISubroutineTemplateOptions } from './template_types';
  *   .system('System message')
  *   .user('User message')
  *   .assistant('Assistant message')
+ *   .parallel(p => p.withSource(Source.llm().openai()).withStrategy('best'))
  *   .loop(agent => agent.user('Input'), condition)
  *   .subroutine(agent => agent.user('Sub'));
  */
@@ -150,13 +151,92 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
+  /**
+   * Convenient method for structured output generation with optional auto-extraction
+   * @param schema Zod schema for structured output
+   * @param options Configuration options
+   * @returns Agent instance for chaining
+   */
+  structured<TSchema extends z.ZodType>(
+    schema: TSchema,
+    options?: {
+      provider?: string;
+      model?: string;
+      temperature?: number;
+      maxTokens?: number;
+      mode?: 'tool' | 'structured_output';
+      functionName?: string;
+      extractToVars?: boolean | string[] | Record<string, string>;
+    },
+  ): this {
+    const {
+      provider = 'openai',
+      extractToVars,
+      mode = 'structured_output',
+      ...config
+    } = options || {};
+
+    const llmConfig: LLMConfig = {
+      provider: provider as any,
+      ...config,
+    };
+
+    if (extractToVars) {
+      // Use extract method for auto-extraction
+      const extractConfig =
+        typeof extractToVars === 'boolean' ? undefined : extractToVars;
+
+      if (extractConfig) {
+        return this.extract(
+          {
+            ...llmConfig,
+            schema,
+            mode,
+            functionName: options?.functionName,
+          },
+          extractConfig,
+        );
+      } else {
+        // Boolean true - extract all fields
+        return this.extract({
+          ...llmConfig,
+          schema,
+          mode,
+          functionName: options?.functionName,
+        });
+      }
+    } else {
+      // Use regular assistant with schema
+      this.root.then(
+        new Assistant(llmConfig, {
+          schema,
+          mode,
+          functionName: options?.functionName,
+        }),
+      );
+      return this;
+    }
+  }
+
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.then(new Transform(transform));
     return this;
   }
 
-  parallel(template: Parallel<TM, TC>) {
-    this.root.then(template);
+  parallel(template: Parallel<TM, TC>): this;
+  parallel(builderFn: (parallel: Parallel<TM, TC>) => Parallel<TM, TC>): this;
+  parallel(
+    templateOrBuilder:
+      | Parallel<TM, TC>
+      | ((parallel: Parallel<TM, TC>) => Parallel<TM, TC>),
+  ): this {
+    if (typeof templateOrBuilder === 'function') {
+      const parallel = new Parallel<TM, TC>();
+      const builtParallel = templateOrBuilder(parallel);
+      this.root.then(builtParallel);
+    } else {
+      this.root.then(templateOrBuilder);
+    }
     return this;
   }
 

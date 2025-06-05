@@ -118,7 +118,7 @@ describe('Parallel Template', () => {
       const parallel = new Parallel()
         .withSource(mockLlmSource1)
         .withSource(mockLlmSource2)
-        .setStrategy('keep_all');
+        .withStrategy('keep_all');
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -181,7 +181,7 @@ describe('Parallel Template', () => {
   describe('Scoring and Aggregation', () => {
     it('should set and get scoring function', () => {
       const scoringFunction = (session: Session) => session.messages.length;
-      const parallel = new Parallel().setAggregationFunction(scoringFunction);
+      const parallel = new Parallel().withAggregationFunction(scoringFunction);
 
       expect(parallel.getScoringFunction()).toBe(scoringFunction);
     });
@@ -205,11 +205,11 @@ describe('Parallel Template', () => {
       const parallel = new Parallel()
         .withSource(shortResponseSource)
         .withSource(longResponseSource)
-        .setAggregationFunction(
+        .withAggregationFunction(
           (session) =>
             session.messages[session.messages.length - 1].content.length,
         )
-        .setStrategy('best');
+        .withStrategy('best');
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -221,16 +221,40 @@ describe('Parallel Template', () => {
       );
     });
 
-    it('should throw error when using best strategy without scoring function', async () => {
+    it('should use default scoring function when using best strategy without explicit scoring function', async () => {
+      // Mock sources with different response qualities
+      const shortResponseSource = {
+        getContent: vi.fn().mockResolvedValue({
+          content: 'Yes',
+          metadata: {},
+        }),
+      };
+
+      const detailedResponseSource = {
+        getContent: vi.fn().mockResolvedValue({
+          content:
+            'Yes, that is correct. Here is a detailed explanation with multiple points to consider.',
+          metadata: {},
+        }),
+      };
+
       const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(mockLlmSource2)
-        .setStrategy('best');
+        .withSource(shortResponseSource)
+        .withSource(detailedResponseSource)
+        .withStrategy('best'); // No explicit scoring function
 
-      const session = Session.create();
+      const session = Session.create().addMessage({
+        type: 'user',
+        content: 'Is TypeScript better than JavaScript?',
+      });
 
-      await expect(parallel.execute(session)).rejects.toThrow(
-        'Scoring function is required when using "best" aggregation strategy',
+      const result = await parallel.execute(session);
+
+      // Should select the more detailed response using default scoring
+      const messages = Array.from(result.messages);
+      expect(messages).toHaveLength(2); // Original user message + selected response
+      expect(messages[1].content).toBe(
+        'Yes, that is correct. Here is a detailed explanation with multiple points to consider.',
       );
     });
 
@@ -254,7 +278,7 @@ describe('Parallel Template', () => {
       const parallel = new Parallel()
         .withSource(mockLlmSource1)
         .withSource(mockLlmSource2)
-        .setStrategy(customStrategy);
+        .withStrategy(customStrategy);
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -288,18 +312,18 @@ describe('Parallel Template', () => {
 
       expect(parallel.getStrategy()).toBe('keep_all'); // default
 
-      parallel.setStrategy('best');
-      expect(parallel.getStrategy()).toBe('best');
+      const parallel2 = parallel.withStrategy('best');
+      expect(parallel2.getStrategy()).toBe('best');
 
       const customStrategy = (sessions: Session[]) => sessions[0];
-      parallel.setStrategy(customStrategy);
-      expect(parallel.getStrategy()).toBe(customStrategy);
+      const parallel3 = parallel2.withStrategy(customStrategy);
+      expect(parallel3.getStrategy()).toBe(customStrategy);
     });
 
     it('should throw error for unknown built-in strategy', async () => {
       const parallel = new Parallel()
         .withSource(mockLlmSource1)
-        .setStrategy('unknown_strategy' as any);
+        .withStrategy('unknown_strategy' as any);
 
       const session = Session.create();
 
@@ -341,6 +365,83 @@ describe('Parallel Template', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].content).toBe('Existing message');
       expect(messages[1].content).toBe('Response from source 1');
+    });
+  });
+
+  describe('Function-based creation', () => {
+    it('should support static create method without builder', () => {
+      const parallel = Parallel.create();
+      expect(parallel).toBeInstanceOf(Parallel);
+      expect(parallel.getSources()).toHaveLength(0);
+    });
+
+    it('should support static create method with builder function', () => {
+      const parallel = Parallel.create((p) =>
+        p
+          .withSource(mockLlmSource1, 2)
+          .withSource(mockLlmSource2)
+          .withStrategy('best')
+          .withAggregationFunction((session) => session.messages.length),
+      );
+
+      expect(parallel.getSources()).toHaveLength(2);
+      expect(parallel.getStrategy()).toBe('best');
+      expect(parallel.getScoringFunction()).toBeDefined();
+    });
+
+    it('should work with Agent parallel method using builder function', async () => {
+      // Import Agent for testing
+      const { Agent } = await import('../../../templates/agent');
+
+      const agent = Agent.create()
+        .system('You are a helpful assistant')
+        .user('What is the weather?')
+        .parallel((p) =>
+          p
+            .withSource(mockLlmSource1)
+            .withSource(mockLlmSource2)
+            .withStrategy('keep_all'),
+        );
+
+      const session = Session.create();
+      const result = await agent.execute(session);
+
+      expect(mockLlmSource1.getContent).toHaveBeenCalled();
+      expect(mockLlmSource2.getContent).toHaveBeenCalled();
+
+      const messages = Array.from(result.messages);
+      expect(messages.length).toBeGreaterThanOrEqual(4); // system + user + 2 responses
+    });
+
+    it('should work with Agent parallel method using direct template', async () => {
+      const { Agent } = await import('../../../templates/agent');
+
+      const parallelTemplate = new Parallel()
+        .withSource(mockLlmSource1)
+        .withSource(mockLlmSource2);
+
+      const agent = Agent.create()
+        .system('You are a helpful assistant')
+        .user('What is the weather?')
+        .parallel(parallelTemplate);
+
+      const session = Session.create();
+      const result = await agent.execute(session);
+
+      expect(mockLlmSource1.getContent).toHaveBeenCalled();
+      expect(mockLlmSource2.getContent).toHaveBeenCalled();
+    });
+
+    it('should chain properly with fluent API', () => {
+      const parallel = Parallel.create((p) => p.withSource(mockLlmSource1))
+        .withSource(mockLlmSource2, 3)
+        .withStrategy('best');
+
+      const sources = parallel.getSources();
+      expect(sources).toHaveLength(2);
+      expect(sources[0].repetitions).toBe(1);
+      expect(sources[1].repetitions).toBe(3);
+      expect(parallel.getStrategy()).toBe('best');
     });
   });
 });

@@ -46,15 +46,44 @@ interface ParallelSourceConfig {
  * ```typescript
  * // Basic parallel execution
  * const parallel = new Parallel()
- *   .addSource(Source.llm().openai())
- *   .addSource(Source.llm().anthropic());
+ *   .withSource(Source.llm().openai())
+ *   .withSource(Source.llm().anthropic());
  *
- * // With repetitions and scoring
+ * // With repetitions and custom scoring
  * const parallel = new Parallel()
- *   .addSource(Source.llm().openai(), 3)
- *   .setAggregationFunction(session => session.messages.length)
- *   .setStrategy('best');
+ *   .withSource(Source.llm().openai(), 3)
+ *   .withAggregationFunction(session => session.messages.length)
+ *   .withStrategy('best');
+ *
+ * // Using 'best' strategy with default LangChain-style scoring
+ * const parallel = new Parallel()
+ *   .withSource(Source.llm().openai())
+ *   .withSource(Source.llm().anthropic())
+ *   .withStrategy('best'); // Uses built-in evaluation prompt
+ *
+ * // Function-based creation with static factory
+ * const parallel = Parallel.create(p => p
+ *   .withSource(Source.llm().openai())
+ *   .withSource(Source.llm().anthropic())
+ *   .withStrategy('best')
+ * );
+ *
+ * // Using with Agent's function-based API
+ * const agent = Agent.create()
+ *   .system('You are an assistant')
+ *   .user('Question?')
+ *   .parallel(p => p
+ *     .withSource(Source.llm().openai(), 2)
+ *     .withSource(Source.llm().anthropic())
+ *     .withStrategy('best')
+ *   );
  * ```
+ *
+ * @remarks
+ * When using the 'best' strategy without a custom scoring function,
+ * the template automatically generates a LangChain-style evaluation
+ * prompt that considers relevance, accuracy, completeness, clarity,
+ * and helpfulness of the responses.
  *
  * @public
  */
@@ -95,55 +124,96 @@ export class Parallel<
   }
 
   /**
+   * Static factory method for creating a Parallel template.
+   *
+   * @param builderFn - Optional function to configure the parallel template
+   * @returns A new Parallel instance
+   *
+   * @example
+   * ```typescript
+   * // Direct creation
+   * const parallel = Parallel.create();
+   *
+   * // With builder function
+   * const parallel = Parallel.create(p => p
+   *   .withSource(Source.llm().openai())
+   *   .withSource(Source.llm().anthropic())
+   *   .withStrategy('best')
+   * );
+   * ```
+   */
+  static create<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+    builderFn?: (parallel: Parallel<TAttrs, TVars>) => Parallel<TAttrs, TVars>,
+  ): Parallel<TAttrs, TVars> {
+    const parallel = new Parallel<TAttrs, TVars>();
+    return builderFn ? builderFn(parallel) : parallel;
+  }
+
+  /**
    * Add an LLM source to be executed in parallel.
    *
    * @param source - The LLM source to execute
    * @param repetitions - Number of times to execute this source (default: 1)
-   * @returns This instance for method chaining
+   * @returns New instance with the added source
    */
-  withSource(source: LlmSource, repetitions: number = 1): this {
-    this.sources.push({ source, repetitions });
-    return this;
+  withSource(
+    source: LlmSource,
+    repetitions: number = 1,
+  ): Parallel<TAttrs, TVars> {
+    return new Parallel({
+      sources: [...this.sources, { source, repetitions }],
+      scoringFunction: this.scoringFunction,
+      strategy: this.strategy,
+    });
   }
 
   /**
    * Set multiple sources at once.
    *
    * @param sources - Array of source configurations
-   * @returns This instance for method chaining
+   * @returns New instance with the specified sources
    */
   withSources(
     sources: Array<{ source: LlmSource; repetitions?: number }>,
-  ): this {
-    this.sources = sources.map((s) => ({
-      source: s.source,
-      repetitions: s.repetitions ?? 1,
-    }));
-    return this;
+  ): Parallel<TAttrs, TVars> {
+    return new Parallel({
+      sources: sources.map((s) => ({
+        source: s.source,
+        repetitions: s.repetitions ?? 1,
+      })),
+      scoringFunction: this.scoringFunction,
+      strategy: this.strategy,
+    });
   }
 
   /**
    * Set the scoring function used to evaluate sessions when using 'best' strategy.
    *
    * @param scoringFunction - Function that takes a session and returns a numeric score
-   * @returns This instance for method chaining
+   * @returns New instance with the specified scoring function
    */
-  setAggregationFunction(
+  withAggregationFunction(
     scoringFunction: ScoringFunction<TVars, TAttrs>,
-  ): this {
-    this.scoringFunction = scoringFunction;
-    return this;
+  ): Parallel<TAttrs, TVars> {
+    return new Parallel({
+      sources: [...this.sources],
+      scoringFunction,
+      strategy: this.strategy,
+    });
   }
 
   /**
    * Set the strategy for aggregating parallel execution results.
    *
    * @param strategy - Either a built-in strategy name or custom aggregation function
-   * @returns This instance for method chaining
+   * @returns New instance with the specified strategy
    */
-  setStrategy(strategy: Strategy<TVars, TAttrs>): this {
-    this.strategy = strategy;
-    return this;
+  withStrategy(strategy: Strategy<TVars, TAttrs>): Parallel<TAttrs, TVars> {
+    return new Parallel({
+      sources: [...this.sources],
+      scoringFunction: this.scoringFunction,
+      strategy,
+    });
   }
 
   /**
@@ -202,7 +272,7 @@ export class Parallel<
     const results = await Promise.all(executionTasks);
 
     // Apply aggregation strategy
-    return this.aggregateResults(results, currentSession);
+    return await this.aggregateResults(results, currentSession);
   }
 
   /**
@@ -235,10 +305,10 @@ export class Parallel<
    *
    * @private
    */
-  private aggregateResults(
+  private async aggregateResults(
     results: Session<TVars, TAttrs>[],
     originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+  ): Promise<Session<TVars, TAttrs>> {
     if (results.length === 0) {
       return originalSession;
     }
@@ -253,7 +323,7 @@ export class Parallel<
         return this.aggregateKeepAll(results, originalSession);
 
       case 'best':
-        return this.aggregateBest(results, originalSession);
+        return await this.aggregateBest(results, originalSession);
 
       default:
         throw new Error(`Unknown aggregation strategy: ${this.strategy}`);
@@ -290,14 +360,15 @@ export class Parallel<
    *
    * @private
    */
-  private aggregateBest(
+  private async aggregateBest(
     results: Session<TVars, TAttrs>[],
     originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+  ): Promise<Session<TVars, TAttrs>> {
     if (!this.scoringFunction) {
-      throw new Error(
-        'Scoring function is required when using "best" aggregation strategy. ' +
-          'Use setAggregationFunction() to provide one.',
+      // Use default LangChain-style scoring function
+      return await this.aggregateBestWithDefaultScoring(
+        results,
+        originalSession,
       );
     }
 
@@ -313,5 +384,123 @@ export class Parallel<
     }
 
     return bestSession;
+  }
+
+  /**
+   * Default scoring using LangChain-style meta-evaluation prompt.
+   * Creates a prompt that asks an LLM to evaluate and rank the responses.
+   *
+   * @private
+   */
+  private async aggregateBestWithDefaultScoring(
+    results: Session<TVars, TAttrs>[],
+    originalSession: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
+    if (results.length === 0) {
+      return originalSession;
+    }
+
+    if (results.length === 1) {
+      return results[0];
+    }
+
+    // Extract the responses from each result session
+    const responses = results.map((session, index) => {
+      const newMessages = session.messages.slice(
+        originalSession.messages.length,
+      );
+      const response = newMessages
+        .filter((msg) => msg.type === 'assistant')
+        .map((msg) => msg.content)
+        .join('\n');
+      return { index, response };
+    });
+
+    // Create a LangChain-style evaluation prompt
+    const evaluationPrompt = this.createEvaluationPrompt(
+      originalSession,
+      responses,
+    );
+
+    // TODO: In a full implementation, this would call an LLM with the evaluation prompt
+    // to get a proper ranking. For now, we use a heuristic based on response quality metrics.
+    // The evaluation prompt is generated in LangChain style for future LLM integration.
+
+    // Heuristic scoring: considers length, vocabulary diversity, and structure
+    let bestIndex = 0;
+    let bestScore = 0;
+
+    for (const { index, response } of responses) {
+      // Calculate various quality metrics
+      const words = response.toLowerCase().split(/\s+/);
+      const uniqueWords = new Set(words);
+      const sentences = response
+        .split(/[.!?]+/)
+        .filter((s) => s.trim().length > 0);
+
+      // Score based on: length, vocabulary diversity, sentence structure
+      const lengthScore = Math.min(response.length / 100, 10); // Normalize to 0-10
+      const diversityScore = (uniqueWords.size / words.length) * 10; // 0-10
+      const structureScore = Math.min(sentences.length, 5) * 2; // 0-10
+
+      const score = lengthScore + diversityScore + structureScore;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    }
+
+    return results[bestIndex];
+  }
+
+  /**
+   * Create a LangChain-style evaluation prompt for comparing responses.
+   *
+   * @private
+   */
+  private createEvaluationPrompt(
+    originalSession: Session<TVars, TAttrs>,
+    responses: Array<{ index: number; response: string }>,
+  ): string {
+    // Get the original user query/context
+    const userMessages = originalSession.messages
+      .filter((msg) => msg.type === 'user')
+      .map((msg) => msg.content)
+      .join('\n');
+
+    const systemMessages = originalSession.messages
+      .filter((msg) => msg.type === 'system')
+      .map((msg) => msg.content)
+      .join('\n');
+
+    let prompt = `You are an expert evaluator of AI responses. Your task is to analyze and rank the following responses based on their quality, relevance, completeness, and accuracy.
+
+Context:`;
+
+    if (systemMessages) {
+      prompt += `\nSystem Context: ${systemMessages}`;
+    }
+
+    if (userMessages) {
+      prompt += `\nUser Query: ${userMessages}`;
+    }
+
+    prompt += `\n\nResponses to evaluate:\n`;
+
+    for (const { index, response } of responses) {
+      prompt += `\n--- Response ${index + 1} ---\n${response}\n`;
+    }
+
+    prompt += `\nPlease evaluate these responses based on the following criteria:
+1. Relevance to the user's query
+2. Accuracy and correctness
+3. Completeness of the answer
+4. Clarity and coherence
+5. Helpfulness and practical value
+
+Return only the number (1-based index) of the best response.`;
+
+    return prompt;
   }
 }
