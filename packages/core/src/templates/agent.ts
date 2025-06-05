@@ -1,29 +1,26 @@
-import type { Session } from '../session';
-import type { Attrs, Vars } from '../session';
-import type { IValidator } from '../validators/base';
+import { z } from 'zod';
+import type { Attrs, Session, Vars } from '../session';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
 import { Loop } from './composite/loop';
-import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
 import {
   Assistant,
-  type LLMConfig,
-  type AssistantTemplateOptions,
   type AssistantContentInput,
+  type AssistantTemplateOptions,
+  type LLMConfig,
 } from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
+import { Parallel } from './primitives/parallel';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
 import {
   User,
   type UserContentInput,
   type UserTemplateOptions,
-  type CLIOptions,
 } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
-import { z } from 'zod';
 
 /**
  * Agent class for building and executing templates
@@ -88,18 +85,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   /** fluent helpers -------------------------------------------------- */
 
-  add(t: Template<TM, TC>) {
-    this.root.add(t);
+  then(t: Template<TM, TC>) {
+    this.root.then(t);
     return this;
   }
 
   system(content: string) {
-    this.root.add(new System(content));
+    this.root.then(new System(content));
     return this;
   }
 
   user(content?: UserContentInput, options?: UserTemplateOptions) {
-    this.root.add(new User(content, options));
+    this.root.then(new User(content, options));
     return this;
   }
 
@@ -107,7 +104,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     config?: AssistantContentInput,
     options?: AssistantTemplateOptions,
   ) {
-    this.root.add(new Assistant(config, options));
+    this.root.then(new Assistant(config, options));
     return this;
   }
 
@@ -142,7 +139,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
     const extractToVars = extractConfig || true;
 
-    this.root.add(
+    this.root.then(
       new Assistant(llmConfig, {
         schema,
         mode: mode || 'structured_output',
@@ -154,12 +151,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
-    this.root.add(new Transform(transform));
+    this.root.then(new Transform(transform));
     return this;
   }
 
   parallel(template: Parallel<TM, TC>) {
-    this.root.add(template);
+    this.root.then(template);
     return this;
   }
 
@@ -176,7 +173,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
     const loopCondition = typeof loopIf === 'boolean' ? () => loopIf : loopIf;
 
-    this.root.add(
+    this.root.then(
       new Loop({ bodyTemplate, loopIf: loopCondition, maxIterations }),
     );
     return this;
@@ -200,7 +197,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
-    this.root.add(
+    this.root.then(
       new Conditional({
         condition: condition,
         thenTemplate: thenTemplate,
@@ -218,7 +215,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
-    this.root.add(new Subroutine(subroutineTemplate, opts));
+    this.root.then(new Subroutine(subroutineTemplate, opts));
     return this;
   }
 
@@ -227,7 +224,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const builtAgent = builderFn(innerAgent);
     const sequenceTemplate = builtAgent.build();
 
-    this.root.add(sequenceTemplate);
+    this.root.then(sequenceTemplate);
     return this;
   }
 

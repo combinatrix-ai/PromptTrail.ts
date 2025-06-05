@@ -5,11 +5,11 @@ export { Composite } from './composite/composite';
 
 // Export concrete template implementations
 export { Loop } from './composite/loop';
-export { Parallel } from './composite/parallel';
 export { Sequence } from './composite/sequence';
 export { Subroutine } from './composite/subroutine';
 export { Assistant } from './primitives/assistant';
 export { Conditional } from './primitives/conditional';
+export { Parallel } from './primitives/parallel';
 export { System } from './primitives/system';
 export { Transform } from './primitives/transform';
 export { User } from './primitives/user';
@@ -19,22 +19,22 @@ export { Agent } from './agent';
 
 // Export Scenario API
 export {
-  Scenario,
-  StepTemplates,
-  Scenarios,
   isInteractiveStep,
+  Scenario,
+  Scenarios,
+  StepTemplates,
 } from './scenario';
 export type {
-  StepOptions,
   InteractiveStepOptions,
   NonInteractiveStepOptions,
   ScenarioConfig,
+  StepOptions,
 } from './scenario';
 
 // Export Parallel template types
 export type {
-  ScoringFunction,
   AggregationStrategy,
   BuiltInStrategy,
+  ScoringFunction,
   Strategy,
-} from './composite/parallel';
+} from './primitives/parallel';

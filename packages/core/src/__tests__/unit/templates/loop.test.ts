@@ -115,8 +115,8 @@ describe('Loop Template', () => {
     // Create the outer loop template
     const outerLoopTemplate = new Loop({
       bodyTemplate: new Sequence()
-        .add(new User('Outer iteration'))
-        .add(innerLoopTemplate),
+        .then(new User('Outer iteration'))
+        .then(innerLoopTemplate),
       loopIf: (session: Session) => {
         outerCounter++; // 1, 2, 3...
         return outerCounter < 2; // Exit after 2 outer iterations
@@ -237,7 +237,7 @@ describe('Loop Template', () => {
     // Create the loop template with a metadata-based exit condition
     const loopTemplate = new Loop({
       bodyTemplate: Agent.create()
-        .add(new User('Adding to counter'))
+        .then(new User('Adding to counter'))
         .transform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
           const counter =
@@ -273,12 +273,12 @@ describe('Loop Template', () => {
     // Create the loop template with a conditional branch
     const loopTemplate = new Loop({
       bodyTemplate: Agent.create()
-        .add(new User('User input'))
+        .then(new User('User input'))
         .conditional(
           // Condition based on iteration count
           () => counter % 2 === 0, // True on even iterations
-          (agent) => agent.add(new System('This is an even iteration')),
-          (agent) => agent.add(new System('This is an odd iteration')),
+          (agent) => agent.then(new System('This is an even iteration')),
+          (agent) => agent.then(new System('This is an odd iteration')),
         )
         .build(),
       loopIf: () => {

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Session } from '../../../session';
-import { Vars } from '../../../session';
+import { Session, type Vars } from '../../../session';
 import { Agent } from '../../../templates';
 import { Assistant } from '../../../templates/primitives/assistant';
 import { Conditional } from '../../../templates/primitives/conditional';
@@ -272,7 +271,7 @@ describe('If Template', () => {
       condition: (session) => session.getVar('userRole') === 'admin',
       thenTemplate: Agent.create()
         .user('Admin role detected')
-        .add(innerIfTemplate),
+        .then(innerIfTemplate),
       elseTemplate: new User('Not an admin'),
     });
 

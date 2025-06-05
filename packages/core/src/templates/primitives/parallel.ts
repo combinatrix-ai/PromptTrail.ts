@@ -1,6 +1,5 @@
-import type { Session } from '../../session';
+import type { Attrs, Session, Vars } from '../../session';
 import { LlmSource } from '../../source';
-import type { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
 /**
@@ -102,7 +101,7 @@ export class Parallel<
    * @param repetitions - Number of times to execute this source (default: 1)
    * @returns This instance for method chaining
    */
-  addSource(source: LlmSource, repetitions: number = 1): this {
+  withSource(source: LlmSource, repetitions: number = 1): this {
     this.sources.push({ source, repetitions });
     return this;
   }
@@ -113,7 +112,7 @@ export class Parallel<
    * @param sources - Array of source configurations
    * @returns This instance for method chaining
    */
-  setSources(
+  withSources(
     sources: Array<{ source: LlmSource; repetitions?: number }>,
   ): this {
     this.sources = sources.map((s) => ({

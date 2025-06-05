@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
-import { Parallel } from '../../../templates/composite/parallel';
+import { Parallel } from '../../../templates/primitives/parallel';
 
 // Mock the source module
 vi.mock('../../../source', () => ({
@@ -53,8 +53,8 @@ describe('Parallel Template', () => {
 
     it('should add sources with default repetitions', () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
-        .addSource(mockLlmSource2);
+        .withSource(mockLlmSource1)
+        .withSource(mockLlmSource2);
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(2);
@@ -64,8 +64,8 @@ describe('Parallel Template', () => {
 
     it('should add sources with custom repetitions', () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1, 3)
-        .addSource(mockLlmSource2, 2);
+        .withSource(mockLlmSource1, 3)
+        .withSource(mockLlmSource2, 2);
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(2);
@@ -74,7 +74,7 @@ describe('Parallel Template', () => {
     });
 
     it('should set sources in bulk', () => {
-      const parallel = new Parallel().setSources([
+      const parallel = new Parallel().withSources([
         { source: mockLlmSource1, repetitions: 2 },
         { source: mockLlmSource2 }, // default repetitions
         { source: mockLlmSource3, repetitions: 3 },
@@ -98,7 +98,7 @@ describe('Parallel Template', () => {
     });
 
     it('should execute single source and add assistant message', async () => {
-      const parallel = new Parallel().addSource(mockLlmSource1);
+      const parallel = new Parallel().withSource(mockLlmSource1);
       const session = Session.create();
       const result = await parallel.execute(session);
 
@@ -116,8 +116,8 @@ describe('Parallel Template', () => {
 
     it('should execute multiple sources in parallel with keep_all strategy', async () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
-        .addSource(mockLlmSource2)
+        .withSource(mockLlmSource1)
+        .withSource(mockLlmSource2)
         .setStrategy('keep_all');
 
       const session = Session.create();
@@ -137,8 +137,8 @@ describe('Parallel Template', () => {
 
     it('should handle source repetitions correctly', async () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1, 2)
-        .addSource(mockLlmSource2, 1);
+        .withSource(mockLlmSource1, 2)
+        .withSource(mockLlmSource2, 1);
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -158,9 +158,9 @@ describe('Parallel Template', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
-        .addSource(failingSource)
-        .addSource(mockLlmSource2);
+        .withSource(mockLlmSource1)
+        .withSource(failingSource)
+        .withSource(mockLlmSource2);
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -203,8 +203,8 @@ describe('Parallel Template', () => {
       };
 
       const parallel = new Parallel()
-        .addSource(shortResponseSource)
-        .addSource(longResponseSource)
+        .withSource(shortResponseSource)
+        .withSource(longResponseSource)
         .setAggregationFunction(
           (session) =>
             session.messages[session.messages.length - 1].content.length,
@@ -223,8 +223,8 @@ describe('Parallel Template', () => {
 
     it('should throw error when using best strategy without scoring function', async () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
-        .addSource(mockLlmSource2)
+        .withSource(mockLlmSource1)
+        .withSource(mockLlmSource2)
         .setStrategy('best');
 
       const session = Session.create();
@@ -252,8 +252,8 @@ describe('Parallel Template', () => {
       };
 
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
-        .addSource(mockLlmSource2)
+        .withSource(mockLlmSource1)
+        .withSource(mockLlmSource2)
         .setStrategy(customStrategy);
 
       const session = Session.create();
@@ -298,7 +298,7 @@ describe('Parallel Template', () => {
 
     it('should throw error for unknown built-in strategy', async () => {
       const parallel = new Parallel()
-        .addSource(mockLlmSource1)
+        .withSource(mockLlmSource1)
         .setStrategy('unknown_strategy' as any);
 
       const session = Session.create();
@@ -318,7 +318,7 @@ describe('Parallel Template', () => {
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const parallel = new Parallel().addSource(alwaysFailingSource);
+      const parallel = new Parallel().withSource(alwaysFailingSource);
       const session = Session.create();
       const result = await parallel.execute(session);
 
@@ -334,7 +334,7 @@ describe('Parallel Template', () => {
         content: 'Existing message',
       });
 
-      const parallel = new Parallel().addSource(mockLlmSource1);
+      const parallel = new Parallel().withSource(mockLlmSource1);
       const result = await parallel.execute(sessionWithMessages);
 
       const messages = Array.from(result.messages);

@@ -1,6 +1,5 @@
-import type { Session } from '../../session';
+import type { Attrs, Session, Vars } from '../../session';
 import type { Source } from '../../source';
-import type { Attrs, Vars } from '../../session';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
 import { User } from '../primitives/user';
@@ -35,7 +34,7 @@ export abstract class Composite<
     return this;
   }
 
-  add(template: Template<TAttrs, TVars>): this {
+  then(template: Template<TAttrs, TVars>): this {
     this.templates.push(template);
     return this;
   }

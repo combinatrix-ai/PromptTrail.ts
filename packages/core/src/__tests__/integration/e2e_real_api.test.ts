@@ -50,9 +50,9 @@ const anthropicLLMSource = Source.llm()
 describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a simple conversation with OpenAI', async () => {
     const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, how are you?'))
-      .add(new Assistant(openAILLMSource));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Hello, how are you?'))
+      .then(new Assistant(openAILLMSource));
 
     const session = await template.execute();
 
@@ -63,9 +63,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should execute a simple conversation with Anthropic', async () => {
     const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, how are you?'))
-      .add(new Assistant(anthropicLLMSource));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Hello, how are you?'))
+      .then(new Assistant(anthropicLLMSource));
 
     const session = await template.execute();
 
@@ -80,9 +80,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Create a template
     const chat = new Sequence()
-      .add(new System("I'm a helpful assistant."))
-      .add(new User("What's TypeScript?"))
-      .add(new Assistant('This is a mock response from the AI model.'));
+      .then(new System("I'm a helpful assistant."))
+      .then(new User("What's TypeScript?"))
+      .then(new Assistant('This is a mock response from the AI model.'));
 
     // Execute the template with print mode enabled
     // We only care about the side effect of console.log being called
@@ -112,11 +112,11 @@ describe('End-to-End Workflows with Real APIs', () => {
     };
     const date = new Date();
     const template = new Sequence<MessageMetadata, UserContext>()
-      .add(new System('You are a helpful assistant.'))
-      .add(new Assistant('Hello, {{username}}!'))
-      .add(new User('My name is not Alice, it is Bob.'))
+      .then(new System('You are a helpful assistant.'))
+      .then(new Assistant('Hello, {{username}}!'))
+      .then(new User('My name is not Alice, it is Bob.'))
       // Update context with the last message
-      .add(
+      .then(
         new Transform((session) => {
           const msgs = session.messages.map((m) => ({
             ...m,
@@ -152,9 +152,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should execute agent and sequence', { timeout: 30000 }, async () => {
     const sequence = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('123456789'))
-      .add(new Assistant(openAILLMSource));
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User('123456789'))
+      .then(new Assistant(openAILLMSource));
     const session = await sequence.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -163,9 +163,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].content).toContain('123456789');
 
     const agent = Agent.create()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('123456789'))
-      .add(new Assistant(openAILLMSource));
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User('123456789'))
+      .then(new Assistant(openAILLMSource));
     const agentSession = await agent.execute();
     const agenMessages = Array.from(agentSession.messages) as Message[];
     expect(agenMessages).toHaveLength(3);
@@ -176,9 +176,9 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should handle UserTemplate with InputSource', async () => {
     const template = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User(new LiteralSource('123456789')))
-      .add(new Assistant(openAILLMSource));
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User(new LiteralSource('123456789')))
+      .then(new Assistant(openAILLMSource));
     const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -190,10 +190,10 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a if template', async () => {
     // thenTemplate
     const template = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('YES'))
-      .add(new Assistant(openAILLMSource))
-      .add(
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User('YES'))
+      .then(new Assistant(openAILLMSource))
+      .then(
         new Conditional({
           condition: (session) => {
             const lastMessage = session.getLastMessage();
@@ -213,10 +213,10 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // elseTemplate
     const template2 = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('NO'))
-      .add(new Assistant(openAILLMSource))
-      .add(
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User('NO'))
+      .then(new Assistant(openAILLMSource))
+      .then(
         new Conditional({
           condition: (session) => {
             const lasMessage = session.getLastMessage();
@@ -237,8 +237,8 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should loop using LoopTemplate', async () => {
     // Exit loop if 3 messages are in session whose content is "123456789"
     const template = new Sequence()
-      .add(
-        new Sequence().add(new User('123456789')).loopIf((session) => {
+      .then(
+        new Sequence().then(new User('123456789')).loopIf((session) => {
           const messages = Array.from(session.messages);
           return (
             messages.filter((message) => message.content === '123456789')
@@ -246,7 +246,7 @@ describe('End-to-End Workflows with Real APIs', () => {
           );
         }),
       )
-      .add(new Assistant('Loop ended'));
+      .then(new Assistant('Loop ended'));
 
     const session = await template.execute();
     const messages = Array.from(session.messages);
@@ -260,14 +260,14 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should loop using Sequence().loopIf() is used', async () => {
     const template = new Sequence()
-      .add(
+      .then(
         new Sequence()
-          .add(new User('123456789'))
+          .then(new User('123456789'))
           .loopIf((session: Session<any, any>) => {
             return session.messages.length < 3;
           }),
       )
-      .add(new Assistant('Loop ended'));
+      .then(new Assistant('Loop ended'));
     const session = await template.execute();
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(4);
@@ -379,9 +379,9 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a subroutine template', async () => {
     // Inherit from parent and merge back to parent
     const subroutineBody = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('123456789'))
-      .add(new Assistant(openAILLMSource));
+      .then(new System('This is automated API testing. Repeat what user says.'))
+      .then(new User('123456789'))
+      .then(new Assistant(openAILLMSource));
 
     // Create a subroutine template with the body
     const subroutine = new Subroutine(subroutineBody);
@@ -409,9 +409,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     );
 
     const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('What is the weather in Tokyo?'))
-      .add(new Assistant(openAIgenerateOptionsWith));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('What is the weather in Tokyo?'))
+      .then(new Assistant(openAIgenerateOptionsWith));
 
     const session = await template.execute();
 
@@ -434,13 +434,13 @@ describe('End-to-End Workflows with Real APIs', () => {
     const continueResponses = new ListSource(['Yes', 'No']);
 
     const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(
+      .then(new System('You are a helpful assistant.'))
+      .then(
         new Loop({
           bodyTemplate: new Sequence()
-            .add(new User(new LiteralSource('What is your name?')))
-            .add(new Assistant(openAILLMSource))
-            .add(new User(continueResponses)),
+            .then(new User(new LiteralSource('What is your name?')))
+            .then(new Assistant(openAILLMSource))
+            .then(new User(continueResponses)),
           loopIf: (session) => {
             // User(continueResponses) is the last message
             const lastMessage = session.getLastMessage();

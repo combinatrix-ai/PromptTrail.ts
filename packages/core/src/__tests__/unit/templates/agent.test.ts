@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../../session';
-import { Agent, Assistant, User } from '../../../templates';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { Agent } from '../../../templates';
 
 describe('Agent', () => {
   beforeEach(() => {
@@ -132,7 +131,7 @@ describe('Agent', () => {
 
     const mainSequence = Agent.create()
       .system('You are a helpful assistant.')
-      .add(nestedSequence)
+      .then(nestedSequence)
       .user('Final message');
 
     const session = await mainSequence.execute();

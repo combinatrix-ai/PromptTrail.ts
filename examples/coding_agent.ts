@@ -150,7 +150,7 @@ export class CodingAgent {
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
     const agent = Agent.create()
-      .add(new System(systemPrompt))
+      .then(new System(systemPrompt))
       .conditional(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',

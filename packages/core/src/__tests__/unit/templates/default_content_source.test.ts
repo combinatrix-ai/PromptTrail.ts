@@ -39,7 +39,7 @@ describe('Default Content Source', () => {
 
       // Add a UserTemplate without specifying a content source
       // Explicitly provide the source intended as default
-      sequence.add(new User(defaultUserSource));
+      sequence.then(new User(defaultUserSource));
 
       // Execute the sequence
       const session = await sequence.execute();
@@ -62,7 +62,7 @@ describe('Default Content Source', () => {
 
       // Add an AssistantTemplate without specifying a content source
       // Explicitly provide the source intended as default
-      sequence.add(new Assistant(defaultLLM));
+      sequence.then(new Assistant(defaultLLM));
 
       // Execute the sequence
       const session = await sequence.execute();
@@ -104,8 +104,8 @@ describe('Default Content Source', () => {
       // How are defaults meant to be set? Assuming implicit context for now.
 
       // Add templates with explicit sources that should override the defaults
-      sequence.add(new User(explicitUserSource));
-      sequence.add(new Assistant(explicitAssistantSource));
+      sequence.then(new User(explicitUserSource));
+      sequence.then(new Assistant(explicitAssistantSource));
 
       // Execute the sequence
       const session = await sequence.execute();
@@ -135,8 +135,8 @@ describe('Default Content Source', () => {
       sequence
         // Add templates without explicit sources to test defaults
         // Explicitly provide the sources intended as default
-        .add(new User(defaultUserSource))
-        .add(new Assistant(defaultAssistantSource));
+        .then(new User(defaultUserSource))
+        .then(new Assistant(defaultAssistantSource));
 
       // Execute the sequence
       const session = await sequence.execute();
@@ -161,8 +161,8 @@ describe('Default Content Source', () => {
       const nestedSequence = new Sequence();
       // Explicitly provide the sources intended as default
       // (Test name is now less accurate, but tests current behavior)
-      nestedSequence.add(new User(defaultUserSource));
-      nestedSequence.add(new Assistant(defaultAssistantSource));
+      nestedSequence.then(new User(defaultUserSource));
+      nestedSequence.then(new Assistant(defaultAssistantSource));
 
       // Create a main sequence with default sources
       // Sequence constructor takes an array of templates, not default sources
@@ -170,7 +170,7 @@ describe('Default Content Source', () => {
       // How are defaults meant to be set? Assuming implicit context for now.
 
       // Add the nested sequence
-      mainSequence.add(nestedSequence);
+      mainSequence.then(nestedSequence);
 
       // Execute the main sequence
       const session = await mainSequence.execute();
@@ -206,8 +206,8 @@ describe('Default Content Source', () => {
       // Create a loop body that uses templates without sources
       const bodyTemplate = new Sequence()
         // Explicitly provide the sources intended as default
-        .add(new User(defaultUserSource))
-        .add(new Assistant(defaultAssistantSource));
+        .then(new User(defaultUserSource))
+        .then(new Assistant(defaultAssistantSource));
 
       // Create a LoopTemplate with default sources
       // LoopTemplate constructor doesn't take default sources
@@ -251,8 +251,8 @@ describe('Default Content Source', () => {
       // Define the body template using convenience methods
       const loopBody = new Sequence()
         // Explicitly provide the sources intended as default
-        .add(new User(defaultUserSource))
-        .add(new Assistant(defaultAssistantSource));
+        .then(new User(defaultUserSource))
+        .then(new Assistant(defaultAssistantSource));
 
       // LoopTemplate constructor doesn't take default sources
       // The convenience methods addUser/addAssistant were incorrectly chained
@@ -294,8 +294,8 @@ describe('Default Content Source', () => {
       const nestedLoop = new Loop({
         bodyTemplate: new Sequence()
           // Explicitly provide the sources intended as default
-          .add(new User(defaultUserSource))
-          .add(new Assistant(defaultAssistantSource)),
+          .then(new User(defaultUserSource))
+          .then(new Assistant(defaultAssistantSource)),
         loopIf: loopIfCondition,
       });
 
@@ -305,7 +305,7 @@ describe('Default Content Source', () => {
       // How are defaults meant to be set? Assuming implicit context for now.
 
       // Add the nested loop to the main sequence
-      mainSequence.add(nestedLoop);
+      mainSequence.then(nestedLoop);
 
       // Execute the main sequence
       const session = await mainSequence.execute();
@@ -334,8 +334,8 @@ describe('Default Content Source', () => {
       // Create a subroutine body that uses templates without sources
       const subroutineBody = new Sequence()
         // Explicitly provide the sources intended as default
-        .add(new User(defaultUserSource))
-        .add(new Assistant(defaultAssistantSource));
+        .then(new User(defaultUserSource))
+        .then(new Assistant(defaultAssistantSource));
 
       // Create a SubroutineTemplate with default sources
       // SubroutineTemplate constructor doesn't take default sources in options
@@ -367,8 +367,8 @@ describe('Default Content Source', () => {
       // Create a subroutine body without explicit sources
       const subroutineBody = new Sequence()
         // Explicitly provide the sources intended as default (parent's defaults)
-        .add(new User(defaultUserSource))
-        .add(new Assistant(defaultAssistantSource));
+        .then(new User(defaultUserSource))
+        .then(new Assistant(defaultAssistantSource));
 
       // Create a SubroutineTemplate without its own default sources
       const subroutine = new Subroutine(subroutineBody);
@@ -379,7 +379,7 @@ describe('Default Content Source', () => {
       // How are defaults meant to be set? Assuming implicit context for now.
 
       // Add the subroutine to the main sequence
-      mainSequence.add(subroutine);
+      mainSequence.then(subroutine);
 
       // Execute the main sequence
       const session = await mainSequence.execute();
@@ -411,8 +411,8 @@ describe('Default Content Source', () => {
       // Create a subroutine body without explicit sources
       const subroutineBody = new Sequence()
         // Explicitly provide the sources intended as default (subroutine's defaults)
-        .add(new User(subroutineUserSource))
-        .add(new Assistant(subroutineAssistantSource));
+        .then(new User(subroutineUserSource))
+        .then(new Assistant(subroutineAssistantSource));
 
       // Create a SubroutineTemplate with its own default sources
       // SubroutineTemplate constructor doesn't take default sources in options
@@ -427,7 +427,7 @@ describe('Default Content Source', () => {
       // How are defaults meant to be set? Assuming implicit context for now.
 
       // Add the subroutine to the main sequence
-      mainSequence.add(subroutine);
+      mainSequence.then(subroutine);
 
       // Execute the main sequence
       const session = await mainSequence.execute();
@@ -474,17 +474,17 @@ describe('Default Content Source', () => {
       // Sequence constructor doesn't take default sources
       const innerTemplate = new Sequence()
         // Explicitly provide the inner-level sources
-        .add(new User(innerLevelUserSource))
-        .add(new Assistant(innerLevelAssistantSource));
+        .then(new User(innerLevelUserSource))
+        .then(new Assistant(innerLevelAssistantSource));
 
       // Create a mid-level loop with its own default sources
       // LoopTemplate constructor doesn't take default sources
       const midLoop = new Loop({
         bodyTemplate: new Sequence()
           // Explicitly provide the mid-level sources
-          .add(new User(midLevelUserSource))
-          .add(innerTemplate) // innerTemplate uses its own explicit sources now
-          .add(new Assistant(midLevelAssistantSource)),
+          .then(new User(midLevelUserSource))
+          .then(innerTemplate) // innerTemplate uses its own explicit sources now
+          .then(new Assistant(midLevelAssistantSource)),
         loopIf: loopIfCondition,
         // How are defaults meant to be set? Assuming implicit context for now.
       });
@@ -494,9 +494,9 @@ describe('Default Content Source', () => {
       const topSequence = new Sequence()
         // How are defaults meant to be set? Assuming implicit context for now.
         // Explicitly provide the top-level sources
-        .add(new User(topLevelUserSource))
-        .add(midLoop) // midLoop uses its own explicit sources now
-        .add(new Assistant(topLevelAssistantSource));
+        .then(new User(topLevelUserSource))
+        .then(midLoop) // midLoop uses its own explicit sources now
+        .then(new Assistant(topLevelAssistantSource));
 
       // Execute the complex nested structure
       const session = await topSequence.execute();
@@ -544,17 +544,17 @@ describe('Default Content Source', () => {
       // Sequence constructor doesn't take default sources
       const sequenceA = new Sequence()
         // How are defaults meant to be set? Assuming implicit context for now.
-        .add(new User(sourceSetA.user)) // Explicitly use sourceSetA
-        .add(new Assistant(sourceSetA.assistant)); // Explicitly use sourceSetA
+        .then(new User(sourceSetA.user)) // Explicitly use sourceSetA
+        .then(new Assistant(sourceSetA.assistant)); // Explicitly use sourceSetA
 
       // Sequence constructor doesn't take default sources
       const sequenceB = new Sequence()
         // How are defaults meant to be set? Assuming implicit context for now.
-        .add(new User(sourceSetB.user)) // Explicitly use sourceSetB
-        .add(new Assistant(sourceSetB.assistant)); // Explicitly use sourceSetB
+        .then(new User(sourceSetB.user)) // Explicitly use sourceSetB
+        .then(new Assistant(sourceSetB.assistant)); // Explicitly use sourceSetB
 
       // Create a main sequence that uses both sequences
-      const mainSequence = new Sequence().add(sequenceA).add(sequenceB);
+      const mainSequence = new Sequence().then(sequenceA).then(sequenceB);
 
       // Execute the main sequence
       const session = await mainSequence.execute();

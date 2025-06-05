@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
+import type { Attrs, Vars } from '../../../session';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
-import type { Attrs, Vars } from '../../../session';
 import {
   Agent,
   Assistant,
@@ -215,7 +215,7 @@ describe('SubroutineTemplate', () => {
     const outerSubroutine = new Subroutine(
       Agent.create()
         .user('Outer subroutine start')
-        .add(innerSubroutine) // Nest the subroutine
+        .then(innerSubroutine) // Nest the subroutine
         .user('Outer subroutine end')
         .transform((session: Session<any>) => {
           return session.withVars({
@@ -510,7 +510,7 @@ describe('SubroutineTemplate', () => {
     const outerSubroutine = new Subroutine(
       Agent.create()
         .user('Outer subroutine start')
-        .add(innerSubroutine) // Nest the subroutine
+        .then(innerSubroutine) // Nest the subroutine
         .user('Outer subroutine end')
         .transform((session: Session<any>) => {
           return session.withVars({ outer: 'completed' });
@@ -543,7 +543,7 @@ describe('SubroutineTemplate', () => {
     // Create a sequence that includes the subroutine
     const sequence = Agent.create()
       .system('Main sequence system message')
-      .add(nestedSubroutine) // Add the subroutine
+      .then(nestedSubroutine) // Add the subroutine
       .user('Message after nested subroutine');
 
     // Execute the sequence

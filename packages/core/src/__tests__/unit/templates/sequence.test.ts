@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -25,9 +24,9 @@ describe('Sequence Template', () => {
 
   it('should execute simple linear sequence', async () => {
     const sequence = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, who are you?'))
-      .add(new Assistant('I am an AI assistant.'));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Hello, who are you?'))
+      .then(new Assistant('I am an AI assistant.'));
 
     const session = await sequence.execute();
 
@@ -62,8 +61,8 @@ describe('Sequence Template', () => {
 
   it('should support string for UserTemplate', async () => {
     const sequence = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Default user message'));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Default user message'));
 
     const session = await sequence.execute();
 
@@ -84,9 +83,9 @@ describe('Sequence Template', () => {
     const llm = Source.llm();
 
     const sequence = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, assistant'))
-      .add(new Assistant(llm));
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Hello, assistant'))
+      .then(new Assistant(llm));
 
     const session = await sequence.execute();
 
@@ -112,9 +111,9 @@ describe('Sequence Template', () => {
 
   it('should support addTransform method', async () => {
     const sequence = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, my name is Alice'))
-      .add(
+      .then(new System('You are a helpful assistant.'))
+      .then(new User('Hello, my name is Alice'))
+      .then(
         new Transform((session) => {
           const message = session.getLastMessage()?.content || '';
           const nameMatch = message.match(/my name is (\w+)/i);
@@ -123,7 +122,7 @@ describe('Sequence Template', () => {
           return session.withVars({ userName: name });
         }),
       )
-      .add(new User('Nice to meet you, {{userName}}'));
+      .then(new User('Nice to meet you, {{userName}}'));
 
     const session = await sequence.execute();
 
@@ -148,14 +147,14 @@ describe('Sequence Template', () => {
   });
 
   it('should maintain session state across nested sequences', async () => {
-    const sequence1 = new Sequence().add(new User('First message')).add(
+    const sequence1 = new Sequence().then(new User('First message')).then(
       new Transform((session) => {
         // Cast the result to satisfy TTransformFunction type
         return session.withVars({ counter: 1 });
       }),
     );
 
-    const sequence2 = new Sequence().add(new User('Second message')).add(
+    const sequence2 = new Sequence().then(new User('Second message')).then(
       new Transform((session) => {
         // Ensure counter is treated as a number
         const counter = Number(session.getVar('counter') || 0);
@@ -167,10 +166,10 @@ describe('Sequence Template', () => {
     );
 
     const mainSequence = new Sequence()
-      .add(sequence1)
-      .add(sequence2)
+      .then(sequence1)
+      .then(sequence2)
       // Note: Template interpolation uses `{{metadataKey}}` syntax
-      .add(new User('Counter value: {{counter}}'));
+      .then(new User('Counter value: {{counter}}'));
 
     const session = await mainSequence.execute();
 

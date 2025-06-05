@@ -57,17 +57,17 @@ describe('Nested Templates', () => {
     const ifTemplate = new Conditional({
       condition: () => true, // Always true for this test
       thenTemplate: new Sequence() // Use Sequence
-        .add(new User('First question')) // Use add()
-        .add(new Assistant(llm)), // Use add()
+        .then(new User('First question')) // Use add()
+        .then(new Assistant(llm)), // Use add()
       elseTemplate: new System('Condition was false'),
     });
 
     const loopTemplate = new Loop({
       // Use constructor options
       bodyTemplate: new Sequence() // Use Sequence for body
-        .add(new User('Second question')) // Use add()
-        .add(new Assistant(llm)) // Removed comma
-        .add(new User('Follow-up question')), // Ensure comma is present
+        .then(new User('Second question')) // Use add()
+        .then(new Assistant(llm)) // Removed comma
+        .then(new User('Follow-up question')), // Ensure comma is present
       // setExitCondition is now part of constructor options
       loopIf: (session: Session) => {
         // Exit after one iteration
@@ -168,17 +168,17 @@ describe('Nested Templates', () => {
 
     // Create a template with nested conditional templates
     const template = new Sequence() // Use Sequence
-      .add(new System('Conditional template test')) // Use add()
+      .then(new System('Conditional template test')) // Use add()
       // First level condition
-      .add(
+      .then(
         new Conditional({
           // Use add()
           condition: (session) => Boolean(session.getVar('condition')),
           thenTemplate: new Sequence() // Use Sequence
-            .add(new User('Question when condition is true')) // Use add()
-            .add(new Assistant(llm)) // Removed comma
+            .then(new User('Question when condition is true')) // Use add()
+            .then(new Assistant(llm)) // Removed comma
             // Nested condition
-            .add(
+            .then(
               new Conditional({
                 // Use add()
                 condition: (session) => {
@@ -193,8 +193,8 @@ describe('Nested Templates', () => {
               }),
             ), // Close inner addIf
           elseTemplate: new Sequence() // Use Sequence
-            .add(new User('Question when condition is false')) // Use add()
-            .add(new Assistant(llm)), // Use add()
+            .then(new User('Question when condition is false')) // Use add()
+            .then(new Assistant(llm)), // Use add()
         }),
       ); // Close outer addIf
 

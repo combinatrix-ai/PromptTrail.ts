@@ -1,5 +1,4 @@
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { Attrs, Session, Vars } from '../../session';
 import type { Template } from '../base';
 
 /**
@@ -8,6 +7,6 @@ import type { Template } from '../base';
  */
 export interface Fluent<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>
   extends Template<TAttrs, TVars> {
-  add(t: Template<TAttrs, TVars>): any;
+  then(t: Template<TAttrs, TVars>): any;
   execute(s?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
 }

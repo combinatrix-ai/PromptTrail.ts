@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../session';
 import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules
@@ -34,9 +33,9 @@ describe('Browser Compatibility', () => {
 
     // Create a template
     const template = new Sequence()
-      .add(new System('You are a helpful assistant in a browser environment.'))
-      .add(new User('Hello from the browser!'))
-      .add(
+      .then(new System('You are a helpful assistant in a browser environment.'))
+      .then(new User('Hello from the browser!'))
+      .then(
         new Assistant(
           'This is a response from the OpenAI API in a browser environment.',
         ),
