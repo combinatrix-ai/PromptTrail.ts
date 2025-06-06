@@ -111,7 +111,7 @@ async function main() {
       },
     },
   });
-  console.log(`   Print enabled: ${session7.print}`);
+  console.log(`   Print enabled: ${session7.debug}`);
   console.log(`   User ID: ${session7.getVar('userId')}\n`);
 
   // 8. Mixed chaining (start with attrs)

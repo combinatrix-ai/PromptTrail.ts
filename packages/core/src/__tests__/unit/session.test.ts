@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../message';
 import { createSession, Session } from '../../session';
-import type { Vars, Attrs } from '../../session';
 
 function createUserMessage(content: string): Message {
   return {
@@ -139,7 +138,7 @@ describe('Session', () => {
     const sessionFromJson = createSession<{ key: string }>(parsedJson);
     expect(sessionFromJson.messages).toEqual(session.messages);
     expect(sessionFromJson.vars).toMatchObject(session.vars);
-    expect(sessionFromJson.print).toEqual(session.print);
+    expect(sessionFromJson.debug).toEqual(session.debug);
     expect(sessionFromJson.getVar('key')).toEqual('value');
     // @ts-expect-error - Testing non-existent key
     expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();
@@ -167,22 +166,22 @@ describe('Session', () => {
     const session1 = createSession();
     expect(session1.messages).toHaveLength(0);
     expect(session1.varsSize).toBe(0);
-    expect(session1.print).toBe(false);
+    expect(session1.debug).toBe(false);
 
     const session2 = createSession({ messages: [createUserMessage('Test')] });
     expect(session2.messages).toHaveLength(1);
     expect(session2.varsSize).toBe(0);
-    expect(session2.print).toBe(false);
+    expect(session2.debug).toBe(false);
 
     const session3 = createSession({ context: { test: true } });
     expect(session3.messages).toHaveLength(0);
     expect(session3.getVar('test')).toBe(true);
-    expect(session3.print).toBe(false);
+    expect(session3.debug).toBe(false);
   });
 
   it('should handle print option', () => {
     const session = createSession({ print: true });
-    expect(session.print).toBe(true);
+    expect(session.debug).toBe(true);
   });
 
   it('should maintain print setting through immutable operations', () => {
@@ -191,8 +190,8 @@ describe('Session', () => {
       .addMessage(createUserMessage('Test'))
       .withVars({ test: true });
 
-    expect(session.print).toBe(true);
-    expect(newSession.print).toBe(true);
+    expect(session.debug).toBe(true);
+    expect(newSession.debug).toBe(true);
   });
 
   it('should include print in JSON representation', () => {
@@ -207,7 +206,7 @@ describe('Session Namespace', () => {
     const session = Session.create();
     expect(session.messages).toHaveLength(0);
     expect(session.varsSize).toBe(0);
-    expect(session.print).toBe(false);
+    expect(session.debug).toBe(false);
   });
 
   it('should create session with vars using Session.create()', () => {
@@ -223,7 +222,7 @@ describe('Session Namespace', () => {
     const session = Session.empty();
     expect(session.messages).toHaveLength(0);
     expect(session.varsSize).toBe(0);
-    expect(session.print).toBe(false);
+    expect(session.debug).toBe(false);
   });
 
   it('should create session with vars using Session.withVars()', () => {
@@ -257,7 +256,7 @@ describe('Session Namespace', () => {
 
   it('should create debug session using Session.debug()', () => {
     const session = Session.debug({ vars: { debug: true } });
-    expect(session.print).toBe(true);
+    expect(session.debug).toBe(true);
     expect(session.getVar('debug')).toBe(true);
   });
 
@@ -272,7 +271,7 @@ describe('Session Namespace', () => {
     expect(session.messages).toHaveLength(1);
     expect(session.messages[0].content).toBe('Test');
     expect(session.getVar('key')).toBe('value');
-    expect(session.print).toBe(false);
+    expect(session.debug).toBe(false);
   });
 
   it('should handle invalid JSON gracefully in Session.fromJSON()', () => {
@@ -404,7 +403,7 @@ describe('Session New API - Gradual Typing', () => {
       },
     });
 
-    expect(session.print).toBe(true);
+    expect(session.debug).toBe(true);
     expect(session.getVar('userId')).toBe('123');
     expect(session.getVar('debug')).toBe(true);
   });

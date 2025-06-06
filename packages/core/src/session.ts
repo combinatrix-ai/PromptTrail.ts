@@ -1,3 +1,4 @@
+import { debugEventHelpers, debugEvents } from './cli/debug-events';
 import { ValidationError } from './errors';
 import type { Message } from './message';
 
@@ -10,16 +11,41 @@ export class Session<
   constructor(
     public readonly messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
-    public readonly print: boolean = false,
-  ) {}
+    public readonly debug: boolean = false,
+    public readonly ui: 'console' | 'ink' | 'auto' = 'auto',
+  ) {
+    // Enable debug events if debug is enabled
+    if (this.debug) {
+      debugEvents.setEnabled(true);
+
+      // Emit session created event for new sessions
+      if (messages.length === 0) {
+        debugEvents.emit(debugEventHelpers.sessionCreated(vars, 0));
+      }
+    }
+  }
   addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
     const newSession = new Session<TVars, TAttrs>(
       [...this.messages, message],
       { ...this.vars },
-      this.print,
+      this.debug,
+      this.ui,
     );
 
-    if (this.print) {
+    if (this.debug) {
+      // Emit debug event for message added
+      debugEvents.emit(
+        debugEventHelpers.messageAdded(
+          message.type,
+          message.content,
+          this.messages.length,
+          {
+            toolCalls: message.toolCalls?.length || 0,
+            contentLength: message.content.length,
+          },
+        ),
+      );
+
       this.updateDebugOutput(newSession, message);
     }
 
@@ -30,8 +56,14 @@ export class Session<
     newSession: Session<TVars, TAttrs>,
     message: Message<TAttrs>,
   ): void {
-    this.logMessageToConsole(message);
-    this.tryUpdateInkInterface(newSession).catch(() => {});
+    // If UI mode is explicitly console, always log to console
+    if (this.ui === 'console') {
+      this.logMessageToConsole(message);
+      return;
+    }
+
+    // If UI mode is ink or auto, try to use Ink interface
+    this.tryUpdateInkInterface(newSession);
   }
 
   private async tryUpdateInkInterface(
@@ -39,10 +71,10 @@ export class Session<
   ): Promise<void> {
     try {
       const { InkDebugContext } = await import('./cli/ink-debug-context');
-      if (InkDebugContext.isActive()) {
-        InkDebugContext.updateSession(newSession);
-      }
-    } catch (error) {}
+      InkDebugContext.updateSession(newSession);
+    } catch (error) {
+      // Silently ignore if Ink interface is not available
+    }
   }
 
   private logMessageToConsole(message: Message<TAttrs>): void {
@@ -85,28 +117,53 @@ export class Session<
     key: K,
     value: V,
   ): Session<Vars<TVars & { [P in K]: V }>, TAttrs> {
-    return new Session(
+    const newSession = new Session(
       [...this.messages],
       { ...this.vars, [key]: value } as TVars & { [P in K]: V },
-      this.print,
+      this.debug,
+      this.ui,
     );
+
+    // Emit debug event for variable update
+    if (this.debug) {
+      const oldValue = (this.vars as any)[key];
+      debugEvents.emit(
+        debugEventHelpers.variableUpdated(String(key), oldValue, value),
+      );
+    }
+
+    return newSession;
   }
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
   ): Session<Vars<TVars & U>, TAttrs> {
-    return new Session(
+    const newSession = new Session(
       [...this.messages],
       { ...this.vars, ...vars } as TVars & U,
-      this.print,
+      this.debug,
+      this.ui,
     );
+
+    // Emit debug events for each variable update
+    if (this.debug) {
+      Object.entries(vars).forEach(([key, value]) => {
+        const oldValue = (this.vars as any)[key];
+        debugEvents.emit(
+          debugEventHelpers.variableUpdated(key, oldValue, value),
+        );
+      });
+    }
+
+    return newSession;
   }
 
   withAttrsType<U extends Record<string, unknown>>(): Session<TVars, Attrs<U>> {
     return new Session<TVars, Attrs<U>>(
       [...this.messages] as Message<Attrs<U>>[],
       { ...this.vars },
-      this.print,
+      this.debug,
+      this.ui,
     );
   }
 
@@ -153,7 +210,9 @@ export class Session<
     return {
       messages: this.messages,
       context: this.vars,
-      print: this.print,
+      debug: this.debug,
+      // Keep 'print' for backwards compatibility
+      print: this.debug,
     };
   }
 
@@ -168,13 +227,19 @@ export function createSession<
 >(options?: {
   context?: C;
   messages?: Message<Attrs<M>>[];
+  debug?: boolean;
+  ui?: 'console' | 'ink' | 'auto';
+  // @deprecated Use 'debug' instead
   print?: boolean;
 }): Session<Vars<C>, Attrs<M>> {
   const ctx = (options?.context ?? {}) as C;
+  // Support backwards compatibility with 'print' parameter
+  const debugEnabled = options?.debug ?? options?.print ?? false;
   return new Session<Vars<C>, Attrs<M>>(
     options?.messages ?? [],
     ctx,
-    options?.print ?? false,
+    debugEnabled,
+    options?.ui ?? 'auto',
   );
 }
 
@@ -199,11 +264,16 @@ export class SessionBuilder<
   create(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
+    debug?: boolean;
+    ui?: 'console' | 'ink' | 'auto';
+    // @deprecated Use 'debug' instead
     print?: boolean;
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
+      debug: options?.debug,
+      ui: options?.ui,
       print: options?.print,
     });
   }
@@ -215,11 +285,13 @@ export class SessionBuilder<
   debug(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
+    ui?: 'ink' | 'console' | 'auto';
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
-      print: true,
+      debug: true,
+      ui: options?.ui ?? 'auto',
     });
   }
 }
@@ -231,11 +303,16 @@ export namespace Session {
   >(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
+    debug?: boolean;
+    ui?: 'console' | 'ink' | 'auto';
+    // @deprecated Use 'debug' instead
     print?: boolean;
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
+      debug: options?.debug,
+      ui: options?.ui,
       print: options?.print,
     });
   }
@@ -347,14 +424,16 @@ export namespace Session {
     messages?: Message<Attrs<TAttrs>>[];
     ui?: 'ink' | 'console' | 'auto';
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
+    const uiMode = options?.ui ?? 'auto';
+
     const session = createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
-      print: true,
+      debug: true,
+      ui: uiMode,
     });
 
     // Initialize Ink interface if requested and available
-    const uiMode = options?.ui ?? 'auto';
     if (uiMode === 'ink' || uiMode === 'auto') {
       // Start initialization but don't await it (to keep debug() synchronous)
       // The initialization will set proper flags so other code can wait for it

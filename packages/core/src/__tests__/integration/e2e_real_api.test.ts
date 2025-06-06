@@ -84,9 +84,9 @@ describe('End-to-End Workflows with Real APIs', () => {
       .then(new User("What's TypeScript?"))
       .then(new Assistant('This is a mock response from the AI model.'));
 
-    // Execute the template with print mode enabled
+    // Execute the template with debug mode enabled and explicit console UI
     // We only care about the side effect of console.log being called
-    await chat.execute(Session.create({ print: true }));
+    await chat.execute(Session.create({ debug: true, ui: 'console' }));
 
     // Verify console.log was called at least once for each message type
     // The actual format of the log calls may vary
@@ -125,7 +125,7 @@ describe('End-to-End Workflows with Real APIs', () => {
           const next = Session.create<UserContext, MessageMetadata>({
             vars: session.vars,
             messages: msgs,
-            print: session.print,
+            print: session.debug,
           });
           return next.withVar('username', 'Bob');
         }),

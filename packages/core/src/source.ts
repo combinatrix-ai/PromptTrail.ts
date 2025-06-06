@@ -362,7 +362,7 @@ export class CLISource extends StringSource {
       const { InkDebugContext } = await import('./cli/ink-debug-context');
 
       // If session has print enabled, try to use or initialize Ink interface
-      if (session.print) {
+      if (session.debug) {
         // Always wait for any ongoing initialization to complete first
         const isInkAvailable = await InkDebugContext.waitForInitialization();
 

@@ -1,5 +1,6 @@
 import type { Session } from '../session';
 import type { InkDebugRenderer } from './ink-debug-renderer';
+import type { EnhancedInkDebugRenderer } from './enhanced-debug-renderer';
 
 /**
  * Terminal capability detection
@@ -20,11 +21,12 @@ function isTerminalCapable(): boolean {
  */
 class InkDebugContextManager {
   private static instance: InkDebugContextManager | null = null;
-  private renderer: InkDebugRenderer | null = null;
+  private renderer: InkDebugRenderer | EnhancedInkDebugRenderer | null = null;
   private activeSession: Session | null = null;
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
   private initializationStarted = false;
+  private useEnhancedRenderer = true;
 
   /**
    * Initialize the Ink debug context with a session
@@ -140,6 +142,16 @@ class InkDebugContextManager {
   }
 
   /**
+   * Set whether to use the enhanced renderer (default: true)
+   */
+  static setEnhancedRenderer(enabled: boolean): void {
+    if (!this.instance) {
+      this.instance = new InkDebugContextManager();
+    }
+    this.instance.useEnhancedRenderer = enabled;
+  }
+
+  /**
    * Start the Ink interface with the given session
    */
   private async startInkInterface(session: Session<any, any>): Promise<void> {
@@ -159,8 +171,15 @@ class InkDebugContextManager {
       this.activeSession = session;
 
       // Lazy load the renderer to avoid loading React/Ink in non-UI contexts
-      const { InkDebugRenderer } = await import('./ink-debug-renderer');
-      this.renderer = new InkDebugRenderer(session);
+      if (this.useEnhancedRenderer) {
+        const { EnhancedInkDebugRenderer } = await import(
+          './enhanced-debug-renderer'
+        );
+        this.renderer = new EnhancedInkDebugRenderer(session);
+      } else {
+        const { InkDebugRenderer } = await import('./ink-debug-renderer');
+        this.renderer = new InkDebugRenderer(session);
+      }
 
       await this.renderer.start();
       this.isInitialized = true;

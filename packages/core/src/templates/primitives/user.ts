@@ -1,11 +1,10 @@
 import * as readline from 'node:readline/promises';
+import { ValidationError } from '../../errors';
 import type { UserMessage } from '../../message';
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { Attrs, Session, Vars } from '../../session';
 import type { Source } from '../../source';
 import { interpolateTemplate } from '../../utils/template_interpolation';
 import type { IValidator } from '../../validators/base';
-import { ValidationError } from '../../errors';
 import { TemplateBase } from '../base';
 
 export interface CLIOptions {
@@ -98,7 +97,7 @@ export class User<
       try {
         const { InkDebugContext } = await import('../../cli/ink-debug-context');
 
-        if (session.print) {
+        if (session.debug) {
           const isInkAvailable = await InkDebugContext.waitForInitialization();
 
           if (isInkAvailable) {

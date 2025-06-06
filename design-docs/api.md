@@ -476,21 +476,6 @@ class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 - `build(): Template<TM, TC>` - Build final template
 - `execute(session?: Session<TC, TM>): Promise<Session<TC, TM>>` - Execute agent
 
-**Legacy Methods (Deprecated):**
-
-The following methods are deprecated in favor of the function-based builders above:
-
-- `addSystem()` → use `system()`
-- `addUser()` → use `user()`
-- `addAssistant()` → use `assistant()`
-- `addConditional()` → use `conditional()`
-- `addTransform()` → use `transform()`
-- `addLoop()` → use `loop()`
-- `addSubroutine()` → use `subroutine()`
-- `addSequence()` → use `sequence()`
-
----
-
 ## Vars and Attrs (Tagged Records)
 
 Type-safe immutable containers for session variables and message metadata.
