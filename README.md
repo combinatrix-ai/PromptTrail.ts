@@ -236,6 +236,13 @@ PromptTrail supports both a **simple direct API** (recommended) and **powerful S
 .assistant({ provider: 'anthropic' })    // Anthropic Claude
 .assistant('Static response')            // Fixed assistant content
 
+// Parallel execution with simple configs
+.parallel(p => p
+  .withSource({ provider: 'openai', temperature: 0.1 })
+  .withSource({ provider: 'anthropic', temperature: 0.8 })
+  .withStrategy('best')
+)
+
 // ⚡ Source API (Power Users) - Advanced customization
 import { Source } from '@prompttrail/core';
 
@@ -245,6 +252,12 @@ import { Source } from '@prompttrail/core';
 
 .assistant(Source.llm().openai())       // LLM with middleware
 .assistant(Source.llm().anthropic())    // Advanced configuration
+
+// Advanced parallel with Source objects
+.parallel(p => p
+  .withSource(Source.llm().openai().temperature(0.1).withSchema(schema))
+  .withSource(Source.llm().anthropic().temperature(0.8))
+)
 ```
 
 **When to use each approach:**
@@ -294,12 +307,30 @@ const agent = Agent.create()
     },
   )
 
-  // Parallel execution
-  .then(
-    new Parallel()
-      .withSource(Source.llm().openai(), 2) // Run OpenAI twice
-      .withSource(Source.llm().anthropic(), 1) // Run Anthropic once
-      .withStrategy('best'), // Keep best result
+  // Simple parallel execution
+  .parallel(
+    (p) =>
+      p
+        .withSource({ provider: 'openai' }, 2) // Run OpenAI twice
+        .withSource({ provider: 'anthropic' }, 1) // Run Anthropic once
+        .withStrategy('best'), // Keep best result
+  )
+
+  // Advanced parallel with detailed config
+  .parallel((p) =>
+    p
+      .withSource(
+        {
+          provider: 'openai',
+          model: 'gpt-4',
+          temperature: 0.1,
+          maxTokens: 1000,
+        },
+        3,
+      )
+      .withSource({ provider: 'anthropic', temperature: 0.8 })
+      .withAggregationFunction((session) => session.messages.length)
+      .withStrategy('best'),
   );
 ```
 
@@ -635,15 +666,16 @@ const agent = Agent.create()
 const researchAgent = Agent.create()
   .system('Research assistant')
   .user('Compare machine learning frameworks')
-  .then(
-    new Parallel()
-      .withSource({ provider: 'openai', temperature: 0.2 }, 1) // Conservative
-      .withSource({ provider: 'anthropic', temperature: 0.8 }, 1) // Creative
-      .withSource({ provider: 'google', temperature: 0.5 }, 1) // Balanced
-      .withAggregationFunction(
-        (session) => session.getLastMessage()?.content?.length || 0,
-      )
-      .withStrategy('best'), // Keep longest response
+  .parallel(
+    (p) =>
+      p
+        .withSource({ provider: 'openai', temperature: 0.2 }, 1) // Conservative
+        .withSource({ provider: 'anthropic', temperature: 0.8 }, 1) // Creative
+        .withSource({ provider: 'google', temperature: 0.5 }, 1) // Balanced
+        .withAggregationFunction(
+          (session) => session.getLastMessage()?.content?.length || 0,
+        )
+        .withStrategy('best'), // Keep longest response
   );
 
 // Goal-oriented research with custom satisfaction

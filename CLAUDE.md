@@ -536,6 +536,231 @@ Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
 })
 ```
 
+## Template Instantiation Patterns & Type Safety
+
+PromptTrail.ts provides multiple ways to create and compose templates. Understanding the preferred patterns will help you write type-safe, maintainable code.
+
+### 🎯 Preferred: Function-Based Agent Methods
+
+The **Agent function-based API** is the recommended approach for creating templates because it provides superior type safety and developer experience.
+
+#### Why Function-Based Methods Are Better
+
+**Type Inheritance & Safety:**
+
+```typescript
+// ✅ GOOD: Function-based methods inherit Agent's type parameters
+type MyVars = { userId: string; role: 'admin' | 'user' };
+type MyAttrs = { timestamp: Date; requestId: string };
+
+const agent = Agent.create<MyVars, MyAttrs>()
+  .system('You are a helpful assistant')
+  .user('Hello')
+  .assistant()
+  .conditional(
+    (session) => session.getVar('role') === 'admin', // ✅ Type-safe access to MyVars
+    (a) => a.system('Admin mode enabled').assistant(),
+    (a) => a.system('Standard mode').assistant(),
+  );
+
+// ❌ BAD: Direct instantiation causes type mismatches
+const agent = Agent.create<MyVars, MyAttrs>()
+  .then(new User('Hello')) // ❌ Type error: User<any, any> ≠ Agent<MyVars, MyAttrs>
+  .then(
+    new Conditional({
+      // ❌ Type error: Template types don't match
+      condition: (session) => session.getVar('role') === 'admin',
+      thenTemplate: new System('Admin mode'),
+      elseTemplate: new System('Standard mode'),
+    }),
+  );
+```
+
+**The Problem with Direct Instantiation:**
+
+- `new User("text")` creates `User<any, any>`
+- `Agent<MyVars, MyAttrs>` expects templates with matching type parameters
+- This causes TypeScript errors requiring ugly type casting
+
+**The Solution with Function-Based Methods:**
+
+- `agent.user("text")` automatically creates `User<MyVars, MyAttrs>`
+- Types flow naturally through the entire composition
+- No type casting or `any` types needed
+
+### Template Creation Patterns
+
+#### Message Templates
+
+```typescript
+// ✅ Preferred: Agent methods (type-safe, support various content sources)
+const agent = Agent.create<UserContext, MessageAttrs>()
+  .system('You are {{userRole}} assistant') // String content
+  .system(Source.literal('Custom system message')) // Source content
+  .system(
+    async (session) => `Dynamic message for ${session.getVar('userName')}`,
+  ) // Function content
+  .user('{{userQuery}}')
+  .assistant();
+
+// ❌ Avoid: Direct instantiation (type issues)
+const agent = Agent.create<UserContext, MessageAttrs>()
+  .then(new System('You are {{userRole}} assistant')) // Type mismatch
+  .then(new User('{{userQuery}}')) // Type mismatch
+  .then(new Assistant()); // Type mismatch
+```
+
+#### Conditional Logic
+
+```typescript
+// ✅ Preferred: Function-based conditional
+const agent = Agent.create()
+  .system('You are a helpful assistant')
+  .user('Process this request')
+  .conditional(
+    (session) => session.getVar('isUrgent', false),
+    // Then branch - urgent handling
+    (a) =>
+      a.system('URGENT: Process immediately with high priority').assistant(),
+    // Else branch - normal handling
+    (a) => a.system('Process normally').assistant(),
+  );
+
+// ❌ Avoid: Direct Conditional instantiation
+const urgentFlow = new Conditional({
+  condition: (session) => session.getVar('isUrgent', false),
+  thenTemplate: new System('URGENT: Process immediately'), // Type issues
+  elseTemplate: new System('Process normally'), // Type issues
+});
+```
+
+#### Loops and Iteration
+
+```typescript
+// ✅ Preferred: Function-based loop
+const agent = Agent.create()
+  .system('You are a helpful chatbot')
+  .loop(
+    (a) => a.user({ cli: 'Your message (or "quit" to exit): ' }).assistant(),
+    (session) => {
+      const lastMessage = session.getLastMessage();
+      return lastMessage?.content.toLowerCase() !== 'quit';
+    },
+    10, // Max iterations
+  );
+
+// ❌ Avoid: Direct Loop instantiation
+const chatLoop = new Loop({
+  bodyTemplate: [
+    new User({ cli: 'Your message: ' }), // Type issues
+    new Assistant(), // Type issues
+  ],
+  loopIf: (session) => session.getVar('continue', true),
+  maxIterations: 10,
+});
+```
+
+#### Parallel Execution
+
+```typescript
+// ✅ Preferred: Function-based parallel with Agent
+const agent = Agent.create()
+  .system('You are a helpful assistant')
+  .user('Compare approaches to this problem')
+  .parallel((p) =>
+    p
+      .withSource(Source.llm().openai('gpt-4.1-mini'))
+      .withSource(Source.llm().anthropic('claude-3.5-haiku'))
+      .withStrategy('best'),
+  );
+
+// ❌ Avoid: Direct Parallel instantiation (type issues)
+const parallel = new Parallel({
+  sources: [
+    { source: Source.llm().openai() },
+    { source: Source.llm().anthropic() },
+  ],
+  strategy: 'best',
+});
+```
+
+#### Subroutines
+
+```typescript
+// ✅ Preferred: Function-based subroutine
+const agent = Agent.create()
+  .system('You are a research assistant')
+  .user('Research: {{topic}}')
+  .assistant()
+  .subroutine(
+    (a) =>
+      a
+        .system('You are a fact-checker. Verify the research above.')
+        .user('Please fact-check the research and rate its accuracy 1-10')
+        .assistant(),
+    { isolateContext: true },
+  )
+  .transform((session) => {
+    // Extract fact-check score and add to vars
+    const factCheckMessage = session.getLastMessage();
+    const scoreMatch = factCheckMessage?.content.match(/(\d+)\/10/);
+    return session.withVar('factCheckScore', scoreMatch?.[1] || '0');
+  })
+  .user(
+    'Based on the fact-check score of {{factCheckScore}}/10, provide a final summary',
+  );
+
+// ❌ Avoid: Direct Subroutine instantiation (complex type management)
+```
+
+### Best Practices Summary
+
+1. **Always start with `Agent.create()`** - provides the fluent interface
+2. **Use function-based methods** (`agent.user()`, `agent.conditional()`, etc.) instead of direct instantiation
+3. **Specify types early** - `Agent.create<MyVars, MyAttrs>()` for type safety
+4. **Leverage nested builders** - function parameters in conditionals, loops, etc. provide clean, type-safe composition
+5. **Direct instantiation is okay for simple cases** but avoid mixing with typed Agents
+
+### When Direct Instantiation Is Acceptable
+
+Direct instantiation is fine when:
+
+- Creating standalone templates for testing
+- Building utility functions that don't need strict typing
+- Working with generic template compositions
+
+```typescript
+// OK for utility functions
+function createWelcomeMessage(role: string): System {
+  return new System(`Welcome, you are logged in as: ${role}`);
+}
+
+// OK for testing
+it('should handle conditional logic', () => {
+  const conditional = new Conditional({
+    condition: () => true,
+    thenTemplate: new User('then branch'),
+    elseTemplate: new User('else branch'),
+  });
+  // Test the conditional...
+});
+```
+
+### Migration from Direct Instantiation
+
+If you have existing code using direct instantiation, consider refactoring:
+
+```typescript
+// Before (direct instantiation)
+const agent = Agent.create()
+  .then(new System('Hello'))
+  .then(new User('Question'))
+  .then(new Assistant());
+
+// After (function-based)
+const agent = Agent.create().system('Hello').user('Question').assistant();
+```
+
 ## Model Comparison
 
 - Your knowledge of LLM models maybe outdated, as the world of AI is rapidly evolving.

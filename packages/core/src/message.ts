@@ -1,13 +1,7 @@
 import type { Attrs } from './session';
 
-/**
- * Represents the role of a message in a conversation
- */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 
-/**
- * Base interface for all message types
- */
 export interface BaseMessage<TAttrs extends Attrs = Attrs> {
   content: string;
   attrs?: TAttrs;
@@ -17,50 +11,28 @@ export interface BaseMessage<TAttrs extends Attrs = Attrs> {
     arguments: Record<string, unknown>;
     id: string;
   }>;
-  // Do **not** declare `type: MessageRole` here!
-  // Because getMessagesByType etc will break.
-  // Having the union ("system" | "user" | …) in the base
-  // would make *every* message structurally compatible with
-  // every role, so Extract<Message, { type: "user" }> collapses
-  // to `never`.  Each specialised interface adds its own
-  // literal `type` instead, keeping the union discriminated.
 }
 
-/**
- * System message interface
- */
 export interface SystemMessage<TAttrs extends Attrs = Attrs>
   extends BaseMessage<TAttrs> {
   type: 'system';
 }
 
-/**
- * User message interface
- */
 export interface UserMessage<TAttrs extends Attrs = Attrs>
   extends BaseMessage<TAttrs> {
   type: 'user';
 }
 
-/**
- * Assistant message interface
- */
 export interface AssistantMessage<TAttrs extends Attrs = Attrs>
   extends BaseMessage<TAttrs> {
   type: 'assistant';
 }
 
-/**
- * Tool result message interface
- */
 export interface ToolResultMessage<TAttrs extends Attrs = Attrs>
   extends BaseMessage<TAttrs> {
   type: 'tool_result';
 }
 
-/**
- * Message interface that can be any of the above types
- */
 export type Message<TAttrs extends Attrs = Attrs> =
   | SystemMessage<TAttrs>
   | UserMessage<TAttrs>
@@ -73,29 +45,16 @@ export const Message = {
     content: string,
     attrs?: M,
   ): Message<M> => {
-    switch (type) {
-      case 'system':
-        return { type: 'system', content, attrs };
-      case 'user':
-        return { type: 'user', content, attrs };
-      case 'assistant':
-        return { type: 'assistant', content, attrs };
-      case 'tool_result':
-        return { type: 'tool_result', content, attrs };
-      default:
-        throw new Error(`Unknown message type: ${type}`);
-    }
+    return { type, content, attrs } as Message<M>;
   },
 
   setAttrs: <M extends Attrs = Attrs>(
     message: Message<M>,
     attrs: M,
-  ): Message<M> => {
-    return {
-      ...message,
-      attrs: { ...message.attrs, ...attrs } as M,
-    };
-  },
+  ): Message<M> => ({
+    ...message,
+    attrs: { ...message.attrs, ...attrs } as M,
+  }),
 
   expandAttrs: <
     M extends Record<string, unknown>,
@@ -103,13 +62,12 @@ export const Message = {
   >(
     message: Message<Attrs<M>>,
     attrs: U,
-  ): Message<Attrs<Omit<M, keyof U> & U>> => {
-    const base = message.attrs ?? ({} as M);
-    return {
-      ...message,
-      attrs: { ...base, ...attrs } as Attrs<Omit<M, keyof U> & U>,
-    };
-  },
+  ): Message<Attrs<Omit<M, keyof U> & U>> => ({
+    ...message,
+    attrs: { ...(message.attrs ?? {}), ...attrs } as Attrs<
+      Omit<M, keyof U> & U
+    >,
+  }),
 
   setStructuredContent: <
     M extends Attrs = Attrs,
@@ -117,22 +75,18 @@ export const Message = {
   >(
     message: Message<M>,
     structuredContent: S,
-  ): Message<M> => {
-    return {
-      ...message,
-      structuredContent,
-    };
-  },
+  ): Message<M> => ({
+    ...message,
+    structuredContent,
+  }),
 
   setContent: <M extends Attrs = Attrs>(
     message: Message<M>,
     content: string,
-  ): Message<M> => {
-    return {
-      ...message,
-      content,
-    };
-  },
+  ): Message<M> => ({
+    ...message,
+    content,
+  }),
 
   system: <M extends Attrs = Attrs>(
     content: string,
@@ -148,11 +102,5 @@ export const Message = {
   assistant: <M extends Attrs = Attrs>(
     content: string,
     attrs?: M,
-  ): Message<M> => {
-    return {
-      type: 'assistant',
-      content,
-      attrs,
-    };
-  },
+  ): Message<M> => ({ type: 'assistant', content, attrs }),
 };

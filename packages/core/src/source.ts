@@ -1,4 +1,3 @@
-// content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import { ValidationError } from './errors';
@@ -26,11 +25,6 @@ import type {
   TValidationResult as ValidationResult,
 } from './validators/base';
 
-// --- Debug Mode Configuration ---
-
-/**
- * Get debug mode configuration for LLM sources
- */
 function isDebugMode(): boolean {
   return process.env.PROMPTTRAIL_DEBUG === 'true';
 }
@@ -41,16 +35,8 @@ function getMaxLLMCalls(): number {
     : 100;
 }
 
-/**
- * Global call counter for LLM sources in debug mode
- */
 const llmCallCounter = new Map<string, number>();
 
-// --- Provider Types ---
-
-/**
- * OpenAI provider configuration
- */
 export interface OpenAIProviderConfig {
   type: 'openai';
   apiKey: string;
@@ -60,9 +46,6 @@ export interface OpenAIProviderConfig {
   dangerouslyAllowBrowser?: boolean;
 }
 
-/**
- * Anthropic provider configuration
- */
 export interface AnthropicProviderConfig {
   type: 'anthropic';
   apiKey: string;
@@ -70,9 +53,6 @@ export interface AnthropicProviderConfig {
   baseURL?: string;
 }
 
-/**
- * Google provider configuration
- */
 export interface GoogleProviderConfig {
   type: 'google';
   apiKey?: string;
@@ -80,17 +60,11 @@ export interface GoogleProviderConfig {
   baseURL?: string;
 }
 
-/**
- * Provider configuration union type
- */
 export type ProviderConfig =
   | OpenAIProviderConfig
   | AnthropicProviderConfig
   | GoogleProviderConfig;
 
-/**
- * LLM Generation Options
- */
 export interface LLMOptions {
   provider: ProviderConfig;
   temperature?: number;
@@ -104,12 +78,6 @@ export interface LLMOptions {
   maxCallLimit?: number;
 }
 
-// --- Temporary Definitions (Move to appropriate files later) ---
-
-/**
- * Interface for AI model outputs with metadata and structured data
- * (Equivalent to ModelContentOutput in the original file)
- */
 export interface ModelOutput {
   content: string;
   toolCalls?: Array<{
@@ -125,18 +93,12 @@ export interface ModelOutput {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * Options for validation behavior
- */
 export interface ValidationOptions {
   validator?: IValidator;
   maxAttempts?: number;
   raiseError?: boolean;
 }
 
-/**
- * Base class for all content sources (Renamed from ContentSource)
- */
 export abstract class Source<T = unknown> {
   protected validator?: IValidator;
   protected maxAttempts: number;
@@ -168,86 +130,50 @@ export abstract class Source<T = unknown> {
     };
   }
 
-  /**
-   * Get content with session context
-   * @param session Session context for content generation
-   * @returns Promise resolving to content of type T
-   */
   abstract getContent(session: Session<any, any>): Promise<T>;
 
-  /**
-   * Validates the given content once using the assigned validator.
-   * Does NOT handle retries internally. Retries should be handled by the calling method (e.g., getContent).
-   */
   protected async validateContent(
     content: string,
     session: Session<any, any>,
   ): Promise<ValidationResult> {
     if (!this.validator) {
-      return { isValid: true }; // No validator means content is considered valid
+      return { isValid: true };
     }
-    // Perform a single validation attempt
     return this.validator.validate(content, session);
   }
 
-  /**
-   * Check if this content source has a validator
-   * @returns True if a validator is available
-   */
   hasValidator(): boolean {
     return !!this.validator;
   }
 
-  /**
-   * Get the validator associated with this content source
-   * @returns The validator or undefined if no validator is set
-   */
   getValidator(): IValidator | undefined {
     return this.validator;
   }
 
-  /**
-   * Add middleware to this source's pipeline
-   */
   useMiddleware(middleware: Middleware<unknown, T>): this {
     this.pipeline.use(middleware);
     return this;
   }
 
-  /**
-   * Add request interceptor (for LLM sources)
-   */
   interceptRequest(interceptor: RequestInterceptor): this {
     this.pipeline.interceptRequest(interceptor);
     return this;
   }
 
-  /**
-   * Add response interceptor (for LLM sources)
-   */
   interceptResponse(interceptor: ResponseInterceptor): this {
     this.pipeline.interceptResponse(interceptor);
     return this;
   }
 
-  /**
-   * Configure retry behavior
-   */
   withRetry(config: Partial<RetryConfig>): this {
     this.retryConfig = { ...this.retryConfig, ...config };
     return this;
   }
 
-  /**
-   * Get the current middleware pipeline
-   */
   getMiddlewarePipeline(): MiddlewarePipeline<unknown, T> {
     return this.pipeline;
   }
 
-  /**
-   * Execute content generation with full middleware pipeline and retry logic
-   */
   protected async executeWithMiddleware(
     session: Session<any, any>,
     generateFn: (context: MiddlewareContext<unknown>) => Promise<T>,
@@ -261,60 +187,38 @@ export abstract class Source<T = unknown> {
     try {
       return await this.pipeline.executeWithRetry(
         async (context) => {
-          // Check if we have a cached response from middleware
           if ((context as any).cachedResponse !== undefined) {
             return (context as any).cachedResponse;
           }
-
-          // Execute the actual generation function
           return generateFn(context);
         },
         initialContext,
         this.retryConfig,
       );
     } catch (error) {
-      // Handle raiseError behavior at the source level
       if (!this.raiseError) {
         console.warn(
           `${this.constructor.name}: Error occurred but raiseError is false. Returning default value.`,
         );
-        // Return a default value based on the type T
         return this.getDefaultValue();
       }
       throw error;
     }
   }
 
-  /**
-   * Get default value when errors occur and raiseError is false
-   */
   protected getDefaultValue(): T {
-    // Default implementation returns empty content
     return '' as T;
   }
 }
 
-/**
- * Base class for sources returning simple string content (Renamed from StringContentSource)
- */
-export abstract class StringSource extends Source<string> {
-  // Returns plain string content
-}
+export abstract class StringSource extends Source<string> {}
 
-/**
- * Base class for sources returning AI model outputs (Renamed from ModelContentSource)
- */
 export abstract class ModelSource extends Source<ModelOutput> {
-  // Returns structured content with content, toolCalls, structuredOutput and metadata
-
   protected getDefaultValue(): ModelOutput {
     return { content: '' };
   }
 }
 
-/**
- * Content source that returns a random element from a predefined list
- */
 export class RandomSource extends StringSource {
   constructor(
     private contentList: string[],
@@ -329,11 +233,6 @@ export class RandomSource extends StringSource {
   }
 }
 
-/**
- * Content source that returns elements from a predefined list sequentially.
- * By default, it throws an error when the list is exhausted.
- * If `loop` is set to true in options, it restarts from the beginning.
- */
 export class ListSource extends StringSource {
   private index: number = 0;
   private loop: boolean;
@@ -379,16 +278,10 @@ export class ListSource extends StringSource {
     }
   }
 
-  /**
-   * Gets the current index.
-   */
   getIndex(): number {
     return this.index;
   }
 
-  /**
-   * Checks if the source is at the end of the list (and not looping).
-   */
   atEnd(): boolean {
     return !this.loop && this.index >= this.contentList.length;
   }
@@ -464,6 +357,90 @@ export class CLISource extends StringSource {
   }
 
   async getContent(session: Session<any, any>): Promise<string> {
+    // Check if Ink debug interface is active or can be initialized
+    try {
+      const { InkDebugContext } = await import('./cli/ink-debug-context');
+
+      // If session has print enabled, try to use or initialize Ink interface
+      if (session.print) {
+        // Always wait for any ongoing initialization to complete first
+        const isInkAvailable = await InkDebugContext.waitForInitialization();
+
+        // If still not available and not started, try to initialize
+        if (!isInkAvailable && !InkDebugContext.isInitializationStarted()) {
+          try {
+            await InkDebugContext.initialize(session);
+            const finalIsInkAvailable =
+              await InkDebugContext.waitForInitialization();
+            if (finalIsInkAvailable) {
+              return this.getContentViaInk(session);
+            }
+          } catch (error) {
+            // Initialization failed, fall back to readline
+          }
+        } else if (isInkAvailable) {
+          return this.getContentViaInk(session);
+        }
+      }
+    } catch (error) {
+      // Ink not available or import failed, fall back to readline
+    }
+
+    // Fallback to original readline implementation
+    return this.getContentViaReadline(session);
+  }
+
+  private async getContentViaInk(session: Session<any, any>): Promise<string> {
+    const { InkDebugContext } = await import('./cli/ink-debug-context');
+
+    let attempts = 0;
+    let lastResult: ValidationResult | undefined;
+    let currentInput = '';
+
+    while (attempts < this.maxAttempts) {
+      attempts++;
+
+      // Get input through Ink interface
+      const rawInput = await InkDebugContext.captureCliInput(
+        this.promptText,
+        this.defaultVal,
+        session,
+      );
+      currentInput = rawInput || this.defaultVal || '';
+
+      lastResult = await this.validateContent(currentInput, session);
+
+      if (lastResult.isValid) {
+        return currentInput;
+      }
+
+      const isLastAttempt = attempts >= this.maxAttempts;
+
+      if (isLastAttempt) {
+        if (this.raiseError) {
+          const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
+          throw new ValidationError(errorMessage);
+        } else {
+          console.warn(
+            `CLISource: Validation failed after ${attempts} attempts. Returning last input or default value.`,
+          );
+          return currentInput;
+        }
+      } else {
+        // In Ink mode, validation errors will be shown in the UI
+        console.log(
+          `Validation attempt ${attempts} failed: ${
+            lastResult?.instruction || 'Invalid input'
+          }. Please try again.`,
+        );
+      }
+    }
+    return this.defaultVal || '';
+  }
+
+  private async getContentViaReadline(
+    session: Session<any, any>,
+  ): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,

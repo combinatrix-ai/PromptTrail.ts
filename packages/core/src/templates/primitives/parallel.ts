@@ -1,6 +1,7 @@
 import type { Attrs, Session, Vars } from '../../session';
-import { LlmSource } from '../../source';
+import { LlmSource, Source } from '../../source';
 import { TemplateBase } from '../base';
+import { LLMConfig } from './assistant';
 
 /**
  * Type for scoring function that evaluates a session
@@ -37,6 +38,142 @@ interface ParallelSourceConfig {
 }
 
 /**
+ * Input type for parallel sources - can be either direct LLM config or Source
+ */
+export type ParallelSourceInput = LLMConfig | LlmSource;
+
+/**
+ * Configuration object for creating Parallel templates
+ */
+export interface ParallelConfig<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  sources?: Array<{ source: ParallelSourceInput; repetitions?: number }>;
+  scoringFunction?: ScoringFunction<TVars, TAttrs>;
+  strategy?: Strategy<TVars, TAttrs>;
+}
+
+/**
+ * Builder class for creating Parallel configurations
+ */
+export class ParallelBuilder<
+  TAttrs extends Attrs = Attrs,
+  TVars extends Vars = Vars,
+> {
+  private sources: Array<{
+    source: ParallelSourceInput;
+    repetitions?: number;
+  }> = [];
+  private scoringFunction?: ScoringFunction<TVars, TAttrs>;
+  private strategy: Strategy<TVars, TAttrs> = 'keep_all';
+
+  withSource(source: ParallelSourceInput, repetitions: number = 1): this {
+    this.sources.push({ source, repetitions });
+    return this;
+  }
+
+  withSources(
+    sources: Array<{ source: ParallelSourceInput; repetitions?: number }>,
+  ): this {
+    this.sources = [...sources];
+    return this;
+  }
+
+  withAggregationFunction(
+    scoringFunction: ScoringFunction<TVars, TAttrs>,
+  ): this {
+    this.scoringFunction = scoringFunction;
+    return this;
+  }
+
+  withStrategy(strategy: Strategy<TVars, TAttrs>): this {
+    this.strategy = strategy;
+    return this;
+  }
+
+  build(): ParallelConfig<TVars, TAttrs> {
+    return {
+      sources: this.sources.map((s) => ({
+        source: this.createLlmSource(s.source),
+        repetitions: s.repetitions || 1,
+      })),
+      scoringFunction: this.scoringFunction,
+      strategy: this.strategy,
+    };
+  }
+
+  /**
+   * Convert ParallelSourceInput to LlmSource for internal use
+   * @private
+   */
+  private createLlmSource(source: ParallelSourceInput): LlmSource {
+    if (typeof source === 'object' && 'getContent' in source) {
+      // Already an LlmSource
+      return source as LlmSource;
+    } else {
+      // It's an LLMConfig, convert to Source
+      const config = source as LLMConfig;
+      let llmSource = Source.llm();
+
+      // Apply provider configuration
+      switch (config.provider) {
+        case 'openai':
+          llmSource = llmSource.openai({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'gpt-4o-mini',
+            dangerouslyAllowBrowser: config.dangerouslyAllowBrowser,
+          });
+          break;
+        case 'anthropic':
+          llmSource = llmSource.anthropic({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'claude-3-5-haiku-latest',
+          });
+          break;
+        case 'google':
+          llmSource = llmSource.google({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'gemini-pro',
+          });
+          break;
+      }
+
+      // Apply generation parameters
+      if (config.temperature !== undefined) {
+        llmSource = llmSource.temperature(config.temperature);
+      }
+      if (config.maxTokens !== undefined) {
+        llmSource = llmSource.maxTokens(config.maxTokens);
+      }
+      if (config.topP !== undefined) {
+        llmSource = llmSource.topP(config.topP);
+      }
+      if (config.topK !== undefined) {
+        llmSource = llmSource.topK(config.topK);
+      }
+      if (config.tools !== undefined) {
+        llmSource = llmSource.withTools(config.tools);
+      }
+      if (config.toolChoice !== undefined) {
+        llmSource = llmSource.toolChoice(config.toolChoice);
+      }
+      if (config.schema !== undefined) {
+        llmSource = llmSource.withSchema(config.schema, {
+          mode: config.mode,
+          functionName: config.functionName,
+        });
+      }
+
+      return llmSource;
+    }
+  }
+}
+
+/**
  * A template that executes multiple LLM sources in parallel and aggregates results.
  *
  * @template TAttrs - Type of the session metadata.
@@ -44,37 +181,39 @@ interface ParallelSourceConfig {
  *
  * @example
  * ```typescript
- * // Basic parallel execution
- * const parallel = new Parallel()
- *   .withSource(Source.llm().openai())
- *   .withSource(Source.llm().anthropic());
- *
- * // With repetitions and custom scoring
- * const parallel = new Parallel()
- *   .withSource(Source.llm().openai(), 3)
- *   .withAggregationFunction(session => session.messages.length)
- *   .withStrategy('best');
- *
- * // Using 'best' strategy with default LangChain-style scoring
- * const parallel = new Parallel()
- *   .withSource(Source.llm().openai())
- *   .withSource(Source.llm().anthropic())
- *   .withStrategy('best'); // Uses built-in evaluation prompt
- *
- * // Function-based creation with static factory
- * const parallel = Parallel.create(p => p
- *   .withSource(Source.llm().openai())
- *   .withSource(Source.llm().anthropic())
- *   .withStrategy('best')
- * );
- *
- * // Using with Agent's function-based API
+ * // Simple parallel execution with generation configs
  * const agent = Agent.create()
  *   .system('You are an assistant')
  *   .user('Question?')
  *   .parallel(p => p
- *     .withSource(Source.llm().openai(), 2)
- *     .withSource(Source.llm().anthropic())
+ *     .withSource({ provider: 'openai', temperature: 0.2 }, 2)
+ *     .withSource({ provider: 'anthropic', temperature: 0.8 })
+ *     .withStrategy('best')
+ *   );
+ *
+ * // Advanced configuration
+ * const agent = Agent.create()
+ *   .system('You are an assistant')
+ *   .user('Question?')
+ *   .parallel(p => p
+ *     .withSource({
+ *       provider: 'openai',
+ *       model: 'gpt-4',
+ *       temperature: 0.1,
+ *       maxTokens: 1000
+ *     }, 3)
+ *     .withSource({ provider: 'anthropic', model: 'claude-3-5-haiku-latest' })
+ *     .withAggregationFunction(session => session.messages.length)
+ *     .withStrategy('best')
+ *   );
+ *
+ * // Still supports Source objects for advanced use cases
+ * const agent = Agent.create()
+ *   .system('You are an assistant')
+ *   .user('Question?')
+ *   .parallel(p => p
+ *     .withSource(Source.llm().openai().temperature(0.2), 2)
+ *     .withSource(Source.llm().anthropic().temperature(0.8))
  *     .withStrategy('best')
  *   );
  * ```
@@ -101,7 +240,7 @@ export class Parallel<
    * @param options - Configuration options for parallel execution
    */
   constructor(options?: {
-    sources?: Array<{ source: LlmSource; repetitions?: number }>;
+    sources?: Array<{ source: ParallelSourceInput; repetitions?: number }>;
     scoringFunction?: ScoringFunction<TVars, TAttrs>;
     strategy?: Strategy<TVars, TAttrs>;
   }) {
@@ -109,7 +248,7 @@ export class Parallel<
 
     if (options?.sources) {
       this.sources = options.sources.map((s) => ({
-        source: s.source,
+        source: this.createLlmSource(s.source),
         repetitions: s.repetitions ?? 1,
       }));
     }
@@ -121,102 +260,6 @@ export class Parallel<
     if (options?.strategy) {
       this.strategy = options.strategy;
     }
-  }
-
-  /**
-   * Static factory method for creating a Parallel template.
-   *
-   * @param builderFn - Optional function to configure the parallel template
-   * @returns A new Parallel instance
-   *
-   * @example
-   * ```typescript
-   * // Direct creation
-   * const parallel = Parallel.create();
-   *
-   * // With builder function
-   * const parallel = Parallel.create(p => p
-   *   .withSource(Source.llm().openai())
-   *   .withSource(Source.llm().anthropic())
-   *   .withStrategy('best')
-   * );
-   * ```
-   */
-  static create<
-    TAttrs extends Attrs = Record<string, any>,
-    TVars extends Vars = Record<string, any>,
-  >(
-    builderFn?: (parallel: Parallel<TAttrs, TVars>) => Parallel<TAttrs, TVars>,
-  ): Parallel<TAttrs, TVars> {
-    const parallel = new Parallel<TAttrs, TVars>();
-    return builderFn ? builderFn(parallel) : parallel;
-  }
-
-  /**
-   * Add an LLM source to be executed in parallel.
-   *
-   * @param source - The LLM source to execute
-   * @param repetitions - Number of times to execute this source (default: 1)
-   * @returns New instance with the added source
-   */
-  withSource(
-    source: LlmSource,
-    repetitions: number = 1,
-  ): Parallel<TAttrs, TVars> {
-    return new Parallel({
-      sources: [...this.sources, { source, repetitions }],
-      scoringFunction: this.scoringFunction,
-      strategy: this.strategy,
-    });
-  }
-
-  /**
-   * Set multiple sources at once.
-   *
-   * @param sources - Array of source configurations
-   * @returns New instance with the specified sources
-   */
-  withSources(
-    sources: Array<{ source: LlmSource; repetitions?: number }>,
-  ): Parallel<TAttrs, TVars> {
-    return new Parallel({
-      sources: sources.map((s) => ({
-        source: s.source,
-        repetitions: s.repetitions ?? 1,
-      })),
-      scoringFunction: this.scoringFunction,
-      strategy: this.strategy,
-    });
-  }
-
-  /**
-   * Set the scoring function used to evaluate sessions when using 'best' strategy.
-   *
-   * @param scoringFunction - Function that takes a session and returns a numeric score
-   * @returns New instance with the specified scoring function
-   */
-  withAggregationFunction(
-    scoringFunction: ScoringFunction<TVars, TAttrs>,
-  ): Parallel<TAttrs, TVars> {
-    return new Parallel({
-      sources: [...this.sources],
-      scoringFunction,
-      strategy: this.strategy,
-    });
-  }
-
-  /**
-   * Set the strategy for aggregating parallel execution results.
-   *
-   * @param strategy - Either a built-in strategy name or custom aggregation function
-   * @returns New instance with the specified strategy
-   */
-  withStrategy(strategy: Strategy<TVars, TAttrs>): Parallel<TAttrs, TVars> {
-    return new Parallel({
-      sources: [...this.sources],
-      scoringFunction: this.scoringFunction,
-      strategy,
-    });
   }
 
   /**
@@ -505,5 +548,74 @@ Context:`;
 Return only the number (1-based index) of the best response.`;
 
     return prompt;
+  }
+
+  /**
+   * Convert ParallelSourceInput to LlmSource for internal use
+   * @private
+   */
+  private createLlmSource(source: ParallelSourceInput): LlmSource {
+    if (typeof source === 'object' && 'getContent' in source) {
+      // Already an LlmSource
+      return source as LlmSource;
+    } else {
+      // It's an LLMConfig, convert to Source
+      const config = source as LLMConfig;
+      let llmSource = Source.llm();
+
+      // Apply provider configuration
+      switch (config.provider) {
+        case 'openai':
+          llmSource = llmSource.openai({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'gpt-4o-mini',
+            dangerouslyAllowBrowser: config.dangerouslyAllowBrowser,
+          });
+          break;
+        case 'anthropic':
+          llmSource = llmSource.anthropic({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'claude-3-5-haiku-latest',
+          });
+          break;
+        case 'google':
+          llmSource = llmSource.google({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+            modelName: config.model || 'gemini-pro',
+          });
+          break;
+      }
+
+      // Apply generation parameters
+      if (config.temperature !== undefined) {
+        llmSource = llmSource.temperature(config.temperature);
+      }
+      if (config.maxTokens !== undefined) {
+        llmSource = llmSource.maxTokens(config.maxTokens);
+      }
+      if (config.topP !== undefined) {
+        llmSource = llmSource.topP(config.topP);
+      }
+      if (config.topK !== undefined) {
+        llmSource = llmSource.topK(config.topK);
+      }
+      if (config.tools !== undefined) {
+        llmSource = llmSource.withTools(config.tools);
+      }
+      if (config.toolChoice !== undefined) {
+        llmSource = llmSource.toolChoice(config.toolChoice);
+      }
+      if (config.schema !== undefined) {
+        llmSource = llmSource.withSchema(config.schema, {
+          mode: config.mode,
+          functionName: config.functionName,
+        });
+      }
+
+      return llmSource;
+    }
   }
 }

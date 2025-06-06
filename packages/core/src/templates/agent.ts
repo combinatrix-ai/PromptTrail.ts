@@ -12,8 +12,12 @@ import {
   type LLMConfig,
 } from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
-import { Parallel } from './primitives/parallel';
-import { System } from './primitives/system';
+import {
+  Parallel,
+  ParallelBuilder,
+  type ParallelConfig,
+} from './primitives/parallel';
+import { System, type SystemContentInput } from './primitives/system';
 import { Transform } from './primitives/transform';
 import {
   User,
@@ -22,35 +26,6 @@ import {
 } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
 
-/**
- * Agent class for building and executing templates
- * @template TAttrs - The metadata type.
- * @template TVars - The context type.
- * @class
- * @public
- * @remarks
- * This class provides a fluent interface for creating and executing templates,
- * allowing for the addition of system, user, and assistant messages,
- * as well as the ability to define loops and subroutines.
- * It serves as a builder for complex template compositions.
- * The templates can be executed in a sequence or as part of a subroutine,
- * enabling flexible and reusable template structures.
- * The class also supports the addition of custom exit conditions for loops
- * and the ability to retain messages or isolate context in subroutines.
- * The Agent class is designed to be extensible and customizable,
- * allowing developers to create sophisticated conversational agents
- * with complex logic and context management.
- * It is a key component of the template system, enabling the creation
- * of dynamic and interactive conversational experiences.
- * @example
- * const agent = Agent.create()
- *   .system('System message')
- *   .user('User message')
- *   .assistant('Assistant message')
- *   .parallel(p => p.withSource(Source.llm().openai()).withStrategy('best'))
- *   .loop(agent => agent.user('Input'), condition)
- *   .subroutine(agent => agent.user('Sub'));
- */
 export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   implements Template<TM, TC>, Fluent<TM, TC>
 {
@@ -58,16 +33,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
   ) {}
 
-  /** Static factory methods -------------------------------------------------- */
-
   static create<TC extends Vars = Vars, TM extends Attrs = Attrs>() {
     return new Agent<TC, TM>();
   }
 
   static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    content: string,
+    contentOrSource: SystemContentInput,
   ) {
-    return new Agent<TC, TM>().system(content);
+    return new Agent<TC, TM>().system(contentOrSource);
   }
 
   static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
@@ -84,15 +57,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return new Agent<TC, TM>().assistant(config, options);
   }
 
-  /** fluent helpers -------------------------------------------------- */
-
   then(t: Template<TM, TC>) {
     this.root.then(t);
     return this;
   }
 
-  system(content: string) {
-    this.root.then(new System(content));
+  system(contentOrSource: SystemContentInput) {
+    this.root.then(new System(contentOrSource));
     return this;
   }
 
@@ -109,25 +80,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  /**
-   * Convenient method to create an Assistant with schema and auto-extract all fields to session variables
-   * @param config LLM configuration with schema
-   * @returns Agent instance for chaining
-   */
   extract(config: LLMConfig & { schema: z.ZodType }): this;
-  /**
-   * Create Assistant with schema and extract only specific fields
-   * @param config LLM configuration with schema
-   * @param fields Array of field names to extract
-   * @returns Agent instance for chaining
-   */
   extract(config: LLMConfig & { schema: z.ZodType }, fields: string[]): this;
-  /**
-   * Create Assistant with schema and custom field mapping
-   * @param config LLM configuration with schema
-   * @param mapping Map schema fields to custom variable names
-   * @returns Agent instance for chaining
-   */
   extract(
     config: LLMConfig & { schema: z.ZodType },
     mapping: Record<string, string>,
@@ -151,12 +105,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  /**
-   * Convenient method for structured output generation with optional auto-extraction
-   * @param schema Zod schema for structured output
-   * @param options Configuration options
-   * @returns Agent instance for chaining
-   */
   structured<TSchema extends z.ZodType>(
     schema: TSchema,
     options?: {
@@ -182,13 +130,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     };
 
     if (extractToVars) {
-      // Use extract method for auto-extraction
       const extractConfig =
         typeof extractToVars === 'boolean' ? undefined : extractToVars;
 
       if (extractConfig) {
         if (Array.isArray(extractConfig)) {
-          // Extract specific fields
           return this.extract(
             {
               ...llmConfig,
@@ -199,7 +145,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
             extractConfig,
           );
         } else {
-          // Extract with mapping
           return this.extract(
             {
               ...llmConfig,
@@ -211,7 +156,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
           );
         }
       } else {
-        // Boolean true - extract all fields
         return this.extract({
           ...llmConfig,
           schema,
@@ -220,7 +164,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         });
       }
     } else {
-      // Use regular assistant with schema
       this.root.then(
         new Assistant(llmConfig, {
           schema,
@@ -238,23 +181,25 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   parallel(template: Parallel<TM, TC>): this;
-  parallel(builderFn: (parallel: Parallel<TM, TC>) => Parallel<TM, TC>): this;
   parallel(
-    templateOrBuilder:
+    configFn: (builder: ParallelBuilder<TM, TC>) => ParallelBuilder<TM, TC>,
+  ): this;
+  parallel(
+    templateOrConfig:
       | Parallel<TM, TC>
-      | ((parallel: Parallel<TM, TC>) => Parallel<TM, TC>),
+      | ((builder: ParallelBuilder<TM, TC>) => ParallelBuilder<TM, TC>),
   ): this {
-    if (typeof templateOrBuilder === 'function') {
-      const parallel = new Parallel<TM, TC>();
-      const builtParallel = templateOrBuilder(parallel);
-      this.root.then(builtParallel);
+    if (typeof templateOrConfig === 'function') {
+      const builder = new ParallelBuilder<TM, TC>();
+      const configuredBuilder = templateOrConfig(builder);
+      const config = configuredBuilder.build();
+      const parallel = new Parallel<TM, TC>(config);
+      this.root.then(parallel);
     } else {
-      this.root.then(templateOrBuilder);
+      this.root.then(templateOrConfig);
     }
     return this;
   }
-
-  /** Function-based template builders -------------------------------------------------- */
 
   loop(
     builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
@@ -322,17 +267,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  /** -------------------------------------------------- */
-
   build() {
     return this.root;
   }
 
   execute(session?: Session<TC, TM> | undefined): Promise<Session<TC, TM>> {
-    if (session) {
-      return this.root.execute(session);
-    } else {
-      return this.root.execute();
-    }
+    return this.root.execute(session);
   }
 }

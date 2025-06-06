@@ -25,7 +25,7 @@ export type UserContentInput =
   | string[]
   | CLIOptions
   | ((session: Session<any, any>) => Promise<string>)
-  | Source<string>; // Backward compatibility
+  | Source<string>;
 
 export class User<
   TAttrs extends Attrs = Record<string, any>,
@@ -43,8 +43,6 @@ export class User<
     super();
     this.content = content;
     this.options = options;
-
-    // Check if this is a Source instance for backward compatibility
     this.isSourceBased = !!(
       content &&
       typeof content === 'object' &&
@@ -52,21 +50,10 @@ export class User<
     );
   }
 
-  /**
-   * Get the content source for this template
-   * Used by composite templates to manage default sources
-   */
   getContentSource(): Source<string> | null {
-    if (this.isSourceBased) {
-      return this.content as Source<string>;
-    }
-    return null;
+    return this.isSourceBased ? (this.content as Source<string>) : null;
   }
 
-  /**
-   * Set the content source for this template
-   * Used by composite templates to set default sources
-   */
   set contentSource(source: Source<string> | undefined) {
     if (source) {
       this.content = source;
@@ -77,7 +64,6 @@ export class User<
   private async getStringContent(
     session: Session<TVars, TAttrs>,
   ): Promise<string> {
-    // Backward compatibility: Use Source if provided
     if (this.isSourceBased) {
       const source = this.content as Source<string>;
       const result = await source.getContent(session);
@@ -87,7 +73,6 @@ export class User<
       return result;
     }
 
-    // Direct API implementation
     if (typeof this.content === 'string') {
       return interpolateTemplate(this.content, session);
     }
@@ -110,6 +95,22 @@ export class User<
     }
 
     if (typeof this.content === 'object' && 'cli' in this.content) {
+      try {
+        const { InkDebugContext } = await import('../../cli/ink-debug-context');
+
+        if (session.print) {
+          const isInkAvailable = await InkDebugContext.waitForInitialization();
+
+          if (isInkAvailable) {
+            return await InkDebugContext.captureCliInput(
+              this.content.cli,
+              this.content.defaultValue,
+              session,
+            );
+          }
+        }
+      } catch (error) {}
+
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -134,10 +135,7 @@ export class User<
     content: string,
     session: Session<TVars, TAttrs>,
   ): Promise<void> {
-    // Skip validation for Source-based content (Sources handle their own validation)
-    if (this.isSourceBased) return;
-
-    if (!this.options.validation) return;
+    if (this.isSourceBased || !this.options.validation) return;
 
     const result = await this.options.validation.validate(content, session);
     if (!result.isValid) {
@@ -152,7 +150,6 @@ export class User<
   ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
 
-    // For Source-based content, use simpler execution (Sources handle retries)
     if (this.isSourceBased) {
       const content = await this.getStringContent(validSession);
       const message: UserMessage<TAttrs> = {
@@ -162,7 +159,6 @@ export class User<
       return validSession.addMessage(message);
     }
 
-    // Direct API execution with retry logic
     const maxAttempts = this.options.maxAttempts || 1;
     let attempts = 0;
 

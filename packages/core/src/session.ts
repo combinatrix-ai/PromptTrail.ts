@@ -1,18 +1,8 @@
 import { ValidationError } from './errors';
 import type { Message } from './message';
 
-/**
- * Session variables - readonly object for conversation state
- */
 export type Vars<T extends Record<string, unknown> = {}> = Readonly<T>;
-
-/**
- * Message attributes - readonly object for message metadata
- */
 export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
-/**
- * Internal session implementation
- */
 export class Session<
   TVars extends Vars = Record<string, any>,
   TAttrs extends Attrs = Record<string, any>,
@@ -22,46 +12,64 @@ export class Session<
     public readonly vars: TVars,
     public readonly print: boolean = false,
   ) {}
-  /**
-   * Create a new session with additional message
-   */
   addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
-    if (this.print) {
-      switch (message.type) {
-        case 'system':
-          console.log('\nSystem:', message.content);
-          break;
-        case 'user':
-          console.log('\nUser:', message.content);
-          break;
-        case 'assistant':
-          // Only print content if it's not just whitespace
-          if (message.content && message.content.trim()) {
-            console.log('Assistant:', message.content);
-          }
-          // Print tool calls if present
-          if (message.toolCalls && message.toolCalls.length > 0) {
-            console.log('\nAssistant:');
-            message.toolCalls.forEach((tc) => {
-              console.log(`[${tc.name}(${JSON.stringify(tc.arguments)})]`);
-            });
-          }
-          break;
-        case 'tool_result':
-          console.log('Tool Result:', message.content);
-          break;
-      }
-    }
-    return new Session<TVars, TAttrs>(
+    const newSession = new Session<TVars, TAttrs>(
       [...this.messages, message],
-      { ...this.vars }, // Create a shallow copy of the context
+      { ...this.vars },
       this.print,
     );
+
+    if (this.print) {
+      this.updateDebugOutput(newSession, message);
+    }
+
+    return newSession;
   }
 
-  /**
-   * Get a value from the context
-   */
+  private updateDebugOutput(
+    newSession: Session<TVars, TAttrs>,
+    message: Message<TAttrs>,
+  ): void {
+    this.logMessageToConsole(message);
+    this.tryUpdateInkInterface(newSession).catch(() => {});
+  }
+
+  private async tryUpdateInkInterface(
+    newSession: Session<TVars, TAttrs>,
+  ): Promise<void> {
+    try {
+      const { InkDebugContext } = await import('./cli/ink-debug-context');
+      if (InkDebugContext.isActive()) {
+        InkDebugContext.updateSession(newSession);
+      }
+    } catch (error) {}
+  }
+
+  private logMessageToConsole(message: Message<TAttrs>): void {
+    switch (message.type) {
+      case 'system':
+        console.log('\nSystem:', message.content);
+        break;
+      case 'user':
+        console.log('\nUser:', message.content);
+        break;
+      case 'assistant':
+        if (message.content?.trim()) {
+          console.log('Assistant:', message.content);
+        }
+        if (message.toolCalls?.length) {
+          console.log('\nAssistant:');
+          message.toolCalls.forEach((tc) => {
+            console.log(`[${tc.name}(${JSON.stringify(tc.arguments)})]`);
+          });
+        }
+        break;
+      case 'tool_result':
+        console.log('Tool Result:', message.content);
+        break;
+    }
+  }
+
   getVar<K extends keyof TVars>(key: K): TVars[K];
   getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
   getVar(key: string): any;
@@ -70,43 +78,30 @@ export class Session<
     key: K | string,
     defaultValue?: TVars[K] | any,
   ): TVars[K] | any {
-    return (this.vars as any)[key] !== undefined
-      ? (this.vars as any)[key]
-      : defaultValue!;
+    return (this.vars as any)[key] ?? defaultValue!;
   }
 
-  /**
-   * Set a value in the context
-   */
   withVar<K extends PropertyKey, V>(
     key: K,
     value: V,
   ): Session<Vars<TVars & { [P in K]: V }>, TAttrs> {
-    const newContext = {
-      ...this.vars,
-      [key]: value,
-    } as TVars & { [P in K]: V };
-
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      { ...this.vars, [key]: value } as TVars & { [P in K]: V },
+      this.print,
+    );
   }
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
   ): Session<Vars<TVars & U>, TAttrs> {
-    const newContext = { ...this.vars, ...vars } as TVars & U;
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      { ...this.vars, ...vars } as TVars & U,
+      this.print,
+    );
   }
 
-  /**
-   * Create a new session with specified attrs type (type-only, no runtime changes)
-   * This is useful for adding type information to an existing session
-   * @returns A new session with the same data but specified attrs type
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const typedSession = session.withAttrsType<MessageMeta>();
-   * ```
-   */
   withAttrsType<U extends Record<string, unknown>>(): Session<TVars, Attrs<U>> {
     return new Session<TVars, Attrs<U>>(
       [...this.messages] as Message<Attrs<U>>[],
@@ -115,30 +110,18 @@ export class Session<
     );
   }
 
-  /**
-   * Get the size of the context
-   */
   get varsSize(): number {
     return Object.keys(this.vars).length;
   }
 
-  /**
-   * Get a copy of the context as a plain object
-   */
   getVarsObject(): TVars {
     return { ...this.vars };
   }
 
-  /**
-   * Get the last message in the session
-   */
   getLastMessage(): Message<TAttrs> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
-  /**
-   * Get all messages of a specific type
-   */
   getMessagesByType<U extends Message<TAttrs>['type']>(
     type: U,
   ): Extract<Message<TAttrs>, { type: U }>[] {
@@ -148,21 +131,15 @@ export class Session<
     >[];
   }
 
-  /**
-   * Validate session state
-   */
   validate(): void {
-    // Check for empty session
     if (this.messages.length === 0) {
       throw new ValidationError('Session must have at least one message');
     }
 
-    // Check for empty messages
     if (this.messages.some((msg) => !msg.content)) {
       throw new ValidationError('Empty messages are not allowed');
     }
 
-    // Check system message position
     const systemMessages = this.getMessagesByType('system');
     if (systemMessages.length > 1) {
       throw new ValidationError('Only one system message is allowed');
@@ -172,9 +149,6 @@ export class Session<
     }
   }
 
-  /**
-   * Create a JSON representation of the session
-   */
   toJSON(): Record<string, unknown> {
     return {
       messages: this.messages,
@@ -183,17 +157,11 @@ export class Session<
     };
   }
 
-  /**
-   * Create a string representation of the session
-   */
   toString(): string {
     return JSON.stringify(this.toJSON(), null, 2);
   }
 }
 
-/**
- * Create a new session with type inference
- */
 export function createSession<
   C extends Record<string, unknown> = Record<string, any>,
   M extends Record<string, unknown> = Record<string, any>,
@@ -202,35 +170,18 @@ export function createSession<
   messages?: Message<Attrs<M>>[];
   print?: boolean;
 }): Session<Vars<C>, Attrs<M>> {
-  options = options ?? {};
-  const ctx = (options.context ?? {}) as C;
+  const ctx = (options?.context ?? {}) as C;
   return new Session<Vars<C>, Attrs<M>>(
-    options.messages ?? [],
+    options?.messages ?? [],
     ctx,
-    options.print ?? false,
+    options?.print ?? false,
   );
 }
 
-/**
- * Session builder for chainable session creation with gradual typing
- * @template TVars - The vars type
- * @template TAttrs - The attrs type
- */
 export class SessionBuilder<
   TVars extends Record<string, unknown> = {},
   TAttrs extends Record<string, unknown> = {},
 > {
-  /**
-   * Add vars type specification to the builder (type-only, no runtime values)
-   * @returns A new builder with the specified vars type
-   * @example
-   * ```typescript
-   * type UserContext = { userId: string; role: string };
-   * const session = Session.withAttrsType<MessageMeta>()
-   *   .withVarsType<UserContext>()
-   *   .create();
-   * ```
-   */
   withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<
     TNewVars,
     TAttrs
@@ -238,17 +189,6 @@ export class SessionBuilder<
     return new SessionBuilder<TNewVars, TAttrs>();
   }
 
-  /**
-   * Add attrs type specification to the builder (type-only, no runtime values)
-   * @returns A new builder with the specified attrs type
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
-   *   .create();
-   * ```
-   */
   withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<
     TVars,
     TNewAttrs
@@ -256,17 +196,6 @@ export class SessionBuilder<
     return new SessionBuilder<TVars, TNewAttrs>();
   }
 
-  /**
-   * Create the session with the specified types
-   * @param options Optional configuration
-   * @returns A new session instance with the specified types
-   * @example
-   * ```typescript
-   * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
-   *   .create({ vars: { userId: '123', role: 'admin' } });
-   * ```
-   */
   create(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
@@ -279,30 +208,10 @@ export class SessionBuilder<
     });
   }
 
-  /**
-   * Create an empty session with the specified types
-   * @returns A new empty session instance with the specified types
-   * @example
-   * ```typescript
-   * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
-   *   .empty();
-   * ```
-   */
   empty(): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({});
   }
 
-  /**
-   * Create a debug session with the specified types
-   * @param options Optional configuration
-   * @returns A new session instance with print enabled and the specified types
-   * @example
-   * ```typescript
-   * const session = Session.withVarsType<UserContext>()
-   *   .debug({ vars: { userId: '123', role: 'admin' } });
-   * ```
-   */
   debug(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
@@ -315,21 +224,7 @@ export class SessionBuilder<
   }
 }
 
-/**
- * Session namespace providing factory methods for creating sessions
- * Provides a consistent API with other PromptTrail components
- */
 export namespace Session {
-  /**
-   * Create a new empty session
-   * @param options Optional configuration
-   * @returns A new session instance
-   * @example
-   * ```typescript
-   * const session = Session.create();
-   * const sessionWithVars = Session.create({ vars: { name: 'test' } });
-   * ```
-   */
   export function create<
     TVars extends Record<string, unknown> = Record<string, any>,
     TAttrs extends Record<string, unknown> = Record<string, any>,
@@ -345,19 +240,6 @@ export namespace Session {
     });
   }
 
-  /**
-   * Create a new session from a JSON representation
-   * @param json JSON object containing session data
-   * @returns A new session instance
-   * @example
-   * ```typescript
-   * const session = Session.fromJSON({
-   *   messages: [{ type: 'user', content: 'Hello' }],
-   *   context: { name: 'test' },
-   *   print: false
-   * });
-   * ```
-   */
   export function fromJSON<
     TVars extends Record<string, unknown> = {},
     TAttrs extends Record<string, unknown> = {},
@@ -381,14 +263,6 @@ export namespace Session {
     });
   }
 
-  /**
-   * Create a new empty session
-   * @returns A new session instance with no messages or vars
-   * @example
-   * ```typescript
-   * const session = Session.empty();
-   * ```
-   */
   export function empty<
     TVars extends Record<string, unknown> = {},
     TAttrs extends Record<string, unknown> = {},
@@ -396,16 +270,6 @@ export namespace Session {
     return createSession<TVars, TAttrs>({});
   }
 
-  /**
-   * Create a new session with initial vars
-   * @param vars Initial session vars
-   * @param options Optional configuration
-   * @returns A new session instance
-   * @example
-   * ```typescript
-   * const session = Session.withVars({ userId: '123', name: 'John' });
-   * ```
-   */
   export function withVars<TVars extends Record<string, unknown>>(
     vars: TVars,
     options?: {
@@ -420,18 +284,6 @@ export namespace Session {
     });
   }
 
-  /**
-   * Create a new session with initial messages
-   * @param messages Initial messages
-   * @param options Optional configuration
-   * @returns A new session instance
-   * @example
-   * ```typescript
-   * const session = Session.withMessages([
-   *   { type: 'system', content: 'You are a helpful assistant' }
-   * ]);
-   * ```
-   */
   export function withMessages<TAttrs extends Record<string, unknown> = {}>(
     messages: Message<Attrs<TAttrs>>[],
     options?: {
@@ -479,11 +331,12 @@ export namespace Session {
 
   /**
    * Create a new session with print enabled for debugging
-   * @param options Optional configuration
+   * @param options Optional configuration including UI mode
    * @returns A new session instance with print enabled
    * @example
    * ```typescript
    * const session = Session.debug({ vars: { debug: true } });
+   * const inkSession = Session.debug({ ui: 'ink' });
    * ```
    */
   export function debug<
@@ -492,12 +345,54 @@ export namespace Session {
   >(options?: {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
+    ui?: 'ink' | 'console' | 'auto';
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+    const session = createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
       print: true,
     });
+
+    // Initialize Ink interface if requested and available
+    const uiMode = options?.ui ?? 'auto';
+    if (uiMode === 'ink' || uiMode === 'auto') {
+      // Start initialization but don't await it (to keep debug() synchronous)
+      // The initialization will set proper flags so other code can wait for it
+      initializeInkInterface(session, uiMode === 'ink').catch((error) => {
+        // Silently ignore initialization errors
+        if (uiMode === 'ink') {
+          console.warn(
+            'Ink interface initialization failed, falling back to console mode',
+          );
+        }
+      });
+    }
+
+    return session;
+  }
+
+  /**
+   * Initialize Ink debug interface if available
+   */
+  async function initializeInkInterface(
+    session: Session<any, any>,
+    forceInk: boolean = false,
+  ): Promise<void> {
+    try {
+      const { InkDebugContext } = await import('./cli/ink-debug-context');
+
+      // Check if terminal supports Ink or if forced
+      if (forceInk || InkDebugContext.isTerminalCapable()) {
+        await InkDebugContext.initialize(session);
+      }
+    } catch (error) {
+      if (forceInk) {
+        console.warn(
+          'Ink interface requested but not available, falling back to console mode',
+        );
+      }
+      // Silently fall back to console mode if Ink not available
+    }
   }
 
   /**

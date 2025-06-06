@@ -116,8 +116,10 @@ describe('If Template', () => {
     };
 
     // Create then and else templates
-    const thenTemplate = new User('Admin access granted');
-    const elseTemplate = new User('Access denied');
+    const thenTemplate = new User<{ userRole: string }, any>(
+      'Admin access granted',
+    );
+    const elseTemplate = new User<{ userRole: string }, any>('Access denied');
 
     // Create an if template
     const ifTemplate = new Conditional({
@@ -346,6 +348,91 @@ describe('If Template', () => {
     const elseResultSession = await elseIfTemplate.execute();
 
     expect(elseResultSession.getVar('branchTaken')).toBe('else');
+  });
+
+  it('should create conditional using direct instantiation', async () => {
+    // Create conditional using direct instantiation
+    const conditional = new Conditional({
+      condition: (session) => session.vars.userRole === 'admin',
+      thenTemplate: new User('Admin access granted'),
+      elseTemplate: new User('Access denied'),
+    });
+
+    // Test with admin session
+    const adminSession = Session.create({
+      vars: { userRole: 'admin' },
+    });
+
+    const adminResult = await conditional.execute(adminSession);
+    const adminMessages = Array.from(adminResult.messages);
+    expect(adminMessages).toHaveLength(1);
+    expect(adminMessages[0].content).toBe('Admin access granted');
+
+    // Test with user session
+    const userSession = Session.create({
+      vars: { userRole: 'user' },
+    });
+
+    const userResult = await conditional.execute(userSession);
+    const userMessages = Array.from(userResult.messages);
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0].content).toBe('Access denied');
+  });
+
+  it('should create conditional using direct instantiation with else branch', async () => {
+    // Create conditional using direct instantiation
+    const conditional = new Conditional({
+      condition: (session) => session.vars.isAuthenticated === true,
+      thenTemplate: new User('Welcome, authenticated user!'),
+      elseTemplate: new User('Please log in first'),
+    });
+
+    // Test with authenticated session
+    const authSession = Session.create({
+      vars: { isAuthenticated: true },
+    });
+
+    const authResult = await conditional.execute(authSession);
+    const authMessages = Array.from(authResult.messages);
+    expect(authMessages).toHaveLength(1);
+    expect(authMessages[0].content).toBe('Welcome, authenticated user!');
+
+    // Test with unauthenticated session
+    const unauthSession = Session.create({
+      vars: { isAuthenticated: false },
+    });
+
+    const unauthResult = await conditional.execute(unauthSession);
+    const unauthMessages = Array.from(unauthResult.messages);
+    expect(unauthMessages).toHaveLength(1);
+    expect(unauthMessages[0].content).toBe('Please log in first');
+  });
+
+  it('should handle conditional without else branch using direct instantiation', async () => {
+    const conditional = new Conditional({
+      condition: (session) => session.vars.showWelcome === true,
+      thenTemplate: new User('Welcome message!'),
+    });
+
+    // Test with condition true
+    const showWelcomeSession = Session.create({
+      vars: { showWelcome: true },
+    });
+
+    const welcomeResult = await conditional.execute(showWelcomeSession);
+    const welcomeMessages = Array.from(welcomeResult.messages);
+    expect(welcomeMessages).toHaveLength(1);
+    expect(welcomeMessages[0].content).toBe('Welcome message!');
+
+    // Test with condition false - should return unchanged session
+    const hideWelcomeSession = Session.create({
+      vars: { showWelcome: false },
+    }).addMessage({ type: 'system', content: 'Initial message' });
+
+    const hideResult = await conditional.execute(hideWelcomeSession);
+    const hideMessages = Array.from(hideResult.messages);
+    expect(hideMessages).toHaveLength(1);
+    expect(hideMessages[0].content).toBe('Initial message');
   });
 
   it('should handle dynamically determined template paths', async () => {

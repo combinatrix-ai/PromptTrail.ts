@@ -1,11 +1,6 @@
 import type { Attrs, Vars } from '../session';
 import { Session } from '../session';
 
-/**
- * Core template interface
- * TAttrs: Message metadata type, must extend Record<string, unknown>
- * TVars: Session context type, must extend Record<string, unknown>
- */
 export interface Template<
   TAttrs extends Attrs = Record<string, any>,
   TVars extends Vars = Record<string, any>,
@@ -13,9 +8,6 @@ export interface Template<
   execute(session?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
 }
 
-/**
- * Base template class with composition methods
- */
 export abstract class TemplateBase<
   TAttrs extends Attrs = Record<string, any>,
   TVars extends Vars = Record<string, any>,

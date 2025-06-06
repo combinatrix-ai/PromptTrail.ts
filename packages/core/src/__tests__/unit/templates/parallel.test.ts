@@ -51,10 +51,13 @@ describe('Parallel Template', () => {
       expect(parallel.getSources()).toHaveLength(0);
     });
 
-    it('should add sources with default repetitions', () => {
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(mockLlmSource2);
+    it('should create with sources via constructor', () => {
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1, repetitions: 1 },
+          { source: mockLlmSource2, repetitions: 1 },
+        ],
+      });
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(2);
@@ -62,10 +65,13 @@ describe('Parallel Template', () => {
       expect(sources[1]).toEqual({ source: mockLlmSource2, repetitions: 1 });
     });
 
-    it('should add sources with custom repetitions', () => {
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1, 3)
-        .withSource(mockLlmSource2, 2);
+    it('should create with custom repetitions via constructor', () => {
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1, repetitions: 3 },
+          { source: mockLlmSource2, repetitions: 2 },
+        ],
+      });
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(2);
@@ -73,12 +79,14 @@ describe('Parallel Template', () => {
       expect(sources[1]).toEqual({ source: mockLlmSource2, repetitions: 2 });
     });
 
-    it('should set sources in bulk', () => {
-      const parallel = new Parallel().withSources([
-        { source: mockLlmSource1, repetitions: 2 },
-        { source: mockLlmSource2 }, // default repetitions
-        { source: mockLlmSource3, repetitions: 3 },
-      ]);
+    it('should set sources with default repetitions via constructor', () => {
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1, repetitions: 2 },
+          { source: mockLlmSource2 }, // default repetitions
+          { source: mockLlmSource3, repetitions: 3 },
+        ],
+      });
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(3);
@@ -98,7 +106,9 @@ describe('Parallel Template', () => {
     });
 
     it('should execute single source and add assistant message', async () => {
-      const parallel = new Parallel().withSource(mockLlmSource1);
+      const parallel = new Parallel({
+        sources: [{ source: mockLlmSource1 }],
+      });
       const session = Session.create();
       const result = await parallel.execute(session);
 
@@ -115,10 +125,10 @@ describe('Parallel Template', () => {
     });
 
     it('should execute multiple sources in parallel with keep_all strategy', async () => {
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(mockLlmSource2)
-        .withStrategy('keep_all');
+      const parallel = new Parallel({
+        sources: [{ source: mockLlmSource1 }, { source: mockLlmSource2 }],
+        strategy: 'keep_all',
+      });
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -136,9 +146,12 @@ describe('Parallel Template', () => {
     });
 
     it('should handle source repetitions correctly', async () => {
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1, 2)
-        .withSource(mockLlmSource2, 1);
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1, repetitions: 2 },
+          { source: mockLlmSource2, repetitions: 1 },
+        ],
+      });
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -157,10 +170,13 @@ describe('Parallel Template', () => {
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(failingSource)
-        .withSource(mockLlmSource2);
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1 },
+          { source: failingSource },
+          { source: mockLlmSource2 },
+        ],
+      });
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -181,7 +197,9 @@ describe('Parallel Template', () => {
   describe('Scoring and Aggregation', () => {
     it('should set and get scoring function', () => {
       const scoringFunction = (session: Session) => session.messages.length;
-      const parallel = new Parallel().withAggregationFunction(scoringFunction);
+      const parallel = new Parallel({
+        scoringFunction,
+      });
 
       expect(parallel.getScoringFunction()).toBe(scoringFunction);
     });
@@ -202,14 +220,15 @@ describe('Parallel Template', () => {
         }),
       };
 
-      const parallel = new Parallel()
-        .withSource(shortResponseSource)
-        .withSource(longResponseSource)
-        .withAggregationFunction(
-          (session) =>
-            session.messages[session.messages.length - 1].content.length,
-        )
-        .withStrategy('best');
+      const parallel = new Parallel({
+        sources: [
+          { source: shortResponseSource },
+          { source: longResponseSource },
+        ],
+        scoringFunction: (session) =>
+          session.messages[session.messages.length - 1].content.length,
+        strategy: 'best',
+      });
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -238,10 +257,13 @@ describe('Parallel Template', () => {
         }),
       };
 
-      const parallel = new Parallel()
-        .withSource(shortResponseSource)
-        .withSource(detailedResponseSource)
-        .withStrategy('best'); // No explicit scoring function
+      const parallel = new Parallel({
+        sources: [
+          { source: shortResponseSource },
+          { source: detailedResponseSource },
+        ],
+        strategy: 'best', // No explicit scoring function
+      });
 
       const session = Session.create().addMessage({
         type: 'user',
@@ -275,10 +297,10 @@ describe('Parallel Template', () => {
         return result;
       };
 
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(mockLlmSource2)
-        .withStrategy(customStrategy);
+      const parallel = new Parallel({
+        sources: [{ source: mockLlmSource1 }, { source: mockLlmSource2 }],
+        strategy: customStrategy,
+      });
 
       const session = Session.create();
       const result = await parallel.execute(session);
@@ -307,23 +329,23 @@ describe('Parallel Template', () => {
       expect(parallel.getStrategy()).toBe('best');
     });
 
-    it('should get and set strategy correctly', () => {
-      const parallel = new Parallel();
+    it('should get and set strategy correctly via constructor', () => {
+      const parallel1 = new Parallel();
+      expect(parallel1.getStrategy()).toBe('keep_all'); // default
 
-      expect(parallel.getStrategy()).toBe('keep_all'); // default
-
-      const parallel2 = parallel.withStrategy('best');
+      const parallel2 = new Parallel({ strategy: 'best' });
       expect(parallel2.getStrategy()).toBe('best');
 
       const customStrategy = (sessions: Session[]) => sessions[0];
-      const parallel3 = parallel2.withStrategy(customStrategy);
+      const parallel3 = new Parallel({ strategy: customStrategy });
       expect(parallel3.getStrategy()).toBe(customStrategy);
     });
 
     it('should throw error for unknown built-in strategy', async () => {
-      const parallel = new Parallel()
-        .withSource(mockLlmSource1)
-        .withStrategy('unknown_strategy' as any);
+      const parallel = new Parallel({
+        sources: [{ source: mockLlmSource1 }],
+        strategy: 'unknown_strategy' as any,
+      });
 
       const session = Session.create();
 
@@ -342,7 +364,9 @@ describe('Parallel Template', () => {
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const parallel = new Parallel().withSource(alwaysFailingSource);
+      const parallel = new Parallel({
+        sources: [{ source: alwaysFailingSource }],
+      });
       const session = Session.create();
       const result = await parallel.execute(session);
 
@@ -358,7 +382,9 @@ describe('Parallel Template', () => {
         content: 'Existing message',
       });
 
-      const parallel = new Parallel().withSource(mockLlmSource1);
+      const parallel = new Parallel({
+        sources: [{ source: mockLlmSource1 }],
+      });
       const result = await parallel.execute(sessionWithMessages);
 
       const messages = Array.from(result.messages);
@@ -368,21 +394,22 @@ describe('Parallel Template', () => {
     });
   });
 
-  describe('Function-based creation', () => {
-    it('should support static create method without builder', () => {
-      const parallel = Parallel.create();
+  describe('Direct instantiation', () => {
+    it('should support direct instantiation', () => {
+      const parallel = new Parallel();
       expect(parallel).toBeInstanceOf(Parallel);
       expect(parallel.getSources()).toHaveLength(0);
     });
 
-    it('should support static create method with builder function', () => {
-      const parallel = Parallel.create((p) =>
-        p
-          .withSource(mockLlmSource1, 2)
-          .withSource(mockLlmSource2)
-          .withStrategy('best')
-          .withAggregationFunction((session) => session.messages.length),
-      );
+    it('should support constructor-based instantiation', () => {
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1, repetitions: 2 },
+          { source: mockLlmSource2 },
+        ],
+        strategy: 'best',
+        scoringFunction: (session) => session.messages.length,
+      });
 
       expect(parallel.getSources()).toHaveLength(2);
       expect(parallel.getStrategy()).toBe('best');
@@ -416,9 +443,9 @@ describe('Parallel Template', () => {
     it('should work with Agent parallel method using direct template', async () => {
       const { Agent } = await import('../../../templates/agent');
 
-      const parallelTemplate = new Parallel()
-        .withSource(mockLlmSource1)
-        .withSource(mockLlmSource2);
+      const parallelTemplate = new Parallel({
+        sources: [{ source: mockLlmSource1 }, { source: mockLlmSource2 }],
+      });
 
       const agent = Agent.create()
         .system('You are a helpful assistant')
@@ -432,16 +459,66 @@ describe('Parallel Template', () => {
       expect(mockLlmSource2.getContent).toHaveBeenCalled();
     });
 
-    it('should chain properly with fluent API', () => {
-      const parallel = Parallel.create((p) => p.withSource(mockLlmSource1))
-        .withSource(mockLlmSource2, 3)
-        .withStrategy('best');
+    it('should work with constructor configuration', () => {
+      const parallel = new Parallel({
+        sources: [
+          { source: mockLlmSource1 },
+          { source: mockLlmSource2, repetitions: 3 },
+        ],
+        strategy: 'best',
+      });
 
       const sources = parallel.getSources();
       expect(sources).toHaveLength(2);
       expect(sources[0].repetitions).toBe(1);
       expect(sources[1].repetitions).toBe(3);
       expect(parallel.getStrategy()).toBe('best');
+    });
+
+    it('should accept LLMConfig objects in parallel builder', async () => {
+      const { Agent } = await import('../../../templates/agent');
+
+      // Mock Source.llm() to return a mock LlmSource
+      const mockCreatedSource = {
+        getContent: vi.fn().mockResolvedValue({
+          content: 'Generated from LLMConfig',
+          metadata: {},
+        }),
+      };
+
+      // Mock the Source.llm chain
+      const mockSourceLlm = {
+        openai: vi.fn().mockReturnValue({
+          temperature: vi.fn().mockReturnValue(mockCreatedSource),
+        }),
+        anthropic: vi.fn().mockReturnValue({
+          temperature: vi.fn().mockReturnValue(mockCreatedSource),
+        }),
+      };
+
+      // Mock Source.llm()
+      vi.mocked(Source.llm).mockReturnValue(mockSourceLlm as any);
+
+      const agent = Agent.create()
+        .system('You are a helpful assistant')
+        .user('What is the weather?')
+        .parallel((p) =>
+          p
+            .withSource({ provider: 'openai', temperature: 0.2 }, 2)
+            .withSource({ provider: 'anthropic', temperature: 0.8 })
+            .withStrategy('keep_all'),
+        );
+
+      const session = Session.create();
+      const result = await agent.execute(session);
+
+      // Should have called Source.llm() to create sources
+      expect(Source.llm).toHaveBeenCalled();
+      expect(mockSourceLlm.openai).toHaveBeenCalled();
+      expect(mockSourceLlm.anthropic).toHaveBeenCalled();
+
+      const messages = Array.from(result.messages);
+      expect(messages.length).toBeGreaterThanOrEqual(4); // system + user + 2+ responses
     });
   });
 });
