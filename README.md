@@ -78,16 +78,16 @@ await agent.execute();
 
 ## 📘 Core Concepts
 
-### Session & Variables
+### Session & Context
 
-Sessions store conversation state with type-safe variables:
+Sessions store conversation state with type-safe context variables:
 
 ```typescript
 import { Session } from '@prompttrail/core';
 
-// Variables for interpolation and state
+// Context variables for interpolation and state
 const session = Session.create({
-  vars: { userName: 'Alice', language: 'TypeScript' },
+  context: { userName: 'Alice', language: 'TypeScript' },
 });
 
 // Use variables in templates with {{variable}} syntax
@@ -113,7 +113,7 @@ PromptTrail uses **Handlebars** for powerful template interpolation with dynamic
 
 // Example: receipe bot
 const session = Session.create({
-  vars: {
+  context: {
     dietaryRestrictions: ['vegetarian', 'gluten-free'],
     availableTime: 30,
     ingredients: ['tomatoes', 'pasta', 'cheese', 'herbs'],
@@ -132,7 +132,7 @@ const agent = Agent.create()
     const recipeMatch = response.match(/Recipe:\s*([^\n]+)/i);
     const cookingTimeMatch = response.match(/(\d+)\s*minutes?/);
 
-    return session.withVars({
+    return session.withContext({
       suggestedRecipe: recipeMatch?.[1] || 'Unknown Recipe',
       estimatedTime: cookingTimeMatch?.[1] ? parseInt(cookingTimeMatch[1]) : 30,
       recipeCount: session.getVar('recipeCount', 0) + 1,
@@ -153,7 +153,7 @@ console.log('Estimated time:', result.getVar('estimatedTime'), 'minutes');
 ```typescript
 // Loop through arrays in templates
 const session = Session.create({
-  vars: {
+  context: {
     tasks: [
       { title: 'Learn TypeScript', status: 'complete' },
       { title: 'Build app', status: 'pending' },
@@ -370,11 +370,11 @@ PromptTrail provides **gradual typing** - start simple and add types as your app
 ```typescript
 // 1. Start simple - types inferred automatically
 const session = Session.create({
-  vars: { userName: 'Alice', score: 100 },
+  context: { userName: 'Alice', score: 100 },
 });
 
 // 2. Convenience method with type inference
-const sessionWithVars = Session.withVars({
+const sessionWithContext = Session.withContext({
   userId: 'user123',
   role: 'admin',
   preferences: { theme: 'dark', notifications: true },
@@ -397,20 +397,20 @@ type MessageMeta = {
 };
 
 // 4. Type-only specification (no runtime values)
-const typedSession = Session.withVarsType<UserContext>()
-  .withAttrsType<MessageMeta>()
-  .create({
-    vars: {
-      userId: 'user123',
-      role: 'admin',
-      preferences: { theme: 'dark', notifications: true },
-    },
-  });
+const typedSession = Session.typed<UserContext, MessageMeta>().create({
+  context: {
+    userId: 'user123',
+    role: 'admin',
+    preferences: { theme: 'dark', notifications: true },
+  },
+});
 
 // 5. Mix and match approaches
-const session1 = Session.withVarsType<UserContext>().debug();
-const session2 = Session.withAttrsType<MessageMeta>().empty();
-const session3 = Session.withVars({ count: 42 }).withAttrsType<MessageMeta>();
+const session1 = Session.typed<UserContext>().debug();
+const session2 = Session.typed<{}, MessageMeta>().empty();
+const session3 = Session.withContext({
+  count: 42,
+}).withMetadataType<MessageMeta>();
 
 // 6. Type-safe access with full IntelliSense
 const userId = typedSession.getVar('userId'); // string
@@ -655,7 +655,7 @@ const agent = Agent.create()
         .transform((session) => session.withVar('stage1Complete', true)),
     {
       squashWith: (parent, sub) =>
-        parent.withVars({
+        parent.withContext({
           processed: sub.getVar('stage1Complete'),
           result: sub.getLastMessage()?.content,
         }),
@@ -710,7 +710,7 @@ const robustAgent = Agent.create()
               const success = session
                 .getLastMessage()
                 ?.content?.includes('success');
-              return session.withVars({
+              return session.withContext({
                 success,
                 retryCount: session.getVar('retryCount') + 1,
               });

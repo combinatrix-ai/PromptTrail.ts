@@ -1,10 +1,12 @@
-import type { Attrs } from './session';
+import type { MessageMetadata } from './session';
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 
-export interface BaseMessage<TAttrs extends Attrs = Attrs> {
+export interface BaseMessage<
+  TMetadata extends MessageMetadata = Record<string, any>,
+> {
   content: string;
-  attrs?: TAttrs;
+  attrs?: TMetadata;
   structuredContent?: Record<string, unknown>;
   toolCalls?: Array<{
     name: string;
@@ -13,34 +15,38 @@ export interface BaseMessage<TAttrs extends Attrs = Attrs> {
   }>;
 }
 
-export interface SystemMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface SystemMessage<
+  TMetadata extends MessageMetadata = Record<string, any>,
+> extends BaseMessage<TMetadata> {
   type: 'system';
 }
 
-export interface UserMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface UserMessage<
+  TMetadata extends MessageMetadata = Record<string, any>,
+> extends BaseMessage<TMetadata> {
   type: 'user';
 }
 
-export interface AssistantMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface AssistantMessage<
+  TMetadata extends MessageMetadata = Record<string, any>,
+> extends BaseMessage<TMetadata> {
   type: 'assistant';
 }
 
-export interface ToolResultMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface ToolResultMessage<
+  TMetadata extends MessageMetadata = Record<string, any>,
+> extends BaseMessage<TMetadata> {
   type: 'tool_result';
 }
 
-export type Message<TAttrs extends Attrs = Attrs> =
-  | SystemMessage<TAttrs>
-  | UserMessage<TAttrs>
-  | AssistantMessage<TAttrs>
-  | ToolResultMessage<TAttrs>;
+export type Message<TMetadata extends MessageMetadata = Record<string, any>> =
+  | SystemMessage<TMetadata>
+  | UserMessage<TMetadata>
+  | AssistantMessage<TMetadata>
+  | ToolResultMessage<TMetadata>;
 
 export const Message = {
-  create: <M extends Attrs = Attrs>(
+  create: <M extends MessageMetadata = Record<string, any>>(
     type: MessageRole,
     content: string,
     attrs?: M,
@@ -48,7 +54,7 @@ export const Message = {
     return { type, content, attrs } as Message<M>;
   },
 
-  setAttrs: <M extends Attrs = Attrs>(
+  seTMetadata: <M extends MessageMetadata = MessageMetadata>(
     message: Message<M>,
     attrs: M,
   ): Message<M> => ({
@@ -60,17 +66,17 @@ export const Message = {
     M extends Record<string, unknown>,
     U extends Record<string, unknown>,
   >(
-    message: Message<Attrs<M>>,
+    message: Message<MessageMetadata<M>>,
     attrs: U,
-  ): Message<Attrs<Omit<M, keyof U> & U>> => ({
+  ): Message<MessageMetadata<Omit<M, keyof U> & U>> => ({
     ...message,
-    attrs: { ...(message.attrs ?? {}), ...attrs } as Attrs<
+    attrs: { ...(message.attrs ?? {}), ...attrs } as MessageMetadata<
       Omit<M, keyof U> & U
     >,
   }),
 
   setStructuredContent: <
-    M extends Attrs = Attrs,
+    M extends MessageMetadata = MessageMetadata,
     S extends Record<string, unknown> = Record<string, unknown>,
   >(
     message: Message<M>,
@@ -80,7 +86,7 @@ export const Message = {
     structuredContent,
   }),
 
-  setContent: <M extends Attrs = Attrs>(
+  setContent: <M extends MessageMetadata = MessageMetadata>(
     message: Message<M>,
     content: string,
   ): Message<M> => ({
@@ -88,18 +94,21 @@ export const Message = {
     content,
   }),
 
-  system: <M extends Attrs = Attrs>(
+  system: <M extends MessageMetadata = MessageMetadata>(
     content: string,
     attrs?: M,
   ): Message<M> => ({ type: 'system', content, attrs }),
 
-  user: <M extends Attrs = Attrs>(content: string, attrs?: M): Message<M> => ({
+  user: <M extends MessageMetadata = MessageMetadata>(
+    content: string,
+    attrs?: M,
+  ): Message<M> => ({
     type: 'user',
     content,
     attrs,
   }),
 
-  assistant: <M extends Attrs = Attrs>(
+  assistant: <M extends MessageMetadata = MessageMetadata>(
     content: string,
     attrs?: M,
   ): Message<M> => ({ type: 'assistant', content, attrs }),

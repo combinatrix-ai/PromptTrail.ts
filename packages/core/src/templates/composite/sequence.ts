@@ -1,13 +1,13 @@
+import type { MessageMetadata, SessionContext } from '../../session';
 import { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
 import type { Template } from '../base';
 import { Composite } from './composite';
 
 /**
  * A template that executes a sequence of templates in order.
- * @template TAttrs - The metadata type.
- * @template TVars - The context type.
- * @extends Composite<TAttrs, TVars>
+ * @template TMetadata - The metadata type.
+ * @template TContext - The context type.
+ * @extends Composite<TMetadata, TContext>
  * @class
  * @public
  * @remarks
@@ -15,14 +15,14 @@ import { Composite } from './composite';
  * enabling complex template compositions.
  */
 export class Sequence<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends Composite<TAttrs, TVars> {
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends Composite<TMetadata, TContext> {
   /**
    * Creates a new Sequence template.
    * @param templates - Optional array of templates to execute in sequence
    */
-  constructor(templates?: Template<TAttrs, TVars>[]) {
+  constructor(templates?: Template<TMetadata, TContext>[]) {
     super();
     if (templates) {
       this.templates = [...templates];
@@ -31,7 +31,7 @@ export class Sequence<
     return this;
   }
 
-  loopIf(condition: (session: Session<TVars, TAttrs>) => boolean): this {
+  loopIf(condition: (session: Session<TContext, TMetadata>) => boolean): this {
     this.loopCondition = condition;
     return this;
   }

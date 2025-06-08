@@ -486,7 +486,7 @@ function ContextEditor({
     setSelectedPaths(newSelectedPathsUpdate);
   };
 
-  const handleUpdateChaTVars = async () => {
+  const handleUpdateChaTContext = async () => {
     let filesToLoad: string[] = [];
     const directoriesToLoad: string[] = [];
 
@@ -685,7 +685,7 @@ function ContextEditor({
 
       <button
         type="button"
-        onClick={handleUpdateChaTVars}
+        onClick={handleUpdateChaTContext}
         className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50"
         disabled={Object.values(selectedPaths).every(
           (v) => v !== true && v !== 'SELECTED',
@@ -869,7 +869,7 @@ export default function Page() {
   const [tokenCount, setTokenCount] = useState<number>(0); // State for token count
   const [isLoadingInitialContext, setIsLoadingInitialContext] =
     useState<boolean>(true);
-  const initialDefaulTVarsLoaded = useRef(false);
+  const initialDefaulTContextLoaded = useRef(false);
 
   // useChat hook setup
   const {
@@ -893,8 +893,8 @@ export default function Page() {
 
   // Effect to load default README.md context ONCE on initial mount
   useEffect(() => {
-    if (!initialDefaulTVarsLoaded.current) {
-      initialDefaulTVarsLoaded.current = true;
+    if (!initialDefaulTContextLoaded.current) {
+      initialDefaulTContextLoaded.current = true;
       console.log('Fetching initial default code context (README.md)...');
       fetch('/api/load-context', {
         method: 'POST',

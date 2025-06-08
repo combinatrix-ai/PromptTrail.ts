@@ -151,7 +151,7 @@ describe('Agent Function-Based Templates', () => {
 
       const session = await agent.execute(
         Session.create({
-          vars: { mainVar: 'value' },
+          context: { mainVar: 'value' },
         }),
       );
 
@@ -172,7 +172,7 @@ describe('Agent Function-Based Templates', () => {
           squashWith: (parent, sub) => {
             const lastMessage = sub.getLastMessage();
             if (lastMessage?.content.includes('42')) {
-              return parent.withVars({ result: 42 });
+              return parent.withContext({ result: 42 });
             }
             return parent;
           },

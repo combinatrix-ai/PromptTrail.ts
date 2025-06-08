@@ -1,6 +1,6 @@
 import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
-import type { Attrs, Vars } from '../session';
+import type { MessageMetadata, SessionContext } from '../session';
 import { Session } from '../session';
 import { LlmSource, Source } from '../source';
 import { Agent } from './agent';
@@ -104,8 +104,8 @@ export interface ScenarioConfig {
  *
  * The LLM drives the conversation by using tools to achieve goals
  *
- * @template TVars - The session vars type
- * @template TAttrs - The message attrs type
+ * @template TContext - The session vars type
+ * @template TMetadata - The message attrs type
  *
  * @example
  * ```typescript
@@ -117,8 +117,10 @@ export interface ScenarioConfig {
  *   .execute();
  * ```
  */
-export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
-  implements Template<TAttrs, TVars>
+export class Scenario<
+  TContext extends SessionContext = Record<string, any>,
+  TMetadata extends MessageMetadata = Record<string, any>,
+> implements Template<TMetadata, TContext>
 {
   private systemPrompt: string;
   private steps: Array<{ goal: string; options: StepOptions }> = [];
@@ -136,11 +138,14 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
   /**
    * Creates a new Scenario with a system prompt
    */
-  static system<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+  static system<
+    TContext extends SessionContext = SessionContext,
+    TMetadata extends MessageMetadata = MessageMetadata,
+  >(
     systemPrompt: string,
     config?: ScenarioConfig,
-  ): Scenario<TVars, TAttrs> {
-    return new Scenario<TVars, TAttrs>(systemPrompt, config);
+  ): Scenario<TContext, TMetadata> {
+    return new Scenario<TContext, TMetadata>(systemPrompt, config);
   }
 
   /**
@@ -245,13 +250,13 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
   /**
    * Compiles the scenario into an Agent-based implementation
    */
-  private compile(): Agent<TVars, TAttrs> {
-    const agent = Agent.create<TVars, TAttrs>();
+  private compile(): Agent<TContext, TMetadata> {
+    const agent = Agent.create<TContext, TMetadata>();
 
     for (const [index, step] of this.steps.entries()) {
       // Each step is a subroutine that loops until the goal is satisfied
       agent.subroutine(
-        (subAgent: Agent<TVars, TAttrs>) => {
+        (subAgent: Agent<TContext, TMetadata>) => {
           // Only add system message for the first step when retaining messages
           // For subsequent steps, the system context is preserved from the retained messages
           if (index === 0) {
@@ -284,7 +289,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
           let currentSession: Session<any, any> | undefined;
 
           return subAgent.loop(
-            (loopAgent: Agent<TVars, TAttrs>) => {
+            (loopAgent: Agent<TContext, TMetadata>) => {
               // Build the tools for this step
               const tools: Record<string, CoreTool> = {};
 
@@ -320,7 +325,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
               return loopAgent.assistant(llmSource);
             },
             // Continue loop while goal not satisfied and under attempt limit
-            (session: Session<TVars, TAttrs>) => {
+            (session: Session<TContext, TMetadata>) => {
               // Update the current session reference for tool access
               currentSession = session;
 
@@ -533,8 +538,8 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
    * Executes the scenario
    */
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const compiledAgent = this.compile();
     return compiledAgent.execute(session);
   }

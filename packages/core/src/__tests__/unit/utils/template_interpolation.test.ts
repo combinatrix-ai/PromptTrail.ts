@@ -8,14 +8,14 @@ import { Session } from '../../../session';
 describe('Template Interpolation with Handlebars', () => {
   describe('Basic Variable Interpolation', () => {
     it('should interpolate simple variables', () => {
-      const session = Session.create({ vars: { name: 'Alice' } });
+      const session = Session.create({ context: { name: 'Alice' } });
       const result = interpolateTemplate('Hello {{name}}!', session);
       expect(result).toBe('Hello Alice!');
     });
 
     it('should interpolate nested object properties', () => {
       const session = Session.create({
-        vars: { user: { name: 'Bob', age: 30 } },
+        context: { user: { name: 'Bob', age: 30 } },
       });
       const result = interpolateTemplate(
         'User: {{user.name}} ({{user.age}})',
@@ -25,7 +25,7 @@ describe('Template Interpolation with Handlebars', () => {
     });
 
     it('should handle missing variables gracefully', () => {
-      const session = Session.create({ vars: {} });
+      const session = Session.create({ context: {} });
       const result = interpolateTemplate('Hello {{missing}}!', session);
       expect(result).toBe('Hello !');
     });
@@ -34,7 +34,7 @@ describe('Template Interpolation with Handlebars', () => {
   describe('Array Iteration', () => {
     it('should iterate over arrays with each helper', () => {
       const session = Session.create({
-        vars: {
+        context: {
           items: [
             { title: 'Item 1', description: 'First item' },
             { title: 'Item 2', description: 'Second item' },
@@ -50,7 +50,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should provide index access in loops', () => {
       const session = Session.create({
-        vars: { names: ['Alice', 'Bob', 'Charlie'] },
+        context: { names: ['Alice', 'Bob', 'Charlie'] },
       });
       const template = `{{#each names}}
 {{@index}}. {{.}}
@@ -63,7 +63,7 @@ describe('Template Interpolation with Handlebars', () => {
   describe('Conditionals', () => {
     it('should support if/else conditions', () => {
       const session = Session.create({
-        vars: { isLoggedIn: true, username: 'Alice' },
+        context: { isLoggedIn: true, username: 'Alice' },
       });
       const template = `{{#if isLoggedIn}}Welcome back, {{username}}!{{else}}Please log in.{{/if}}`;
       const result = interpolateTemplate(template, session);
@@ -72,7 +72,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should support unless conditions', () => {
       const session = Session.create({
-        vars: { isEmpty: false, content: 'Hello World' },
+        context: { isEmpty: false, content: 'Hello World' },
       });
       const template = `{{#unless isEmpty}}{{content}}{{/unless}}`;
       const result = interpolateTemplate(template, session);
@@ -83,7 +83,7 @@ describe('Template Interpolation with Handlebars', () => {
   describe('Built-in Helpers', () => {
     it('should use length helper for arrays', () => {
       const session = Session.create({
-        vars: { items: ['a', 'b', 'c'] },
+        context: { items: ['a', 'b', 'c'] },
       });
       const result = interpolateTemplate('Count: {{length items}}', session);
       expect(result).toBe('Count: 3');
@@ -91,7 +91,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use length helper for strings', () => {
       const session = Session.create({
-        vars: { text: 'hello' },
+        context: { text: 'hello' },
       });
       const result = interpolateTemplate('Length: {{length text}}', session);
       expect(result).toBe('Length: 5');
@@ -99,7 +99,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use join helper for arrays', () => {
       const session = Session.create({
-        vars: { tags: ['javascript', 'typescript', 'node'] },
+        context: { tags: ['javascript', 'typescript', 'node'] },
       });
       const result = interpolateTemplate('Tags: {{join tags ", "}}', session);
       expect(result).toBe('Tags: javascript, typescript, node');
@@ -107,7 +107,9 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use truncate helper', () => {
       const session = Session.create({
-        vars: { longText: 'This is a very long text that should be truncated' },
+        context: {
+          longText: 'This is a very long text that should be truncated',
+        },
       });
       const result = interpolateTemplate('{{truncate longText 20}}', session);
       expect(result).toBe('This is a very long ...');
@@ -115,7 +117,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use numberedList helper', () => {
       const session = Session.create({
-        vars: { items: ['First', 'Second', 'Third'] },
+        context: { items: ['First', 'Second', 'Third'] },
       });
       const result = interpolateTemplate('{{numberedList items}}', session);
       expect(result).toBe('1. First\n2. Second\n3. Third');
@@ -123,7 +125,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use bulletList helper', () => {
       const session = Session.create({
-        vars: { items: ['Apple', 'Banana', 'Cherry'] },
+        context: { items: ['Apple', 'Banana', 'Cherry'] },
       });
       const result = interpolateTemplate('{{bulletList items}}', session);
       expect(result).toBe('- Apple\n- Banana\n- Cherry');
@@ -131,7 +133,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use isEmpty helper', () => {
       const session = Session.create({
-        vars: {
+        context: {
           emptyArray: [],
           nonEmptyArray: [1, 2, 3],
           emptyString: '',
@@ -150,7 +152,7 @@ describe('Template Interpolation with Handlebars', () => {
 
     it('should use comparison helpers', () => {
       const session = Session.create({
-        vars: { score: 85, passingScore: 80, name: 'Alice' },
+        context: { score: 85, passingScore: 80, name: 'Alice' },
       });
       const template = `{{#if (gt score passingScore)}}{{name}} passed!{{else}}{{name}} failed.{{/if}}`;
       const result = interpolateTemplate(template, session);
@@ -161,7 +163,7 @@ describe('Template Interpolation with Handlebars', () => {
   describe('Complex Templates', () => {
     it('should handle complex nested structures', () => {
       const session = Session.create({
-        vars: {
+        context: {
           user: { name: 'Alice', role: 'admin' },
           projects: [
             {
@@ -197,7 +199,7 @@ Your projects:
       registerHelper('uppercase', (text: string) => text.toUpperCase());
 
       const session = Session.create({
-        vars: { message: 'hello world' },
+        context: { message: 'hello world' },
       });
       const result = interpolateTemplate('{{uppercase message}}', session);
       expect(result).toBe('HELLO WORLD');
@@ -206,7 +208,7 @@ Your projects:
 
   describe('Error Handling', () => {
     it('should handle template errors gracefully', () => {
-      const session = Session.create({ vars: {} });
+      const session = Session.create({ context: {} });
       const result = interpolateTemplate('{{#each}}{{/each}}', session); // Invalid syntax
       expect(result).toContain('[TEMPLATE ERROR:');
       expect(result).toContain('{{#each}}{{/each}}');

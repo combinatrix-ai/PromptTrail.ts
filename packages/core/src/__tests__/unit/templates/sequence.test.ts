@@ -119,7 +119,7 @@ describe('Sequence Template', () => {
           const nameMatch = message.match(/my name is (\w+)/i);
           const name = nameMatch ? nameMatch[1] : 'unknown';
           // Cast the result to satisfy TTransformFunction type
-          return session.withVars({ userName: name });
+          return session.withContext({ userName: name });
         }),
       )
       .then(new User('Nice to meet you, {{userName}}'));
@@ -150,7 +150,7 @@ describe('Sequence Template', () => {
     const sequence1 = new Sequence().then(new User('First message')).then(
       new Transform((session) => {
         // Cast the result to satisfy TTransformFunction type
-        return session.withVars({ counter: 1 });
+        return session.withContext({ counter: 1 });
       }),
     );
 
@@ -159,7 +159,7 @@ describe('Sequence Template', () => {
         // Ensure counter is treated as a number
         const counter = Number(session.getVar('counter') || 0);
         // Cast the result to satisfy TTransformFunction type
-        return session.withVars({
+        return session.withContext({
           counter: counter + 1,
         });
       }),

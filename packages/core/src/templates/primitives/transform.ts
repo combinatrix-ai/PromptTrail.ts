@@ -1,5 +1,4 @@
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
 import { TemplateBase } from '../base';
 import type { TransformFn } from '../template_types';
 
@@ -9,17 +8,19 @@ import type { TransformFn } from '../template_types';
  */
 // Make TransformTemplate generic
 export class Transform<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> extends TemplateBase<TAttrs, TVars> {
-  private transformFn: TransformFn<TAttrs, TVars>;
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends TemplateBase<TMetadata, TContext> {
+  private transformFn: TransformFn<TMetadata, TContext>;
 
   // Update constructor signature
-  constructor(fn: TransformFn<TAttrs, TVars> | TransformFn<TAttrs, TVars>[]) {
+  constructor(
+    fn: TransformFn<TMetadata, TContext> | TransformFn<TMetadata, TContext>[],
+  ) {
     super();
     // Higher-order function
     if (Array.isArray(fn)) {
-      this.transformFn = async (session: Session<TVars, TAttrs>) => {
+      this.transformFn = async (session: Session<TContext, TMetadata>) => {
         let updatedSession = session;
         for (const f of fn) {
           updatedSession = await f(updatedSession);
@@ -35,13 +36,13 @@ export class Transform<
 
   // Update execute signature
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     // Return Session<any>
     const currentSession = this.ensureSession(session);
     // Apply the transformation function
     const updatedSession = await this.transformFn(currentSession);
-    // Cast the result back to Session<TVars, TAttrs> as the transform might have changed metadata type
-    return updatedSession as Session<TVars, TAttrs>;
+    // Cast the result back to Session<TContext, TMetadata> as the transform might have changed metadata type
+    return updatedSession as Session<TContext, TMetadata>;
   }
 }

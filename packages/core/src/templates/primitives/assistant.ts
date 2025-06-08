@@ -1,17 +1,16 @@
-import type { AssistantMessage } from '../../message';
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
-import type { Tool } from '../../tool';
-import type { IValidator } from '../../validators/base';
-import type { Source, ModelOutput, LlmSource } from '../../source';
+import { z } from 'zod';
 import { ValidationError } from '../../errors';
 import {
   generateText,
   generateWithSchema,
   SchemaGenerationOptions,
 } from '../../generate';
+import type { AssistantMessage } from '../../message';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
+import type { LlmSource, ModelOutput, Source } from '../../source';
+import type { Tool } from '../../tool';
 import { interpolateTemplate } from '../../utils/template_interpolation';
-import { z } from 'zod';
+import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 
 export interface LLMConfig {
@@ -57,9 +56,9 @@ export type AssistantContentInput =
   | LlmSource; // Backward compatibility - LlmSource is the main Source type for assistants
 
 export class Assistant<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> extends TemplateBase<TAttrs, TVars> {
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends TemplateBase<TMetadata, TContext> {
   private content: AssistantContentInput;
   private options: AssistantTemplateOptions;
   private schemaConfig?: SchemaGenerationOptions;
@@ -154,7 +153,7 @@ export class Assistant<
   }
 
   private async getModelOutput(
-    session: Session<TVars, TAttrs>,
+    session: Session<TContext, TMetadata>,
   ): Promise<ModelOutput> {
     // Backward compatibility: Use Source if provided
     if (this.isSourceBased) {
@@ -237,7 +236,7 @@ export class Assistant<
 
   private async validateContent(
     content: string,
-    session: Session<TVars, TAttrs>,
+    session: Session<TContext, TMetadata>,
   ): Promise<void> {
     // Skip validation for Source-based content (Sources handle their own validation)
     if (this.isSourceBased) return;
@@ -253,19 +252,19 @@ export class Assistant<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const validSession = this.ensureSession(session);
 
     // For Source-based content, use simpler execution (Sources handle retries)
     if (this.isSourceBased) {
       const output = await this.getModelOutput(validSession);
 
-      const message: AssistantMessage<TAttrs> = {
+      const message: AssistantMessage<TMetadata> = {
         type: 'assistant',
         content: output.content,
         toolCalls: output.toolCalls,
-        attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
+        attrs: (output.metadata as TMetadata) ?? ({} as TMetadata),
         structuredContent: output.structuredOutput,
       };
 
@@ -279,7 +278,7 @@ export class Assistant<
             content: JSON.stringify(toolResult.result),
             attrs: {
               toolCallId: toolResult.toolCallId,
-            } as unknown as TAttrs,
+            } as unknown as TMetadata,
           });
         }
       }
@@ -309,11 +308,11 @@ export class Assistant<
 
         lastOutput = output;
 
-        const message: AssistantMessage<TAttrs> = {
+        const message: AssistantMessage<TMetadata> = {
           type: 'assistant',
           content: output.content,
           toolCalls: output.toolCalls,
-          attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
+          attrs: (output.metadata as TMetadata) ?? ({} as TMetadata),
           structuredContent: output.structuredOutput,
         };
 
@@ -327,7 +326,7 @@ export class Assistant<
               content: JSON.stringify(toolResult.result),
               attrs: {
                 toolCallId: toolResult.toolCallId,
-              } as unknown as TAttrs,
+              } as unknown as TMetadata,
             });
           }
         }
@@ -359,14 +358,14 @@ export class Assistant<
    * Extract structured data to session variables based on extractToVars configuration
    */
   private extractVariables(
-    session: Session<TVars, TAttrs>,
+    session: Session<TContext, TMetadata>,
     structuredOutput: any,
-  ): Session<TVars, TAttrs> {
+  ): Session<TContext, TMetadata> {
     if (!this.extractToVarsConfig || !structuredOutput) {
       return session;
     }
 
-    const newVars: Partial<TVars> = {};
+    const newVars: Partial<TContext> = {};
 
     if (this.extractToVarsConfig === true) {
       // Extract all fields directly
@@ -389,6 +388,6 @@ export class Assistant<
       }
     }
 
-    return session.withVars(newVars);
+    return session.withContext(newVars);
   }
 }

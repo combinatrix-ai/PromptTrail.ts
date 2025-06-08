@@ -1,5 +1,5 @@
 // middleware.ts - Enhanced middleware and plugin system for Sources
-import type { Session, Vars } from './session';
+import type { Session } from './session';
 import type { LLMOptions, ModelOutput } from './source';
 import type { IValidator, TValidationResult } from './validators/base';
 

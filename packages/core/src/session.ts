@@ -2,15 +2,17 @@ import { debugEventHelpers, debugEvents } from './cli/debug-events';
 import { ValidationError } from './errors';
 import type { Message } from './message';
 
-export type Vars<T extends Record<string, unknown> = {}> = Readonly<T>;
-export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
+export type SessionContext<T extends Record<string, unknown> = {}> =
+  Readonly<T>;
+export type MessageMetadata<T extends Record<string, unknown> = {}> =
+  Readonly<T>;
 export class Session<
-  TVars extends Vars = Record<string, any>,
-  TAttrs extends Attrs = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+  TMetadata extends MessageMetadata = Record<string, any>,
 > {
   constructor(
-    public readonly messages: readonly Message<TAttrs>[] = [],
-    public readonly vars: TVars,
+    public readonly messages: readonly Message<TMetadata>[] = [],
+    public readonly vars: TContext,
     public readonly debug: boolean = false,
     public readonly ui: 'console' | 'ink' | 'auto' = 'auto',
   ) {
@@ -24,8 +26,8 @@ export class Session<
       }
     }
   }
-  addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
-    const newSession = new Session<TVars, TAttrs>(
+  addMessage(message: Message<TMetadata>): Session<TContext, TMetadata> {
+    const newSession = new Session<TContext, TMetadata>(
       [...this.messages, message],
       { ...this.vars },
       this.debug,
@@ -53,8 +55,8 @@ export class Session<
   }
 
   private updateDebugOutput(
-    newSession: Session<TVars, TAttrs>,
-    message: Message<TAttrs>,
+    newSession: Session<TContext, TMetadata>,
+    message: Message<TMetadata>,
   ): void {
     // If UI mode is explicitly console, always log to console
     if (this.ui === 'console') {
@@ -67,7 +69,7 @@ export class Session<
   }
 
   private async tryUpdateInkInterface(
-    newSession: Session<TVars, TAttrs>,
+    newSession: Session<TContext, TMetadata>,
   ): Promise<void> {
     try {
       const { InkDebugContext } = await import('./cli/ink-debug-context');
@@ -77,7 +79,7 @@ export class Session<
     }
   }
 
-  private logMessageToConsole(message: Message<TAttrs>): void {
+  private logMessageToConsole(message: Message<TMetadata>): void {
     switch (message.type) {
       case 'system':
         console.log('\nSystem:', message.content);
@@ -102,24 +104,27 @@ export class Session<
     }
   }
 
-  getVar<K extends keyof TVars>(key: K): TVars[K];
-  getVar<K extends keyof TVars>(key: K, defaultValue: TVars[K]): TVars[K];
+  getVar<K extends keyof TContext>(key: K): TContext[K];
+  getVar<K extends keyof TContext>(
+    key: K,
+    defaultValue: TContext[K],
+  ): TContext[K];
   getVar(key: string): any;
   getVar(key: string, defaultValue: any): any;
-  getVar<K extends keyof TVars>(
+  getVar<K extends keyof TContext>(
     key: K | string,
-    defaultValue?: TVars[K] | any,
-  ): TVars[K] | any {
+    defaultValue?: TContext[K] | any,
+  ): TContext[K] | any {
     return (this.vars as any)[key] ?? defaultValue!;
   }
 
   withVar<K extends PropertyKey, V>(
     key: K,
     value: V,
-  ): Session<Vars<TVars & { [P in K]: V }>, TAttrs> {
+  ): Session<SessionContext<TContext & { [P in K]: V }>, TMetadata> {
     const newSession = new Session(
       [...this.messages],
-      { ...this.vars, [key]: value } as TVars & { [P in K]: V },
+      { ...this.vars, [key]: value } as TContext & { [P in K]: V },
       this.debug,
       this.ui,
     );
@@ -135,19 +140,19 @@ export class Session<
     return newSession;
   }
 
-  withVars<U extends Record<string, unknown>>(
-    vars: U,
-  ): Session<Vars<TVars & U>, TAttrs> {
+  withContext<U extends Record<string, unknown>>(
+    context: U,
+  ): Session<SessionContext<TContext & U>, TMetadata> {
     const newSession = new Session(
       [...this.messages],
-      { ...this.vars, ...vars } as TVars & U,
+      { ...this.vars, ...context } as TContext & U,
       this.debug,
       this.ui,
     );
 
     // Emit debug events for each variable update
     if (this.debug) {
-      Object.entries(vars).forEach(([key, value]) => {
+      Object.entries(context).forEach(([key, value]) => {
         const oldValue = (this.vars as any)[key];
         debugEvents.emit(
           debugEventHelpers.variableUpdated(key, oldValue, value),
@@ -158,9 +163,12 @@ export class Session<
     return newSession;
   }
 
-  withAttrsType<U extends Record<string, unknown>>(): Session<TVars, Attrs<U>> {
-    return new Session<TVars, Attrs<U>>(
-      [...this.messages] as Message<Attrs<U>>[],
+  withMetadataType<U extends Record<string, unknown>>(): Session<
+    TContext,
+    MessageMetadata<U>
+  > {
+    return new Session<TContext, MessageMetadata<U>>(
+      [...this.messages] as Message<MessageMetadata<U>>[],
       { ...this.vars },
       this.debug,
       this.ui,
@@ -171,19 +179,19 @@ export class Session<
     return Object.keys(this.vars).length;
   }
 
-  getVarsObject(): TVars {
+  geTContextObject(): TContext {
     return { ...this.vars };
   }
 
-  getLastMessage(): Message<TAttrs> | undefined {
+  getLastMessage(): Message<TMetadata> | undefined {
     return this.messages[this.messages.length - 1];
   }
 
-  getMessagesByType<U extends Message<TAttrs>['type']>(
+  getMessagesByType<U extends Message<TMetadata>['type']>(
     type: U,
-  ): Extract<Message<TAttrs>, { type: U }>[] {
+  ): Extract<Message<TMetadata>, { type: U }>[] {
     return this.messages.filter((msg) => msg.type === type) as Extract<
-      Message<TAttrs>,
+      Message<TMetadata>,
       { type: U }
     >[];
   }
@@ -226,16 +234,16 @@ export function createSession<
   M extends Record<string, unknown> = Record<string, any>,
 >(options?: {
   context?: C;
-  messages?: Message<Attrs<M>>[];
+  messages?: Message<MessageMetadata<M>>[];
   debug?: boolean;
   ui?: 'console' | 'ink' | 'auto';
   // @deprecated Use 'debug' instead
   print?: boolean;
-}): Session<Vars<C>, Attrs<M>> {
+}): Session<SessionContext<C>, MessageMetadata<M>> {
   const ctx = (options?.context ?? {}) as C;
   // Support backwards compatibility with 'print' parameter
   const debugEnabled = options?.debug ?? options?.print ?? false;
-  return new Session<Vars<C>, Attrs<M>>(
+  return new Session<SessionContext<C>, MessageMetadata<M>>(
     options?.messages ?? [],
     ctx,
     debugEnabled,
@@ -243,73 +251,56 @@ export function createSession<
   );
 }
 
-export class SessionBuilder<
-  TVars extends Record<string, unknown> = {},
-  TAttrs extends Record<string, unknown> = {},
+export class TypedSessionBuilder<
+  TContext extends SessionContext = Record<string, any>,
+  TMetadata extends MessageMetadata = Record<string, any>,
 > {
-  withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<
-    TNewVars,
-    TAttrs
-  > {
-    return new SessionBuilder<TNewVars, TAttrs>();
-  }
-
-  withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<
-    TVars,
-    TNewAttrs
-  > {
-    return new SessionBuilder<TVars, TNewAttrs>();
-  }
-
   create(options?: {
-    vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    context?: TContext;
+    messages?: Message<TMetadata>[];
     debug?: boolean;
     ui?: 'console' | 'ink' | 'auto';
-    // @deprecated Use 'debug' instead
-    print?: boolean;
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
-      context: options?.vars,
+  }): Session<TContext, TMetadata> {
+    return createSession<TContext, TMetadata>({
+      context: options?.context,
       messages: options?.messages,
       debug: options?.debug,
       ui: options?.ui,
-      print: options?.print,
     });
   }
 
-  empty(): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({});
-  }
-
   debug(options?: {
-    vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    context?: TContext;
+    messages?: Message<TMetadata>[];
     ui?: 'ink' | 'console' | 'auto';
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
-      context: options?.vars,
+  }): Session<TContext, TMetadata> {
+    return createSession<TContext, TMetadata>({
+      context: options?.context,
       messages: options?.messages,
       debug: true,
       ui: options?.ui ?? 'auto',
     });
   }
+
+  empty(): Session<TContext, TMetadata> {
+    return createSession<TContext, TMetadata>({});
+  }
 }
 
 export namespace Session {
   export function create<
-    TVars extends Record<string, unknown> = Record<string, any>,
-    TAttrs extends Record<string, unknown> = Record<string, any>,
+    TContext extends Record<string, unknown> = Record<string, any>,
+    TMetadata extends Record<string, unknown> = Record<string, any>,
   >(options?: {
-    vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    context?: TContext;
+    messages?: Message<MessageMetadata<TMetadata>>[];
     debug?: boolean;
     ui?: 'console' | 'ink' | 'auto';
     // @deprecated Use 'debug' instead
     print?: boolean;
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
-      context: options?.vars,
+  }): Session<SessionContext<TContext>, MessageMetadata<TMetadata>> {
+    return createSession<TContext, TMetadata>({
+      context: options?.context,
       messages: options?.messages,
       debug: options?.debug,
       ui: options?.ui,
@@ -318,9 +309,11 @@ export namespace Session {
   }
 
   export function fromJSON<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(json: Record<string, unknown>): Session<Vars<TVars>, Attrs<TAttrs>> {
+    TContext extends Record<string, unknown> = {},
+    TMetadata extends Record<string, unknown> = {},
+  >(
+    json: Record<string, unknown>,
+  ): Session<SessionContext<TContext>, MessageMetadata<TMetadata>> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -333,76 +326,76 @@ export namespace Session {
       );
     }
 
-    return createSession<TVars, TAttrs>({
-      messages: json.messages as Message<Attrs<TAttrs>>[],
-      context: json.context as TVars,
+    return createSession<TContext, TMetadata>({
+      messages: json.messages as Message<MessageMetadata<TMetadata>>[],
+      context: json.context as TContext,
       print: json.print ? (json.print as boolean) : false,
     });
   }
 
   export function empty<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({});
+    TContext extends Record<string, unknown> = {},
+    TMetadata extends Record<string, unknown> = {},
+  >(): Session<SessionContext<TContext>, MessageMetadata<TMetadata>> {
+    return createSession<TContext, TMetadata>({});
   }
 
-  export function withVars<TVars extends Record<string, unknown>>(
-    vars: TVars,
+  export function withContext<TContext extends Record<string, unknown>>(
+    context: TContext,
     options?: {
-      messages?: Message<Attrs<{}>>[];
-      print?: boolean;
+      messages?: Message<MessageMetadata<{}>>[];
+      debug?: boolean;
     },
-  ): Session<Vars<TVars>, Attrs<{}>> {
-    return createSession<TVars, {}>({
-      context: vars,
+  ): Session<SessionContext<TContext>, MessageMetadata<{}>> {
+    return createSession<TContext, {}>({
+      context: context,
       messages: options?.messages,
-      print: options?.print,
+      debug: options?.debug,
     });
   }
 
-  export function withMessages<TAttrs extends Record<string, unknown> = {}>(
-    messages: Message<Attrs<TAttrs>>[],
+  export function withMessages<TMetadata extends Record<string, unknown> = {}>(
+    messages: Message<MessageMetadata<TMetadata>>[],
     options?: {
-      vars?: Record<string, unknown>;
-      print?: boolean;
+      context?: Record<string, unknown>;
+      debug?: boolean;
     },
-  ): Session<Vars<{}>, Attrs<TAttrs>> {
-    return createSession<{}, TAttrs>({
-      context: options?.vars,
+  ): Session<SessionContext<{}>, MessageMetadata<TMetadata>> {
+    return createSession<{}, TMetadata>({
+      context: options?.context,
       messages: messages,
-      print: options?.print,
+      debug: options?.debug,
     });
   }
 
   /**
-   * Create a new session with both vars and messages
-   * @param vars Initial session vars
+   * Create a new session with both context and messages
+   * @param context Initial session context
    * @param messages Initial messages
    * @param options Optional configuration
    * @returns A new session instance
    * @example
    * ```typescript
-   * const session = Session.withVarsAndMessages(
+   * const session = Session.withContextAndMessages(
    *   { userId: '123' },
    *   [{ type: 'user', content: 'Hello' }]
    * );
    * ```
    */
-  export function withVarsAndMessages<
-    TVars extends Record<string, unknown>,
-    TAttrs extends Record<string, unknown> = {},
+  export function withContextAndMessages<
+    TContext extends Record<string, unknown>,
+    TMetadata extends Record<string, unknown> = {},
   >(
-    vars: TVars,
-    messages: Message<Attrs<TAttrs>>[],
+    context: TContext,
+    messages: Message<MessageMetadata<TMetadata>>[],
     options?: {
-      print?: boolean;
+      debug?: boolean;
     },
-  ): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
-      context: vars,
+  ): Session<SessionContext<TContext>, MessageMetadata<TMetadata>> {
+    return createSession<TContext, TMetadata>({
+      context: context,
       messages: messages,
-      print: options?.print,
+      debug: options?.debug,
     });
   }
 
@@ -412,22 +405,22 @@ export namespace Session {
    * @returns A new session instance with print enabled
    * @example
    * ```typescript
-   * const session = Session.debug({ vars: { debug: true } });
+   * const session = Session.debug({ context: { debug: true } });
    * const inkSession = Session.debug({ ui: 'ink' });
    * ```
    */
   export function debug<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
+    TContext extends Record<string, unknown> = {},
+    TMetadata extends Record<string, unknown> = {},
   >(options?: {
-    vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    context?: TContext;
+    messages?: Message<MessageMetadata<TMetadata>>[];
     ui?: 'ink' | 'console' | 'auto';
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
+  }): Session<SessionContext<TContext>, MessageMetadata<TMetadata>> {
     const uiMode = options?.ui ?? 'auto';
 
-    const session = createSession<TVars, TAttrs>({
-      context: options?.vars,
+    const session = createSession<TContext, TMetadata>({
+      context: options?.context,
       messages: options?.messages,
       debug: true,
       ui: uiMode,
@@ -475,32 +468,20 @@ export namespace Session {
   }
 
   /**
-   * Create a session builder with specified vars type (type-only, no runtime values)
-   * @returns A chainable session builder
+   * Create a type-first session builder for clean type specification
+   * @returns A chainable typed session builder
    * @example
    * ```typescript
    * type UserContext = { userId: string; role: string };
-   * const session = Session.withVarsType<UserContext>().create();
+   * type MessageMeta = { timestamp: Date; source: string };
+   * const session = Session.typed<UserContext, MessageMeta>()
+   *   .create({ context: { userId: '123', role: 'admin' } });
    * ```
    */
-  export function withVarsType<
-    TVars extends Record<string, unknown>,
-  >(): SessionBuilder<TVars, {}> {
-    return new SessionBuilder<TVars, {}>();
-  }
-
-  /**
-   * Create a session builder with specified attrs type (type-only, no runtime values)
-   * @returns A chainable session builder
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const session = Session.withAttrsType<MessageMeta>().create();
-   * ```
-   */
-  export function withAttrsType<
-    TAttrs extends Record<string, unknown>,
-  >(): SessionBuilder<{}, TAttrs> {
-    return new SessionBuilder<{}, TAttrs>();
+  export function typed<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >(): TypedSessionBuilder<TContext, TMetadata> {
+    return new TypedSessionBuilder<TContext, TMetadata>();
   }
 }

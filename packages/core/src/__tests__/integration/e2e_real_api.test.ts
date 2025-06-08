@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
-import { Session, type Vars } from '../../session';
+import { Session, type SessionContext } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
 import {
   Agent,
@@ -123,7 +123,7 @@ describe('End-to-End Workflows with Real APIs', () => {
             attrs: { ...m.attrs, timestamp: date },
           }));
           const next = Session.create<UserContext, MessageMetadata>({
-            vars: session.vars,
+            context: session.vars,
             messages: msgs,
             print: session.debug,
           });
@@ -132,7 +132,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       );
     // Pass the raw initialContext object to Session.create
     const session = await template.execute(
-      Session.create<UserContext>({ vars: initialContext }),
+      Session.create<UserContext>({ context: initialContext }),
     );
     const messages = Array.from(session.messages);
     expect(messages).toHaveLength(3);
@@ -303,7 +303,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     const userContentSource = new ListSource(['123456789', '987654321']);
 
     // Define the body of the loop as a Agent
-    const loopBodySequence = Agent.create<Vars<{ count: number }>>()
+    const loopBodySequence = Agent.create<SessionContext<{ count: number }>>()
       .system('This is automated API testing. Repeat what user says.')
       .user(userContentSource)
       .assistant(openAILLMSource)
@@ -322,7 +322,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Define the exit condition for the loop
     // Add a transform to increment count in the loop body
     const loopBodySequenceWithTransform = loopBodySequence.transform(
-      (session: Session<Vars<{ count: number }>>) => {
+      (session: Session<SessionContext<{ count: number }>>) => {
         const currentCount =
           (session.getVar('count') as number | undefined) ?? 0;
         return session.withVar('count', currentCount + 1);
@@ -331,7 +331,7 @@ describe('End-to-End Workflows with Real APIs', () => {
 
     // Define the exit condition for the loop (pure check)
     const loopExitCondition = (
-      session: Session<Vars<{ count: number }>>,
+      session: Session<SessionContext<{ count: number }>>,
     ): boolean => {
       const updatedCount = (session.getVar('count') as number | undefined) ?? 0;
       // Loop twice (count 0, 1) -> exit when count reaches 2
@@ -340,13 +340,15 @@ describe('End-to-End Workflows with Real APIs', () => {
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
-    const loop = new Loop<any, Vars<{ count: number }>>({
+    const loop = new Loop<any, SessionContext<{ count: number }>>({
       bodyTemplate: loopBodySequenceWithTransform,
       loopIf: loopExitCondition,
     });
 
     // Execute the loop, starting context count at 0
-    const session2 = await loop.execute(Session.create({ vars: { count: 0 } }));
+    const session2 = await loop.execute(
+      Session.create({ context: { count: 0 } }),
+    );
     const messages2 = Array.from(session2.messages);
 
     // The loop will execute twice (count 0, 1) before the exit condition is true (2>=2)

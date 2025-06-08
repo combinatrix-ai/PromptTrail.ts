@@ -20,7 +20,7 @@ async function testEnhancedDebug() {
 
   // Create a debug session with initial variables
   const session = Session.debug({
-    vars: {
+    context: {
       userName: 'TestUser',
       sessionType: 'enhanced_debug_test',
       testPhase: 'initialization',
@@ -43,14 +43,14 @@ async function testEnhancedDebug() {
     )
     .transform((session) => {
       // Update test phase
-      return session.withVar('testPhase', 'conversation_started');
+      return session.withContext({ testPhase: 'conversation_started' });
     })
     .user('Hello! This is a test of the enhanced debug interface.')
     .assistant(Source.llm().openai({ modelName: 'gpt-4o-mini' }))
     .transform((session) => {
       // Increment counter and update variables
       const currentCounter = session.getVar('counter', 0);
-      return session.withVars({
+      return session.withContext({
         counter: currentCounter + 1,
         lastResponse:
           session.getLastMessage()?.content.substring(0, 50) + '...',
@@ -61,7 +61,7 @@ async function testEnhancedDebug() {
     .assistant(Source.llm().openai({ modelName: 'gpt-4o-mini' }))
     .transform((session) => {
       // Final update
-      return session.withVars({
+      return session.withContext({
         counter: session.getVar('counter', 0) + 1,
         testPhase: 'completion',
         totalMessages: session.messages.length,
@@ -122,7 +122,7 @@ async function testSimpleEnhancedDebug() {
 
   // Create a debug session
   const session = Session.debug({
-    vars: {
+    context: {
       testMode: 'simple',
       version: '1.0',
       features: ['events', 'variables', 'metadata'],
@@ -137,7 +137,7 @@ async function testSimpleEnhancedDebug() {
       'Test assistant response - this is a static response for testing',
     )
     .transform((session) => {
-      return session.withVars({
+      return session.withContext({
         testComplete: true,
         messageCount: session.messages.length,
       });

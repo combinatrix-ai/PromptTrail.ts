@@ -1,6 +1,5 @@
 import type { SystemMessage } from '../../message';
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
 import type { Source } from '../../source';
 import { interpolateTemplate } from '../../utils/template_interpolation';
 import { TemplateBase } from '../base';
@@ -11,9 +10,9 @@ export type SystemContentInput =
   | ((session: Session<any, any>) => Promise<string>);
 
 export class System<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> extends TemplateBase<TAttrs, TVars> {
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends TemplateBase<TMetadata, TContext> {
   private content: SystemContentInput;
 
   constructor(contentOrSource: SystemContentInput) {
@@ -22,8 +21,8 @@ export class System<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const validSession = this.ensureSession(session);
 
     let content: string;
@@ -39,7 +38,7 @@ export class System<
 
     const interpolatedContent = interpolateTemplate(content, validSession);
 
-    const message: SystemMessage<TAttrs> = {
+    const message: SystemMessage<TMetadata> = {
       type: 'system',
       content: interpolatedContent,
     };

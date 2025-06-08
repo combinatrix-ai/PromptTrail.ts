@@ -21,7 +21,7 @@ Static vs instance methods: Inconsistent factory patterns
 
 1. Type Safety Improvements
 
-Generic type parameters are complex (<TAttrs, TVars>) and could be simplified
+Generic type parameters use consistent naming (TMetadata, TContext) with clear defaults (Record<string, any>)
 The any types in several places reduce type safety
 Message type unions could be better discriminated
 

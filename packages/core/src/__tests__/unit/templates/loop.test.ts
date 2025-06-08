@@ -243,7 +243,7 @@ describe('Loop Template', () => {
           const counter =
             (session.getVar('counter') as number | undefined) ?? 0;
           // Increment the counter
-          return session.withVars({ counter: counter + 1 });
+          return session.withContext({ counter: counter + 1 });
         }),
       loopIf: (session: Session) => {
         // Exit when counter reaches 3

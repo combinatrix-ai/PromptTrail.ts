@@ -17,7 +17,7 @@ import {
   ResponseInterceptor,
   RetryConfig,
 } from './middleware';
-import type { Session, Vars } from './session';
+import type { Session, SessionContext } from './session';
 import type { Tool } from './tool';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
@@ -493,10 +493,10 @@ export class CLISource extends StringSource {
  * Callback-based content source with fluent API
  */
 export class CallbackSource extends StringSource {
-  private callback: (context: { context?: Vars }) => Promise<string>;
+  private callback: (context: { context?: SessionContext }) => Promise<string>;
 
   constructor(
-    callback: (context: { context?: Vars }) => Promise<string>,
+    callback: (context: { context?: SessionContext }) => Promise<string>,
     options?: ValidationOptions,
   ) {
     super(options);
@@ -505,7 +505,7 @@ export class CallbackSource extends StringSource {
 
   // Helper method to create new instance with merged options
   private clone(
-    newCallback?: (context: { context?: Vars }) => Promise<string>,
+    newCallback?: (context: { context?: SessionContext }) => Promise<string>,
     newValidationOptions?: ValidationOptions,
   ): CallbackSource {
     const mergedValidationOptions = newValidationOptions || {
@@ -522,7 +522,7 @@ export class CallbackSource extends StringSource {
 
   // Fluent API methods - all return new instances
   withCallback(
-    callback: (context: { context?: Vars }) => Promise<string>,
+    callback: (context: { context?: SessionContext }) => Promise<string>,
   ): CallbackSource {
     return this.clone(callback);
   }
@@ -1311,7 +1311,7 @@ export namespace Source {
 
   /** Create callback-based source with fluent API */
   export function callback(
-    callback: (context: { context?: Vars }) => Promise<string>,
+    callback: (context: { context?: SessionContext }) => Promise<string>,
     options?: ValidationOptions,
   ): CallbackSource {
     return new CallbackSource(callback, options);

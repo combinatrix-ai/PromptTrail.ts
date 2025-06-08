@@ -105,7 +105,7 @@ describe('If Template', () => {
   it('should handle complex conditions using session data', async () => {
     // Create a session with context
     const adminSession = Session.create({
-      vars: {
+      context: {
         userRole: 'admin',
       },
     });
@@ -310,14 +310,14 @@ describe('If Template', () => {
     const thenTemplate = Agent.create()
       .user('Setting context in then branch')
       .transform((session) => {
-        return session.withVars({ branchTaken: 'then' });
+        return session.withContext({ branchTaken: 'then' });
       });
 
     // Create else template that updates metadata differently
     const elseTemplate = Agent.create()
       .user('Setting context in else branch')
       .transform((session) => {
-        return session.withVars({ branchTaken: 'else' });
+        return session.withContext({ branchTaken: 'else' });
       });
 
     // Create an if template
@@ -360,7 +360,7 @@ describe('If Template', () => {
 
     // Test with admin session
     const adminSession = Session.create({
-      vars: { userRole: 'admin' },
+      context: { userRole: 'admin' },
     });
 
     const adminResult = await conditional.execute(adminSession);
@@ -370,7 +370,7 @@ describe('If Template', () => {
 
     // Test with user session
     const userSession = Session.create({
-      vars: { userRole: 'user' },
+      context: { userRole: 'user' },
     });
 
     const userResult = await conditional.execute(userSession);
@@ -389,7 +389,7 @@ describe('If Template', () => {
 
     // Test with authenticated session
     const authSession = Session.create({
-      vars: { isAuthenticated: true },
+      context: { isAuthenticated: true },
     });
 
     const authResult = await conditional.execute(authSession);
@@ -399,7 +399,7 @@ describe('If Template', () => {
 
     // Test with unauthenticated session
     const unauthSession = Session.create({
-      vars: { isAuthenticated: false },
+      context: { isAuthenticated: false },
     });
 
     const unauthResult = await conditional.execute(unauthSession);
@@ -416,7 +416,7 @@ describe('If Template', () => {
 
     // Test with condition true
     const showWelcomeSession = Session.create({
-      vars: { showWelcome: true },
+      context: { showWelcome: true },
     });
 
     const welcomeResult = await conditional.execute(showWelcomeSession);
@@ -426,7 +426,7 @@ describe('If Template', () => {
 
     // Test with condition false - should return unchanged session
     const hideWelcomeSession = Session.create({
-      vars: { showWelcome: false },
+      context: { showWelcome: false },
     }).addMessage({ type: 'system', content: 'Initial message' });
 
     const hideResult = await conditional.execute(hideWelcomeSession);

@@ -135,7 +135,7 @@ describe('Source.llm().mock()', () => {
     });
 
     it('should use callback for dynamic responses', async () => {
-      const session = Session.withVars({ name: 'Alice' });
+      const session = Session.withContext({ name: 'Alice' });
       const mockSource = Source.llm()
         .temperature(0.9)
         .mock()

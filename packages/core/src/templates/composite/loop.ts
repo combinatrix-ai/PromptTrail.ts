@@ -1,12 +1,11 @@
-import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
 import type { Template } from '../base';
 import { Composite } from './composite';
 
 /**
  * A template that executes its body templates repeatedly until a condition is met.
- * @template TAttrs - Type of the session metadata.
- * @template TVars - Type of the session context.
+ * @template TMetadata - Type of the session metadata.
+ * @template TContext - Type of the session context.
  * @class
  * @public
  * @remarks
@@ -14,10 +13,10 @@ import { Composite } from './composite';
  * enabling repeated execution until a specified condition is met.
  */
 export class Loop<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends Composite<TAttrs, TVars> {
-  // implements ICompositeTemplateFactoryMethods<TAttrs, TVars>
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends Composite<TMetadata, TContext> {
+  // implements ICompositeTemplateFactoryMethods<TMetadata, TContext>
   /**
    * Creates a new Loop template.
    * @param options - Configuration options for the loop
@@ -26,7 +25,7 @@ export class Loop<
     options: {
       bodyTemplate?: Template<any, any> | Template<any, any>[];
       // Do not make loopIf optional, to prevent unwanted infinite loops
-      loopIf?: (session: Session<TVars, TAttrs>) => boolean;
+      loopIf?: (session: Session<TContext, TMetadata>) => boolean;
       maxIterations?: number;
     } = {},
   ) {
@@ -63,7 +62,9 @@ export class Loop<
    * @param condition - Function that evaluates the session and returns true when the loop should continue
    * @returns This instance for method chaining
    */
-  setLoopIf(condition: (session: Session<TVars, TAttrs>) => boolean): this {
+  setLoopIf(
+    condition: (session: Session<TContext, TMetadata>) => boolean,
+  ): this {
     this.loopCondition = condition;
     return this;
   }

@@ -1,4 +1,4 @@
-import type { Attrs, Session, Vars } from '../../session';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
 import { LlmSource, Source } from '../../source';
 import { TemplateBase } from '../base';
 import { LLMConfig } from './assistant';
@@ -6,16 +6,18 @@ import { LLMConfig } from './assistant';
 /**
  * Type for scoring function that evaluates a session
  */
-export type ScoringFunction<TVars extends Vars, TAttrs extends Attrs> = (
-  session: Session<TVars, TAttrs>,
-) => number;
+export type ScoringFunction<
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
+> = (session: Session<TContext, TMetadata>) => number;
 
 /**
  * Type for aggregation strategy function
  */
-export type AggregationStrategy<TVars extends Vars, TAttrs extends Attrs> = (
-  sessions: Session<TVars, TAttrs>[],
-) => Session<TVars, TAttrs>;
+export type AggregationStrategy<
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
+> = (sessions: Session<TContext, TMetadata>[]) => Session<TContext, TMetadata>;
 
 /**
  * Built-in aggregation strategies
@@ -25,9 +27,10 @@ export type BuiltInStrategy = 'keep_all' | 'best';
 /**
  * Union type for all possible strategies
  */
-export type Strategy<TVars extends Vars, TAttrs extends Attrs> =
-  | BuiltInStrategy
-  | AggregationStrategy<TVars, TAttrs>;
+export type Strategy<
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
+> = BuiltInStrategy | AggregationStrategy<TContext, TMetadata>;
 
 /**
  * Configuration for a parallel source execution
@@ -46,27 +49,27 @@ export type ParallelSourceInput = LLMConfig | LlmSource;
  * Configuration object for creating Parallel templates
  */
 export interface ParallelConfig<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
+  TContext extends SessionContext = Record<string, any>,
+  TMetadata extends MessageMetadata = Record<string, any>,
 > {
   sources?: Array<{ source: ParallelSourceInput; repetitions?: number }>;
-  scoringFunction?: ScoringFunction<TVars, TAttrs>;
-  strategy?: Strategy<TVars, TAttrs>;
+  scoringFunction?: ScoringFunction<TContext, TMetadata>;
+  strategy?: Strategy<TContext, TMetadata>;
 }
 
 /**
  * Builder class for creating Parallel configurations
  */
 export class ParallelBuilder<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
 > {
   private sources: Array<{
     source: ParallelSourceInput;
     repetitions?: number;
   }> = [];
-  private scoringFunction?: ScoringFunction<TVars, TAttrs>;
-  private strategy: Strategy<TVars, TAttrs> = 'keep_all';
+  private scoringFunction?: ScoringFunction<TContext, TMetadata>;
+  private strategy: Strategy<TContext, TMetadata> = 'keep_all';
 
   withSource(source: ParallelSourceInput, repetitions: number = 1): this {
     this.sources.push({ source, repetitions });
@@ -81,18 +84,18 @@ export class ParallelBuilder<
   }
 
   withAggregationFunction(
-    scoringFunction: ScoringFunction<TVars, TAttrs>,
+    scoringFunction: ScoringFunction<TContext, TMetadata>,
   ): this {
     this.scoringFunction = scoringFunction;
     return this;
   }
 
-  withStrategy(strategy: Strategy<TVars, TAttrs>): this {
+  withStrategy(strategy: Strategy<TContext, TMetadata>): this {
     this.strategy = strategy;
     return this;
   }
 
-  build(): ParallelConfig<TVars, TAttrs> {
+  build(): ParallelConfig<TContext, TMetadata> {
     return {
       sources: this.sources.map((s) => ({
         source: this.createLlmSource(s.source),
@@ -176,8 +179,8 @@ export class ParallelBuilder<
 /**
  * A template that executes multiple LLM sources in parallel and aggregates results.
  *
- * @template TAttrs - Type of the session metadata.
- * @template TVars - Type of the session context.
+ * @template TMetadata - Type of the session metadata.
+ * @template TContext - Type of the session context.
  *
  * @example
  * ```typescript
@@ -227,12 +230,12 @@ export class ParallelBuilder<
  * @public
  */
 export class Parallel<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> extends TemplateBase<TAttrs, TVars> {
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends TemplateBase<TMetadata, TContext> {
   private sources: ParallelSourceConfig[] = [];
-  private scoringFunction?: ScoringFunction<TVars, TAttrs>;
-  private strategy: Strategy<TVars, TAttrs> = 'keep_all';
+  private scoringFunction?: ScoringFunction<TContext, TMetadata>;
+  private strategy: Strategy<TContext, TMetadata> = 'keep_all';
 
   /**
    * Creates a new Parallel template.
@@ -241,8 +244,8 @@ export class Parallel<
    */
   constructor(options?: {
     sources?: Array<{ source: ParallelSourceInput; repetitions?: number }>;
-    scoringFunction?: ScoringFunction<TVars, TAttrs>;
-    strategy?: Strategy<TVars, TAttrs>;
+    scoringFunction?: ScoringFunction<TContext, TMetadata>;
+    strategy?: Strategy<TContext, TMetadata>;
   }) {
     super();
 
@@ -276,7 +279,7 @@ export class Parallel<
    *
    * @returns The scoring function or undefined if not set
    */
-  getScoringFunction(): ScoringFunction<TVars, TAttrs> | undefined {
+  getScoringFunction(): ScoringFunction<TContext, TMetadata> | undefined {
     return this.scoringFunction;
   }
 
@@ -285,7 +288,7 @@ export class Parallel<
    *
    * @returns The current strategy
    */
-  getStrategy(): Strategy<TVars, TAttrs> {
+  getStrategy(): Strategy<TContext, TMetadata> {
     return this.strategy;
   }
 
@@ -296,8 +299,8 @@ export class Parallel<
    * @returns Promise resolving to the aggregated session
    */
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const currentSession = this.ensureSession(session);
 
     if (this.sources.length === 0) {
@@ -305,7 +308,7 @@ export class Parallel<
     }
 
     // Create execution tasks for all sources with their repetitions
-    const executionTasks: Promise<Session<TVars, TAttrs>>[] = [];
+    const executionTasks: Promise<Session<TContext, TMetadata>>[] = [];
 
     for (const config of this.sources) {
       for (let i = 0; i < config.repetitions; i++) {
@@ -328,8 +331,8 @@ export class Parallel<
    */
   private async executeSource(
     source: LlmSource,
-    session: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     try {
       const content = await source.getContent(session);
 
@@ -337,7 +340,7 @@ export class Parallel<
       return session.addMessage({
         type: 'assistant',
         content: content.content,
-        attrs: content.metadata as TAttrs,
+        attrs: content.metadata as TMetadata,
       });
     } catch (error) {
       console.warn(`Parallel source execution failed:`, error);
@@ -352,9 +355,9 @@ export class Parallel<
    * @private
    */
   private async aggregateResults(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    results: Session<TContext, TMetadata>[],
+    originalSession: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     if (results.length === 0) {
       return originalSession;
     }
@@ -382,9 +385,9 @@ export class Parallel<
    * @private
    */
   private aggregateKeepAll(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+    results: Session<TContext, TMetadata>[],
+    originalSession: Session<TContext, TMetadata>,
+  ): Session<TContext, TMetadata> {
     let aggregatedSession = originalSession;
 
     for (const result of results) {
@@ -407,9 +410,9 @@ export class Parallel<
    * @private
    */
   private async aggregateBest(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    results: Session<TContext, TMetadata>[],
+    originalSession: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     if (!this.scoringFunction) {
       // Use default LangChain-style scoring function
       return await this.aggregateBestWithDefaultScoring(
@@ -439,9 +442,9 @@ export class Parallel<
    * @private
    */
   private async aggregateBestWithDefaultScoring(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    results: Session<TContext, TMetadata>[],
+    originalSession: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     if (results.length === 0) {
       return originalSession;
     }
@@ -506,7 +509,7 @@ export class Parallel<
    * @private
    */
   private createEvaluationPrompt(
-    originalSession: Session<TVars, TAttrs>,
+    originalSession: Session<TContext, TMetadata>,
     responses: Array<{ index: number; response: string }>,
   ): string {
     // Get the original user query/context

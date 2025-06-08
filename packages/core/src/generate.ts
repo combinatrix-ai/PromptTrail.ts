@@ -4,14 +4,14 @@ import { createOpenAI } from '@ai-sdk/openai';
 import {
   generateText as aiSdkGenerateText,
   streamText as aiSdkStreamText,
+  tool as aiTool,
   LanguageModelV1,
   Output,
   ToolSet,
-  tool as aiTool,
 } from 'ai';
 import { z } from 'zod';
 import type { Message } from './message';
-import type { Session, Attrs, Vars } from './session';
+import type { MessageMetadata, Session, SessionContext } from './session';
 import type { LLMOptions } from './source';
 
 export interface SchemaGenerationOptions {
@@ -131,10 +131,13 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
   );
 }
 
-export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
-  session: Session<TVars, TAttrs>,
+export async function generateText<
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
+>(
+  session: Session<TContext, TMetadata>,
   options: LLMOptions,
-): Promise<Message<TAttrs>> {
+): Promise<Message<TMetadata>> {
   const messages = convertSessionToAiSdkMessages(session);
   const provider = createProvider(options);
 
@@ -181,13 +184,13 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 }
 
 export async function generateWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
 >(
-  session: Session<TVars, TAttrs>,
+  session: Session<TContext, TMetadata>,
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message<TMetadata> & { structuredOutput?: unknown }> {
   const messages = convertSessionToAiSdkMessages(session);
   const provider = createProvider(options);
 
@@ -258,12 +261,12 @@ export async function generateWithSchema<
 }
 
 export async function* generateTextStream<
-  TVars extends Vars,
-  TAttrs extends Attrs,
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
 >(
-  session: Session<TVars, TAttrs>,
+  session: Session<TContext, TMetadata>,
   options: LLMOptions,
-): AsyncGenerator<Message<TAttrs>, void, unknown> {
+): AsyncGenerator<Message<TMetadata>, void, unknown> {
   const messages = convertSessionToAiSdkMessages(session);
   const provider = createProvider(options);
 

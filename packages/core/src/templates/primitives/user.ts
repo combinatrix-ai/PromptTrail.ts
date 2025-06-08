@@ -1,7 +1,7 @@
 import * as readline from 'node:readline/promises';
 import { ValidationError } from '../../errors';
 import type { UserMessage } from '../../message';
-import type { Attrs, Session, Vars } from '../../session';
+import type { MessageMetadata, Session, SessionContext } from '../../session';
 import type { Source } from '../../source';
 import { interpolateTemplate } from '../../utils/template_interpolation';
 import type { IValidator } from '../../validators/base';
@@ -27,9 +27,9 @@ export type UserContentInput =
   | Source<string>;
 
 export class User<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> extends TemplateBase<TAttrs, TVars> {
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> extends TemplateBase<TMetadata, TContext> {
   private content: UserContentInput;
   private options: UserTemplateOptions;
   private currentIndex = 0;
@@ -61,7 +61,7 @@ export class User<
   }
 
   private async getStringContent(
-    session: Session<TVars, TAttrs>,
+    session: Session<TContext, TMetadata>,
   ): Promise<string> {
     if (this.isSourceBased) {
       const source = this.content as Source<string>;
@@ -132,7 +132,7 @@ export class User<
 
   private async validateContent(
     content: string,
-    session: Session<TVars, TAttrs>,
+    session: Session<TContext, TMetadata>,
   ): Promise<void> {
     if (this.isSourceBased || !this.options.validation) return;
 
@@ -145,13 +145,13 @@ export class User<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>> {
     const validSession = this.ensureSession(session);
 
     if (this.isSourceBased) {
       const content = await this.getStringContent(validSession);
-      const message: UserMessage<TAttrs> = {
+      const message: UserMessage<TMetadata> = {
         type: 'user',
         content,
       };
@@ -168,7 +168,7 @@ export class User<
         const content = await this.getStringContent(validSession);
         await this.validateContent(content, validSession);
 
-        const message: UserMessage<TAttrs> = {
+        const message: UserMessage<TMetadata> = {
           type: 'user',
           content,
         };

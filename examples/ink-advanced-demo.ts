@@ -127,7 +127,7 @@ async function advancedDemo() {
   )
     .transform((session) => {
       // Update session stats
-      return session.withVars({
+      return session.withContext({
         sessionStart: new Date().toISOString(),
         messageCount: session.messages.length,
       });
@@ -156,7 +156,7 @@ async function advancedDemo() {
             const toolCallsCount = lastMessage?.toolCalls?.length || 0;
 
             if (toolCallsCount > 0) {
-              return session.withVars({
+              return session.withContext({
                 toolsUsed: session.getVar('toolsUsed', 0) + toolCallsCount,
                 lastToolUsed: lastMessage?.toolCalls?.[0]?.name,
                 lastToolTime: new Date().toISOString(),
@@ -175,7 +175,7 @@ async function advancedDemo() {
     )
     .transform((session) => {
       // Final session summary
-      return session.withVars({
+      return session.withContext({
         sessionEnd: new Date().toISOString(),
         finalMessageCount: session.messages.length,
         totalToolsUsed: session.getVar('toolsUsed', 0),

@@ -1,25 +1,27 @@
-import type { Attrs, Vars } from '../session';
+import type { MessageMetadata, SessionContext } from '../session';
 import { Session } from '../session';
 
 export interface Template<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
 > {
-  execute(session?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
+  execute(
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>>;
 }
 
 export abstract class TemplateBase<
-  TAttrs extends Attrs = Record<string, any>,
-  TVars extends Vars = Record<string, any>,
-> implements Template<TAttrs, TVars>
+  TMetadata extends MessageMetadata = Record<string, any>,
+  TContext extends SessionContext = Record<string, any>,
+> implements Template<TMetadata, TContext>
 {
   abstract execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>>;
+    session?: Session<TContext, TMetadata>,
+  ): Promise<Session<TContext, TMetadata>>;
 
   protected ensureSession(
-    session?: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
-    return session || Session.create<TVars, TAttrs>();
+    session?: Session<TContext, TMetadata>,
+  ): Session<TContext, TMetadata> {
+    return session || Session.create<TContext, TMetadata>();
   }
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Attrs, Session, Vars } from '../session';
+import type { MessageMetadata, Session, SessionContext } from '../session';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
 import { Loop } from './composite/loop';
@@ -12,11 +12,7 @@ import {
   type LLMConfig,
 } from './primitives/assistant';
 import { Conditional } from './primitives/conditional';
-import {
-  Parallel,
-  ParallelBuilder,
-  type ParallelConfig,
-} from './primitives/parallel';
+import { Parallel, ParallelBuilder } from './primitives/parallel';
 import { System, type SystemContentInput } from './primitives/system';
 import { Transform } from './primitives/transform';
 import {
@@ -26,38 +22,48 @@ import {
 } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
 
-export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
-  implements Template<TM, TC>, Fluent<TM, TC>
+export class Agent<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >
+  implements Template<TMetadata, TContext>, Fluent<TMetadata, TContext>
 {
   private constructor(
-    private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
+    private readonly root: Fluent<TMetadata, TContext> = new Sequence<
+      TMetadata,
+      TContext
+    >(),
   ) {}
 
-  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>() {
-    return new Agent<TC, TM>();
+  static create<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >() {
+    return new Agent<TContext, TMetadata>();
   }
 
-  static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource: SystemContentInput,
-  ) {
-    return new Agent<TC, TM>().system(contentOrSource);
+  static system<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >(contentOrSource: SystemContentInput) {
+    return new Agent<TContext, TMetadata>().system(contentOrSource);
   }
 
-  static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    content?: UserContentInput,
-    options?: UserTemplateOptions,
-  ) {
-    return new Agent<TC, TM>().user(content, options);
+  static user<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >(content?: UserContentInput, options?: UserTemplateOptions) {
+    return new Agent<TContext, TMetadata>().user(content, options);
   }
 
-  static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    config?: AssistantContentInput,
-    options?: AssistantTemplateOptions,
-  ) {
-    return new Agent<TC, TM>().assistant(config, options);
+  static assistant<
+    TContext extends SessionContext = Record<string, any>,
+    TMetadata extends MessageMetadata = Record<string, any>,
+  >(config?: AssistantContentInput, options?: AssistantTemplateOptions) {
+    return new Agent<TContext, TMetadata>().assistant(config, options);
   }
 
-  then(t: Template<TM, TC>) {
+  then(t: Template<TMetadata, TContext>) {
     this.root.then(t);
     return this;
   }
@@ -175,25 +181,33 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     }
   }
 
-  transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
+  transform(
+    transform: (
+      s: Session<TContext, TMetadata>,
+    ) => Session<TContext, TMetadata>,
+  ) {
     this.root.then(new Transform(transform));
     return this;
   }
 
-  parallel(template: Parallel<TM, TC>): this;
+  parallel(template: Parallel<TMetadata, TContext>): this;
   parallel(
-    configFn: (builder: ParallelBuilder<TM, TC>) => ParallelBuilder<TM, TC>,
+    configFn: (
+      builder: ParallelBuilder<TMetadata, TContext>,
+    ) => ParallelBuilder<TMetadata, TContext>,
   ): this;
   parallel(
     templateOrConfig:
-      | Parallel<TM, TC>
-      | ((builder: ParallelBuilder<TM, TC>) => ParallelBuilder<TM, TC>),
+      | Parallel<TMetadata, TContext>
+      | ((
+          builder: ParallelBuilder<TMetadata, TContext>,
+        ) => ParallelBuilder<TMetadata, TContext>),
   ): this {
     if (typeof templateOrConfig === 'function') {
-      const builder = new ParallelBuilder<TM, TC>();
+      const builder = new ParallelBuilder<TMetadata, TContext>();
       const configuredBuilder = templateOrConfig(builder);
       const config = configuredBuilder.build();
-      const parallel = new Parallel<TM, TC>(config);
+      const parallel = new Parallel<TMetadata, TContext>(config);
       this.root.then(parallel);
     } else {
       this.root.then(templateOrConfig);
@@ -202,11 +216,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   loop(
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    loopIf: boolean | ((s: Session<TC, TM>) => boolean),
+    builderFn: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
+    loopIf: boolean | ((s: Session<TContext, TMetadata>) => boolean),
     maxIterations?: number,
   ) {
-    const innerAgent = Agent.create<TC, TM>();
+    const innerAgent = Agent.create<TContext, TMetadata>();
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
 
@@ -218,21 +234,29 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  loopForever(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
+  loopForever(
+    builderFn: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
+  ) {
     return this.loop(builderFn, true);
   }
 
   conditional(
-    condition: (s: Session<TC, TM>) => boolean,
-    thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    condition: (s: Session<TContext, TMetadata>) => boolean,
+    thenBuilderFn: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
+    elseBuilderFn?: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
   ) {
-    const thenAgent = Agent.create<TC, TM>();
+    const thenAgent = Agent.create<TContext, TMetadata>();
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
-    let elseTemplate: Template<TM, TC> | undefined;
+    let elseTemplate: Template<TMetadata, TContext> | undefined;
     if (elseBuilderFn) {
-      const elseAgent = Agent.create<TC, TM>();
+      const elseAgent = Agent.create<TContext, TMetadata>();
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
@@ -247,10 +271,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   subroutine(
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    opts?: ISubroutineTemplateOptions<TM, TC>,
+    builderFn: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
+    opts?: ISubroutineTemplateOptions<TMetadata, TContext>,
   ) {
-    const innerAgent = Agent.create<TC, TM>();
+    const innerAgent = Agent.create<TContext, TMetadata>();
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
@@ -258,8 +284,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
-    const innerAgent = Agent.create<TC, TM>();
+  sequence(
+    builderFn: (
+      agent: Agent<TContext, TMetadata>,
+    ) => Agent<TContext, TMetadata>,
+  ) {
+    const innerAgent = Agent.create<TContext, TMetadata>();
     const builtAgent = builderFn(innerAgent);
     const sequenceTemplate = builtAgent.build();
 
@@ -271,7 +301,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this.root;
   }
 
-  execute(session?: Session<TC, TM> | undefined): Promise<Session<TC, TM>> {
+  execute(
+    session?: Session<TContext, TMetadata> | undefined,
+  ): Promise<Session<TContext, TMetadata>> {
     return this.root.execute(session);
   }
 }

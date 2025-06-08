@@ -305,7 +305,7 @@ PromptTrail.ts uses **Handlebars** for powerful template interpolation with dyna
 
 // Transform example: Recipe recommendation system
 const session = Session.create({
-  vars: {
+  context: {
     dietaryRestrictions: ['vegetarian', 'gluten-free'],
     availableTime: 30,
     ingredients: ['tomatoes', 'pasta', 'cheese', 'herbs'],
@@ -345,7 +345,7 @@ console.log('Estimated time:', result.getVar('estimatedTime'), 'minutes');
 ```typescript
 // Loop through arrays in templates
 const session = Session.create({
-  vars: {
+  context: {
     tasks: [
       { title: 'Learn TypeScript', status: 'complete' },
       { title: 'Build app', status: 'pending' }

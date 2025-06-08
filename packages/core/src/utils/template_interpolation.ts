@@ -1,6 +1,5 @@
 import Handlebars from 'handlebars';
-import type { Session } from '../session';
-import type { Attrs, Vars } from '../session';
+import type { MessageMetadata, Session, SessionContext } from '../session';
 
 // Create a dedicated Handlebars instance for PromptTrail
 const handlebars = Handlebars.create();
@@ -164,9 +163,15 @@ function registerPromptTrailHelpers() {
  * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<TVars extends Vars, TAttrs extends Attrs>(
+export function interpolateTemplate<
+  TContext extends SessionContext,
+  TMetadata extends MessageMetadata,
+>(
   template: string,
-  session: Session<TVars, TAttrs> | Vars | Record<string, unknown>,
+  session:
+    | Session<TContext, TMetadata>
+    | SessionContext
+    | Record<string, unknown>,
 ): string {
   // Extract the context data from the session
   let context: Record<string, unknown>;
