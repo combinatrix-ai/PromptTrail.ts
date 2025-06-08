@@ -86,99 +86,68 @@ export class Agent<
     return this;
   }
 
-  extract(config: LLMConfig & { schema: z.ZodType }): this;
-  extract(config: LLMConfig & { schema: z.ZodType }, fields: string[]): this;
+  /**
+   * Extract structured data from LLM response to session variables
+   * @param schema - Zod schema defining the structure to extract
+   * @param mapping - Where to store the data:
+   *   - boolean: Auto-map all schema fields to top-level session vars (overrides existing)
+   *   - string: Store entire object in this variable name
+   *   - string[]: Extract only specified fields to same-named session vars
+   *   - Record<string, string>: Map schema fields to custom variable names
+   * @param config - Optional LLM configuration (provider, model, etc.)
+   */
+  extract(schema: z.ZodType, config?: LLMConfig): this;
   extract(
-    config: LLMConfig & { schema: z.ZodType },
-    mapping: Record<string, string>,
+    schema: z.ZodType,
+    mapping: boolean | string | string[] | Record<string, string>,
+    config?: LLMConfig,
   ): this;
   extract(
-    config: LLMConfig & { schema: z.ZodType },
-    extractConfig?: string[] | Record<string, string>,
+    schema: z.ZodType,
+    mappingOrConfig?:
+      | boolean
+      | string
+      | string[]
+      | Record<string, string>
+      | LLMConfig,
+    config?: LLMConfig,
   ): this {
-    const { schema, mode, functionName, ...llmConfig } = config;
+    // Handle parameter overloading: extract(schema, config) vs extract(schema, mapping, config)
+    let actualMapping: boolean | string | string[] | Record<string, string>;
+    let actualConfig: LLMConfig | undefined;
 
-    const extractToVars = extractConfig || true;
+    if (mappingOrConfig === undefined) {
+      // extract(schema) - default to auto-mapping
+      actualMapping = true;
+      actualConfig = undefined;
+    } else if (
+      typeof mappingOrConfig === 'object' &&
+      !Array.isArray(mappingOrConfig) &&
+      ('provider' in mappingOrConfig ||
+        'model' in mappingOrConfig ||
+        'temperature' in mappingOrConfig)
+    ) {
+      // extract(schema, config) - mappingOrConfig is LLMConfig
+      actualMapping = true; // Default to auto-mapping
+      actualConfig = mappingOrConfig as LLMConfig;
+    } else {
+      // extract(schema, mapping, config?) - mappingOrConfig is mapping
+      actualMapping = mappingOrConfig as
+        | boolean
+        | string
+        | string[]
+        | Record<string, string>;
+      actualConfig = config;
+    }
 
     this.root.then(
-      new Assistant(llmConfig, {
+      new Assistant(actualConfig, {
         schema,
-        mode: mode || 'structured_output',
-        functionName,
-        extractToVars,
+        mode: 'structured_output',
+        extractToVars: actualMapping,
       }),
     );
     return this;
-  }
-
-  structured<TSchema extends z.ZodType>(
-    schema: TSchema,
-    options?: {
-      provider?: string;
-      model?: string;
-      temperature?: number;
-      maxTokens?: number;
-      mode?: 'tool' | 'structured_output';
-      functionName?: string;
-      extractToVars?: boolean | string[] | Record<string, string>;
-    },
-  ): this {
-    const {
-      provider = 'openai',
-      extractToVars,
-      mode = 'structured_output',
-      ...config
-    } = options || {};
-
-    const llmConfig: LLMConfig = {
-      provider: provider as any,
-      ...config,
-    };
-
-    if (extractToVars) {
-      const extractConfig =
-        typeof extractToVars === 'boolean' ? undefined : extractToVars;
-
-      if (extractConfig) {
-        if (Array.isArray(extractConfig)) {
-          return this.extract(
-            {
-              ...llmConfig,
-              schema,
-              mode,
-              functionName: options?.functionName,
-            },
-            extractConfig,
-          );
-        } else {
-          return this.extract(
-            {
-              ...llmConfig,
-              schema,
-              mode,
-              functionName: options?.functionName,
-            },
-            extractConfig,
-          );
-        }
-      } else {
-        return this.extract({
-          ...llmConfig,
-          schema,
-          mode,
-          functionName: options?.functionName,
-        });
-      }
-    } else {
-      this.root.then(
-        new Assistant(llmConfig, {
-          schema,
-          mode,
-          functionName: options?.functionName,
-        }),
-      );
-      return this;
-    }
   }
 
   transform(

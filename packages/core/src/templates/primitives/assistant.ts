@@ -33,6 +33,7 @@ export interface LLMConfig {
 
 export type ExtractToVarsConfig =
   | boolean // Extract all schema fields to vars
+  | string // Store entire object in this variable name
   | string[] // Extract only specified fields
   | Record<string, string>; // Map schema fields to var names
 
@@ -368,17 +369,20 @@ export class Assistant<
     const newVars: Partial<TContext> = {};
 
     if (this.extractToVarsConfig === true) {
-      // Extract all fields directly
+      // Extract all fields directly to top-level session vars
       Object.assign(newVars, structuredOutput);
+    } else if (typeof this.extractToVarsConfig === 'string') {
+      // Store entire object in specified variable name
+      (newVars as any)[this.extractToVarsConfig] = structuredOutput;
     } else if (Array.isArray(this.extractToVarsConfig)) {
-      // Extract only specified fields
+      // Extract only specified fields to same-named session vars
       for (const field of this.extractToVarsConfig) {
         if (field in structuredOutput) {
           (newVars as any)[field] = structuredOutput[field];
         }
       }
     } else if (typeof this.extractToVarsConfig === 'object') {
-      // Map schema fields to var names
+      // Map schema fields to custom variable names
       for (const [schemaField, varName] of Object.entries(
         this.extractToVarsConfig,
       )) {

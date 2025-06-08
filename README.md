@@ -477,10 +477,7 @@ const userData = session.getLastMessage()?.structuredContent;
 const agentWithExtraction = Agent.create()
   .system('Extract user info from text.')
   .user("Hi, I'm Alice, 25, love coding and music.")
-  .extract({
-    provider: 'openai',
-    schema: userSchema,
-  }) // Agent.extract() - creates Assistant with schema + auto-extraction
+  .extract(userSchema) // Auto-map all fields to top-level session vars
   .user(
     'Hi {{name}}, you are {{age}} years old and like {{join interests ", "}}',
   )
@@ -491,36 +488,39 @@ const agentWithMapping = Agent.create()
   .system('Extract recipe details.')
   .user('I want to make pasta with tomatoes in 30 minutes')
   .extract(
-    {
-      provider: 'openai',
-      schema: z.object({
-        recipeName: z.string(),
-        cookingTime: z.number(),
-        difficulty: z.enum(['easy', 'medium', 'hard']),
-      }),
-    },
+    z.object({
+      recipeName: z.string(),
+      cookingTime: z.number(),
+      difficulty: z.enum(['easy', 'medium', 'hard']),
+    }),
     {
       recipeName: 'suggestedRecipe',
       cookingTime: 'estimatedTime',
       difficulty: 'recipeComplexity',
     },
+    { provider: 'openai' }, // Optional config
   )
   .user(
     'Great! {{suggestedRecipe}} takes {{estimatedTime}} minutes and is {{recipeComplexity}}',
   )
   .assistant();
 
-// Partial extraction (Agent convenience method)
+// Extract specific fields only (using array mapping)
 const agentPartial = Agent.create()
   .system('Analyze the request.')
   .user('Complex request with many details...')
   .extract(
-    {
-      provider: 'openai',
-      schema: complexSchema,
-    },
-    ['title', 'priority'],
-  ); // Only extract specific fields
+    complexSchema,
+    ['title', 'priority'], // Only extract these fields to same-named vars
+    { provider: 'openai' },
+  );
+
+// Store entire object in a single variable
+const agentWithObject = Agent.create()
+  .system('Extract product details.')
+  .user('iPhone 15 Pro, released in 2023, starting at $999')
+  .extract(productSchema, 'product') // Store as session.vars.product
+  .user('The {{product.name}} costs {{product.price}}');
 
 // Alternative: Using assistant with options (still supported)
 const agentWithOptions = Agent.create()

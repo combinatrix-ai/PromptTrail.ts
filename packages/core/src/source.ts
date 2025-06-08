@@ -219,6 +219,153 @@ export abstract class ModelSource extends Source<ModelOutput> {
   }
 }
 
+/**
+ * Base class for Sources that need validation fluent API and clone helpers
+ * Eliminates code duplication across CLISource, LiteralSource, CallbackSource, etc.
+ */
+export abstract class BaseValidatedSource<
+  T,
+  TContent = unknown,
+> extends Source<T> {
+  protected content: TContent;
+
+  constructor(content: TContent, options?: ValidationOptions) {
+    super(options);
+    this.content = content;
+  }
+
+  /**
+   * Generic clone method that subclasses can override for content merging
+   * Eliminates duplicate clone() methods across Source classes
+   */
+  protected clone(
+    newContent?: TContent,
+    newValidationOptions?: ValidationOptions,
+  ): this {
+    const mergedValidationOptions = newValidationOptions || {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+
+    const Constructor = this.constructor as new (
+      content: TContent,
+      options?: ValidationOptions,
+    ) => this;
+    return new Constructor(newContent ?? this.content, mergedValidationOptions);
+  }
+
+  /**
+   * Helper to get current validation options
+   */
+  protected getValidationOptions(): ValidationOptions {
+    return {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+  }
+
+  // Shared fluent API methods - eliminates duplication across Source classes
+  validate(validator: IValidator): this {
+    return this.clone(this.content, {
+      ...this.getValidationOptions(),
+      validator,
+    });
+  }
+
+  withMaxAttempts(attempts: number): this {
+    return this.clone(this.content, {
+      ...this.getValidationOptions(),
+      maxAttempts: attempts,
+    });
+  }
+
+  withRaiseError(raise: boolean): this {
+    return this.clone(this.content, {
+      ...this.getValidationOptions(),
+      raiseError: raise,
+    });
+  }
+
+  /**
+   * Reusable validation execution helper that eliminates duplicate validation loops
+   * Handles retries, validation, and error handling consistently across Source classes
+   */
+  protected async executeWithValidation<TResult>(
+    session: Session<any, any>,
+    generateFn: () => Promise<TResult | string>,
+    extractContent?: (result: TResult) => string,
+  ): Promise<TResult> {
+    let attempts = 0;
+
+    while (attempts < this.maxAttempts) {
+      attempts++;
+
+      try {
+        const result = await generateFn();
+        const contentToValidate = extractContent
+          ? extractContent(result)
+          : typeof result === 'string'
+            ? result
+            : String(result);
+
+        const validationResult = await this.validateContent(
+          contentToValidate,
+          session,
+        );
+
+        if (validationResult.isValid) {
+          return result;
+        }
+
+        // Handle validation failure with retries
+        const isLastAttempt = attempts >= this.maxAttempts;
+        if (isLastAttempt) {
+          if (this.raiseError) {
+            throw new ValidationError(
+              `Validation failed after ${attempts} attempts: ${validationResult.instruction || ''}`,
+            );
+          } else {
+            console.warn(
+              `${this.constructor.name}: Validation failed but raiseError is false. Returning content anyway.`,
+            );
+            return result;
+          }
+        } else {
+          console.log(
+            `Validation attempt ${attempts} failed: ${validationResult?.instruction || 'Invalid input'}. Retrying...`,
+          );
+        }
+      } catch (error) {
+        const isLastAttempt = attempts >= this.maxAttempts;
+        if (isLastAttempt) {
+          if (this.raiseError) {
+            throw error;
+          } else {
+            console.warn(
+              `${this.constructor.name}: Error occurred but raiseError is false. Returning default value.`,
+            );
+            return this.getDefaultValue() as TResult;
+          }
+        } else {
+          console.warn(
+            `${this.constructor.name} attempt ${attempts} failed: ${(error as Error).message}. Retrying...`,
+          );
+        }
+      }
+    }
+
+    throw new Error(
+      `${this.constructor.name} execution failed unexpectedly after ${this.maxAttempts} attempts.`,
+    );
+  }
+
+  protected getDefaultValue(): T {
+    return '' as T;
+  }
+}
+
 export class RandomSource extends StringSource {
   constructor(
     private contentList: string[],
@@ -323,6 +470,15 @@ export class CLISource extends StringSource {
     );
   }
 
+  // Helper to get current validation options
+  private getValidationOptions(): ValidationOptions {
+    return {
+      validator: this.validator,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+  }
+
   // Fluent API methods - all return new instances
   prompt(text: string): CLISource {
     return this.clone(text, this.defaultVal);
@@ -334,24 +490,21 @@ export class CLISource extends StringSource {
 
   validate(validator: IValidator): CLISource {
     return this.clone(this.promptText, this.defaultVal, {
+      ...this.getValidationOptions(),
       validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: this.raiseError,
     });
   }
 
   withMaxAttempts(attempts: number): CLISource {
     return this.clone(this.promptText, this.defaultVal, {
-      validator: this.validator,
+      ...this.getValidationOptions(),
       maxAttempts: attempts,
-      raiseError: this.raiseError,
     });
   }
 
   withRaiseError(raise: boolean): CLISource {
     return this.clone(this.promptText, this.defaultVal, {
-      validator: this.validator,
-      maxAttempts: this.maxAttempts,
+      ...this.getValidationOptions(),
       raiseError: raise,
     });
   }
@@ -492,165 +645,42 @@ export class CLISource extends StringSource {
 /**
  * Callback-based content source with fluent API
  */
-export class CallbackSource extends StringSource {
-  private callback: (context: { context?: SessionContext }) => Promise<string>;
-
+export class CallbackSource extends BaseValidatedSource<
+  string,
+  (context: { context?: SessionContext }) => Promise<string>
+> {
   constructor(
     callback: (context: { context?: SessionContext }) => Promise<string>,
     options?: ValidationOptions,
   ) {
-    super(options);
-    this.callback = callback;
+    super(callback, options);
   }
 
-  // Helper method to create new instance with merged options
-  private clone(
-    newCallback?: (context: { context?: SessionContext }) => Promise<string>,
-    newValidationOptions?: ValidationOptions,
-  ): CallbackSource {
-    const mergedValidationOptions = newValidationOptions || {
-      validator: this.validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: this.raiseError,
-    };
-
-    return new CallbackSource(
-      newCallback ?? this.callback,
-      mergedValidationOptions,
-    );
-  }
-
-  // Fluent API methods - all return new instances
+  // Fluent API methods - validate(), withMaxAttempts(), withRaiseError() inherited from BaseValidatedSource
   withCallback(
     callback: (context: { context?: SessionContext }) => Promise<string>,
   ): CallbackSource {
     return this.clone(callback);
   }
 
-  validate(validator: IValidator): CallbackSource {
-    return this.clone(this.callback, {
-      validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: this.raiseError,
-    });
-  }
-
-  withMaxAttempts(attempts: number): CallbackSource {
-    return this.clone(this.callback, {
-      validator: this.validator,
-      maxAttempts: attempts,
-      raiseError: this.raiseError,
-    });
-  }
-
-  withRaiseError(raise: boolean): CallbackSource {
-    return this.clone(this.callback, {
-      validator: this.validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: raise,
-    });
-  }
-
   async getContent(session: Session<any, any>): Promise<string> {
-    let attempts = 0;
-    let lastResult: ValidationResult | undefined;
-    let currentInput = '';
-
-    while (attempts < this.maxAttempts) {
-      attempts++;
-      currentInput = await this.callback({ context: session.vars });
-      lastResult = await this.validateContent(currentInput, session);
-
-      if (lastResult.isValid) {
-        return currentInput;
-      }
-
-      const isLastAttempt = attempts >= this.maxAttempts;
-
-      if (isLastAttempt) {
-        if (this.raiseError) {
-          const errorMessage = `Validation failed after ${attempts} attempts: ${lastResult.instruction || ''}`;
-          throw new ValidationError(errorMessage);
-        } else {
-          console.warn(
-            `CallbackSource: Validation failed after ${attempts} attempts. Returning last (invalid) input.`,
-          );
-          return currentInput;
-        }
-      } else {
-        console.log(
-          `Validation attempt ${attempts} failed: ${
-            lastResult?.instruction || 'Invalid input'
-          }. Retrying...`,
-        );
-      }
-    }
-
-    if (!this.raiseError) {
-      return currentInput;
-    } else {
-      throw new Error(
-        `Callback input validation failed unexpectedly after ${this.maxAttempts} attempts.`,
-      );
-    }
+    return this.executeWithValidation(session, async () => {
+      return await this.content({ context: session.vars });
+    });
   }
 }
 
 /**
  * Static text content source with fluent API
  */
-export class LiteralSource extends StringSource {
-  private content: string;
-
+export class LiteralSource extends BaseValidatedSource<string, string> {
   constructor(content: string, options?: ValidationOptions) {
-    super(options);
-    this.content = content;
+    super(content, options);
   }
 
-  // Helper method to create new instance with merged options
-  private clone(
-    newContent?: string,
-    newValidationOptions?: ValidationOptions,
-  ): LiteralSource {
-    const mergedValidationOptions = newValidationOptions || {
-      validator: this.validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: this.raiseError,
-    };
-
-    return new LiteralSource(
-      newContent ?? this.content,
-      mergedValidationOptions,
-    );
-  }
-
-  // Fluent API methods - all return new instances
+  // Fluent API methods - validate(), withMaxAttempts(), withRaiseError() inherited from BaseValidatedSource
   withContent(content: string): LiteralSource {
     return this.clone(content);
-  }
-
-  validate(validator: IValidator): LiteralSource {
-    return this.clone(this.content, {
-      validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: this.raiseError,
-    });
-  }
-
-  withMaxAttempts(attempts: number): LiteralSource {
-    return this.clone(this.content, {
-      validator: this.validator,
-      maxAttempts: attempts,
-      raiseError: this.raiseError,
-    });
-  }
-
-  withRaiseError(raise: boolean): LiteralSource {
-    return this.clone(this.content, {
-      validator: this.validator,
-      maxAttempts: this.maxAttempts,
-      raiseError: raise,
-    });
   }
 
   async getContent(session: Session<any, any>): Promise<string> {

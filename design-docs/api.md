@@ -1,5 +1,34 @@
 # PromptTrail.ts API Documentation
 
+## Table of Contents
+
+### Core APIs
+
+- [Session](#session) - Immutable conversation state management
+- [Agent](#agent-template-builder) - Fluent template composition builder
+- [Source Classes](#source-classes) - Content generation sources
+- [Template Classes](#template-classes) - Conversation flow templates
+
+### Advanced Features
+
+- [Structured Output & Variable Extraction](#structured-output--variable-extraction)
+- [Middleware System](#middleware-system) - Request/response processing
+- [Scenario API](#scenario-api-multi-step-conversations) - Multi-step conversations
+- [Validation System](#validation-system) - Input/output validation
+
+### Developer Tools
+
+- [CLI and Debugging](#cli-and-debugging) - Development interface
+- [Testing Support](#testing-and-development) - Mocking and utilities
+- [Error Classes](#error-classes) - Error handling
+
+### Reference
+
+- [Type Definitions](#type-definitions-reference) - Complete type reference
+- [Usage Examples](#usage-examples) - Real-world examples
+
+---
+
 ## Overview
 
 PromptTrail.ts is a TypeScript-first framework for building structured LLM conversations with type safety and composability. This document provides comprehensive API documentation for all major objects and classes.
@@ -429,18 +458,6 @@ class Transform<TMetadata extends Attrs = Attrs, TContext extends Vars = Vars>
 constructor(transform: (s: Session<TContext, TMetadata>) => Session<TContext, TMetadata>)
 ```
 
-#### Structured
-
-**Instantiation Methods:**
-
-1. **Direct instantiation**: `new Structured(schema, options?)`
-2. **🎯 Preferred: Agent method**: Use `agent.assistant()` with `Source.llm().withSchema()` - Better integration with LLM sources
-
-```typescript
-class Structured<T, TMetadata extends Attrs = Attrs, TContext extends Vars = Vars>
-constructor(schema: SchemaType<T>, options?: StructuredOptions)
-```
-
 ### 🎯 Recommended Instantiation Patterns
 
 **For type safety and better developer experience, prefer Agent methods over direct instantiation:**
@@ -496,13 +513,15 @@ class Agent<TContext extends SessionContext = Record<string, any>, TMetadata ext
 **Template Building:**
 
 - `add(template: Template<TMetadata, TContext>): Agent<TContext, TMetadata>` - Add any template
+- `then(template: Template<TMetadata, TContext>): Agent<TContext, TMetadata>` - Alias for add()
 
 **Message Builders:**
 
 - `system(content: SystemContentInput): Agent<TContext, TMetadata>` - Add system message
 - `user(content?: UserContentInput, options?: UserOptions): Agent<TContext, TMetadata>` - Add user message
 - `assistant(content?: AssistantContentInput, options?: AssistantOptions): Agent<TContext, TMetadata>` - Add assistant message
-- `extract(config: LLMConfig & { schema: z.ZodType }, extractConfig?: ExtractConfig): Agent<TContext, TMetadata>` - Add assistant with structured output and auto-variable extraction
+- `extract(schema: z.ZodType, config?: LLMConfig): Agent<TContext, TMetadata>` - Extract with auto-mapping (all fields)
+- `extract(schema: z.ZodType, mapping: boolean | string | string[] | Record<string, string>, config?: LLMConfig): Agent<TContext, TMetadata>` - Extract with custom mapping
 
 **Composite Template Builders:**
 
@@ -512,11 +531,16 @@ class Agent<TContext extends SessionContext = Record<string, any>, TMetadata ext
 - `loopForever(builderFn): Agent<TContext, TMetadata>` - Add infinite loop with nested agent
 - `subroutine(builderFn, options?): Agent<TContext, TMetadata>` - Add subroutine with nested agent
 - `sequence(builderFn): Agent<TContext, TMetadata>` - Add sequence with nested agent
+- `parallel(builderFn): Agent<TContext, TMetadata>` - Add parallel execution with ParallelBuilder
 
 **Execution:**
 
 - `build(): Template<TMetadata, TContext>` - Build final template
 - `execute(session?: Session<TContext, TMetadata>): Promise<Session<TContext, TMetadata>>` - Execute agent
+- `stream(session?: Session<TContext, TMetadata>): AsyncGenerator<Session<TContext, TMetadata>>` - Stream execution results
+- `validate(): void` - Validate the agent configuration
+
+---
 
 ## Vars and Attrs (Tagged Records)
 
@@ -803,6 +827,471 @@ namespace Source {
 
 ---
 
+## Middleware System
+
+### Middleware Interface
+
+```typescript
+interface Middleware<TIn, TOut> {
+  process(input: TIn, context: MiddlewareContext): Promise<TOut>;
+}
+```
+
+### Pipeline and Context
+
+```typescript
+class MiddlewarePipeline<TIn, TOut>
+
+interface MiddlewareContext {
+  session: Session<any, any>;
+  requestId: string;
+  timestamp: Date;
+}
+
+interface RequestContext extends MiddlewareContext {
+  request: TIn;
+}
+
+interface ResponseContext extends MiddlewareContext {
+  response: TOut;
+  processingTime: number;
+}
+```
+
+### Interceptors
+
+```typescript
+type RequestInterceptor<T> = (
+  request: T,
+  context: RequestContext,
+) => Promise<T>;
+type ResponseInterceptor<T> = (
+  response: T,
+  context: ResponseContext,
+) => Promise<T>;
+```
+
+---
+
+## Scenario API (Multi-Step Conversations)
+
+### Core Classes
+
+```typescript
+class Scenario<TContext extends Vars = Vars, TMetadata extends Attrs = Attrs>
+
+// Factory methods
+Scenario.create<TContext, TMetadata>(config?: ScenarioConfig): Scenario<TContext, TMetadata>
+Scenario.interactive<TContext, TMetadata>(config?: ScenarioConfig): Scenario<TContext, TMetadata>
+```
+
+### Configuration
+
+```typescript
+interface ScenarioConfig {
+  debug?: boolean;
+  ui?: 'console' | 'ink' | 'auto';
+  maxSteps?: number;
+  allowEarlyExit?: boolean;
+}
+
+interface InteractiveStepOptions {
+  prompt?: string;
+  validation?: IValidator;
+  optional?: boolean;
+  exitKeywords?: string[];
+}
+
+interface NonInteractiveStepOptions {
+  skipCondition?: (session: Session) => boolean;
+  retryConfig?: RetryConfig;
+}
+```
+
+### Utilities
+
+```typescript
+namespace Scenarios {
+  create<TContext, TMetadata>(config?: ScenarioConfig): Scenario<TContext, TMetadata>
+  interactive<TContext, TMetadata>(config?: ScenarioConfig): Scenario<TContext, TMetadata>
+}
+
+namespace StepTemplates {
+  interactive(options: InteractiveStepOptions): Template
+  nonInteractive(template: Template, options?: NonInteractiveStepOptions): Template
+}
+
+// Type guards
+function isInteractiveStep(step: unknown): step is InteractiveStep;
+```
+
+---
+
+## CLI and Debugging
+
+### Ink-based Debug Interface
+
+```typescript
+interface InkDebugContext {
+  session: Session<any, any>;
+  events: DebugEvent[];
+  ui: 'console' | 'ink' | 'auto';
+}
+
+class InkDebugRenderer {
+  constructor(context: InkDebugContext);
+  render(): React.ReactElement;
+}
+
+class EnhancedInkDebugRenderer extends InkDebugRenderer {
+  renderWithEnhancements(): React.ReactElement;
+}
+```
+
+### Debug Events
+
+```typescript
+namespace debugEvents {
+  templateStart(templateName: string): DebugEvent
+  templateEnd(templateName: string, duration: number): DebugEvent
+  messageAdded(message: Message): DebugEvent
+  variableSet(key: string, value: unknown): DebugEvent
+  llmCall(provider: string, model: string): DebugEvent
+  llmResponse(content: string, tokens?: number): DebugEvent
+  validationFailed(error: string): DebugEvent
+  error(error: Error): DebugEvent
+}
+
+namespace debugEventHelpers {
+  formatDuration(ms: number): string
+  formatTokens(count: number): string
+  summarizeMessage(message: Message): string
+  colorizeOutput(text: string, type: 'success' | 'error' | 'info'): string
+}
+```
+
+---
+
+## Utility Functions
+
+### Template Interpolation
+
+```typescript
+function interpolateTemplate(
+  template: string,
+  context: Record<string, unknown>,
+): string;
+```
+
+### Built-in Handlebars Helpers
+
+```typescript
+// Length and formatting
+length(array: unknown[]): number
+join(array: unknown[], separator: string): string
+truncate(text: string, maxLength: number): string
+formatNumber(num: number): string
+
+// List formatting
+numberedList(items: string[]): string  // "1. Item A\n2. Item B"
+bulletList(items: string[]): string    // "• Item A\n• Item B"
+
+// Comparison helpers
+eq(a: unknown, b: unknown): boolean
+gt(a: number, b: number): boolean
+lt(a: number, b: number): boolean
+gte(a: number, b: number): boolean
+lte(a: number, b: number): boolean
+
+// Debug helper
+debug(value: unknown, label?: string): string
+```
+
+### Helper Registration
+
+```typescript
+function registerHelper(name: string, helper: Function): void;
+```
+
+---
+
+## Error Classes
+
+### Core Errors
+
+```typescript
+class PromptTrailError extends Error {
+  constructor(message: string, cause?: Error);
+}
+
+class ValidationError extends PromptTrailError {
+  constructor(message: string, validator?: IValidator);
+}
+```
+
+---
+
+## Testing and Development
+
+### Mock Sources
+
+```typescript
+interface MockedLlmSource extends LlmSource {
+  mockResponse(response: MockResponse): MockedLlmSource;
+  mockResponses(...responses: MockResponse[]): MockedLlmSource;
+  mockCallback(callback: MockCallback): MockedLlmSource;
+  getCallHistory(): Array<CallHistoryEntry>;
+  getLastCall(): CallHistoryEntry | undefined;
+  getCallCount(): number;
+  reset(): MockedLlmSource;
+}
+
+interface MockResponse {
+  content: string;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+  metadata?: Record<string, unknown>;
+  structuredOutput?: Record<string, unknown>;
+}
+
+interface CallHistoryEntry {
+  session: Session;
+  options: LLMOptions;
+  response: MockResponse;
+}
+
+type MockCallback = (
+  session: Session,
+  options: LLMOptions,
+) => MockResponse | Promise<MockResponse>;
+```
+
+### Debug Utilities
+
+```typescript
+namespace Source {
+  resetCallCounters(): void;
+  getCallCount(instanceId: string): number;
+}
+```
+
+---
+
+## Type Definitions Reference
+
+### Core Type Aliases
+
+```typescript
+// Branded types for type safety
+type Vars<T extends Record<string, unknown> = {}> = Readonly<T> & {
+  readonly [varsBrand]: void;
+};
+type Attrs<T extends Record<string, unknown> = {}> = Readonly<T> & {
+  readonly [attrsBrand]: void;
+};
+
+// Session and message types
+type SessionContext<T = Record<string, unknown>> = Vars<T>;
+type MessageMetadata<T = Record<string, unknown>> = Attrs<T>;
+
+// Content input types
+type SystemContentInput =
+  | string
+  | Source<string>
+  | ((session: Session) => Promise<string>);
+type UserContentInput =
+  | string
+  | string[]
+  | { cli: string; defaultValue?: string }
+  | Source<string>
+  | ((session: Session) => Promise<string>);
+type AssistantContentInput =
+  | LLMConfig
+  | string
+  | Source<ModelOutput>
+  | ((session: Session) => Promise<ModelOutput>);
+
+// Template options
+type UserTemplateOptions = UserOptions & ValidationOptions;
+type AssistantTemplateOptions = AssistantOptions & ValidationOptions;
+
+// Parallel execution types
+type AggregationStrategy<TContext, TMetadata> = (
+  responses: Session<TContext, TMetadata>[],
+) => Session<TContext, TMetadata>;
+type ScoringFunction<TContext, TMetadata> = (
+  session: Session<TContext, TMetadata>,
+) => number;
+type Strategy<TContext, TMetadata> =
+  | 'keep_all'
+  | 'best'
+  | AggregationStrategy<TContext, TMetadata>;
+type BuiltInStrategy = 'keep_all' | 'best';
+
+// Extraction configuration
+type ExtractConfig = string | string[] | Record<string, string>;
+
+// Validation types
+type TValidationResult =
+  | { isValid: true }
+  | { isValid: false; instruction: string };
+type ValidationOptions = {
+  validator?: IValidator;
+  maxAttempts?: number;
+  raiseOnError?: boolean;
+};
+
+// Schema types
+type SchemaType<T> = z.ZodType<T>;
+type SchemaGenerationOptions = {
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
+};
+
+// Tool types (re-exported from AI SDK)
+type ToolCall = {
+  name: string;
+  arguments: Record<string, unknown>;
+  id: string;
+};
+type ToolResult = { toolCallId: string; result: unknown };
+
+// Provider configuration unions
+type ProviderConfig =
+  | OpenAIProviderConfig
+  | AnthropicProviderConfig
+  | GoogleProviderConfig;
+type LLMConfig = Partial<LLMOptions & { provider: string; model: string }>;
+
+// Retry configuration
+interface RetryConfig {
+  maxAttempts?: number;
+  backoffMs?: number;
+  exponential?: boolean;
+}
+```
+
+### Advanced Types
+
+```typescript
+// Template composition types
+type TemplateOrArray<TMetadata, TContext> =
+  | Template<TMetadata, TContext>
+  | Template<TMetadata, TContext>[];
+
+// Builder function types
+type AgentBuilderFn<TContext, TMetadata> = (
+  agent: Agent<TContext, TMetadata>,
+) => Agent<TContext, TMetadata>;
+type ConditionalBuilderFn<TContext, TMetadata> = (
+  agent: Agent<TContext, TMetadata>,
+) => Agent<TContext, TMetadata>;
+type LoopBuilderFn<TContext, TMetadata> = (
+  agent: Agent<TContext, TMetadata>,
+) => Agent<TContext, TMetadata>;
+
+// Parallel execution input types
+type ParallelSourceInput = LLMConfig | LlmSource;
+type ParallelSourceConfig = {
+  source: ParallelSourceInput;
+  repetitions?: number;
+};
+
+// CLI configuration
+interface CLIOptions {
+  prompt?: string;
+  defaultValue?: string;
+  validation?: IValidator;
+}
+
+// Model output types
+interface ModelOutput {
+  content: string;
+  toolCalls?: ToolCall[];
+  structuredContent?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+```
+
+---
+
+## Re-exports from AI SDK
+
+PromptTrail.ts re-exports several utilities from the AI SDK for convenience:
+
+```typescript
+// Tool utilities
+export { tool } from 'ai';
+export type { Tool } from 'ai';
+
+// Core generation functions
+export { generateText } from 'ai';
+export { generateObject } from 'ai';
+export { streamText } from 'ai';
+
+// Provider imports
+export { openai } from '@ai-sdk/openai';
+export { anthropic } from '@ai-sdk/anthropic';
+export { google } from '@ai-sdk/google';
+```
+
+---
+
+## Namespace Summary
+
+### Major Namespaces and Their Methods
+
+**Source** - Content source factories and utilities
+
+- `Source.llm()`, `Source.cli()`, `Source.literal()`, `Source.callback()`, `Source.random()`, `Source.list()`
+- `Source.resetCallCounters()`, `Source.getCallCount()`
+
+**Session** - Session creation and manipulation
+
+- `Session.create()`, `Session.debug()`, `Session.fromJSON()`, `Session.typed()`
+- `Session.empty()`, `Session.withContext()`, `Session.withMessages()`
+
+**Agent** - Template builder factories
+
+- `Agent.create()`, `Agent.system()`, `Agent.user()`, `Agent.assistant()`
+
+**Message** - Message utilities and factories
+
+- `Message.create()`, `Message.system()`, `Message.user()`, `Message.assistant()`
+- `Message.setMetadata()`, `Message.setContent()`, `Message.expandAttrs()`
+
+**Validation** - Validator factories and utilities
+
+- `Validation.regex()`, `Validation.keyword()`, `Validation.length()`, `Validation.json()`, `Validation.schema()`
+- `Validation.custom()`, `Validation.all()`, `Validation.any()`
+
+**Tool** - Tool creation utilities (enhanced AI SDK integration)
+
+- `Tool.create()` - PromptTrail-style tool factory
+
+**Vars/Attrs** - Tagged record utilities
+
+- `Vars.create()`, `Vars.is()`, `Vars.set()`, `Vars.extend()`
+- `Attrs.create()`, `Attrs.is()`, `Attrs.set()`, `Attrs.extend()`
+
+**Scenarios** - Multi-step conversation utilities
+
+- `Scenarios.create()`, `Scenarios.interactive()`
+
+**StepTemplates** - Step template builders
+
+- `StepTemplates.interactive()`, `StepTemplates.nonInteractive()`
+
+**debugEvents** - Debug event factories
+
+- `debugEvents.templateStart()`, `debugEvents.messageAdded()`, `debugEvents.llmCall()`, etc.
+
+**debugEventHelpers** - Debug formatting utilities
+
+- `debugEventHelpers.formatDuration()`, `debugEventHelpers.colorizeOutput()`, etc.
+
+---
+
 ## Usage Examples
 
 ### Basic Agent
@@ -913,6 +1402,53 @@ const agent = Agent.create()
         .system('Use simple language and brief explanations')
         .assistant(Source.llm()),
   );
+```
+
+### Advanced Extract Example
+
+```typescript
+import { z } from 'zod';
+
+// Complex extraction with nested data
+const analysisSchema = z.object({
+  sentiment: z.enum(['positive', 'negative', 'neutral']),
+  confidence: z.number().min(0).max(1),
+  keyTopics: z.array(z.string()),
+  actionItems: z.array(
+    z.object({
+      task: z.string(),
+      priority: z.enum(['high', 'medium', 'low']),
+      dueDate: z.string().optional(),
+    }),
+  ),
+});
+
+const textAnalyzer = Agent.create()
+  .system('You are an expert text analyzer')
+  .user('Analyze this meeting transcript: {{transcript}}')
+  .extract(analysisSchema, {
+    sentiment: 'overallSentiment',
+    confidence: 'analysisConfidence',
+    keyTopics: 'mainTopics',
+    actionItems: 'tasks',
+  })
+  .user(
+    `
+Analysis Summary:
+- Sentiment: {{overallSentiment}} (confidence: {{analysisConfidence}})
+- Key topics: {{join mainTopics ", "}}
+- Action items: {{length tasks}} tasks identified
+
+Would you like me to elaborate on any of these findings?
+  `,
+  )
+  .assistant();
+
+// Execute with context
+const session = Session.create({
+  context: { transcript: 'Meeting discussion about Q4 planning...' },
+});
+const result = await textAnalyzer.execute(session);
 ```
 
 ### Subroutine Example

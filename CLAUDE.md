@@ -459,54 +459,47 @@ const userData = session.getLastMessage()?.structuredContent;
 ### Auto-Extract to Session Variables
 
 ```typescript
-// Extract all schema fields to vars (Agent convenience method)
+// Auto-map all schema fields to top-level session vars
 const agentWithExtraction = Agent.create()
   .system('Extract user info from text.')
   .user("Hi, I'm Alice, 25, love coding and music.")
-  .extract({
-    provider: 'openai',
-    schema: userSchema,
-  }) // Agent.extract() - creates Assistant with schema + auto-extraction
+  .extract(userSchema) // Auto-map: name → session.vars.name, age → session.vars.age
   .user(
-    'Hi {{name}}, you are {{age}} years old and like {{join interests ", "}}',
+    'Hi {{name}}, you are {{age}} years old and like {{join interests ", "}}!',
   )
   .assistant();
 
-// Custom field mapping (Agent convenience method)
+// Custom field mapping (map individual fields to variables)
 const agentWithMapping = Agent.create()
   .system('Extract recipe details.')
   .user('I want to make pasta with tomatoes in 30 minutes')
   .extract(
-    {
-      provider: 'openai',
-      schema: z.object({
-        recipeName: z.string(),
-        cookingTime: z.number(),
-        difficulty: z.enum(['easy', 'medium', 'hard']),
-      }),
-    },
+    z.object({
+      recipeName: z.string(),
+      cookingTime: z.number(),
+      difficulty: z.enum(['easy', 'medium', 'hard']),
+    }),
     {
       recipeName: 'suggestedRecipe',
       cookingTime: 'estimatedTime',
       difficulty: 'recipeComplexity',
     },
+    { provider: 'openai' }, // Optional config
   )
   .user(
     'Great! {{suggestedRecipe}} takes {{estimatedTime}} minutes and is {{recipeComplexity}}',
   )
   .assistant();
 
-// Partial extraction (Agent convenience method)
+// Extract specific fields only (using Record mapping)
 const agentPartial = Agent.create()
   .system('Analyze the request.')
   .user('Complex request with many details...')
   .extract(
-    {
-      provider: 'openai',
-      schema: complexSchema,
-    },
-    ['title', 'priority'],
-  ); // Only extract specific fields
+    complexSchema,
+    { title: 'title', priority: 'priority' }, // Only extract these fields
+    { provider: 'openai' },
+  );
 ```
 
 ### Extract Methods
@@ -514,14 +507,24 @@ const agentPartial = Agent.create()
 **Agent.extract() (Recommended)**
 
 ```typescript
-// Auto-extract all fields
-Agent.create().extract({ provider: 'openai', schema });
+// Auto-map all schema fields to top-level session vars (default)
+Agent.create().extract(schema); // or extract(schema, true)
 
-// Extract specific fields
-Agent.create().extract({ provider: 'openai', schema }, ['field1', 'field2']);
+// Store entire object in one variable
+Agent.create().extract(schema, 'objectName');
 
-// Custom field mapping
-Agent.create().extract({ provider: 'openai', schema }, { field: 'varName' });
+// Extract only specific fields (same names)
+Agent.create().extract(schema, ['field1', 'field2']);
+
+// Map individual fields to custom variable names
+Agent.create().extract(schema, { field1: 'var1', field2: 'var2' });
+
+// With custom LLM configuration
+Agent.create().extract(schema, 'objectName', {
+  provider: 'anthropic',
+  temperature: 0.1,
+});
+Agent.create().extract(schema, { provider: 'openai' }); // Auto-map with config
 ```
 
 **Assistant with Options (Alternative)**
