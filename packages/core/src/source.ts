@@ -294,7 +294,7 @@ export abstract class BaseValidatedSource<
    */
   protected async executeWithValidation<TResult>(
     session: Session<any, any>,
-    generateFn: () => Promise<TResult | string>,
+    generateFn: () => Promise<TResult>,
     extractContent?: (result: TResult) => string,
   ): Promise<TResult> {
     let attempts = 0;
@@ -346,7 +346,7 @@ export abstract class BaseValidatedSource<
             console.warn(
               `${this.constructor.name}: Error occurred but raiseError is false. Returning default value.`,
             );
-            return this.getDefaultValue() as TResult;
+            return this.getDefaultValue() as unknown as TResult;
           }
         } else {
           console.warn(

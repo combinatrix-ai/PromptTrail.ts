@@ -49,9 +49,6 @@ cd packages/core && pnpm test
 
 # Run tests with coverage
 cd packages/core && pnpm test:coverage
-
-# Special test command for Cline compatibility
-pnpm test:cline
 ```
 
 ### Code Quality

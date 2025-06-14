@@ -1,6 +1,7 @@
 export { tool } from 'ai';
 export * from './cli';
 export * from './generate';
+export * from './mcp';
 export * from './message';
 export * from './middleware';
 export { createSession, Session, TypedSessionBuilder } from './session';
@@ -23,6 +24,7 @@ export type {
   UserTemplateOptions,
 } from './templates/primitives/user';
 export * from './tool';
+export * from './tools';
 export * from './utils';
 export * from './validators';
 export { Validation } from './validators/validation';

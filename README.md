@@ -729,6 +729,223 @@ const robustAgent = Agent.create()
 - **Custom goal validation** - Define complex satisfaction criteria for scenarios
 - **Error recovery** - Retry logic with fallback strategies
 
+### MCP Integration
+
+PromptTrail.ts provides full integration with the **Model Context Protocol (MCP)**, allowing you to dynamically create tools from MCP servers and use MCP resources and prompts as content sources.
+
+#### Quick Start with MCP
+
+```typescript
+import { createMCPClient, MCPTools, MCPSource } from '@prompttrail/core';
+
+// Connect to an MCP server
+const mcpClient = createMCPClient({
+  name: 'my-app',
+  version: '1.0.0'
+});
+
+await mcpClient.connect({
+  type: 'stdio',
+  command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp']
+});
+
+// Create all tools from the MCP server automatically
+const tools = await MCPTools.createAll(mcpClient);
+
+// Use in an agent
+const agent = Agent.create()
+  .system('You have access to filesystem tools.')
+  .user('List files in the current directory')
+  .assistant({
+    provider: 'openai',
+    tools // All MCP tools are now available
+  });
+```
+
+#### Dynamic Tool Creation
+
+PromptTrail automatically converts MCP tool schemas to typed AI SDK tools:
+
+```typescript
+// Create specific tools by name
+const calculatorTools = await MCPTools.named(mcpClient, ['calculate', 'convert']);
+
+// Create tools matching a pattern
+const fileTools = await MCPTools.matching(mcpClient, /^file_/);
+
+// Create tools with custom prefix
+const prefixedTools = await MCPTools.withPrefix(mcpClient, 'mcp_');
+
+// Use the MCPToolFactory for advanced configurations
+const factory = new MCPToolFactory(mcpClient);
+const result = await factory.createAllTools({
+  namePrefix: 'fs_',
+  filter: (tool) => tool.name.includes('file'),
+  extractTextOnly: true, // Return text instead of MCP result objects
+  resultTransform: (result) => `Processed: ${result}`,
+  customHandlers: {
+    'special-tool': async (params) => {
+      // Custom implementation for specific tools
+      return `Custom result for ${JSON.stringify(params)}`;
+    }
+  }
+});
+
+console.log(`Created ${result.count} tools:`, result.names);
+```
+
+#### MCP as Content Sources
+
+Use MCP tools, resources, and prompts directly in templates:
+
+```typescript
+// MCP Tools as User Content
+const agent = Agent.create()
+  .system('Processing request')
+  .user(MCPSource.tool(mcpClient, 'calculate', {
+    arguments: { operation: 'add', a: 5, b: 3 },
+    extractText: true // Get "Result: 8" instead of full MCP response
+  }))
+  .assistant('I see the calculation result.');
+
+// MCP Resources as Content
+const configAgent = Agent.create()
+  .system('Configuration processor')
+  .user(MCPSource.resource(mcpClient, 'config://app/settings', {
+    extractText: true
+  }))
+  .assistant('I can see your configuration.');
+
+// MCP Prompts as Content
+const reviewAgent = Agent.create()
+  .system('Code reviewer')
+  .user(MCPSource.prompt(mcpClient, 'code-review', {
+    arguments: {
+      code: 'function add(a, b) { return a + b; }',
+      language: 'javascript'
+    },
+    format: 'text' // 'text' or 'messages'
+  }))
+  .assistant();
+
+// MCP Tools as Assistant Sources (for non-LLM responses)
+const calculatorAgent = Agent.create()
+  .system('Calculator service')
+  .transform(s => s.withVar('operation', 'multiply').withVar('a', 10).withVar('b', 5))
+  .assistant(MCPSource.model(mcpClient, 'calculate')); // Uses session vars as arguments
+```
+
+#### Advanced MCP Workflows
+
+```typescript
+// Chaining MCP operations with variable extraction
+const complexAgent = Agent.create()
+  .system('Data processor')
+  // Get user list from MCP
+  .user(MCPSource.tool(mcpClient, 'list-users', {
+    arguments: { limit: 5 },
+    extractText: true
+  }))
+  .transform(session => {
+    // Extract first user ID from the response
+    const userList = JSON.parse(session.getLastMessage()?.content || '[]');
+    return session.withVar('userId', userList[0]?.id || 'default');
+  })
+  // Use extracted user ID to get user details
+  .user(MCPSource.resource(mcpClient, 'users://{{userId}}/profile', {
+    extractText: true
+  }))
+  .assistant('I can analyze this user data.');
+
+// Conditional MCP usage
+const conditionalAgent = Agent.create<{ useFileSystem: boolean }>()
+  .system('Adaptive assistant')
+  .conditional(
+    (session) => session.getVar('useFileSystem', false),
+    // Use filesystem MCP tools
+    (agent) => agent
+      .user(MCPSource.tool(mcpClient, 'list-directory', {
+        arguments: { path: '/tmp' }
+      }))
+      .assistant('I can see your files.'),
+    // Use web search instead
+    (agent) => agent
+      .user('Search the web for information')
+      .assistant({ provider: 'openai' })
+  );
+
+// Error handling with MCP
+const robustAgent = Agent.create()
+  .system('Fault-tolerant MCP usage')
+  .user(async (session) => {
+    try {
+      const result = await mcpClient.callTool({
+        name: 'risky-operation',
+        arguments: { data: 'test' }
+      });
+      return result.content[0]?.text || 'No result';
+    } catch (error) {
+      return `Operation failed: ${error.message}`;
+    }
+  })
+  .assistant();
+```
+
+#### Tool Registry Management
+
+Manage tools across multiple MCP clients:
+
+```typescript
+import { globalMCPToolRegistry } from '@prompttrail/core';
+
+// Register tools from multiple clients
+const tools1 = await MCPTools.withInfo(mcpClient1);
+const tools2 = await MCPTools.withInfo(mcpClient2);
+
+globalMCPToolRegistry.register('filesystem', mcpClient1, tools1);
+globalMCPToolRegistry.register('database', mcpClient2, tools2);
+
+// Find tools across all clients
+const calculatorTools = globalMCPToolRegistry.findTools(/calc/);
+const allFileTools = globalMCPToolRegistry.getToolsForClient('filesystem');
+
+// Get registry statistics
+const stats = globalMCPToolRegistry.getStats();
+console.log(`Total clients: ${stats.totalClients}, Total tools: ${stats.totalTools}`);
+
+// Use specific tool from registry
+const specificTool = globalMCPToolRegistry.getTool('filesystem', 'list-files');
+if (specificTool) {
+  const result = await specificTool.execute({ path: '/home' });
+}
+```
+
+#### Connection Types
+
+PromptTrail supports all MCP transport types:
+
+```typescript
+// stdio transport (most common)
+await mcpClient.connect({
+  type: 'stdio',
+  command: 'python',
+  args: ['my-mcp-server.py']
+});
+
+// HTTP transport
+await mcpClient.connect({
+  type: 'http',
+  url: 'http://localhost:3000/mcp'
+});
+
+// Direct connection (for testing)
+await mcpClient.connect({
+  type: 'direct',
+  server: myMCPServerInstance
+});
+```
+
 ### Streaming Responses
 
 ```typescript

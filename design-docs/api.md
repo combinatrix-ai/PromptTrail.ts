@@ -20,6 +20,7 @@
 
 - [CLI and Debugging](#cli-and-debugging) - Development interface
 - [Testing Support](#testing-and-development) - Mocking and utilities
+- [MCP Integration](#mcp-integration) - Model Context Protocol support
 - [Error Classes](#error-classes) - Error handling
 
 ### Reference
@@ -1237,6 +1238,347 @@ export { google } from '@ai-sdk/google';
 
 ---
 
+## MCP Integration
+
+PromptTrail.ts provides comprehensive support for the **Model Context Protocol (MCP)**, allowing seamless integration with MCP servers to access external tools, resources, and prompts.
+
+### Core MCP Classes
+
+#### MCPClientWrapper
+
+Wrapper for MCP client functionality with connection management.
+
+```typescript
+class MCPClientWrapper {
+  constructor(options: { name: string; version: string })
+  
+  // Connection management
+  async connect(connection: MCPConnectionOptions): Promise<void>
+  async disconnect(): Promise<void>
+  isConnected(): boolean
+  
+  // Server interaction
+  async getServerInfo(): Promise<ServerInfo>
+  async listTools(): Promise<ListToolsResult>
+  async callTool(tool: MCPToolCall): Promise<CallToolResult>
+  async listResources(): Promise<ListResourcesResult>
+  async readResource(resource: MCPResourceRead): Promise<ReadResourceResult>
+  async listPrompts(): Promise<ListPromptsResult>
+  async getPrompt(prompt: MCPPromptRequest): Promise<GetPromptResult>
+}
+
+// Factory function
+createMCPClient(options?: { name?: string; version?: string }): MCPClientWrapper
+```
+
+**Connection Options:**
+
+```typescript
+interface MCPConnectionOptions {
+  type: 'stdio' | 'http';
+  url?: string;           // Required for HTTP transport
+  command?: string;       // Required for stdio transport
+  args?: string[];        // Optional arguments for stdio
+  environment?: Record<string, string>; // Environment variables
+}
+```
+
+#### MCP Sources
+
+Use MCP servers as content sources in PromptTrail templates.
+
+```typescript
+// Tool source - calls MCP tools
+MCPSource.tool(client: MCPClientWrapper, tool: string, options?: {
+  arguments?: Record<string, unknown>;
+  extractText?: boolean; // Extract text content (default: true)
+}): MCPToolSource
+
+// Resource source - reads MCP resources
+MCPSource.resource(client: MCPClientWrapper, uri: string, options?: {
+  extractText?: boolean;
+}): MCPResourceSource
+
+// Prompt source - gets MCP prompts
+MCPSource.prompt(client: MCPClientWrapper, prompt: string, options?: {
+  arguments?: Record<string, unknown>;
+  format?: 'text' | 'messages'; // How to format result
+}): MCPPromptSource
+
+// Model source - uses MCP tool as assistant source
+MCPSource.model(client: MCPClientWrapper, toolName: string, schema?: z.ZodType): MCPModelSource
+```
+
+### Dynamic Tool Creation
+
+**Automatically create PromptTrail tools from MCP servers** using JSON Schema to Zod conversion.
+
+#### MCPToolFactory
+
+High-level factory for creating tools with filtering and customization.
+
+```typescript
+class MCPToolFactory {
+  constructor(mcpClient: MCPClientWrapper, defaultOptions?: MCPToolFactoryOptions)
+  
+  // Create all available tools
+  async createAllTools(options?: MCPToolFactoryOptions): Promise<MCPToolCreationResult>
+  
+  // Create specific tools by name
+  async createToolsByName(names: string[], options?: MCPToolFactoryOptions): Promise<MCPToolCreationResult>
+  
+  // Create tools matching pattern
+  async createToolsMatching(pattern: RegExp | string, options?: MCPToolFactoryOptions): Promise<MCPToolCreationResult>
+  
+  // Preview tools without creating
+  async previewTools(filter?: (tool: ToolInformation) => boolean): Promise<{
+    available: ToolInformation[];
+    count: number;
+    names: string[];
+  }>
+  
+  // Get tool information
+  async getToolInfo(toolName: string): Promise<ToolInformation | null>
+}
+
+interface MCPToolFactoryOptions {
+  namePrefix?: string;                    // Prefix for tool names
+  nameTransform?: (name: string) => string; // Transform tool names
+  filter?: (tool: ToolInformation) => boolean; // Filter tools
+  extractTextOnly?: boolean;              // Extract text only (default: true)
+  resultTransform?: (result: any) => unknown; // Transform results
+  customHandlers?: Record<string, (params: unknown, client: MCPClientWrapper) => Promise<unknown>>;
+  dynamicToolConfig?: DynamicMCPToolConfig;
+}
+
+interface MCPToolCreationResult {
+  tools: Record<string, Tool>;           // Tools as object map
+  toolInfo: MCPToolInfo[];              // Detailed tool information
+  count: number;                        // Number of tools created
+  names: string[];                      // Tool names
+  filteredOut: string[];                // Tools that were filtered out
+}
+```
+
+#### MCPTools Convenience Functions
+
+```typescript
+namespace MCPTools {
+  // Create all tools
+  createAll(client: MCPClientWrapper, options?: MCPToolFactoryOptions): Promise<Record<string, Tool>>
+  
+  // Create with prefix
+  withPrefix(client: MCPClientWrapper, prefix: string, options?): Promise<Record<string, Tool>>
+  
+  // Create tools matching pattern
+  matching(client: MCPClientWrapper, pattern: RegExp | string, options?): Promise<Record<string, Tool>>
+  
+  // Create specific named tools
+  named(client: MCPClientWrapper, names: string[], options?): Promise<Record<string, Tool>>
+  
+  // Create with detailed information
+  withInfo(client: MCPClientWrapper, options?): Promise<MCPToolCreationResult>
+}
+```
+
+### JSON Schema to Zod Conversion
+
+Automatic conversion of MCP tool JSON schemas to Zod for type safety.
+
+```typescript
+class JsonSchemaToZod {
+  constructor(options?: ConversionOptions)
+  convert(schema: JsonSchema): z.ZodTypeAny
+}
+
+// Utility functions
+jsonSchemaToZod(schema: JsonSchema, options?: ConversionOptions): z.ZodTypeAny
+mcpToolSchemaToZod(inputSchema: JsonSchema): z.ZodTypeAny
+
+interface ConversionOptions {
+  strictMode?: boolean;           // Strict schema enforcement
+  allowUnknownFormats?: boolean;  // Handle unknown string formats
+  defaultToOptional?: boolean;    // Make undefined fields optional
+  preserveDescriptions?: boolean; // Keep schema descriptions
+}
+```
+
+### Tool Registry
+
+Manage and track created MCP tools across multiple clients.
+
+```typescript
+class MCPToolRegistry {
+  // Registration
+  register(clientId: string, client: MCPClientWrapper, result: MCPToolCreationResult): void
+  unregisterClient(clientId: string): void
+  unregisterTool(clientId: string, toolName: string): boolean
+  clear(): void
+  
+  // Access
+  getTool(clientId: string, toolName: string): Tool | null
+  getToolsForClient(clientId: string): Record<string, Tool>
+  getAllTools(): Record<string, Tool>
+  getToolInfo(clientId: string, toolName: string): MCPToolInfo | null
+  
+  // Query
+  getClients(): string[]
+  hasClient(clientId: string): boolean
+  hasTool(clientId: string, toolName: string): boolean
+  findTools(pattern: RegExp | string): MCPToolInfo[]
+  getStats(): { totalClients: number; totalTools: number; toolsByClient: Record<string, number> }
+}
+
+// Global registry instance
+globalMCPToolRegistry: MCPToolRegistry
+```
+
+### Usage Examples
+
+#### Basic MCP Integration
+
+```typescript
+import { createMCPClient, MCPSource } from '@prompttrail/core/mcp';
+
+// Connect to MCP server
+const mcpClient = createMCPClient();
+await mcpClient.connect({ type: 'http', url: 'http://localhost:3000/mcp' });
+
+// Use MCP tool as source
+const agent = Agent.create()
+  .system('You are a helpful assistant')
+  .user(MCPSource.tool(mcpClient, 'calculate', {
+    arguments: { operation: 'add', a: 5, b: 3 }
+  }))
+  .assistant('The calculation result is ready!');
+```
+
+#### Dynamic Tool Creation
+
+```typescript
+import { MCPTools } from '@prompttrail/core/mcp';
+
+// Create all tools automatically
+const tools = await MCPTools.createAll(mcpClient);
+
+// Use in LLM with tools
+const agent = Agent.create()
+  .system('You have access to various tools')
+  .user('Calculate 25 * 8 and tell me about user 123')
+  .assistant({
+    provider: { type: 'openai', apiKey: 'key', modelName: 'gpt-4' },
+    tools
+  });
+```
+
+#### Advanced Tool Configuration
+
+```typescript
+// Create tools with custom configuration
+const customTools = await MCPTools.createAll(mcpClient, {
+  namePrefix: 'mcp_',
+  filter: (tool) => tool.name.includes('calc') || tool.name.includes('user'),
+  extractTextOnly: true,
+  resultTransform: (result) => ({
+    success: true,
+    data: result.content?.[0]?.text,
+    timestamp: new Date().toISOString()
+  }),
+  customHandlers: {
+    'special-tool': async (params, client) => {
+      // Custom implementation
+      return await customLogic(params);
+    }
+  }
+});
+```
+
+#### Pattern-Based Tool Creation
+
+```typescript
+// Create only calculation tools
+const mathTools = await MCPTools.matching(mcpClient, /calc|math/);
+
+// Create with name transformation
+const apiTools = await MCPTools.createAll(mcpClient, {
+  nameTransform: (name) => `api_${name.replace('-', '_')}`,
+  filter: (tool) => !tool.name.includes('internal')
+});
+```
+
+#### Tool Registry Management
+
+```typescript
+import { globalMCPToolRegistry } from '@prompttrail/core/mcp';
+
+// Register tools
+const toolResult = await MCPTools.withInfo(mcpClient);
+globalMCPToolRegistry.register('main-client', mcpClient, toolResult);
+
+// Query registry
+const stats = globalMCPToolRegistry.getStats();
+const calcTools = globalMCPToolRegistry.findTools(/calc/);
+const clientTools = globalMCPToolRegistry.getToolsForClient('main-client');
+```
+
+#### Complex Workflows
+
+```typescript
+// MCP in conditional logic
+const agent = Agent.create()
+  .system('You are a data assistant')
+  .conditional(
+    (session) => session.getVar('needsCalculation', false),
+    // Use MCP calculator
+    (a) => a.assistant(MCPSource.model(mcpClient, 'calculate')),
+    // Use MCP user lookup
+    (a) => a.user(MCPSource.tool(mcpClient, 'fetch-user', {
+      arguments: { userId: session.getVar('userId') }
+    }))
+  );
+
+// Chained MCP operations
+const workflow = Agent.create()
+  .system('Multi-step data processing')
+  // Step 1: Get user data
+  .user(MCPSource.resource(mcpClient, 'users://123/profile'))
+  .transform(session => {
+    const userData = JSON.parse(session.getLastMessage()?.content || '{}');
+    return session.withVar('userName', userData.name);
+  })
+  // Step 2: Process with calculation
+  .user('Hello {{userName}}, calculating your score...')
+  .assistant(MCPSource.model(mcpClient, 'calculate'))
+  .transform(s => s.withVar('operation', 'multiply').withVar('a', 100).withVar('b', 5));
+```
+
+#### Error Handling
+
+```typescript
+try {
+  const tools = await MCPTools.createAll(mcpClient);
+  const result = await tools.someCalculation.execute({ a: 10, b: 0 });
+} catch (error) {
+  if (error.message.includes('MCP tool call failed')) {
+    // Handle MCP-specific errors
+    console.log('MCP server error:', error.message);
+  }
+}
+```
+
+### MCP Types
+
+```typescript
+// Re-exported from MCP SDK for convenience
+type CallToolResult = { content: Array<{ type: string; text: string }> };
+type ReadResourceResult = { contents: Array<{ uri: string; text: string }> };
+type GetPromptResult = { messages: Array<{ role: string; content: any }> };
+type ToolInformation = { name: string; description?: string; inputSchema?: JsonSchema };
+type ServerInfo = { name: string; version: string; capabilities: any };
+```
+
+---
+
 ## Namespace Summary
 
 ### Major Namespaces and Their Methods
@@ -1289,6 +1631,14 @@ export { google } from '@ai-sdk/google';
 **debugEventHelpers** - Debug formatting utilities
 
 - `debugEventHelpers.formatDuration()`, `debugEventHelpers.colorizeOutput()`, etc.
+
+**MCP Integration** - Model Context Protocol support
+
+- `createMCPClient()` - Create MCP client instances
+- `MCPSource.tool()`, `MCPSource.resource()`, `MCPSource.prompt()`, `MCPSource.model()` - MCP content sources
+- `MCPTools.createAll()`, `MCPTools.withPrefix()`, `MCPTools.matching()`, `MCPTools.named()` - Dynamic tool creation
+- `globalMCPToolRegistry` - Global tool registry management
+- `jsonSchemaToZod()`, `mcpToolSchemaToZod()` - Schema conversion utilities
 
 ---
 

@@ -3,100 +3,24 @@
  *
  * This example demonstrates how to create an interactive coding agent using PromptTrail.
  * The agent can execute shell commands, read and write files, and maintain a conversation.
+ * Now uses the built-in default tools for enhanced functionality.
  */
 
-// Import PromptTrail core components
+// Import PromptTrail core components and default tools
 import {
   Agent,
-  CLISource,
   Session,
   Source,
   System,
+  getAllDefaultTools,
+  defaultTools,
 } from '../packages/core/src/index';
-
-// Import Tool namespace from PromptTrail
-import { z } from 'zod';
-import { Tool } from '../packages/core/src/index';
-
-// Node.js modules for file and command operations
-import { exec } from 'child_process';
-import { readFile, writeFile } from 'fs/promises';
-import { promisify } from 'util';
-// Convert exec to promise-based for async/await usage
-const execAsync = promisify(exec);
-
-// Define shell command tool
-const shellCommandTool = Tool.create({
-  description: 'Execute a shell command',
-  parameters: z.object({
-    command: z.string().describe('Shell command to execute'),
-  }),
-  execute: async (input) => {
-    try {
-      console.log(`[Debug] Executing command: ${input.command}`);
-      const { stdout, stderr } = await execAsync(input.command);
-      return { stdout, stderr };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Command failed';
-      return { stdout: '', stderr: message };
-    }
-  },
-});
-
-// Define file reading tool
-const readFileTool = Tool.create({
-  description: 'Read content from a file',
-  parameters: z.object({
-    path: z.string().describe('Path to the file to read'),
-  }),
-  execute: async (input) => {
-    try {
-      const content = await readFile(input.path, 'utf-8');
-      console.log(
-        `[Debug] Read content from ${input.path}:`,
-        content.substring(0, 10),
-        '...',
-      );
-      return { content };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { error: `Failed to read file: ${message}` };
-    }
-  },
-});
-
-// Define file writing tool
-const writeFileTool = Tool.create({
-  description: 'Write content to a file',
-  parameters: z.object({
-    path: z.string().describe('Path to write the file'),
-    content: z.string().describe('Content to write to the file'),
-  }),
-  execute: async (input) => {
-    try {
-      console.log(
-        `[Debug] Writing content to ${input.path}:`,
-        input.content.substring(0, 10),
-        '...',
-      );
-      await writeFile(input.path, input.content, 'utf-8');
-      return { success: true };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: `Failed to write file: ${message}` };
-    }
-  },
-});
-
-// Type definition for tools collection
-type ToolsMap = Record<string, Tool>;
 
 /**
  * CodingAgent class that provides an interactive coding assistant
- * with tool capabilities for shell commands and file operations
+ * with comprehensive tool capabilities using PromptTrail's default tools
  */
 export class CodingAgent {
-  private tools: ToolsMap;
   private llm: Source;
 
   constructor(config: {
@@ -104,14 +28,7 @@ export class CodingAgent {
     apiKey: string;
     modelName?: string;
   }) {
-    // Register all available tools
-    this.tools = {
-      shell_command: shellCommandTool,
-      read_file: readFileTool,
-      write_file: writeFileTool,
-    };
-
-    // Configure the LLM with tools using the fluent API
+    // Configure the LLM with all default tools using the fluent API
     let llmSource = Source.llm();
 
     // Configure provider
@@ -127,8 +44,8 @@ export class CodingAgent {
       });
     }
 
-    // Add temperature and tools
-    this.llm = llmSource.temperature(0.7).withTools(this.tools);
+    // Add temperature and all default tools for comprehensive capabilities
+    this.llm = llmSource.temperature(0.7).withTools(getAllDefaultTools());
   }
 
   /**
@@ -140,14 +57,24 @@ export class CodingAgent {
       '\nStarting interactive coding agent (type "exit" to end)...\n',
     );
 
-    // Create interactive input source
-    const userCliSource = new CLISource('Your request (type "exit" to end): ');
-
     // Create session with console output
     const session = Session.debug();
 
-    const systemPrompt =
-      'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
+    const systemPrompt = `You are an advanced coding agent with comprehensive file system and shell capabilities. You have access to these tools:
+
+**File Operations:**
+- fileRead: Read any file with optional line ranges
+- fileEdit: Make precise edits to files using find-and-replace
+- ls: List directory contents with detailed information
+
+**Search & Discovery:**
+- globSearch: Find files using patterns like **/*.js, src/**/*.ts
+- grep: Search file contents using regular expressions
+
+**Shell Operations:**
+- bash: Execute any shell command with proper error handling
+
+Use these tools effectively to help users accomplish their coding tasks. Always explain what you're doing and why.`;
 
     const agent = Agent.create()
       .then(new System(systemPrompt))
@@ -159,7 +86,10 @@ export class CodingAgent {
         // Otherwise, this is interactive mode
         (agent) =>
           agent.loop(
-            (innerAgent) => innerAgent.user(userCliSource).assistant(this.llm),
+            (innerAgent) =>
+              innerAgent
+                .user({ cli: 'Your request (type "exit" to end): ' })
+                .assistant(this.llm),
             (session) => {
               const lastUserMessage = session
                 .getMessagesByType('user')
@@ -178,24 +108,65 @@ export class CodingAgent {
    * Run predefined examples to demonstrate agent capabilities
    */
   async runExample(): Promise<void> {
-    // Example 1: Basic file listing
-    console.log('\n=== Example 1: List files ===\n');
-    this.run(
-      'List the files in the current directory and tell me what you see.',
+    // Example 1: Basic file exploration
+    console.log('\n=== Example 1: Explore project structure ===\n');
+    await this.run(
+      'Explore the current project structure. List the main directories and find all TypeScript files. Give me an overview of what this project contains.',
     );
 
-    // Example 2: File creation and reading
-    console.log('\n=== Example 2: Create and read a file ===\n');
-    this.run(
-      'Create a file named example.txt with some interesting content, then read it back and explain what you wrote.',
+    // Example 2: File creation and manipulation
+    console.log('\n=== Example 2: Create and manipulate files ===\n');
+    await this.run(
+      'Create a file named hello.js that exports a function which prints "Hello, World!" with the current timestamp. Then read it back and test it by running it with Node.js.',
     );
 
-    // Example 3: Create and run a script
-    console.log('\n=== Example 3: Advanced task ===\n');
-    this.run(
-      'Create a simple Node.js script that prints "Hello, World!" and run it.',
+    // Example 3: Code analysis task
+    console.log('\n=== Example 3: Code analysis ===\n');
+    await this.run(
+      'Search for all files that contain the word "test" in their content. Then create a summary report in a file called test-summary.txt listing what types of tests exist in this project.',
     );
+
     console.log('\n=== Examples completed ===\n');
+  }
+
+  /**
+   * Demonstrate specific tool capabilities
+   */
+  async demonstrateTools(): Promise<void> {
+    console.log('\n=== Tool Demonstration ===\n');
+
+    const session = Session.debug();
+
+    // Demonstrate each tool category
+    const agent = Agent.create()
+      .system(`You are demonstrating PromptTrail's default tools. Show each tool's capabilities clearly.`)
+
+      // File system tools demo
+      .user('Demonstrate the ls tool by listing the current directory with detailed information')
+      .assistant({ tools: [defaultTools.ls] })
+
+      // Search tools demo  
+      .user('Now use globSearch to find all .ts files in the project')
+      .assistant({ tools: [defaultTools.globSearch] })
+
+      // Content search demo
+      .user('Use grep to search for the word "Agent" in TypeScript files')
+      .assistant({ tools: [defaultTools.grep] })
+
+      // File operations demo
+      .user('Use fileRead to read the package.json file and show its contents')
+      .assistant({ tools: [defaultTools.fileRead] })
+
+      // Create a test file
+      .user('Create a simple test file using fileEdit with some sample content')
+      .assistant({ tools: [defaultTools.fileEdit] })
+
+      // Shell operations demo
+      .user('Use bash to run "npm --version" and show the result')
+      .assistant({ tools: [defaultTools.bash] });
+
+    await agent.execute(session);
+    console.log('\n=== Tool demonstration completed ===\n');
   }
 }
 
@@ -223,8 +194,15 @@ const runAgent = async (): Promise<void> => {
     // Initialize the agent
     const agent = new CodingAgent({ provider, apiKey });
 
-    // Run examples or interactive mode
-    if (process.argv.includes('--test')) {
+    // Run examples, tool demo, or interactive mode based on arguments
+    if (process.argv.includes('--examples')) {
+      console.log('Running example scenarios...');
+      await agent.runExample();
+    } else if (process.argv.includes('--tools')) {
+      console.log('Running tool demonstrations...');
+      await agent.demonstrateTools();
+    } else if (process.argv.includes('--test')) {
+      // Legacy support for test flag
       console.log('Running example tests...');
       await agent.runExample();
     } else {

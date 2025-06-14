@@ -7,14 +7,13 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest --run --watch=false",
-    "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1; cat \"$tmpfile\" && rm \"$tmpfile\"",
     "readme:test": "node scripts/generate-readme-tests.js && vitest run --config vitest.readme.config.ts readme.test.ts",
     "lint": "eslint . --fix",
     "lint:check": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm run lint:check && pnpm run format:check",
-    "context": "bun run dump_context.ts packages/core/ md ts | tee context.txt",
+    "context": "bun run dump_context.ts packages/core/ -- md ts",
     "pad": "bun run scratchpad.ts"
   },
   "devDependencies": {
