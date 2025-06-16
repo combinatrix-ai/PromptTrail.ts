@@ -16,11 +16,18 @@ interface InputResolver {
 /**
  * Main debug interface component
  */
-const DebugInterface: React.FC<{
-  session: Session<any, any>;
+const DebugInterface = <
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
+  session,
+  currentInput,
+  onUserInput,
+}: {
+  session: Session<TContext, TMetadata>;
   currentInput?: InputResolver;
   onUserInput: (inputId: string, value: string) => void;
-}> = ({ session, currentInput, onUserInput }) => {
+}) => {
   return (
     <Box flexDirection="column" height="100%">
       {/* Header */}
@@ -62,8 +69,13 @@ const DebugInterface: React.FC<{
 /**
  * Conversation history display
  */
-const ConversationHistory: React.FC<{ session: Session<any, any> }> = ({
+const ConversationHistory = <
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
   session,
+}: {
+  session: Session<TContext, TMetadata>;
 }) => {
   const maxMessages = 10; // Limit display to prevent overflow
   const messages = session.messages.slice(-maxMessages);
@@ -71,7 +83,7 @@ const ConversationHistory: React.FC<{ session: Session<any, any> }> = ({
   return (
     <Box flexDirection="column">
       {messages.length > 0 ? (
-        messages.map((message, index) => (
+        messages.map((message: Message<TMetadata>, index: number) => (
           <MessageBubble
             key={`${session.messages.length - maxMessages + index}`}
             message={message}
@@ -89,7 +101,13 @@ const ConversationHistory: React.FC<{ session: Session<any, any> }> = ({
 /**
  * Individual message display
  */
-const MessageBubble: React.FC<{ message: Message<any> }> = ({ message }) => {
+const MessageBubble = <
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
+  message,
+}: {
+  message: Message<TMetadata>;
+}) => {
   const getMessageStyle = (type: string) => {
     switch (type) {
       case 'system':
@@ -132,9 +150,9 @@ const MessageBubble: React.FC<{ message: Message<any> }> = ({ message }) => {
 /**
  * Tool calls display
  */
-const ToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }) => (
+const ToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }: { calls: any[] }) => (
   <Box flexDirection="column">
-    {calls.map((call, index) => (
+    {calls.map((call: any, index: number) => (
       <Box key={index}>
         <Text color="cyan">🔧 {call.name}(</Text>
         <Text color="gray">{JSON.stringify(call.arguments)}</Text>
@@ -147,7 +165,7 @@ const ToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }) => (
 /**
  * Variables panel display
  */
-const VariablesPanel: React.FC<{ vars: any }> = ({ vars }) => {
+const VariablesPanel: React.FC<{ vars: any }> = ({ vars }: { vars: any }) => {
   const varsString = JSON.stringify(vars, null, 2);
   const truncatedVars =
     varsString.length > 300 ? varsString.substring(0, 300) + '...' : varsString;
@@ -168,7 +186,10 @@ const VariablesPanel: React.FC<{ vars: any }> = ({ vars }) => {
 const InputArea: React.FC<{
   inputResolver: InputResolver;
   onSubmit: (inputId: string, value: string) => void;
-}> = ({ inputResolver, onSubmit }) => {
+}> = ({ inputResolver, onSubmit }: {
+  inputResolver: InputResolver;
+  onSubmit: (inputId: string, value: string) => void;
+}) => {
   const [input, setInput] = useState(inputResolver.defaultValue || '');
   const { exit } = useApp();
 
@@ -177,11 +198,11 @@ const InputArea: React.FC<{
       onSubmit(inputResolver.id, input);
       setInput('');
     } else if (key.backspace || key.delete) {
-      setInput((prev) => prev.slice(0, -1));
+      setInput((prev: string) => prev.slice(0, -1));
     } else if (key.ctrl && inputChar === 'c') {
       exit();
     } else if (!key.ctrl && !key.meta && inputChar) {
-      setInput((prev) => prev + inputChar);
+      setInput((prev: string) => prev + inputChar);
     }
   });
 
@@ -205,14 +226,17 @@ const InputArea: React.FC<{
 /**
  * Ink Debug Renderer - manages the React app lifecycle
  */
-export class InkDebugRenderer {
-  private session: Session<any, any>;
+export class InkDebugRenderer<
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+> {
+  private session: Session<TContext, TMetadata>;
   private app: any;
   private inputResolvers: Map<string, InputResolver> = new Map();
   private currentInputResolver: InputResolver | undefined;
   private isShuttingDown = false;
 
-  constructor(session: Session<any, any>) {
+  constructor(session: Session<TContext, TMetadata>) {
     this.session = session;
   }
 

@@ -21,8 +21,11 @@ interface InputResolver {
   resolve: (value: string) => void;
 }
 
-interface EnhancedDebugProps {
-  session: Session<any, any>;
+interface EnhancedDebugProps<
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+> {
+  session: Session<TContext, TMetadata>;
   events: DebugEvent[];
   metadata: DebugSessionMetadata;
   currentInput?: InputResolver;
@@ -32,13 +35,16 @@ interface EnhancedDebugProps {
 /**
  * Enhanced Debug Interface with multi-panel layout
  */
-const EnhancedDebugInterface: React.FC<EnhancedDebugProps> = ({
+const EnhancedDebugInterface = <
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
   session,
   events,
   metadata,
   currentInput,
   onUserInput,
-}) => {
+}: EnhancedDebugProps<TContext, TMetadata>) => {
   const [uiState, setUIState] = useState<DebugUIState>({
     activePanel: 'conversation',
     eventFilter: 'all',
@@ -49,7 +55,7 @@ const EnhancedDebugInterface: React.FC<EnhancedDebugProps> = ({
   });
 
   // Handle keyboard navigation
-  useInput((input, key) => {
+  useInput((input: string, key: any) => {
     if (key.tab) {
       setUIState((prev) => ({
         ...prev,
@@ -126,8 +132,8 @@ const EnhancedDebugInterface: React.FC<EnhancedDebugProps> = ({
             <VariablesInspector
               session={session}
               expandedVars={uiState.expandedVariables}
-              onToggleExpand={(varName) => {
-                setUIState((prev) => {
+              onToggleExpand={(varName: string) => {
+                setUIState((prev: DebugUIState) => {
                   const newExpanded = new Set(prev.expandedVariables);
                   if (newExpanded.has(varName)) {
                     newExpanded.delete(varName);
@@ -150,7 +156,7 @@ const EnhancedDebugInterface: React.FC<EnhancedDebugProps> = ({
             <EventsStream
               events={events}
               filter={uiState.eventFilter}
-              onFilterChange={(filter) => {
+              onFilterChange={(filter: DebugEventType | 'all') => {
                 setUIState((prev) => ({ ...prev, eventFilter: filter }));
               }}
             />
@@ -184,7 +190,7 @@ const EnhancedDebugInterface: React.FC<EnhancedDebugProps> = ({
  */
 const EnhancedHeader: React.FC<{ metadata: DebugSessionMetadata }> = ({
   metadata,
-}) => {
+}: { metadata: DebugSessionMetadata }) => {
   const formatDuration = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -236,11 +242,18 @@ const EnhancedHeader: React.FC<{ metadata: DebugSessionMetadata }> = ({
 /**
  * Enhanced conversation panel with metadata
  */
-const ConversationPanel: React.FC<{
-  session: Session<any, any>;
+const ConversationPanel = <
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
+  session,
+  showMetadata,
+  selectedIndex,
+}: {
+  session: Session<TContext, TMetadata>;
   showMetadata: boolean;
   selectedIndex?: number;
-}> = ({ session, showMetadata, selectedIndex }) => {
+}) => {
   const maxMessages = 8;
   const messages = session.messages.slice(-maxMessages);
 
@@ -251,7 +264,7 @@ const ConversationPanel: React.FC<{
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {messages.length > 0 ? (
-          messages.map((message, index) => (
+          messages.map((message: Message<TMetadata>, index: number) => (
             <EnhancedMessageBubble
               key={`${session.messages.length - maxMessages + index}`}
               message={message}
@@ -273,12 +286,19 @@ const ConversationPanel: React.FC<{
 /**
  * Enhanced message bubble with metadata
  */
-const EnhancedMessageBubble: React.FC<{
-  message: Message<any>;
+const EnhancedMessageBubble = <
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
+  message,
+  index,
+  showMetadata,
+  isSelected,
+}: {
+  message: Message<TMetadata>;
   index: number;
   showMetadata: boolean;
   isSelected: boolean;
-}> = ({ message, index, showMetadata, isSelected }) => {
+}) => {
   const getMessageStyle = (type: string) => {
     switch (type) {
       case 'system':
@@ -340,9 +360,9 @@ const EnhancedMessageBubble: React.FC<{
 /**
  * Enhanced tool calls display
  */
-const EnhancedToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }) => (
+const EnhancedToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }: { calls: any[] }) => (
   <Box flexDirection="column">
-    {calls.map((call, index) => (
+    {calls.map((call: any, index: number) => (
       <Box key={index} marginBottom={1}>
         <Box>
           <Text color="cyan" bold>
@@ -367,11 +387,18 @@ const EnhancedToolCallsDisplay: React.FC<{ calls: any[] }> = ({ calls }) => (
 /**
  * Enhanced variables inspector
  */
-const VariablesInspector: React.FC<{
-  session: Session<any, any>;
+const VariablesInspector = <
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+>({
+  session,
+  expandedVars,
+  onToggleExpand,
+}: {
+  session: Session<TContext, TMetadata>;
   expandedVars: Set<string>;
   onToggleExpand: (varName: string) => void;
-}> = ({ session, expandedVars, onToggleExpand }) => {
+}) => {
   const variables = useMemo(() => {
     const vars: VariableInfo[] = [];
     const sessionVars = session.vars || {};
@@ -408,7 +435,7 @@ const VariablesInspector: React.FC<{
 
   const groupedVars = useMemo(() => {
     const groups: Record<string, VariableInfo[]> = {};
-    variables.forEach((variable) => {
+    variables.forEach((variable: VariableInfo) => {
       if (!groups[variable.category]) {
         groups[variable.category] = [];
       }
@@ -445,7 +472,12 @@ const VariableGroup: React.FC<{
   variables: VariableInfo[];
   expandedVars: Set<string>;
   onToggleExpand: (varName: string) => void;
-}> = ({ category, variables, expandedVars, onToggleExpand }) => {
+}> = ({ category, variables, expandedVars, onToggleExpand }: {
+  category: string;
+  variables: VariableInfo[];
+  expandedVars: Set<string>;
+  onToggleExpand: (varName: string) => void;
+}) => {
   const categoryColors = {
     core: 'cyan',
     counter: 'yellow',
@@ -462,7 +494,7 @@ const VariableGroup: React.FC<{
       >
         ┌─ {category.toUpperCase()} ({variables.length})
       </Text>
-      {variables.map((variable) => {
+      {variables.map((variable: VariableInfo) => {
         const isExpanded = expandedVars.has(variable.name);
         const displayValue = isExpanded
           ? JSON.stringify(variable.value, null, 2)
@@ -494,11 +526,15 @@ const EventsStream: React.FC<{
   events: DebugEvent[];
   filter: DebugEventType | 'all';
   onFilterChange: (filter: DebugEventType | 'all') => void;
-}> = ({ events, filter }) => {
+}> = ({ events, filter }: {
+  events: DebugEvent[];
+  filter: DebugEventType | 'all';
+  onFilterChange: (filter: DebugEventType | 'all') => void;
+}) => {
   const filteredEvents = useMemo(() => {
     return filter === 'all'
       ? events.slice(-10)
-      : events.filter((event) => event.type === filter).slice(-10);
+      : events.filter((event: DebugEvent) => event.type === filter).slice(-10);
   }, [events, filter]);
 
   return (
@@ -510,7 +546,7 @@ const EventsStream: React.FC<{
         <Text color="gray">Filter: {filter} • Recent activity:</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
-        {filteredEvents.map((event, index) => (
+        {filteredEvents.map((event: DebugEvent, index: number) => (
           <EventItem key={`${event.id}-${index}`} event={event} />
         ))}
       </Box>
@@ -521,7 +557,7 @@ const EventsStream: React.FC<{
 /**
  * Individual event item
  */
-const EventItem: React.FC<{ event: DebugEvent }> = ({ event }) => {
+const EventItem: React.FC<{ event: DebugEvent }> = ({ event }: { event: DebugEvent }) => {
   const getEventStyle = (type: DebugEventType) => {
     const styles = {
       MESSAGE_ADDED: { icon: '📝', color: 'blue' },
@@ -555,7 +591,7 @@ const EventItem: React.FC<{ event: DebugEvent }> = ({ event }) => {
 /**
  * Event details based on type
  */
-const EventDetails: React.FC<{ event: DebugEvent }> = ({ event }) => {
+const EventDetails: React.FC<{ event: DebugEvent }> = ({ event }: { event: DebugEvent }) => {
   switch (event.type) {
     case 'MESSAGE_ADDED':
       return (
@@ -596,7 +632,10 @@ const EventDetails: React.FC<{ event: DebugEvent }> = ({ event }) => {
 const InputArea: React.FC<{
   inputResolver: InputResolver;
   onSubmit: (inputId: string, value: string) => void;
-}> = ({ inputResolver, onSubmit }) => {
+}> = ({ inputResolver, onSubmit }: {
+  inputResolver: InputResolver;
+  onSubmit: (inputId: string, value: string) => void;
+}) => {
   const [input, setInput] = useState(inputResolver.defaultValue || '');
   const { exit } = useApp();
 
@@ -605,11 +644,11 @@ const InputArea: React.FC<{
       onSubmit(inputResolver.id, input);
       setInput('');
     } else if (key.backspace || key.delete) {
-      setInput((prev) => prev.slice(0, -1));
+      setInput((prev: string) => prev.slice(0, -1));
     } else if (key.ctrl && inputChar === 'c') {
       exit();
     } else if (!key.ctrl && !key.meta && inputChar) {
-      setInput((prev) => prev + inputChar);
+      setInput((prev: string) => prev + inputChar);
     }
   });
 
@@ -630,7 +669,7 @@ const InputArea: React.FC<{
 /**
  * Controls footer
  */
-const ControlsFooter: React.FC<{ activePanel: string }> = ({ activePanel }) => (
+const ControlsFooter: React.FC<{ activePanel: string }> = ({ activePanel }: { activePanel: string }) => (
   <Box borderStyle="single" borderColor="gray" padding={1}>
     <Text color="gray">
       Tab: Switch panels • V: Variables • E: Events • M: Toggle metadata •
@@ -642,8 +681,11 @@ const ControlsFooter: React.FC<{ activePanel: string }> = ({ activePanel }) => (
 /**
  * Enhanced Ink Debug Renderer
  */
-export class EnhancedInkDebugRenderer {
-  private session: Session<any, any>;
+export class EnhancedInkDebugRenderer<
+  TContext extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, any> = Record<string, any>
+> {
+  private session: Session<TContext, TMetadata>;
   private app: any;
   private inputResolvers: Map<string, InputResolver> = new Map();
   private currentInputResolver: InputResolver | undefined;
@@ -652,7 +694,7 @@ export class EnhancedInkDebugRenderer {
   private metadata: DebugSessionMetadata;
   private startTime: number;
 
-  constructor(session: Session<any, any>) {
+  constructor(session: Session<TContext, TMetadata>) {
     this.session = session;
     this.startTime = Date.now();
     this.metadata = this.createInitialMetadata();
