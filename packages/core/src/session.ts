@@ -10,6 +10,29 @@ export type Vars<T extends Record<string, unknown> = {}> = Readonly<T>;
  * Message attributes - readonly object for message metadata
  */
 export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
+
+/**
+ * Usage information for a single API call
+ */
+export interface UsageInfo {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number; // Cost in USD for this call
+}
+
+/**
+ * Cumulative usage statistics for the session
+ */
+export interface SessionUsage {
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalPrice: number; // Total cost in USD
+  callCount: number; // Number of API calls
+  history: UsageInfo[]; // History of each API call
+}
+
 /**
  * Internal session implementation
  */
@@ -18,6 +41,14 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     public readonly messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
     public readonly print: boolean = false,
+    public readonly usage: SessionUsage = {
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      totalTokens: 0,
+      totalPrice: 0,
+      callCount: 0,
+      history: [],
+    },
   ) {}
   /**
    * Create a new session with additional message
@@ -53,6 +84,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [...this.messages, message],
       { ...this.vars }, // Create a shallow copy of the context
       this.print,
+      { ...this.usage }, // Copy usage
     );
   }
 
@@ -77,14 +109,42 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [key]: value,
     } as TVars & { [P in K]: V };
 
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      newContext,
+      this.print,
+      { ...this.usage },
+    );
   }
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
   ): Session<Vars<TVars & U>, TAttrs> {
     const newContext = { ...this.vars, ...vars } as TVars & U;
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      newContext,
+      this.print,
+      { ...this.usage },
+    );
+  }
+
+  /**
+   * Add usage information from an API call
+   */
+  withUsage(usageInfo: UsageInfo): Session<TVars, TAttrs> {
+    const newUsage: SessionUsage = {
+      totalPromptTokens:
+        this.usage.totalPromptTokens + (usageInfo.promptTokens || 0),
+      totalCompletionTokens:
+        this.usage.totalCompletionTokens + (usageInfo.completionTokens || 0),
+      totalTokens: this.usage.totalTokens + (usageInfo.totalTokens || 0),
+      totalPrice: this.usage.totalPrice + (usageInfo.cost || 0),
+      callCount: this.usage.callCount + 1,
+      history: [...this.usage.history, usageInfo],
+    };
+
+    return new Session([...this.messages], { ...this.vars }, this.print, newUsage);
   }
 
   /**
@@ -102,6 +162,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [...this.messages] as Message<Attrs<U>>[],
       { ...this.vars },
       this.print,
+      { ...this.usage },
     );
   }
 
@@ -170,6 +231,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       messages: this.messages,
       context: this.vars,
       print: this.print,
+      usage: this.usage,
     };
   }
 
@@ -191,6 +253,7 @@ export function createSession<
   context?: C;
   messages?: Message<Attrs<M>>[];
   print?: boolean;
+  usage?: SessionUsage;
 }): Session<Vars<C>, Attrs<M>> {
   options = options ?? {};
   const ctx = (options.context ?? {}) as C;
@@ -198,6 +261,7 @@ export function createSession<
     options.messages ?? [],
     ctx,
     options.print ?? false,
+    options.usage,
   );
 }
 
@@ -261,11 +325,13 @@ export class SessionBuilder<
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
     print?: boolean;
+    usage?: SessionUsage;
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
       print: options?.print,
+      usage: options?.usage,
     });
   }
 
@@ -327,11 +393,13 @@ export namespace Session {
     vars?: TVars;
     messages?: Message<Attrs<TAttrs>>[];
     print?: boolean;
+    usage?: SessionUsage;
   }): Session<Vars<TVars>, Attrs<TAttrs>> {
     return createSession<TVars, TAttrs>({
       context: options?.vars,
       messages: options?.messages,
       print: options?.print,
+      usage: options?.usage,
     });
   }
 

@@ -11,7 +11,7 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import type { Message } from './message';
-import type { Session, Attrs, Vars } from './session';
+import type { Session, Attrs, Vars, UsageInfo } from './session';
 import type { LLMOptions } from './source';
 
 /**
@@ -166,13 +166,28 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
 }
 
 /**
+ * Convert AI SDK usage to our UsageInfo format
+ */
+function convertUsageToUsageInfo(usage: any): UsageInfo | undefined {
+  if (!usage) return undefined;
+
+  return {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+    // OpenRouter returns cost in the usage object
+    cost: usage.cost || usage.totalCost,
+  };
+}
+
+/**
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
 export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
-): Promise<Message<TAttrs>> {
+): Promise<Message<TAttrs> & { usage?: UsageInfo }> {
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 
@@ -191,6 +206,9 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     toolChoice: options.toolChoice,
     ...options.sdkOptions,
   });
+
+  // Extract usage information
+  const usageInfo = convertUsageToUsageInfo(result.usage);
 
   // If there are tool calls, add them directly to the message
   if (result.toolCalls && result.toolCalls.length > 0) {
@@ -217,12 +235,14 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
       content: content,
       toolCalls: formattedToolCalls,
       toolResults: result.toolResults, // Include tool results from ai-sdk
+      usage: usageInfo,
     } as any;
   }
 
   return {
     type: 'assistant',
     content: result.text || ' ', // Ensure content is never empty for Anthropic compatibility
+    usage: usageInfo,
   };
 }
 
@@ -236,7 +256,7 @@ export async function generateWithSchema<
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message<TAttrs> & { structuredOutput?: unknown; usage?: UsageInfo }> {
   const messages = convertSessionToAiSdkMessages(session);
   const provider = createProvider(options);
 
@@ -265,10 +285,13 @@ export async function generateWithSchema<
       );
     }
 
+    const usageInfo = convertUsageToUsageInfo(result.usage);
+
     return {
       type: 'assistant',
       content: JSON.stringify(parsedOutput.data, null, 2),
       structuredOutput: parsedOutput.data,
+      usage: usageInfo,
     };
   } else {
     // Use tool-based generation (existing SchemaSource logic)
@@ -302,6 +325,7 @@ export async function generateWithSchema<
             content: response.content,
             toolCalls: response.toolCalls,
             structuredOutput: result.data,
+            usage: response.usage,
           };
         } else {
           throw new Error(`Schema validation failed: ${result.error.message}`);
