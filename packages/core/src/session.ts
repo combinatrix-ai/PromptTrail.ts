@@ -432,10 +432,25 @@ export namespace Session {
       );
     }
 
+    // Parse usage information if present
+    let usage: SessionUsage | undefined;
+    if (json.usage && typeof json.usage === 'object') {
+      const usageObj = json.usage as any;
+      usage = {
+        totalPromptTokens: usageObj.totalPromptTokens || 0,
+        totalCompletionTokens: usageObj.totalCompletionTokens || 0,
+        totalTokens: usageObj.totalTokens || 0,
+        totalPrice: usageObj.totalPrice || 0,
+        callCount: usageObj.callCount || 0,
+        history: Array.isArray(usageObj.history) ? usageObj.history : [],
+      };
+    }
+
     return createSession<TVars, TAttrs>({
       messages: json.messages as Message<Attrs<TAttrs>>[],
       context: json.context as TVars,
       print: json.print ? (json.print as boolean) : false,
+      usage,
     });
   }
 
