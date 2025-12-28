@@ -7,7 +7,7 @@ import {
   generateWithSchema,
   SchemaGenerationOptions,
 } from './generate';
-import type { Session, Vars } from './session';
+import type { Session, Vars, UsageInfo } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
@@ -111,6 +111,7 @@ export interface ModelOutput {
   }>;
   structuredOutput?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  usage?: UsageInfo;
 }
 
 /**
@@ -583,6 +584,7 @@ export interface MockResponse {
   }>;
   metadata?: Record<string, unknown>;
   structuredOutput?: Record<string, unknown>;
+  usage?: UsageInfo;
 }
 
 /**
@@ -1015,6 +1017,7 @@ export class LlmSource extends ModelSource {
               toolResults: mockResponse.toolResults,
               metadata: mockResponse.metadata,
               structuredOutput: mockResponse.structuredOutput,
+              usage: mockResponse.usage,
             };
           }
 
@@ -1035,6 +1038,7 @@ export class LlmSource extends ModelSource {
                 toolResults: mockResponse.toolResults,
                 metadata: mockResponse.metadata,
                 structuredOutput: mockResponse.structuredOutput,
+                usage: mockResponse.usage,
               };
             }
           } else {
@@ -1050,6 +1054,7 @@ export class LlmSource extends ModelSource {
             toolResults: mockResponse.toolResults,
             metadata: mockResponse.metadata,
             structuredOutput: mockResponse.structuredOutput,
+            usage: mockResponse.usage,
           };
         }
       } catch (error) {
@@ -1057,7 +1062,7 @@ export class LlmSource extends ModelSource {
           if (this.raiseError) {
             throw error;
           } else {
-            return { content: '' };
+            return { content: '', usage: undefined };
           }
         }
         console.log(`Mock generation attempt ${attempts} failed, retrying...`);
@@ -1137,6 +1142,7 @@ export class LlmSource extends ModelSource {
             toolResults: response.toolResults,
             metadata: response.attrs,
             structuredOutput: response.structuredOutput,
+            usage: response.usage,
           };
         }
 
@@ -1157,6 +1163,7 @@ export class LlmSource extends ModelSource {
               toolResults: response.toolResults,
               metadata: response.attrs,
               structuredOutput: response.structuredOutput,
+              usage: response.usage,
             };
           }
         } else {
@@ -1169,7 +1176,7 @@ export class LlmSource extends ModelSource {
           if (this.raiseError) {
             throw error;
           } else {
-            return { content: '' };
+            return { content: '', usage: undefined };
           }
         }
         console.log(`Generation attempt ${attempts} failed, retrying...`);

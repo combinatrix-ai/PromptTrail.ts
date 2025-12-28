@@ -80,6 +80,7 @@ export class Assistant<
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
         let outpuTAttrs: ModelOutput['metadata'] | undefined;
         let outputStructured: ModelOutput['structuredOutput'] | undefined;
+        let outputUsage: ModelOutput['usage'] | undefined;
 
         if (typeof rawOutput === 'string') {
           outputContent = rawOutput;
@@ -94,6 +95,7 @@ export class Assistant<
           outputToolCalls = modelOutput.toolCalls;
           outpuTAttrs = modelOutput.metadata;
           outputStructured = modelOutput.structuredOutput;
+          outputUsage = modelOutput.usage;
         } else {
           throw new Error(
             'Invalid content source output for AssistantTemplate',
@@ -106,6 +108,7 @@ export class Assistant<
           toolCalls: outputToolCalls,
           metadata: outpuTAttrs,
           structuredOutput: outputStructured,
+          usage: outputUsage,
         };
 
         // Extract tool results if available
@@ -144,6 +147,11 @@ export class Assistant<
           structuredContent: currentOutput.structuredOutput,
         };
         let updatedSession = validSession.addMessage(message);
+
+        // Add usage information if available
+        if (currentOutput.usage) {
+          updatedSession = updatedSession.withUsage(currentOutput.usage);
+        }
 
         // Add tool results as separate messages if available
         if (currentOutput.toolResults && currentOutput.toolResults.length > 0) {
@@ -199,6 +207,11 @@ export class Assistant<
         structuredContent: lastOutput.structuredOutput,
       };
       let lastAttemptSession = validSession.addMessage(lastMessage);
+
+      // Add usage information if available
+      if (lastOutput.usage) {
+        lastAttemptSession = lastAttemptSession.withUsage(lastOutput.usage);
+      }
 
       // Note: Not adding tool results to avoid ai-sdk message ordering issues
 
