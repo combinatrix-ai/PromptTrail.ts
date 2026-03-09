@@ -222,6 +222,8 @@ export class Parallel<
       return session.addMessage({
         type: 'assistant',
         content: content.content,
+        toolCalls: content.toolCalls,
+        structuredContent: content.structuredOutput,
         attrs: content.metadata as TAttrs,
       });
     } catch (error) {

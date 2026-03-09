@@ -114,6 +114,40 @@ describe('Parallel Template', () => {
       });
     });
 
+    it('should preserve structured output and tool calls from parallel sources', async () => {
+      const toolCall = {
+        id: 'call-1',
+        name: 'save_user',
+        arguments: { name: 'Noa' },
+      };
+      const structuredOutput = {
+        mood: 'curious',
+        nextAction: 'ask_follow_up',
+      };
+      const structuredSource = {
+        getContent: vi.fn().mockResolvedValue({
+          content: 'Structured response',
+          toolCalls: [toolCall],
+          structuredOutput,
+          metadata: { sourceId: 'structured-source' },
+        }),
+      };
+
+      const parallel = new Parallel().addSource(structuredSource);
+      const session = Session.create();
+      const result = await parallel.execute(session);
+      const messages = Array.from(result.messages);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({
+        type: 'assistant',
+        content: 'Structured response',
+        toolCalls: [toolCall],
+        structuredContent: structuredOutput,
+        attrs: { sourceId: 'structured-source' },
+      });
+    });
+
     it('should execute multiple sources in parallel with keep_all strategy', async () => {
       const parallel = new Parallel()
         .addSource(mockLlmSource1)
