@@ -5,7 +5,10 @@ import { z } from 'zod';
 /**
  * Type for AI SDK tools
  */
-export type Tool<TParams = any, TResult = any> = AiTool<TParams, TResult>;
+export type Tool<TParams = any, TResult = any> = AiTool<
+  z.ZodType<TParams>,
+  TResult
+>;
 
 /**
  * Tool namespace for creating tools in PromptTrail style
@@ -33,6 +36,10 @@ export namespace Tool {
     parameters: z.ZodType<TParams>;
     execute: (input: TParams) => Promise<TResult>;
   }): Tool<TParams, TResult> {
-    return aiTool(config);
+    return aiTool<z.ZodType<TParams>, TResult>({
+      description: config.description,
+      parameters: config.parameters,
+      execute: async (input) => config.execute(input),
+    });
   }
 }
