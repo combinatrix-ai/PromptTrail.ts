@@ -3,6 +3,7 @@ export * from './generate';
 export * from './message';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
+export * from './durable';
 export * from './templates';
 export * from './templates/primitives/structured';
 export * from './tool';
