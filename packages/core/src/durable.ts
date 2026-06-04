@@ -404,8 +404,9 @@ export class DurableAgent<
   }
 }
 
-interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
+export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   agent: DurableAgent<TVars, TAttrs>;
+  agentName: string;
   initial: Session<TVars, TAttrs>;
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
@@ -413,43 +414,138 @@ interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   inbox: Inbound[];
 }
 
-export class MemoryDurableRuntime {
+export interface PromptTrailRunOptions<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  agent: string | DurableAgent<TVars, TAttrs>;
+  runId?: string;
+  input?: string | Omit<Inbound, 'offset'>;
+  session?: Session<TVars, TAttrs>;
+  durable?: boolean;
+  resumable?: boolean;
+}
+
+export interface PromptTrailSendOptions {
+  agent?: string;
+  runId: string;
+  input: string | Omit<Inbound, 'offset'>;
+  durable?: boolean;
+  resumable?: boolean;
+}
+
+export interface RuntimeEvent {
+  source: string;
+  agent: string;
+  runId: string;
+  input: string;
+  kind?: InboundKind;
+  durable?: boolean;
+  resumable?: boolean;
+  attrs?: Attrs;
+}
+
+export interface EventSource {
+  start(emit: (event: RuntimeEvent) => Promise<void>): Promise<void> | void;
+  stop?(): Promise<void> | void;
+}
+
+export interface DurableRunStore {
+  get(runId: string): StoredRun<any, any> | undefined;
+  set(runId: string, run: StoredRun<any, any>): void;
+  has(runId: string): boolean;
+  delete(runId: string): void;
+}
+
+export class MemoryRunStore implements DurableRunStore {
   private runs = new Map<string, StoredRun<any, any>>();
 
-  async start<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    durableAgent: DurableAgent<TVars, TAttrs>,
-    options: {
-      runId: string;
-      session?: Session<TVars, TAttrs>;
-      input?: string;
-    },
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const initial = options.session ?? Session.create<TVars, TAttrs>();
-    this.runs.set(options.runId, {
-      agent: durableAgent,
-      initial,
-      status: 'open',
-      journal: { results: new Map(), sequence: [] },
-      inbox: [],
-    });
-    if (options.input !== undefined) {
-      this.append(options.runId, {
-        kind: 'user',
-        content: options.input,
-      });
+  get(runId: string): StoredRun<any, any> | undefined {
+    return this.runs.get(runId);
+  }
+
+  set(runId: string, run: StoredRun<any, any>): void {
+    this.runs.set(runId, run);
+  }
+
+  has(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  delete(runId: string): void {
+    this.runs.delete(runId);
+  }
+}
+
+export interface PromptTrailAppOptions {
+  store?: DurableRunStore;
+  agents?: Record<string, DurableAgent<any, any>>;
+  sources?: Record<string, EventSource>;
+}
+
+export class PromptTrailApp {
+  private readonly store: DurableRunStore;
+  private readonly agents = new Map<string, DurableAgent<any, any>>();
+  private readonly sources = new Map<string, EventSource>();
+  private runCounter = 0;
+
+  constructor(options: PromptTrailAppOptions = {}) {
+    this.store = options.store ?? new MemoryRunStore();
+    for (const [name, durableAgent] of Object.entries(options.agents ?? {})) {
+      this.agent(name, durableAgent);
     }
-    return this.resume<TVars, TAttrs>(options.runId);
+    for (const [name, source] of Object.entries(options.sources ?? {})) {
+      this.sources.set(name, source);
+    }
+  }
+
+  agent(name: string, durableAgent: DurableAgent<any, any>): this {
+    this.agents.set(name, durableAgent);
+    return this;
+  }
+
+  source(name: string, source: EventSource): this {
+    this.sources.set(name, source);
+    return this;
+  }
+
+  async start(): Promise<void> {
+    for (const source of this.sources.values()) {
+      await source.start((event) => this.handleEvent(event));
+    }
+  }
+
+  async stop(): Promise<void> {
+    for (const source of this.sources.values()) {
+      await source.stop?.();
+    }
+  }
+
+  async run<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+    options: PromptTrailRunOptions<TVars, TAttrs>,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    return this.startRun(options);
   }
 
   async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    runId: string,
-    content: string | Omit<Inbound, 'offset'>,
+    options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    this.append(
-      runId,
-      typeof content === 'string' ? { kind: 'user', content } : content,
-    );
-    return this.resume<TVars, TAttrs>(runId);
+    const durable = options.durable ?? options.resumable ?? true;
+    const existing = this.store.get(options.runId);
+    if (!existing) {
+      if (!options.agent) {
+        throw new Error(`Unknown durable run: ${options.runId}`);
+      }
+      return this.startRun<TVars, TAttrs>({
+        agent: options.agent,
+        runId: options.runId,
+        input: options.input,
+        durable,
+      });
+    }
+
+    this.append(options.runId, normalizeInbound(options.input));
+    return this.resume<TVars, TAttrs>(options.runId);
   }
 
   async resume<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
@@ -459,6 +555,7 @@ export class MemoryDurableRuntime {
     if (run.status === 'done' && run.result) {
       return { status: 'done', runId, session: run.result };
     }
+
     const state: DurableExecutionState<TVars, TAttrs> = {
       runId,
       session: run.initial,
@@ -467,6 +564,7 @@ export class MemoryDurableRuntime {
       cursor: 0,
       sequencePosition: 0,
     };
+
     try {
       const session = await run.agent.execute(state);
       run.status = 'done';
@@ -489,6 +587,84 @@ export class MemoryDurableRuntime {
     return [...this.getRun(runId).journal.sequence];
   }
 
+  private async handleEvent(event: RuntimeEvent): Promise<void> {
+    await this.send({
+      agent: event.agent,
+      runId: event.runId,
+      input: {
+        kind: event.kind ?? 'user',
+        content: event.input,
+        attrs: event.attrs,
+      },
+      durable: event.durable,
+      resumable: event.resumable,
+    });
+  }
+
+  private async startRun<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(
+    options: PromptTrailRunOptions<TVars, TAttrs>,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    const durable = options.durable ?? options.resumable ?? false;
+    const durableAgent = this.resolveAgent(options.agent);
+    const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
+    const initial = options.session ?? Session.create<TVars, TAttrs>();
+    const run: StoredRun<TVars, TAttrs> = {
+      agent: durableAgent,
+      agentName: durableAgent.name,
+      initial,
+      status: 'open',
+      journal: { results: new Map(), sequence: [] },
+      inbox: [],
+    };
+
+    if (durable) {
+      this.store.set(runId, run);
+      if (options.input !== undefined) {
+        this.append(runId, normalizeInbound(options.input));
+      }
+      return this.resume<TVars, TAttrs>(runId);
+    }
+
+    if (options.input !== undefined) {
+      run.inbox.push({ ...normalizeInbound(options.input), offset: 0 });
+    }
+    return this.executeEphemeral(runId, run);
+  }
+
+  private async executeEphemeral<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(
+    runId: string,
+    run: StoredRun<TVars, TAttrs>,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    const state: DurableExecutionState<TVars, TAttrs> = {
+      runId,
+      session: run.initial,
+      journal: run.journal,
+      inbox: run.inbox,
+      cursor: 0,
+      sequencePosition: 0,
+    };
+    try {
+      const session = await run.agent.execute(state);
+      return { status: 'done', runId, session };
+    } catch (error) {
+      if (error instanceof Suspend) {
+        return {
+          status: 'suspended',
+          runId,
+          awaiting: error.stepId,
+          session: state.session,
+        };
+      }
+      throw error;
+    }
+  }
+
   private append(runId: string, message: Omit<Inbound, 'offset'>): void {
     const run = this.getRun(runId);
     run.inbox.push({ ...message, offset: run.inbox.length });
@@ -498,10 +674,23 @@ export class MemoryDurableRuntime {
     }
   }
 
+  private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
+    durableAgent: string | DurableAgent<TVars, TAttrs>,
+  ): DurableAgent<TVars, TAttrs> {
+    if (typeof durableAgent !== 'string') {
+      return durableAgent;
+    }
+    const resolved = this.agents.get(durableAgent);
+    if (!resolved) {
+      throw new Error(`Unknown agent: ${durableAgent}`);
+    }
+    return resolved as DurableAgent<TVars, TAttrs>;
+  }
+
   private getRun<TVars extends Vars, TAttrs extends Attrs>(
     runId: string,
   ): StoredRun<TVars, TAttrs> {
-    const run = this.runs.get(runId);
+    const run = this.store.get(runId);
     if (!run) {
       throw new Error(`Unknown durable run: ${runId}`);
     }
@@ -509,8 +698,85 @@ export class MemoryDurableRuntime {
   }
 }
 
+export class MemoryDurableRuntime {
+  private readonly app = new PromptTrailApp();
+
+  async start<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+    durableAgent: DurableAgent<TVars, TAttrs>,
+    options: {
+      runId: string;
+      session?: Session<TVars, TAttrs>;
+      input?: string;
+    },
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    return this.app.run<TVars, TAttrs>({
+      agent: durableAgent,
+      runId: options.runId,
+      session: options.session,
+      input: options.input,
+      durable: true,
+    });
+  }
+
+  async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+    runId: string,
+    content: string | Omit<Inbound, 'offset'>,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    return this.app.send<TVars, TAttrs>({
+      runId,
+      input: content,
+      durable: true,
+    });
+  }
+
+  async resume<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+    runId: string,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    return this.app.resume<TVars, TAttrs>(runId);
+  }
+
+  journal(runId: string): readonly string[] {
+    return this.app.journal(runId);
+  }
+}
+
+function normalizeInbound(
+  input: string | Omit<Inbound, 'offset'>,
+): Omit<Inbound, 'offset'> {
+  return typeof input === 'string' ? { kind: 'user', content: input } : input;
+}
+
 export function agent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
   name: string,
 ): DurableAgent<TVars, TAttrs> {
   return new DurableAgent<TVars, TAttrs>(name);
 }
+
+export function memoryStore(): DurableRunStore {
+  return new MemoryRunStore();
+}
+
+export function app(options: PromptTrailAppOptions = {}): PromptTrailApp {
+  return new PromptTrailApp(options);
+}
+
+export function manualSource(): EventSource & {
+  emit(event: RuntimeEvent): Promise<void>;
+} {
+  let emitEvent: ((event: RuntimeEvent) => Promise<void>) | undefined;
+  return {
+    start(emit) {
+      emitEvent = emit;
+    },
+    async emit(event) {
+      if (!emitEvent) {
+        throw new Error('Manual source has not been started');
+      }
+      await emitEvent(event);
+    },
+  };
+}
+
+export const PromptTrail = {
+  app,
+};

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   MemoryDurableRuntime,
-  agent,
   NondeterminismError,
+  PromptTrail,
+  agent,
+  manualSource,
+  memoryStore,
 } from '../../durable';
 
 describe('durable agent runtime', () => {
-  it('suspends at awaitUser and resumes from the inbox', async () => {
+  it('runs durable agents through the app runtime', async () => {
     let modelCalls = 0;
     const assistant = agent('assistant')
       .system('You are helpful.')
@@ -19,11 +22,16 @@ describe('durable agent runtime', () => {
           })
           .awaitUser('next'),
       );
-    const runtime = new MemoryDurableRuntime();
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
 
-    const first = await runtime.start(assistant, {
+    const first = await app.run({
+      agent: 'assistant',
       runId: 'run-1',
       input: 'hello',
+      durable: true,
     });
 
     expect(first.status).toBe('suspended');
@@ -35,7 +43,10 @@ describe('durable agent runtime', () => {
     ]);
     expect(modelCalls).toBe(1);
 
-    const second = await runtime.send('run-1', 'next message');
+    const second = await app.send({
+      runId: 'run-1',
+      input: 'next message',
+    });
 
     expect(second.status).toBe('done');
     expect(second.session.messages.map((message) => message.content)).toEqual([
@@ -47,7 +58,7 @@ describe('durable agent runtime', () => {
     expect(modelCalls).toBe(1);
   });
 
-  it('journals model and tool effects so resume does not re-execute them', async () => {
+  it('journals model and tool effects for durable replay', async () => {
     let modelCalls = 0;
     let toolCalls = 0;
     const assistant = agent('tool-agent')
@@ -84,19 +95,24 @@ describe('durable agent runtime', () => {
           .untilNoToolCalls()
           .awaitUser('next'),
       );
-    const runtime = new MemoryDurableRuntime();
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
 
-    const first = await runtime.start(assistant, {
+    const first = await app.run({
+      agent: assistant,
       runId: 'run-2',
       input: 'hello',
+      durable: true,
     });
-    const replay = await runtime.resume('run-2');
+    const replay = await app.resume('run-2');
 
     expect(first.status).toBe('suspended');
     expect(replay.status).toBe('suspended');
     expect(modelCalls).toBe(2);
     expect(toolCalls).toBe(1);
-    expect(runtime.journal('run-2')).toEqual([
+    expect(app.journal('run-2')).toEqual([
       'main#0/inbox/peek',
       'main#0/reply/model',
       'main#0/tools/call-1',
@@ -105,39 +121,96 @@ describe('durable agent runtime', () => {
     ]);
   });
 
-  it('detects replay divergence when the graph changes under an existing run', async () => {
-    const runtime = new MemoryDurableRuntime();
-    const firstAgent = agent('first')
-      .system('System')
-      .assistant('a', () => 'A');
+  it('can run ephemeral executions without persisting them', async () => {
+    const assistant = agent('ephemeral').assistant('reply', () => 'hello');
+    const app = PromptTrail.app({ agents: { assistant } });
 
-    await runtime.start(firstAgent, { runId: 'run-3' });
+    const result = await app.run({
+      agent: 'assistant',
+      input: 'ignored',
+    });
 
-    const changedAgent = agent('changed')
-      .system('System')
-      .assistant('b', () => 'B');
-
-    await runtime.start(changedAgent, { runId: 'run-4' });
-    expect(runtime.journal('run-4')).toEqual(['b/model']);
+    expect(result.status).toBe('done');
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+    ]);
+    expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
   });
 
   it('throws NondeterminismError for mismatched journal order', async () => {
-    const runtime = new MemoryDurableRuntime();
+    const store = memoryStore();
+    const app = PromptTrail.app({ store });
     const stable = agent('stable')
       .system('System')
       .assistant('a', () => 'A');
 
-    await runtime.start(stable, { runId: 'run-5' });
+    await app.run({
+      agent: stable,
+      runId: 'run-5',
+      durable: true,
+    });
 
-    const run = (runtime as any).runs.get('run-5');
+    const run = store.get('run-5')!;
     run.agent = agent('changed')
       .system('System')
       .assistant('b', () => 'B');
     run.status = 'open';
     run.result = undefined;
 
-    await expect(runtime.resume('run-5')).rejects.toBeInstanceOf(
+    await expect(app.resume('run-5')).rejects.toBeInstanceOf(
       NondeterminismError,
     );
+  });
+
+  it('routes events from app sources into durable runs', async () => {
+    const source = manualSource();
+    const assistant = agent('assistant')
+      .system('System')
+      .turn('main', (turn) =>
+        turn
+          .steer()
+          .assistant(
+            'reply',
+            (session) => `seen:${session.getMessagesByType('user').length}`,
+          )
+          .awaitUser(),
+      );
+    const app = PromptTrail.app({
+      agents: { assistant },
+      sources: { manual: source },
+      store: memoryStore(),
+    });
+
+    await app.start();
+    await source.emit({
+      source: 'manual',
+      agent: 'assistant',
+      runId: 'run-6',
+      input: 'hello',
+      durable: true,
+    });
+
+    const result = await app.resume('run-6');
+
+    expect(result.status).toBe('suspended');
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'System',
+      'hello',
+      'seen:1',
+    ]);
+  });
+
+  it('keeps MemoryDurableRuntime as a compatibility wrapper', async () => {
+    const runtime = new MemoryDurableRuntime();
+    const assistant = agent('assistant')
+      .assistant('reply', () => 'hello')
+      .turn('wait', (turn) => turn.awaitUser());
+
+    const result = await runtime.start(assistant, {
+      runId: 'compat',
+    });
+
+    expect(result.status).toBe('suspended');
+    expect(runtime.journal('compat')).toEqual(['reply/model']);
   });
 });
