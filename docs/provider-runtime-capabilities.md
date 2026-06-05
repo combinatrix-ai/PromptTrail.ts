@@ -159,8 +159,11 @@ Provider mapping differs:
 - OpenAI Responses API supports skills through shell tool environments, not as a
   top-level model primitive. Hosted shell can mount uploaded skill references
   via `tools[].environment.skills`; local shell can expose local skill paths.
-  When no compatible shell/runtime capability is enabled, skills fall back to
-  instruction injection (see lossy-injection note below).
+  `RuntimeSkill` must not implicitly enable the shell tool: some skills are
+  instruction-only, and shell/container execution changes the permission,
+  cost, and data-exposure boundary. When no compatible shell/runtime capability
+  is explicitly enabled, skills fall back to instruction injection (see
+  lossy-injection note below).
 - For any adapter that falls back to instruction injection, only the
   `instructions` text is conveyed; `path`, bundled files, and scripts are
   dropped. The adapter must `warn` (or `error` under a strict policy) when a
@@ -876,8 +879,9 @@ Avoid:
 - Add native Anthropic Messages skills via `container.skill_id` + code execution
   tool + Anthropic's three API Skills beta headers, with optional `/v1/skills`
   upload behind approval.
-- Add OpenAI Responses skill mounting for shell environments; fall back to
-  instruction injection when no compatible shell/runtime capability is enabled.
+- Add OpenAI Responses skill mounting for explicitly enabled shell environments;
+  do not auto-add shell for `RuntimeSkill`. Fall back to instruction injection
+  when no compatible shell/runtime capability is enabled.
 - Add the instruction-injection fallback with a warn/error on dropped skill
   files for adapters without native skill support or without an enabled runtime
   that can consume skill files.
