@@ -12,7 +12,7 @@ describe('SchemaTemplate API Integration', () => {
   let anthropicCheapLLM: LlmSource;
 
   beforeAll(() => {
-    openaiLLM = Source.llm().model('gpt-4o-mini').temperature(0.7);
+    openaiLLM = Source.llm().model('gpt-5.4-nano').temperature(0.7);
     anthropicLLM = Source.llm()
       .anthropic()
       .model('claude-haiku-4-5')

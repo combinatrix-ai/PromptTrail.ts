@@ -21,7 +21,7 @@ describe('Basic Text Generation', () => {
   it('should demonstrate generateText with a simple prompt', async () => {
     // Example of how to use generateText
     const result = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-5.4-nano'),
       prompt: 'Write a short greeting.',
     });
 
@@ -34,7 +34,7 @@ describe('Basic Text Generation', () => {
   it('should demonstrate multi-turn conversations with messages', async () => {
     // Example of using messages for conversation
     const result = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-5.4-nano'),
       messages: [
         { role: 'system', content: 'You are a helpful assistant.' },
         { role: 'user', content: 'What is machine learning?' },
@@ -56,7 +56,7 @@ describe('Basic Text Generation', () => {
   it('should demonstrate streaming text responses', async () => {
     // Example of streaming text
     const result = streamText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-5.4-nano'),
       prompt: 'Write a short greeting.',
     });
 
@@ -109,7 +109,7 @@ describe('Tool Integration', () => {
 
     // Example of using tools
     const result = streamText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-5.4-nano'),
       tools: { weatherTool: weatherTool },
       prompt: 'What is the weather in New York?',
     });
@@ -178,7 +178,7 @@ describe('Tool Integration', () => {
 
       try {
         const result = await generateObject({
-          model: openai('gpt-4o-mini', { structuredOutputs: true }),
+          model: openai('gpt-5.4-nano', { structuredOutputs: true }),
           schema: simplifiedSchema,
           prompt:
             'Create a 3-day itinerary for Tokyo, Japan, focusing on traditional culture and food.',
@@ -217,7 +217,7 @@ describe('Tool Integration', () => {
 
       try {
         await generateObject({
-          model: openai('gpt-4o-mini', { structuredOutputs: true }),
+          model: openai('gpt-5.4-nano', { structuredOutputs: true }),
           schema: userSchema,
           prompt: 'Generate user data for John Doe with an invalid email',
         });
@@ -249,7 +249,7 @@ describe('Tool Integration', () => {
       });
 
       const result = await generateText({
-        model: openai('gpt-4o-mini', { structuredOutputs: true }),
+        model: openai('gpt-5.4-nano', { structuredOutputs: true }),
         experimental_output: Output.object({
           schema: simplifiedSchema,
         }),

@@ -24,7 +24,7 @@ import { Agent } from '@prompttrail/core';
 const chat = Agent.create()
   .system("You're a helpful assistant.")
   .user("What's TypeScript?")
-  .assistant(); // Uses OpenAI GPT-4o-mini by default
+  .assistant(); // Uses OpenAI GPT-5.4 nano via the Responses API by default
 
 const session = await chat.execute();
 console.log(session.getLastMessage()?.content);
@@ -58,7 +58,7 @@ const agent = Agent.create()
   .assistant(
     Source.llm()
       .openai()
-      .model('gpt-4')
+      .model('gpt-5.4-nano')
       .temperature(0.9)
       .apiKey(process.env.OPENAI_API_KEY),
   );
@@ -113,6 +113,36 @@ import { Source } from '@prompttrail/core';
 
 .assistant(Source.llm())                 // LLM generation (default)
 .assistant(Source.cli())                 // Manual assistant input
+```
+
+### Generating Multiple Messages
+
+```typescript
+import { Agent, Message } from '@prompttrail/core';
+
+const agent = Agent.create()
+  .user('Summarize the external workflow')
+  .messages(async (session) => [
+    Message.assistant(`Processed ${session.messages.length} messages`),
+  ]);
+```
+
+### Codex App Server Turns
+
+Codex App Server is treated as an external runtime turn, not as an OpenAI model
+provider. `codexTurn()` runs one Codex turn and inserts the final Codex answer
+back into the PromptTrail session while preserving Codex metadata in message
+attributes.
+
+```typescript
+const agent = Agent.create()
+  .user('Inspect this repository and suggest the next edit')
+  .codexTurn({
+    transport: { kind: 'http', url: 'http://localhost:1455' },
+    cwd: process.cwd(),
+    model: 'gpt-5.4-nano',
+    sandboxPolicy: 'workspace-write',
+  });
 ```
 
 ### Control Flow
@@ -505,8 +535,8 @@ for await (const chunk of generateTextStream(session, Source.llm().openai())) {
 
 ```typescript
 const openaiConfig = Source.llm()
-  .openai()
-  .model('gpt-4')
+  .openai({ api: 'responses' })
+  .model('gpt-5.4-nano')
   .temperature(0.7)
   .maxTokens(1000)
   .apiKey(process.env.OPENAI_API_KEY);

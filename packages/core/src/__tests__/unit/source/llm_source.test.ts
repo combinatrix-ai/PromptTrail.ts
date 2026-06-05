@@ -33,7 +33,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'openai',
-            modelName: 'gpt-4o-mini',
+            modelName: 'gpt-5.4-nano',
           }),
         }),
       );

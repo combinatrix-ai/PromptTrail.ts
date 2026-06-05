@@ -40,7 +40,7 @@ import { createWeatherTool, expect_types } from '../utils';
 
 const openAILLMSource = Source.llm()
   .openai()
-  .model('gpt-4o-mini')
+  .model('gpt-5.4-nano')
   .temperature(0.7);
 
 const anthropicLLMSource = Source.llm()

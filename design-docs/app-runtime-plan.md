@@ -17,20 +17,20 @@ than a separate runtime family.
 ## Target API Sketch
 
 ```ts
-const codingAgent = Agent.create("coding-agent")
-  .system("You are a careful coding agent.")
-  .tool("search", searchTool)
-  .turn("main", (turn) =>
+const codingAgent = Agent.create('coding-agent')
+  .system('You are a careful coding agent.')
+  .tool('search', searchTool)
+  .turn('main', (turn) =>
     turn
       .steer()
-      .assistant("act", openai("gpt-4.1"))
+      .assistant('act', openai('gpt-4.1'))
       .runTools()
       .untilNoToolCalls()
       .awaitUser(),
   );
 
 const app = PromptTrail.app({
-  store: sqliteStore("./prompttrail.db"),
+  store: sqliteStore('./prompttrail.db'),
 
   agents: {
     coding: codingAgent,
@@ -39,18 +39,18 @@ const app = PromptTrail.app({
   sources: {
     cli: cliSource(),
     github: githubSource({
-      repo: "combinatrix-ai/PromptTrail.ts",
+      repo: 'combinatrix-ai/PromptTrail.ts',
       onIssueComment: (comment) => ({
-        agent: "coding",
+        agent: 'coding',
         runId: `issue:${comment.issue.number}`,
         input: comment.body,
         durable: true,
       }),
     }),
     cron: cronSource({
-      "daily-review": {
-        schedule: "0 9 * * *",
-        agent: "coding",
+      'daily-review': {
+        schedule: '0 9 * * *',
+        agent: 'coding',
         runId: ({ date }) => `daily-review:${date}`,
         input: "Review today's open tasks.",
         durable: true,
@@ -66,14 +66,14 @@ For direct use without sources:
 
 ```ts
 const app = PromptTrail.app({
-  store: sqliteStore("./prompttrail.db"),
+  store: sqliteStore('./prompttrail.db'),
   agents: { coding: codingAgent },
 });
 
 await app.send({
-  agent: "coding",
-  runId: "task-1",
-  input: "Review this repository.",
+  agent: 'coding',
+  runId: 'task-1',
+  input: 'Review this repository.',
   durable: true,
 });
 ```
@@ -93,8 +93,8 @@ Without durable/resumable, the same app/runtime can run ephemeral executions.
 
 ```ts
 await app.run({
-  agent: "coding",
-  input: "Hello",
+  agent: 'coding',
+  input: 'Hello',
 });
 ```
 
@@ -105,10 +105,10 @@ that produce normalized events.
 
 ```ts
 type RuntimeEvent = {
-  source: "cli" | "http" | "github" | "slack" | "cron" | "fs";
+  source: 'cli' | 'http' | 'github' | 'slack' | 'cron' | 'fs';
   agent: string;
   runId: string;
-  kind?: "user" | "system" | "control";
+  kind?: 'user' | 'system' | 'control';
   input: string;
   durable?: boolean;
   attrs?: Record<string, unknown>;
@@ -133,7 +133,7 @@ The store should be an adapter, not a runtime type.
 
 ```ts
 const app = PromptTrail.app({
-  store: sqliteStore("./runs.db"),
+  store: sqliteStore('./runs.db'),
   agents: { coding: codingAgent },
 });
 ```

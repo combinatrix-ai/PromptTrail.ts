@@ -1,4 +1,5 @@
 import type { Session } from '../session';
+import type { CodexTurnOptions } from '../codex_app_server';
 import { ModelOutput, Source, ValidationOptions } from '../source';
 import { Attrs, Vars } from '../session';
 import { IValidator } from '../validators';
@@ -9,7 +10,12 @@ import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
 import { Assistant } from './primitives/assistant';
+import { CodexTurn } from './primitives/codex_turn';
 import { Conditional } from './primitives/conditional';
+import {
+  GenerateMessages,
+  type GenerateMessagesFn,
+} from './primitives/messages';
 import { Structured } from './primitives/structured';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
@@ -103,6 +109,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.add(new Transform(transform));
+    return this;
+  }
+
+  messages(generateMessages: GenerateMessagesFn<TM, TC>) {
+    this.root.add(new GenerateMessages(generateMessages));
+    return this;
+  }
+
+  codexTurn(options: CodexTurnOptions<TM, TC>) {
+    this.root.add(new CodexTurn(options));
     return this;
   }
 

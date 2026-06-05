@@ -118,7 +118,7 @@ export class CodingAgent {
     if (config.provider === 'openai') {
       llmSource = llmSource.openai({
         apiKey: config.apiKey,
-        modelName: config.modelName || 'gpt-4o-mini',
+        modelName: config.modelName || 'gpt-5.4-nano',
       });
     } else {
       llmSource = llmSource.anthropic({

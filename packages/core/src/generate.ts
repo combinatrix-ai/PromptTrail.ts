@@ -114,7 +114,9 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
     }
 
     const openai = createOpenAI(sdkProviderOptions);
-    return openai(providerConfig.modelName);
+    return providerConfig.api === 'responses'
+      ? openai.responses(providerConfig.modelName)
+      : openai(providerConfig.modelName);
   } else if (providerConfig.type === 'anthropic') {
     if (providerConfig.baseURL) {
       sdkProviderOptions.baseURL = providerConfig.baseURL;
@@ -180,6 +182,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     topK: options.topK,
     tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
+    providerOptions: options.providerOptions as any,
     ...options.sdkOptions,
   });
 
@@ -243,6 +246,7 @@ export async function generateWithSchema<
       experimental_output: Output.object({
         schema: schemaOptions.schema,
       }),
+      providerOptions: options.providerOptions as any,
       ...options.sdkOptions,
     });
 
@@ -330,6 +334,7 @@ export async function* generateTextStream<
     topK: options.topK,
     tools: options.tools as ToolSet,
     toolChoice: options.toolChoice,
+    providerOptions: options.providerOptions as any,
     ...options.sdkOptions,
   });
 

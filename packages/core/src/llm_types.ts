@@ -4,6 +4,7 @@ export interface OpenAIProviderConfig {
   type: 'openai';
   apiKey: string;
   modelName: string;
+  api?: 'chat' | 'responses';
   baseURL?: string;
   organization?: string;
   dangerouslyAllowBrowser?: boolean;
@@ -37,6 +38,7 @@ export interface LLMOptions {
   tools?: Record<string, unknown>;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
+  providerOptions?: Record<string, Record<string, unknown>>;
   sdkOptions?: Record<string, unknown>;
   maxCallLimit?: number;
 }

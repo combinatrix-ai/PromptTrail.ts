@@ -587,7 +587,8 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || '',
-        modelName: 'gpt-4o-mini',
+        modelName: 'gpt-5.4-nano',
+        api: 'responses',
       },
       temperature: 0.7,
       ...options,
@@ -654,7 +655,8 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'openai',
         apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
-        modelName: config?.modelName || 'gpt-4o-mini',
+        modelName: config?.modelName || 'gpt-5.4-nano',
+        api: config?.api ?? 'responses',
         baseURL: config?.baseURL,
         organization: config?.organization,
         dangerouslyAllowBrowser: config?.dangerouslyAllowBrowser,
@@ -703,6 +705,23 @@ export class LlmSource extends ModelSource {
         apiKey,
       },
     });
+  }
+
+  openaiApi(api: 'chat' | 'responses'): LlmSource {
+    if (this.options.provider.type !== 'openai') {
+      throw new Error('openaiApi() can only be used with the OpenAI provider.');
+    }
+
+    return this.clone({
+      provider: {
+        ...this.options.provider,
+        api,
+      },
+    });
+  }
+
+  providerOptions(options: Record<string, Record<string, unknown>>): LlmSource {
+    return this.clone({ providerOptions: options });
   }
 
   // Generation parameters - all return new instances
