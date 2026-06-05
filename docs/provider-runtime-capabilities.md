@@ -10,6 +10,8 @@ toward this document in small steps.
 
 - OpenAI Responses API: https://developers.openai.com/api/reference/responses/overview
 - OpenAI tools guide: https://developers.openai.com/api/docs/guides/tools
+- OpenAI Responses Skills: https://developers.openai.com/api/docs/guides/tools-skills
+- OpenAI Responses Shell: https://developers.openai.com/api/docs/guides/tools-shell
 - OpenAI Agents SDK: https://openai.github.io/openai-agents-python/
 - OpenAI Codex SDK: https://developers.openai.com/codex/sdk
 - OpenAI Codex App Server: https://developers.openai.com/codex/app-server
@@ -19,6 +21,9 @@ toward this document in small steps.
 - Claude tool use: https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
 - Anthropic Agent Skills overview: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview
 - Anthropic Skills with the Claude API: https://platform.claude.com/docs/en/build-with-claude/skills-guide
+- Google Gemini API libraries: https://ai.google.dev/gemini-api/docs/libraries
+- Google GenAI SDK (JS/TS, `@google/genai`): https://github.com/googleapis/js-genai
+- Google Agent Development Kit (ADK): https://adk.dev/
 
 ## Core Principle
 
@@ -490,8 +495,14 @@ Current state:
 
 Target state:
 
-- Add a native Gemini adapter (via the official Google GenAI SDK) so Google is a
-  first-class deep-integration provider alongside OpenAI and Anthropic.
+- Add a native Gemini adapter so Google is a first-class deep-integration
+  provider alongside OpenAI and Anthropic.
+- Build it on the official Google GenAI SDK, `@google/genai` (repo
+  `googleapis/js-genai`, GA since May 2025). Do not use the legacy
+  `@google/generative-ai` package: it is deprecated (end of support
+  2025-11-30) and lacks recent features. Verify whether ai-sdk's Google provider
+  already tracks `@google/genai` so the ai-sdk path and the native path do not
+  diverge on SDK version.
 
 Native Gemini requirements:
 
@@ -713,6 +724,35 @@ other runtime adapters: `PromptTrailTool` is a client-executed in-process
 function tool, built-ins stay `runtime` mode, and Handoffs map to a
 `SubagentDefinition` capability only when explicitly passed in.
 
+### Google ADK (deferred)
+
+Google's analog to the OpenAI Agents SDK is the Agent Development Kit (ADK,
+`adk.dev`). Like the Agents SDK it is a full agent framework that owns its own
+loop, with Agents, a Runner, Sessions/Memory, Graph Workflows, tools (function /
+MCP / OpenAPI), multi-agent/sub-agents, and its own Skills concept. It ships a
+TypeScript implementation (alongside Python/Go/Java/Kotlin) and is
+**model-agnostic** (Gemini, Claude, Gemma, Ollama, vLLM, LiteLLM).
+
+Status: deferred. If added, it would be a runtime adapter named `adkTurn()`,
+parallel to `agentsTurn()`.
+
+Why deferred — the same reasoning as the OpenAI Agents SDK, and more so:
+
+- ADK overlaps PromptTrail's core concepts even more broadly (Sessions/Memory ↔
+  `Session`, sub-agents ↔ `subroutine()`, its Skills ↔ `RuntimeSkill`). It is a
+  competing orchestration framework, so nesting it needs a concrete motivation
+  (reusing an existing ADK app), not a default integration.
+- Because ADK is model-agnostic, it is not a way to reach Gemini — Gemini is
+  reached natively through `@google/genai`. ADK would only be integrated to host
+  an existing ADK agent as one PromptTrail turn.
+
+Note the resulting symmetry: each vendor exposes a model API plus an agent
+framework. PromptTrail adopts the model APIs natively (OpenAI Responses,
+Anthropic Messages, Google Gemini) and the coding runtimes (`codexTurn`,
+`claudeTurn`), while deferring the general agent frameworks (`agentsTurn` for the
+OpenAI Agents SDK, `adkTurn` for Google ADK) because they duplicate PromptTrail's
+own orchestration.
+
 ## Capability Mapping Matrix
 
 | PromptTrail concept  | OpenAI Responses                                                                | Anthropic Messages                                                                           | Codex App Server                                                   | Claude Agent SDK                                  |
@@ -769,6 +809,7 @@ Preferred public names:
 - `codexTurn()`
 - `claudeTurn()`
 - `agentsTurn()` (deferred; OpenAI Agents SDK runtime adapter)
+- `adkTurn()` (deferred; Google ADK runtime adapter)
 
 Avoid:
 
@@ -863,6 +904,7 @@ the sections above:
 - Default adapter selection (native on parity, ai-sdk escape hatch) — ai-sdk
   Adapter.
 - Scope of native adapters (OpenAI/Anthropic/Google + ai-sdk) and deferral of
-  OpenAI Agents SDK — Model API Adapter, OpenAI Agents SDK (deferred).
+  the general agent frameworks (OpenAI Agents SDK, Google ADK) — Model API
+  Adapter, OpenAI Agents SDK (deferred), Google ADK (deferred).
 
 Add new questions here as they arise.
