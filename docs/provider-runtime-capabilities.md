@@ -141,10 +141,12 @@ Provider mapping differs:
 - Anthropic Messages API supports skills natively (verified). A skill is passed
   by `skill_id` in the `container` parameter together with the code execution
   tool; the skill runs in Anthropic's code execution container (`provider`
-  execution mode), not as injected text. Skill invocation examples use the
-  `code-execution-2025-08-25` and `skills-2025-10-02` beta headers. The broader
-  skill workflow can also require the `files-api-2025-04-14` beta header for
-  file operations and custom skill upload/download. Pre-built skills (`pptx`,
+  execution mode), not as injected text. Anthropic's API docs list three beta
+  headers as prerequisites for API Skills: `code-execution-2025-08-25`,
+  `skills-2025-10-02`, and `files-api-2025-04-14`. The third header is described
+  as supporting file upload/download to and from the container, but PromptTrail
+  should still send all three for native Anthropic Skills unless Anthropic
+  documents a narrower invocation-only contract. Pre-built skills (`pptx`,
   `xlsx`, `docx`, `pdf`) are referenced by id; custom skills must first be
   uploaded via the Skills API (`/v1/skills`), which returns a workspace-scoped
   id. The API container has no network access and no runtime package
@@ -464,13 +466,12 @@ Native Anthropic requirements:
   keeping PromptTrail's common `toolChoice` mapping.
 - Support native skills: when a `RuntimeSkill` has a `skillId`, pass it via the
   `container` parameter with the code execution tool and the required beta
-  headers for invocation (`code-execution-2025-08-25`,
-  `skills-2025-10-02`), rather than injecting instructions. File operations and
-  custom skill upload/download can additionally require `files-api-2025-04-14`.
-  Optionally support uploading a PromptTrail-defined skill through the Skills
-  API (`/v1/skills`) to obtain an id, gated behind explicit approval since it
-  publishes the skill workspace-wide. Account for the container's no-network /
-  no-package-install constraints.
+  headers listed by Anthropic for API Skills (`code-execution-2025-08-25`,
+  `skills-2025-10-02`, `files-api-2025-04-14`), rather than injecting
+  instructions. Optionally support uploading a PromptTrail-defined skill through
+  the Skills API (`/v1/skills`) to obtain an id, gated behind explicit approval
+  since it publishes the skill workspace-wide. Account for the container's
+  no-network / no-package-install constraints.
 
 Recommended API:
 
@@ -832,8 +833,8 @@ Avoid:
 - Add Claude Agent SDK skill referencing.
 - Add explicit skill materialization for Claude Agent SDK.
 - Add native Anthropic Messages skills via `container.skill_id` + code execution
-  tool + invocation beta headers, with optional `/v1/skills` upload behind
-  approval.
+  tool + Anthropic's three API Skills beta headers, with optional `/v1/skills`
+  upload behind approval.
 - Add OpenAI Responses skill mounting for shell environments; fall back to
   instruction injection when no compatible shell/runtime capability is enabled.
 - Add the instruction-injection fallback with a warn/error on dropped skill
