@@ -278,6 +278,45 @@ Recommended message attrs:
 - `message.attrs.codex` for Codex App Server turn metadata
 - `message.attrs.claudeAgent` for Claude Agent SDK turn metadata
 
+## Conversation State
+
+Some providers and runtimes keep their own server-side copy of the conversation
+and let you continue it by reference instead of resending history:
+
+- OpenAI Responses: `previous_response_id` (and the Conversations API).
+- Codex App Server: `threadId`.
+- Claude Agent SDK: session / resume id.
+
+Anthropic Messages and Google Gemini are stateless, so this concept is a no-op
+for them: PromptTrail always resends the converted history.
+
+This server-side state creates a second source of truth, which conflicts with
+PromptTrail's immutable, locally-owned session. The decided rules resolve that
+conflict:
+
+1. **PromptTrail messages are always canonical.** Server-side state is only a
+   send-time optimization (reference an id instead of resending full input). It
+   is never the source of truth.
+2. **No provider state on the `Session` type.** The session is not parameterized
+   by provider and gains no mutable "current response id" field. Continuation is
+   derived from the last assistant message's provider metadata
+   (`attrs.openai.responseId`, `attrs.codex.threadId`, ...). This keeps the
+   session immutable and makes forking/branching correct for free: each branch's
+   last message carries its own id, so each branch continues the right chain.
+3. **Opt-in is conversation-scoped, not source-scoped.** Whether to use
+   server-side continuation is a property of the whole conversation, expressed
+   as a single provider-neutral option, not a per-`Source.llm()` toggle. A
+   per-source flag is rejected: it would let turns in one session disagree about
+   whether the server is tracking state, which is incoherent.
+4. **Divergence falls back to stateless.** If local history has been compacted,
+   edited, or branched since the referenced response/thread, the adapter must
+   drop the reference and send full input (starting a fresh server chain).
+   "PromptTrail history wins."
+
+Generalize all three under one provider-neutral concept — a `ConversationBinding`
+(opaque `{ provider, id }` derived from message metadata, never authoritative).
+The existing `codexTurn()` thread handling is one instance of this binding.
+
 ## Model API Adapters
 
 ### OpenAI Responses API
@@ -297,9 +336,12 @@ Native Responses requirements:
 
 - Preserve `response.id` as `attrs.openai.responseId`.
 - Preserve output items as `attrs.openai.outputItems`.
-- Support `previous_response_id` when a PromptTrail session opts into
-  provider-managed conversation state.
-- Support stateless mode by converting PromptTrail messages into `input` items.
+- Support `previous_response_id` per the Conversation State rules: derive it from
+  the last assistant message's `attrs.openai.responseId`, treat it as a send
+  optimization only, and fall back to stateless full input on any history
+  divergence.
+- Support stateless mode by converting PromptTrail messages into `input` items
+  (this is also the divergence fallback).
 - Translate `PromptTrailTool` to Responses function tools.
 - Execute PromptTrail-owned function calls in a deterministic tool loop.
 - Preserve built-in tool calls and provider-hosted results in raw metadata.
@@ -709,8 +751,6 @@ Avoid:
 
 - Whether `Source.llm().openai()` should default to native Responses once the
   native adapter exists, or remain ai-sdk for one release.
-- Whether provider-managed conversation state should be opt-in per source or per
-  session.
 - How much raw provider metadata should be retained by default.
 - Whether skill materialization should use `.prompttrail/skills` as an
   intermediate source and then copy to runtime-specific locations.
