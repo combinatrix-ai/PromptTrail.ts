@@ -141,14 +141,19 @@ Provider mapping differs:
 - Anthropic Messages API supports skills natively (verified). A skill is passed
   by `skill_id` in the `container` parameter together with the code execution
   tool; the skill runs in Anthropic's code execution container (`provider`
-  execution mode), not as injected text. This requires the
-  `code-execution-2025-08-25`, `skills-2025-10-02`, and `files-api-2025-04-14`
-  beta headers. Pre-built skills (`pptx`, `xlsx`, `docx`, `pdf`) are referenced
-  by id; custom skills must first be uploaded via the Skills API (`/v1/skills`),
-  which returns a workspace-scoped id. The API container has no network access
-  and no runtime package installation.
-- OpenAI Responses API has no first-class skill primitive. Skills should be
-  injected as instructions there (see lossy-injection note below).
+  execution mode), not as injected text. Skill invocation examples use the
+  `code-execution-2025-08-25` and `skills-2025-10-02` beta headers. The broader
+  skill workflow can also require the `files-api-2025-04-14` beta header for
+  file operations and custom skill upload/download. Pre-built skills (`pptx`,
+  `xlsx`, `docx`, `pdf`) are referenced by id; custom skills must first be
+  uploaded via the Skills API (`/v1/skills`), which returns a workspace-scoped
+  id. The API container has no network access and no runtime package
+  installation.
+- OpenAI Responses API supports skills through shell tool environments, not as a
+  top-level model primitive. Hosted shell can mount uploaded skill references
+  via `tools[].environment.skills`; local shell can expose local skill paths.
+  When no compatible shell/runtime capability is enabled, skills fall back to
+  instruction injection (see lossy-injection note below).
 - For any adapter that falls back to instruction injection, only the
   `instructions` text is conveyed; `path`, bundled files, and scripts are
   dropped. The adapter must `warn` (or `error` under a strict policy) when a
@@ -173,7 +178,12 @@ native MCP support.
 
 ```ts
 export type McpTransport =
-  | { kind: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | {
+      kind: 'stdio';
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
   | { kind: 'ws'; url: string }
   | { kind: 'http'; url: string; headers?: Record<string, string> }
   | { kind: 'sdk-in-process'; server: unknown }; // e.g. createSdkMcpServer() result
@@ -191,6 +201,10 @@ Like `inputSchema`, `transport` should be a typed union, not `unknown`. The
 `sdk-in-process` variant carries an in-process MCP server (such as the Claude
 Agent SDK's `createSdkMcpServer()` result) and reuses the same tool-execution
 path as a `PromptTrailTool`.
+
+Keep MCP WebSocket transport separate from the Codex App Server WebSocket
+transport. Use `kind: 'ws'` only for MCP servers that explicitly support
+WebSocket MCP transport.
 
 ### Builtin Tool
 
@@ -213,11 +227,11 @@ capability only when passed into a runtime that supports them.
 
 Every capability must resolve to one of three execution modes.
 
-| Mode          | Owner                                      | Examples                                          |
-| ------------- | ------------------------------------------ | ------------------------------------------------- |
+| Mode          | Owner                                      | Examples                                                                                      |
+| ------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | `prompttrail` | PromptTrail executes and appends results   | Responses function tools, Anthropic client tools, custom tools given to Codex/Claude runtimes |
-| `provider`    | Model provider executes internally         | OpenAI built-in tools, Claude server tools        |
-| `runtime`     | External agent runtime executes internally | Codex shell/filesystem, Claude Code built-in tools |
+| `provider`    | Model provider executes internally         | OpenAI built-in tools, Claude server tools                                                    |
+| `runtime`     | External agent runtime executes internally | Codex shell/filesystem, Claude Code built-in tools                                            |
 
 This distinction is required for approval, logging, retry, and deterministic
 test behavior.
@@ -228,20 +242,20 @@ Important: a `PromptTrailTool` (a custom tool with a handler) is **always**
 call it and then asks PromptTrail to run it. Only built-in tools (shell,
 filesystem, web search) are `runtime`/`provider` mode. So the execution mode of
 a custom tool is a property of the tool, not the adapter — what changes per
-adapter is the *delivery path* that gets PromptTrail's handler invoked.
+adapter is the _delivery path_ that gets PromptTrail's handler invoked.
 
 ### Tool Execution Mechanics
 
 The same `PromptTrailTool` reaches its handler through three different paths.
 The handler runs in the PromptTrail process in all three.
 
-| Adapter          | How the tool is registered                 | How the handler is invoked                                                                 |
-| ---------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Responses / Messages | function/tool definition in the request | PromptTrail's own tool loop: read `tool_use`/function call from the response, run handler, append result |
-| Claude Agent SDK | `createSdkMcpServer()` + `mcpServers` option | In-process MCP server; the SDK calls the handler directly. No network hop. Result is an MCP `CallToolResult`. Pre-approve via `allowedTools: ['mcp__{server}__{tool}']` |
-| Codex App Server | `dynamicTools` on `thread/start` (experimental) | Bidirectional JSON-RPC: the server sends an `item/tool/call` request back to the client; the client runs the handler and replies with content items |
+| Adapter              | How the tool is registered                      | How the handler is invoked                                                                                                                                              |
+| -------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Responses / Messages | function/tool definition in the request         | PromptTrail's own tool loop: read `tool_use`/function call from the response, run handler, append result                                                                |
+| Claude Agent SDK     | `createSdkMcpServer()` + `mcpServers` option    | In-process MCP server; the SDK calls the handler directly. No network hop. Result is an MCP `CallToolResult`. Pre-approve via `allowedTools: ['mcp__{server}__{tool}']` |
+| Codex App Server     | `dynamicTools` on `thread/start` (experimental) | Bidirectional JSON-RPC: the server sends an `item/tool/call` request back to the client; the client runs the handler and replies with content items                     |
 
-Consequence for Codex: PromptTrail must act as a JSON-RPC *server* for the
+Consequence for Codex: PromptTrail must act as a JSON-RPC _server_ for the
 duration of the turn — it has to accept server-initiated requests
 (`item/tool/call`, and the approval requests `item/commandExecution/requestApproval`,
 `item/fileChange/requestApproval`, `tool/requestUserInput`) and answer them.
@@ -399,6 +413,16 @@ Native Responses requirements:
 - Execute PromptTrail-owned function calls in a deterministic tool loop.
 - Preserve built-in tool calls and provider-hosted results in raw metadata.
 - Support remote MCP tools as provider-native tools when configured.
+- Support Responses streaming events as first-class metadata and loop inputs:
+  at minimum `response.output_item.added`, `response.output_item.done`,
+  `response.function_call_arguments.delta`,
+  `response.function_call_arguments.done`, `response.completed`,
+  `response.failed`, `response.incomplete`, and `response.error`.
+- Preserve modern Responses output/input item types including
+  `function_call`, `function_call_output`, `tool_search_call`,
+  `tool_search_output`, `additional_tools`, MCP call/list/approval items, shell
+  calls, custom tool calls, and provider built-in call outputs. Unknown item
+  types must be retained in raw metadata rather than dropped.
 - Surface reasoning, citations, annotations, and tool call results without
   forcing them into assistant text.
 
@@ -440,10 +464,11 @@ Native Anthropic requirements:
   keeping PromptTrail's common `toolChoice` mapping.
 - Support native skills: when a `RuntimeSkill` has a `skillId`, pass it via the
   `container` parameter with the code execution tool and the required beta
-  headers (`code-execution-2025-08-25`, `skills-2025-10-02`,
-  `files-api-2025-04-14`), rather than injecting instructions. Optionally
-  support uploading a PromptTrail-defined skill through the Skills API
-  (`/v1/skills`) to obtain an id, gated behind explicit approval since it
+  headers for invocation (`code-execution-2025-08-25`,
+  `skills-2025-10-02`), rather than injecting instructions. File operations and
+  custom skill upload/download can additionally require `files-api-2025-04-14`.
+  Optionally support uploading a PromptTrail-defined skill through the Skills
+  API (`/v1/skills`) to obtain an id, gated behind explicit approval since it
   publishes the skill workspace-wide. Account for the container's no-network /
   no-package-install constraints.
 
@@ -543,20 +568,25 @@ Target state:
 - Treat Codex App Server as an agent runtime template, not an OpenAI provider
   backend.
 
-Relationship to the Codex SDK: the Codex SDK (`startThread()` / `run()` /
-thread resume / sandbox policy) is a higher-level wrapper over this same
-runtime — the Python SDK drives the local Codex app-server over JSON-RPC, and
-custom tools / MCP / skills are configured at the app-server level, not exposed
-as a separate SDK surface. So the Codex SDK adds no new capability surface over
-what `codexTurn()` already targets. It is purely an implementation choice:
+Relationship to the Codex SDK: the public TypeScript Codex SDK is a
+higher-level wrapper around the Codex CLI (`startThread()` / `run()` /
+`runStreamed()` / thread resume / sandbox policy). It exposes useful turn and
+streaming primitives, but its documented TypeScript API does not currently
+expose PromptTrail-owned dynamic tool handlers, approval callbacks, MCP
+registration, or skill registration as public inputs. The App Server protocol is
+therefore the primary capability surface for `codexTurn()` deep integration.
+The Codex SDK remains an implementation option for simple turns:
 
 - Raw App Server protocol (current): no extra dependency, but PromptTrail must
   implement the inbound JSON-RPC channel itself.
 - Codex SDK wrapper: less thread/turn/streaming boilerplate, at the cost of a
-  pinned Codex CLI dependency.
+  pinned Codex CLI dependency and less direct access to experimental App Server
+  capabilities.
 
-Both reach the same `dynamicTools` / `item/tool/call` flow described above, so
-the choice does not affect the capability model.
+If the Codex SDK later exposes `dynamicTools` / `item/tool/call` equivalents as
+public API, it can share the same capability model. Until then, custom tools,
+runtime approvals, and skills should be implemented against the App Server
+protocol directly.
 
 Required additions:
 
@@ -565,8 +595,9 @@ Required additions:
   tools and approvals the client must accept server-initiated requests and reply
   to them: `item/tool/call` (custom tool execution),
   `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`,
-  and `tool/requestUserInput`. Without this channel, only `approvalPolicy:
-  'never'` and zero custom tools can work. Build this before the items below.
+  and `tool/requestUserInput`. Without this channel, only
+  `approvalPolicy: 'never'` and zero custom tools can work. Build this before
+  the items below.
 - `onEvent` callback for streaming runtime events. This is the full-fidelity
   channel for diffs and command logs (see Metadata Retention); the persisted
   session keeps only the `retain`-level summary.
@@ -683,14 +714,14 @@ function tool, built-ins stay `runtime` mode, and Handoffs map to a
 
 ## Capability Mapping Matrix
 
-| PromptTrail concept  | OpenAI Responses                                   | Anthropic Messages                                 | Codex App Server                | Claude Agent SDK                      |
-| -------------------- | -------------------------------------------------- | -------------------------------------------------- | ------------------------------- | ------------------------------------- |
-| `PromptTrailTool`    | function tool, PromptTrail executes                | tool, PromptTrail executes                         | `dynamicTools`, PromptTrail executes via `item/tool/call` callback | in-process MCP tool, PromptTrail executes via SDK |
-| `BuiltinTool`        | provider-hosted tool                               | server/provider tool                               | runtime tool                    | runtime tool                          |
-| `RuntimeSkill`       | instruction injection (no native skill primitive)  | native `container.skill_id` + code execution tool (beta headers); else instruction injection | skill input item                | `.claude/skills` plus `skills` filter |
-| `McpServer`          | remote MCP tool                                    | MCP/server tool where supported                    | runtime MCP config              | SDK MCP config                        |
-| `SubagentDefinition` | out of scope; use PromptTrail `subroutine()`       | out of scope; use PromptTrail `subroutine()`       | runtime subagent when supported | SDK subagent when supported           |
-| `ApprovalPolicy`     | PromptTrail tool loop policy                       | PromptTrail tool loop policy                       | runtime approval bridge         | SDK permission bridge                 |
+| PromptTrail concept  | OpenAI Responses                                                                | Anthropic Messages                                                                           | Codex App Server                                                   | Claude Agent SDK                                  |
+| -------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------- |
+| `PromptTrailTool`    | function tool, PromptTrail executes                                             | tool, PromptTrail executes                                                                   | `dynamicTools`, PromptTrail executes via `item/tool/call` callback | in-process MCP tool, PromptTrail executes via SDK |
+| `BuiltinTool`        | provider-hosted tool                                                            | server/provider tool                                                                         | runtime tool                                                       | runtime tool                                      |
+| `RuntimeSkill`       | shell environment skill mount when shell is enabled; else instruction injection | native `container.skill_id` + code execution tool (beta headers); else instruction injection | skill input item                                                   | `.claude/skills` plus `skills` filter             |
+| `McpServer`          | remote MCP tool                                                                 | MCP/server tool where supported                                                              | runtime MCP config                                                 | SDK MCP config                                    |
+| `SubagentDefinition` | out of scope; use PromptTrail `subroutine()`                                    | out of scope; use PromptTrail `subroutine()`                                                 | runtime subagent when supported                                    | SDK subagent when supported                       |
+| `ApprovalPolicy`     | PromptTrail tool loop policy                                                    | PromptTrail tool loop policy                                                                 | runtime approval bridge                                            | SDK permission bridge                             |
 
 ## Approval Model
 
@@ -801,9 +832,13 @@ Avoid:
 - Add Claude Agent SDK skill referencing.
 - Add explicit skill materialization for Claude Agent SDK.
 - Add native Anthropic Messages skills via `container.skill_id` + code execution
-  tool + beta headers, with optional `/v1/skills` upload behind approval.
+  tool + invocation beta headers, with optional `/v1/skills` upload behind
+  approval.
+- Add OpenAI Responses skill mounting for shell environments; fall back to
+  instruction injection when no compatible shell/runtime capability is enabled.
 - Add the instruction-injection fallback with a warn/error on dropped skill
-  files for adapters without native skill support (e.g. OpenAI Responses).
+  files for adapters without native skill support or without an enabled runtime
+  that can consume skill files.
 
 ### Phase 6: Claude Runtime Adapter
 
