@@ -537,6 +537,11 @@ for await (const chunk of generateTextStream(session, Source.llm().openai())) {
 
 ## 🔧 Provider Configuration
 
+For the longer-term provider/runtime design, including Responses API,
+Anthropic Messages API, Codex App Server, Claude Agent SDK, tools, skills, MCP,
+and approvals, see
+[`docs/provider-runtime-capabilities.md`](./docs/provider-runtime-capabilities.md).
+
 ### OpenAI
 
 ```typescript
