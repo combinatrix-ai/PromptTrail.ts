@@ -154,6 +154,17 @@ Provider mapping differs:
   dropped. The adapter must `warn` (or `error` under a strict policy) when a
   skill carrying files/scripts is injected as text, so the loss is not silent.
 
+Materialization strategy (decided): there is **no** shared `.prompttrail/skills`
+intermediate layer. Each target consumes skills through a different mechanism —
+Anthropic native uploads via `/v1/skills` (no filesystem), Codex passes a skill
+input item, and only the Claude Agent SDK reads filesystem `.claude/skills`. A
+common intermediate directory would therefore serve exactly one target, so a
+PromptTrail-defined skill is materialized **directly** into each target's
+expected form (workspace `.claude/skills` for the Claude Agent SDK; `/v1/skills`
+upload for Anthropic; skill input item for Codex), each gated by explicit
+approval. Filesystem materialization stays inside the workspace unless approved
+otherwise.
+
 ### MCP Server
 
 An MCP server is a remote or local tool namespace. PromptTrail should represent
@@ -495,9 +506,14 @@ Policy (decided, assuming no backward-compatibility constraint):
 - ai-sdk is removed from the public surface. `providerOptions` / `sdkOptions`
   and other raw ai-sdk objects are not part of the stable API; they live behind
   the ai-sdk adapter.
-- For OpenAI, Anthropic, and Google, the native adapter is the default. ai-sdk
-  is not offered as a per-provider toggle for these three once native parity is
-  reached.
+- For OpenAI, Anthropic, and Google, the native adapter becomes the default the
+  moment that provider's native adapter reaches parity — switched per provider as
+  each lands, not on a fixed release schedule and with no one-release ai-sdk
+  grace period (backward compatibility is not a constraint). `adapter: 'ai-sdk'`
+  stays available as an explicit escape hatch, but is not the default for these
+  three once parity is reached. Parity means: text generation, streaming, the
+  tool loop, structured output, and error mapping all verified against the
+  ai-sdk path.
 - Deep-integration features (exact item/tool/reasoning/approval/event metadata)
   are only guaranteed on native adapters; the ai-sdk adapter provides
   best-effort metadata.
@@ -797,7 +813,20 @@ Avoid:
 
 ## Open Questions
 
-- Whether `Source.llm().openai()` should default to native Responses once the
-  native adapter exists, or remain ai-sdk for one release.
-- Whether skill materialization should use `.prompttrail/skills` as an
-  intermediate source and then copy to runtime-specific locations.
+None outstanding. The earlier open questions have been resolved and folded into
+the sections above:
+
+- Model API / runtime split, capability taxonomy, and execution modes — Core
+  Principle, Capability, Execution Modes.
+- Tool delivery and execution per adapter — Tool Execution Mechanics.
+- Native skill support (Anthropic) and lossy injection — Skill.
+- Skill materialization strategy (no shared intermediate layer) — Skill.
+- Conversation state ownership (`ConversationBinding`) — Conversation State.
+- Raw-metadata volume and runtime diff/log exposure (`retain`) — Metadata
+  Retention.
+- Default adapter selection (native on parity, ai-sdk escape hatch) — ai-sdk
+  Adapter.
+- Scope of native adapters (OpenAI/Anthropic/Google + ai-sdk) and deferral of
+  OpenAI Agents SDK — Model API Adapter, OpenAI Agents SDK (deferred).
+
+Add new questions here as they arise.
