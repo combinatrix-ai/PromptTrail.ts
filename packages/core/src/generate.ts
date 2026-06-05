@@ -9,19 +9,10 @@ import {
   Output,
   ToolSet,
 } from 'ai';
-import { z } from 'zod';
+import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import type { Session, Attrs, Vars } from './session';
-import type { LLMOptions } from './source';
-
-/**
- * Schema generation options
- */
-export interface SchemaGenerationOptions {
-  schema: z.ZodType;
-  mode?: 'tool' | 'structured_output';
-  functionName?: string;
-}
+export type { SchemaGenerationOptions } from './llm_types';
 
 /**
  * Convert Session to AI SDK compatible format

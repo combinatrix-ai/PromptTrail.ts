@@ -2,11 +2,15 @@
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import { ValidationError } from './errors';
-import {
-  generateText,
-  generateWithSchema,
+import { generateText, generateWithSchema } from './generate';
+import type {
+  AnthropicProviderConfig,
+  GoogleProviderConfig,
+  LLMOptions,
+  ModelOutput,
+  OpenAIProviderConfig,
   SchemaGenerationOptions,
-} from './generate';
+} from './llm_types';
 import type { Session, Vars } from './session';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
@@ -34,84 +38,15 @@ function getMaxLLMCalls(): number {
  */
 const llmCallCounter = new Map<string, number>();
 
-// --- Provider Types ---
-
-/**
- * OpenAI provider configuration
- */
-export interface OpenAIProviderConfig {
-  type: 'openai';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
-  organization?: string;
-  dangerouslyAllowBrowser?: boolean;
-}
-
-/**
- * Anthropic provider configuration
- */
-export interface AnthropicProviderConfig {
-  type: 'anthropic';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
-}
-
-/**
- * Google provider configuration
- */
-export interface GoogleProviderConfig {
-  type: 'google';
-  apiKey?: string;
-  modelName: string;
-  baseURL?: string;
-}
-
-/**
- * Provider configuration union type
- */
-export type ProviderConfig =
-  | OpenAIProviderConfig
-  | AnthropicProviderConfig
-  | GoogleProviderConfig;
-
-/**
- * LLM Generation Options
- */
-export interface LLMOptions {
-  provider: ProviderConfig;
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  topK?: number;
-  tools?: Record<string, unknown>;
-  toolChoice?: 'auto' | 'required' | 'none';
-  dangerouslyAllowBrowser?: boolean;
-  sdkOptions?: Record<string, unknown>;
-  maxCallLimit?: number;
-}
-
-// --- Temporary Definitions (Move to appropriate files later) ---
-
-/**
- * Interface for AI model outputs with metadata and structured data
- * (Equivalent to ModelContentOutput in the original file)
- */
-export interface ModelOutput {
-  content: string;
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
-  toolResults?: Array<{
-    toolCallId: string;
-    result: unknown;
-  }>;
-  structuredOutput?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-}
+export type {
+  AnthropicProviderConfig,
+  GoogleProviderConfig,
+  LLMOptions,
+  ModelOutput,
+  OpenAIProviderConfig,
+  ProviderConfig,
+  SchemaGenerationOptions,
+} from './llm_types';
 
 /**
  * Options for validation behavior
@@ -706,7 +641,6 @@ export class LlmSource extends ModelSource {
 
     // In debug mode, share the same counter for cloned instances
     if (isDebugMode() && llmCallCounter.has(this.instanceId)) {
-      const currentCount = llmCallCounter.get(this.instanceId) || 0;
       llmCallCounter.delete(newSource.instanceId);
       newSource.instanceId = this.instanceId;
     }
@@ -735,7 +669,7 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'anthropic',
         apiKey: config?.apiKey || process.env.ANTHROPIC_API_KEY || '',
-        modelName: config?.modelName || 'claude-3-5-haiku-latest',
+        modelName: config?.modelName || 'claude-haiku-4-5',
         baseURL: config?.baseURL,
       },
     });
@@ -853,7 +787,11 @@ export class LlmSource extends ModelSource {
     const newSource = this.clone({});
     newSource.schemaConfig = {
       schema,
-      mode: options?.mode || 'structured_output',
+      mode:
+        options?.mode ??
+        (this.options.provider.type === 'anthropic'
+          ? 'tool'
+          : 'structured_output'),
       functionName: options?.functionName || 'generateStructuredOutput',
     };
     return newSource;

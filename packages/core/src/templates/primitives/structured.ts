@@ -37,14 +37,7 @@ export class Structured<
       }
     } else {
       // No source provided, create a schema-configured LlmSource
-      const {
-        source: _,
-        schema,
-        mode,
-        functionName,
-        maxAttempts,
-        ...rest
-      } = options;
+      const { schema, mode, functionName, maxAttempts, ...rest } = options;
 
       this.source = Source.schema(schema, {
         mode,

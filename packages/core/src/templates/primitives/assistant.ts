@@ -78,7 +78,7 @@ export class Assistant<
         const rawOutput = await this.contentSource.getContent(validSession);
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
-        let outpuTAttrs: ModelOutput['metadata'] | undefined;
+        let outputAttrs: ModelOutput['metadata'] | undefined;
         let outputStructured: ModelOutput['structuredOutput'] | undefined;
 
         if (typeof rawOutput === 'string') {
@@ -92,7 +92,7 @@ export class Assistant<
           const modelOutput = rawOutput as ModelOutput;
           outputContent = modelOutput.content;
           outputToolCalls = modelOutput.toolCalls;
-          outpuTAttrs = modelOutput.metadata;
+          outputAttrs = modelOutput.metadata;
           outputStructured = modelOutput.structuredOutput;
         } else {
           throw new Error(
@@ -104,7 +104,7 @@ export class Assistant<
         currentOutput = {
           content: outputContent,
           toolCalls: outputToolCalls,
-          metadata: outpuTAttrs,
+          metadata: outputAttrs,
           structuredOutput: outputStructured,
         };
 
@@ -198,7 +198,7 @@ export class Assistant<
         attrs: (lastOutput.metadata as TAttrs) ?? ({} as TAttrs),
         structuredContent: lastOutput.structuredOutput,
       };
-      let lastAttemptSession = validSession.addMessage(lastMessage);
+      const lastAttemptSession = validSession.addMessage(lastMessage);
 
       // Note: Not adding tool results to avoid ai-sdk message ordering issues
 

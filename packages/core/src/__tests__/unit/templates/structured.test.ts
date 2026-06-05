@@ -15,11 +15,11 @@ describe('SchemaTemplate API Integration', () => {
     openaiLLM = Source.llm().model('gpt-4o-mini').temperature(0.7);
     anthropicLLM = Source.llm()
       .anthropic()
-      .model('claude-3-opus-latest')
+      .model('claude-haiku-4-5')
       .temperature(0.7);
     anthropicCheapLLM = Source.llm()
       .anthropic()
-      .model('claude-3-5-haiku-latest')
+      .model('claude-haiku-4-5')
       .temperature(0.7);
   });
 
@@ -151,16 +151,13 @@ describe('SchemaTemplate API Integration', () => {
   }, 30000);
 
   it('should retry on failure and eventually fail with max attempts', async () => {
-    const invalidSchema = z.object({
-      name: z.string().describe('The name of the product'),
-      price: z.number().describe('The price of the product in USD'),
-      inStock: z.boolean().describe('Whether the product is in stock'),
-      nonExistentProperty: z
-        .string()
-        .describe(
-          'This property does not exist and will cause validation errors',
-        ),
-    });
+    const invalidSchema = z
+      .object({
+        name: z.string().describe('The name of the product'),
+        price: z.number().describe('The price of the product in USD'),
+        inStock: z.boolean().describe('Whether the product is in stock'),
+      })
+      .refine(() => false, 'Always fail validation for retry testing');
 
     const template = new Structured({
       source: anthropicCheapLLM,

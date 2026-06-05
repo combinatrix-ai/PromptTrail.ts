@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../session';
 import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules

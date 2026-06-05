@@ -68,7 +68,7 @@ describe('Source.llm().mock() examples', () => {
 
   it('should demonstrate dynamic responses with callback', async () => {
     const mockSource = Source.llm()
-      .model('claude-3')
+      .model('claude-haiku-4-5')
       .mock()
       .mockCallback(async (session, options) => {
         // Access session variables
@@ -88,7 +88,9 @@ describe('Source.llm().mock() examples', () => {
       Session.withVars({ userName: 'Alice' }),
     );
 
-    expect(session.messages[0].content).toBe("Hello Alice, I'm using claude-3");
+    expect(session.messages[0].content).toBe(
+      "Hello Alice, I'm using claude-haiku-4-5",
+    );
   });
 
   it('should demonstrate mocking tool calls', async () => {

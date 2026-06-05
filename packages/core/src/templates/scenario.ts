@@ -433,7 +433,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
         // Get user input with validation
         // Create a temporary session for the source if needed
         const tempSession = Session.create();
-        let userResponse = await source.getContent(tempSession);
+        const userResponse = await source.getContent(tempSession);
 
         console.log(`   User said: "${userResponse}"`);
 

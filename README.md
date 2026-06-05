@@ -517,7 +517,7 @@ const openaiConfig = Source.llm()
 ```typescript
 const anthropicConfig = Source.llm()
   .anthropic()
-  .model('claude-3-5-haiku-latest')
+  .model('claude-haiku-4-5')
   .temperature(0.5)
   .apiKey(process.env.ANTHROPIC_API_KEY);
 ```

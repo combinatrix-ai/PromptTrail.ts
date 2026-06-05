@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
 import { Session } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
-import { Attrs, Vars } from '../../session';
+import { Vars } from '../../session';
 import {
   Agent,
   Assistant,
@@ -45,7 +45,7 @@ const openAILLMSource = Source.llm()
 
 const anthropicLLMSource = Source.llm()
   .anthropic()
-  .model('claude-3-5-haiku-latest')
+  .model('claude-haiku-4-5')
   .temperature(0.7);
 
 describe('End-to-End Workflows with Real APIs', () => {

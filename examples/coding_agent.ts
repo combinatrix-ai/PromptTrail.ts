@@ -123,7 +123,7 @@ export class CodingAgent {
     } else {
       llmSource = llmSource.anthropic({
         apiKey: config.apiKey,
-        modelName: config.modelName || 'claude-3-5-haiku-latest',
+        modelName: config.modelName || 'claude-haiku-4-5',
       });
     }
 

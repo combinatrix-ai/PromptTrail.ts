@@ -293,7 +293,7 @@ export class Parallel<
    */
   private aggregateBest(
     results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
+    _originalSession: Session<TVars, TAttrs>,
   ): Session<TVars, TAttrs> {
     if (!this.scoringFunction) {
       throw new Error(

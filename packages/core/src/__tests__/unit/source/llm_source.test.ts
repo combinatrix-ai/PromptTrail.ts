@@ -153,7 +153,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
             apiKey: 'anthropic-key',
           }),
         }),
@@ -162,7 +162,7 @@ describe('LlmSource', () => {
 
     it('should configure Anthropic with custom settings', async () => {
       const source = Source.llm().anthropic({
-        modelName: 'claude-3-5-haiku-latest',
+        modelName: 'claude-haiku-4-5',
         apiKey: 'custom-anthropic-key',
         baseURL: 'https://custom.anthropic.com',
       });
@@ -174,7 +174,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
             apiKey: 'custom-anthropic-key',
             baseURL: 'https://custom.anthropic.com',
           }),
@@ -616,7 +616,7 @@ describe('LlmSource', () => {
       const base = Source.llm();
       const _ = base.openai({ modelName: 'gpt-4' });
       const anthropicSource = base.anthropic({
-        modelName: 'claude-3-5-haiku-latest',
+        modelName: 'claude-haiku-4-5',
       });
 
       // Since it's the same instance, the last configuration wins
@@ -627,7 +627,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
           }),
         }),
       );

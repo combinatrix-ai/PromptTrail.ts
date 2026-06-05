@@ -1,0 +1,63 @@
+import type { z } from 'zod';
+
+export interface OpenAIProviderConfig {
+  type: 'openai';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+  organization?: string;
+  dangerouslyAllowBrowser?: boolean;
+}
+
+export interface AnthropicProviderConfig {
+  type: 'anthropic';
+  apiKey: string;
+  modelName: string;
+  baseURL?: string;
+}
+
+export interface GoogleProviderConfig {
+  type: 'google';
+  apiKey?: string;
+  modelName: string;
+  baseURL?: string;
+}
+
+export type ProviderConfig =
+  | OpenAIProviderConfig
+  | AnthropicProviderConfig
+  | GoogleProviderConfig;
+
+export interface LLMOptions {
+  provider: ProviderConfig;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+  tools?: Record<string, unknown>;
+  toolChoice?: 'auto' | 'required' | 'none';
+  dangerouslyAllowBrowser?: boolean;
+  sdkOptions?: Record<string, unknown>;
+  maxCallLimit?: number;
+}
+
+export interface SchemaGenerationOptions {
+  schema: z.ZodType;
+  mode?: 'tool' | 'structured_output';
+  functionName?: string;
+}
+
+export interface ModelOutput {
+  content: string;
+  toolCalls?: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    id: string;
+  }>;
+  toolResults?: Array<{
+    toolCallId: string;
+    result: unknown;
+  }>;
+  structuredOutput?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}

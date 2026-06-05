@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../../session';
-import { Agent, Assistant, User } from '../../../templates';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { Agent } from '../../../templates';
 
 describe('Agent', () => {
   beforeEach(() => {

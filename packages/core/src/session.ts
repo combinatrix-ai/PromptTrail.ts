@@ -1,15 +1,7 @@
 import { ValidationError } from './errors';
 import type { Message } from './message';
-
-/**
- * Session variables - readonly object for conversation state
- */
-export type Vars<T extends Record<string, unknown> = {}> = Readonly<T>;
-
-/**
- * Message attributes - readonly object for message metadata
- */
-export type Attrs<T extends Record<string, unknown> = {}> = Readonly<T>;
+export type { Attrs, Vars } from './session_types';
+import type { Attrs, Vars } from './session_types';
 /**
  * Internal session implementation
  */

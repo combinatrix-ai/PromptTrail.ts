@@ -399,7 +399,7 @@ describe('SubroutineTemplate', () => {
           if (
             key !== 'user' &&
             key !== 'preferences' &&
-            subroutineMeta.hasOwnProperty(key)
+            Object.prototype.hasOwnProperty.call(subroutineMeta, key)
           ) {
             mergedMetadataObject[key] = subroutineMeta[key];
           }

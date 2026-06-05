@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';

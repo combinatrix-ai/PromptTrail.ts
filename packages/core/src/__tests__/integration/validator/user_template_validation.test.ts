@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { Session } from '../../../session';
 import { User } from '../../../templates';
 import { CustomValidator } from '../../../validators/custom';
 

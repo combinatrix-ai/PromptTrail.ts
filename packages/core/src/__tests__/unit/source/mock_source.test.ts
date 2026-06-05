@@ -69,7 +69,7 @@ describe('Source.llm().mock()', () => {
       // Anthropic
       const anthropicMock = Source.llm()
         .anthropic({
-          modelName: 'claude-3',
+          modelName: 'claude-haiku-4-5',
           apiKey: 'test-key',
           baseURL: 'https://test.com',
         })

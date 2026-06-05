@@ -1,4 +1,4 @@
-import type { Attrs } from './session';
+import type { Attrs } from './session_types';
 
 /**
  * Represents the role of a message in a conversation
