@@ -317,6 +317,47 @@ Generalize all three under one provider-neutral concept — a `ConversationBindi
 (opaque `{ provider, id }` derived from message metadata, never authoritative).
 The existing `codexTurn()` thread handling is one instance of this binding.
 
+## Metadata Retention
+
+Immutable sessions accumulate every turn, so embedding full raw provider
+payloads (Responses output items, Anthropic content blocks, Codex items/events,
+runtime diffs and command logs) in each message bloats memory and `toJSON()`
+output. The model decouples **live observability** from **persisted state**.
+
+Decided design — one common knob across every model-API adapter and runtime
+turn, generalizing the existing `codexTurn()` `includeItems` option:
+
+```ts
+retain?: 'none' | 'summary' | 'full'; // default 'summary'
+```
+
+Levels:
+
+- `none`: keep only the canonical assistant text / `finalAnswer`, plus the
+  `ConversationBinding` id and status. The binding id must survive even here,
+  because conversation continuation derives from it (see Conversation State).
+- `summary` (default): binding id, status, `stopReason`/`finishReason`, usage,
+  and a summarized list of items/events — each `{ type, id, status, preview }`
+  with content truncated (default 500 chars). No `raw`.
+- `full`: everything, including `raw` provider payloads.
+
+Two rules keep this safe:
+
+1. **Large artifacts by reference, not inline.** Diffs and command logs are
+   never embedded in full at the default level. `summary` keeps a stat only —
+   a diff becomes `{ path, added, removed, status }`; a command becomes
+   `{ command, exitCode, status, outputPreview }`. Full-fidelity diffs/logs are
+   delivered live through `onEvent`; if a caller needs them persisted, it
+   captures them from `onEvent` into its own sink and correlates by event id.
+   This is the answer to "how to expose runtime diffs without bloating messages."
+2. **No silent truncation.** Any summarized or truncated field is flagged
+   (`truncated: true`, `fullLength: N`) so a summary never reads as if it were
+   the complete payload.
+
+This applies uniformly: `attrs.openai.outputItems`, `attrs.anthropic.content`,
+`attrs.google`, and `attrs.codex`/`attrs.claudeAgent` events all follow the same
+`retain` levels and the same summary shape.
+
 ## Model API Adapters
 
 ### OpenAI Responses API
@@ -335,7 +376,8 @@ Target state:
 Native Responses requirements:
 
 - Preserve `response.id` as `attrs.openai.responseId`.
-- Preserve output items as `attrs.openai.outputItems`.
+- Preserve output items as `attrs.openai.outputItems`, subject to the `retain`
+  level (summary by default; `raw` only at `full`).
 - Support `previous_response_id` per the Conversation State rules: derive it from
   the last assistant message's `attrs.openai.responseId`, treat it as a send
   optimization only, and fall back to stateless full input on any history
@@ -509,9 +551,15 @@ Required additions:
   `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`,
   and `tool/requestUserInput`. Without this channel, only `approvalPolicy:
   'never'` and zero custom tools can work. Build this before the items below.
-- `onEvent` callback for streaming runtime events.
+- `onEvent` callback for streaming runtime events. This is the full-fidelity
+  channel for diffs and command logs (see Metadata Retention); the persisted
+  session keeps only the `retain`-level summary.
 - Stable `RuntimeEvent` normalization for item started/completed, deltas,
-  command events, diffs, approvals, errors, and turn completion.
+  command events, diffs, approvals, errors, and turn completion. Each event
+  carries an id so a `summary`-level stat can be correlated back to the full
+  artifact captured via `onEvent`.
+- Align `includeItems` with the common `retain: 'none' | 'summary' | 'full'`
+  knob (default `summary`).
 - Thread reuse and explicit thread persistence.
 - Skill resolution through `skills/list`.
 - Skill input item insertion for requested `RuntimeSkill` values.
@@ -751,8 +799,5 @@ Avoid:
 
 - Whether `Source.llm().openai()` should default to native Responses once the
   native adapter exists, or remain ai-sdk for one release.
-- How much raw provider metadata should be retained by default.
 - Whether skill materialization should use `.prompttrail/skills` as an
   intermediate source and then copy to runtime-specific locations.
-- How to expose runtime diffs and command logs without making every assistant
-  message too large.
