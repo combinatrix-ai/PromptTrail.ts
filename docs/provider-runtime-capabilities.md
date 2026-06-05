@@ -17,6 +17,8 @@ toward this document in small steps.
 - Claude Agent SDK custom tools: https://code.claude.com/docs/en/agent-sdk/custom-tools
 - Claude Agent SDK skills: https://code.claude.com/docs/en/agent-sdk/skills
 - Claude tool use: https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
+- Anthropic Agent Skills overview: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview
+- Anthropic Skills with the Claude API: https://platform.claude.com/docs/en/build-with-claude/skills-guide
 
 ## Core Principle
 
@@ -116,6 +118,10 @@ export interface RuntimeSkill {
   description?: string;
   instructions?: string;
   path?: string;
+  // Provider-native skill reference (e.g. Anthropic Messages `container.skill_id`,
+  // a pre-built id like 'pptx' or an uploaded custom skill id). When set, the
+  // adapter can pass the skill natively instead of injecting instructions.
+  skillId?: string;
   materialize?: 'never' | 'workspace' | 'temporary';
   metadata?: Record<string, unknown>;
 }
@@ -126,9 +132,21 @@ Provider mapping differs:
 - Codex App Server can receive skill input items after resolving `skills/list`.
 - Claude Agent SDK discovers skills from `.claude/skills` and can filter them
   with the SDK `skills` option.
-- Model APIs do not generally execute skills as first-class runtime artifacts.
-  They should receive skills as instructions unless the provider exposes a
-  native skill feature.
+- Anthropic Messages API supports skills natively (verified). A skill is passed
+  by `skill_id` in the `container` parameter together with the code execution
+  tool; the skill runs in Anthropic's code execution container (`provider`
+  execution mode), not as injected text. This requires the
+  `code-execution-2025-08-25`, `skills-2025-10-02`, and `files-api-2025-04-14`
+  beta headers. Pre-built skills (`pptx`, `xlsx`, `docx`, `pdf`) are referenced
+  by id; custom skills must first be uploaded via the Skills API (`/v1/skills`),
+  which returns a workspace-scoped id. The API container has no network access
+  and no runtime package installation.
+- OpenAI Responses API has no first-class skill primitive. Skills should be
+  injected as instructions there (see lossy-injection note below).
+- For any adapter that falls back to instruction injection, only the
+  `instructions` text is conveyed; `path`, bundled files, and scripts are
+  dropped. The adapter must `warn` (or `error` under a strict policy) when a
+  skill carrying files/scripts is injected as text, so the loss is not silent.
 
 ### MCP Server
 
@@ -137,14 +155,25 @@ it separately from individual tools because providers and runtimes often have
 native MCP support.
 
 ```ts
+export type McpTransport =
+  | { kind: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { kind: 'ws'; url: string }
+  | { kind: 'http'; url: string; headers?: Record<string, string> }
+  | { kind: 'sdk-in-process'; server: unknown }; // e.g. createSdkMcpServer() result
+
 export interface McpServer {
   kind: 'mcp';
   name: string;
-  transport: unknown;
+  transport: McpTransport;
   tools?: 'all' | string[];
   approval?: ApprovalPolicy;
 }
 ```
+
+Like `inputSchema`, `transport` should be a typed union, not `unknown`. The
+`sdk-in-process` variant carries an in-process MCP server (such as the Claude
+Agent SDK's `createSdkMcpServer()` result) and reuses the same tool-execution
+path as a `PromptTrailTool`.
 
 ### Builtin Tool
 
@@ -307,6 +336,14 @@ Native Anthropic requirements:
 - Preserve `stop_reason`, usage, model, and raw response metadata.
 - Support Anthropic tool choice modes through a provider-specific option while
   keeping PromptTrail's common `toolChoice` mapping.
+- Support native skills: when a `RuntimeSkill` has a `skillId`, pass it via the
+  `container` parameter with the code execution tool and the required beta
+  headers (`code-execution-2025-08-25`, `skills-2025-10-02`,
+  `files-api-2025-04-14`), rather than injecting instructions. Optionally
+  support uploading a PromptTrail-defined skill through the Skills API
+  (`/v1/skills`) to obtain an id, gated behind explicit approval since it
+  publishes the skill workspace-wide. Account for the container's no-network /
+  no-package-install constraints.
 
 Recommended API:
 
@@ -485,7 +522,7 @@ function tool, built-ins stay `runtime` mode, and Handoffs map to a
 | -------------------- | -------------------------------------------------- | -------------------------------------------------- | ------------------------------- | ------------------------------------- |
 | `PromptTrailTool`    | function tool, PromptTrail executes                | tool, PromptTrail executes                         | `dynamicTools`, PromptTrail executes via `item/tool/call` callback | in-process MCP tool, PromptTrail executes via SDK |
 | `BuiltinTool`        | provider-hosted tool                               | server/provider tool                               | runtime tool                    | runtime tool                          |
-| `RuntimeSkill`       | instruction injection unless native support exists | instruction injection unless native support exists | skill input item                | `.claude/skills` plus `skills` filter |
+| `RuntimeSkill`       | instruction injection (no native skill primitive)  | native `container.skill_id` + code execution tool (beta headers); else instruction injection | skill input item                | `.claude/skills` plus `skills` filter |
 | `McpServer`          | remote MCP tool                                    | MCP/server tool where supported                    | runtime MCP config              | SDK MCP config                        |
 | `SubagentDefinition` | out of scope; use PromptTrail `subroutine()`       | out of scope; use PromptTrail `subroutine()`       | runtime subagent when supported | SDK subagent when supported           |
 | `ApprovalPolicy`     | PromptTrail tool loop policy                       | PromptTrail tool loop policy                       | runtime approval bridge         | SDK permission bridge                 |
@@ -549,8 +586,14 @@ Avoid:
 
 - Add native `Capability`, `PromptTrailTool`, `RuntimeSkill`, `BuiltinTool`,
   `McpServer`, and approval types.
-- Add adapters from current ai-sdk tools to `PromptTrailTool`.
-- Keep current `Tool.create()` working.
+- Add a bidirectional adapter between ai-sdk tools and `PromptTrailTool`:
+  - ai-sdk → `PromptTrailTool`: map `parameters` to `inputSchema` and wrap the
+    handler, discarding/adapting the ai-sdk `ToolCallOptions` second argument in
+    favor of `ToolExecutionContext`.
+  - `PromptTrailTool` → ai-sdk: map `inputSchema` to `parameters` and bridge the
+    `ToolExecutionContext`, so native tools keep working on the ai-sdk path.
+- Keep current `Tool.create()` working (it can keep returning an ai-sdk tool
+  internally while the native type is introduced).
 
 ### Phase 2: Native Responses Adapter
 
@@ -585,6 +628,10 @@ Avoid:
 - Add Codex skill resolution and skill input items.
 - Add Claude Agent SDK skill referencing.
 - Add explicit skill materialization for Claude Agent SDK.
+- Add native Anthropic Messages skills via `container.skill_id` + code execution
+  tool + beta headers, with optional `/v1/skills` upload behind approval.
+- Add the instruction-injection fallback with a warn/error on dropped skill
+  files for adapters without native skill support (e.g. OpenAI Responses).
 
 ### Phase 6: Claude Runtime Adapter
 
