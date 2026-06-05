@@ -558,9 +558,15 @@ Policy (decided, assuming no backward-compatibility constraint):
   each lands, not on a fixed release schedule and with no one-release ai-sdk
   grace period (backward compatibility is not a constraint). `adapter: 'ai-sdk'`
   stays available as an explicit escape hatch, but is not the default for these
-  three once parity is reached. Parity means: text generation, streaming, the
-  tool loop, structured output, and error mapping all verified against the
-  ai-sdk path.
+  three once default parity is reached.
+- Default parity is the minimum required to switch defaults: text generation,
+  streaming, the PromptTrail-owned tool loop, structured output, error mapping,
+  and basic metadata retention all verified against the ai-sdk path.
+- Deep parity is not a default-switch blocker. It is native-only coverage added
+  incrementally after default parity: exact provider output items/events,
+  reasoning/citations/annotations, provider-hosted tools, remote MCP,
+  `tool_search` / `additional_tools`, shell-backed skills, and other
+  provider-specific advanced surfaces.
 - Deep-integration features (exact item/tool/reasoning/approval/event metadata)
   are only guaranteed on native adapters; the ai-sdk adapter provides
   best-effort metadata.
@@ -846,13 +852,19 @@ Avoid:
 
 - Add `adapter: 'native' | 'ai-sdk'` for OpenAI.
 - Implement native Responses text generation.
+- Implement streaming, structured output, error mapping, and basic metadata
+  retention.
 - Add function tool loop.
 - Preserve raw response items in message attrs.
-- Keep ai-sdk as default until native parity is good.
+- Keep ai-sdk as default until default parity is good. Remote MCP,
+  `tool_search`, `additional_tools`, shell skills, and exact item/event
+  preservation are deep-parity follow-ups, not blockers for the default switch.
 
 ### Phase 3: Native Anthropic Messages Adapter
 
 - Add `adapter: 'native' | 'ai-sdk'` for Anthropic.
+- Implement text generation, streaming, structured output, error mapping, and
+  basic metadata retention.
 - Implement content block preservation and tool loop.
 - Preserve raw response metadata.
 
@@ -860,8 +872,10 @@ Avoid:
 
 - Add `adapter: 'native' | 'ai-sdk'` for Google, via the official Google GenAI
   SDK.
+- Implement text generation, streaming, structured output, error mapping, and
+  basic metadata retention.
 - Implement function-declaration tool loop and `attrs.google` metadata.
-- Keep ai-sdk as default until native parity is good.
+- Keep ai-sdk as default until default parity is good.
 
 ### Phase 4: Runtime Event Common Layer
 
@@ -911,8 +925,8 @@ the sections above:
 - Conversation state ownership (`ConversationBinding`) — Conversation State.
 - Raw-metadata volume and runtime diff/log exposure (`retain`) — Metadata
   Retention.
-- Default adapter selection (native on parity, ai-sdk escape hatch) — ai-sdk
-  Adapter.
+- Default adapter selection (native on default parity, deep parity as follow-up,
+  ai-sdk escape hatch) — ai-sdk Adapter.
 - Scope of native adapters (OpenAI/Anthropic/Google + ai-sdk) and deferral of
   the general agent frameworks (OpenAI Agents SDK, Google ADK) — Model API
   Adapter, OpenAI Agents SDK (deferred), Google ADK (deferred).
