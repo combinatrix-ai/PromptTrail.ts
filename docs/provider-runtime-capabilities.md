@@ -42,11 +42,17 @@ call and an agent runtime turn have different control semantics.
 A model API adapter is used by `Source.llm()` and `assistant()`. It returns a
 PromptTrail assistant message and optional structured metadata.
 
-Target adapters:
+Supported adapters (decided): exactly four.
 
-- OpenAI Responses API
-- Anthropic Messages API
-- Google Gemini API or existing ai-sdk compatibility path
+- OpenAI Responses API (native)
+- Anthropic Messages API (native)
+- Google Gemini API (native)
+- ai-sdk (first-class catch-all adapter for every other provider)
+
+This is a deliberate scope decision: only OpenAI, Anthropic, and Google get
+native deep-integration adapters. Every other provider is reached through the
+ai-sdk adapter, which is a permanent, supported path — not a temporary
+compatibility shim. PromptTrail does not write a native adapter per provider.
 
 ### Agent Runtime Adapter
 
@@ -268,6 +274,7 @@ Recommended message attrs:
 
 - `message.attrs.openai` for OpenAI Responses metadata
 - `message.attrs.anthropic` for Anthropic Messages metadata
+- `message.attrs.google` for Google Gemini metadata
 - `message.attrs.codex` for Codex App Server turn metadata
 - `message.attrs.claudeAgent` for Claude Agent SDK turn metadata
 
@@ -354,19 +361,71 @@ Source.llm()
   .withCapabilities([weatherTool]);
 ```
 
-### ai-sdk Compatibility
+### Google Gemini API
 
-ai-sdk is useful for broad provider compatibility and low-maintenance default
-behavior. It should not be the only path for providers where PromptTrail needs
-exact item, tool, reasoning, approval, or event metadata.
+Current state:
 
-Policy:
+- `Source.llm().google()` uses the ai-sdk Google provider.
 
-- Default model calls may continue to use ai-sdk while native adapters are
-  incomplete.
-- Deep integration features require native adapters.
-- Native adapters should expose a stable PromptTrail API, not provider SDK
-  objects directly.
+Target state:
+
+- Add a native Gemini adapter (via the official Google GenAI SDK) so Google is a
+  first-class deep-integration provider alongside OpenAI and Anthropic.
+
+Native Gemini requirements:
+
+- Translate PromptTrail messages into Gemini `contents` plus `systemInstruction`.
+- Translate `PromptTrailTool` to Gemini function declarations (JSON Schema
+  derived from the Zod `inputSchema`).
+- Execute `functionCall` parts and append `functionResponse` parts under
+  PromptTrail control.
+- Preserve candidates, `finishReason`, safety ratings, and usage metadata as
+  `attrs.google` raw metadata.
+- Support provider-hosted built-ins (e.g. Google Search grounding, code
+  execution) as `BuiltinTool` values without forcing results into assistant text.
+- Skills map to instruction injection: Gemini has no first-class skill primitive,
+  so apply the lossy-injection warn/error rule when a skill carries files.
+
+Recommended API:
+
+```ts
+Source.llm()
+  .google({ adapter: 'native' })
+  .model('gemini-2.5-pro')
+  .withCapabilities([weatherTool]);
+```
+
+### ai-sdk Adapter
+
+ai-sdk is the fourth supported adapter: the catch-all transport for every
+provider that does not have a native adapter (everything except OpenAI,
+Anthropic, and Google). It is a permanent, first-class path, not a temporary
+shim. It is also where PromptTrail relies on ai-sdk's cross-provider streaming,
+tool-call, and structured-output normalization instead of reimplementing it.
+
+Policy (decided, assuming no backward-compatibility constraint):
+
+- ai-sdk is removed from the core abstraction. `PromptTrailTool` is the single
+  core tool type; ai-sdk tool objects are an internal detail of the ai-sdk
+  adapter only, reached through a one-way `PromptTrailTool -> ai-sdk` mapping.
+- ai-sdk is removed from the public surface. `providerOptions` / `sdkOptions`
+  and other raw ai-sdk objects are not part of the stable API; they live behind
+  the ai-sdk adapter.
+- For OpenAI, Anthropic, and Google, the native adapter is the default. ai-sdk
+  is not offered as a per-provider toggle for these three once native parity is
+  reached.
+- Deep-integration features (exact item/tool/reasoning/approval/event metadata)
+  are only guaranteed on native adapters; the ai-sdk adapter provides
+  best-effort metadata.
+- Native adapters expose a stable PromptTrail API, never provider SDK objects
+  directly.
+
+Why not delete ai-sdk entirely: removing it would force either writing and
+maintaining a native adapter per long-tail provider, or dropping multi-provider
+support to just OpenAI/Anthropic/Google. Keeping ai-sdk as one contained,
+non-core adapter preserves provider breadth at low maintenance cost. Full
+removal is only on the table if PromptTrail decides to support exactly the three
+native providers and nothing else.
 
 ## Agent Runtime Adapters
 
@@ -608,6 +667,13 @@ Avoid:
 - Add `adapter: 'native' | 'ai-sdk'` for Anthropic.
 - Implement content block preservation and tool loop.
 - Preserve raw response metadata.
+
+### Phase 3b: Native Google Gemini Adapter
+
+- Add `adapter: 'native' | 'ai-sdk'` for Google, via the official Google GenAI
+  SDK.
+- Implement function-declaration tool loop and `attrs.google` metadata.
+- Keep ai-sdk as default until native parity is good.
 
 ### Phase 4: Runtime Event Common Layer
 
