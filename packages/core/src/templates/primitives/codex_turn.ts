@@ -2,6 +2,7 @@ import {
   codexResultToMessage,
   collectCodexTurnResult,
   createCodexAppServerHttpClient,
+  createCodexAppServerWebSocketClient,
   type CodexTurnOptions,
 } from '../../codex_app_server';
 import type { Session } from '../../session';
@@ -20,58 +21,70 @@ export class CodexTurn<
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
+    const ownsClient = this.options.client === undefined;
     const client =
       this.options.client ??
       (this.options.transport?.kind === 'http'
         ? createCodexAppServerHttpClient({ url: this.options.transport.url })
-        : undefined);
+        : this.options.transport?.kind === 'websocket'
+          ? createCodexAppServerWebSocketClient({
+              url: this.options.transport.url,
+              timeoutMs: this.options.transport.timeoutMs,
+            })
+          : undefined);
 
     if (!client) {
       throw new Error(
-        'CodexTurn requires either a Codex App Server client or an HTTP transport URL.',
+        'CodexTurn requires either a Codex App Server client or a transport URL.',
       );
     }
 
-    const resolvedThreadId = await this.resolveThreadId(currentSession);
-    const input = await this.resolveInput(currentSession);
-    const threadId =
-      resolvedThreadId ??
-      (
-        await client.startThread({
-          cwd: this.options.cwd,
-          model: this.options.model,
-          sandboxPolicy: this.options.sandboxPolicy,
-          approvalPolicy: this.options.approvalPolicy,
-          ...(this.options.threadStart ?? {}),
-        })
-      ).threadId;
+    try {
+      const resolvedThreadId = await this.resolveThreadId(currentSession);
+      const input = await this.resolveInput(currentSession);
+      const threadId =
+        resolvedThreadId ??
+        (
+          await client.startThread({
+            cwd: this.options.cwd,
+            model: this.options.model,
+            sandboxPolicy: this.options.sandboxPolicy,
+            approvalPolicy: this.options.approvalPolicy,
+            ...(this.options.threadStart ?? {}),
+          })
+        ).threadId;
 
-    const rawTurnResult = await client.startTurn({
-      threadId,
-      input,
-      cwd: this.options.cwd,
-      model: this.options.model,
-      sandboxPolicy: this.options.sandboxPolicy,
-      approvalPolicy: this.options.approvalPolicy,
-      ...(this.options.turnStart ?? {}),
-    });
-    const result = await collectCodexTurnResult(rawTurnResult, { threadId });
-    const sessionResult = this.prepareSessionResult(result);
+      const rawTurnResult = await client.startTurn({
+        threadId,
+        input: normalizeCodexInput(input),
+        cwd: this.options.cwd,
+        model: this.options.model,
+        sandboxPolicy: this.options.sandboxPolicy,
+        approvalPolicy: this.options.approvalPolicy,
+        ...(this.options.turnStart ?? {}),
+      });
+      const result = await collectCodexTurnResult(rawTurnResult, { threadId });
+      const sessionResult = this.prepareSessionResult(result);
 
-    if (this.options.squashWith) {
-      return this.options.squashWith(currentSession, result);
-    }
+      if (this.options.squashWith) {
+        return this.options.squashWith(currentSession, result);
+      }
 
-    if (this.options.retainMessages === false) {
-      return currentSession.withVar(
-        this.options.attrsKey ?? 'codex',
-        sessionResult,
+      if (this.options.retainMessages === false) {
+        return currentSession.withVar(
+          this.options.attrsKey ?? 'codex',
+          sessionResult,
+        );
+      }
+
+      return currentSession.addMessage(
+        codexResultToMessage<TAttrs>(sessionResult, this.options.attrsKey),
       );
+    } finally {
+      if (ownsClient) {
+        await client.close?.();
+      }
     }
-
-    return currentSession.addMessage(
-      codexResultToMessage<TAttrs>(sessionResult, this.options.attrsKey),
-    );
   }
 
   private async resolveThreadId(
@@ -123,6 +136,12 @@ export class CodexTurn<
       items: items?.map((item) => summarizeCodexItem(item)),
     };
   }
+}
+
+function normalizeCodexInput(
+  input: string | unknown[] | undefined,
+): string | unknown[] | undefined {
+  return typeof input === 'string' ? [{ type: 'text', text: input }] : input;
 }
 
 function summarizeCodexItem(item: unknown): unknown {

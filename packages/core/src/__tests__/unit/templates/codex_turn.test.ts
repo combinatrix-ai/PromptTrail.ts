@@ -55,7 +55,7 @@ describe('CodexTurn template', () => {
     ]);
     expect(client.turnStarts[0]).toMatchObject({
       threadId: 'thread-1',
-      input: 'Implement this',
+      input: [{ type: 'text', text: 'Implement this' }],
       cwd: '/repo',
       model: 'gpt-5.4-nano',
     });
@@ -88,7 +88,7 @@ describe('CodexTurn template', () => {
     expect(client.threadStarts).toHaveLength(0);
     expect(client.turnStarts[0]).toMatchObject({
       threadId: 'thread-existing',
-      input: 'Input: Continue',
+      input: [{ type: 'text', text: 'Input: Continue' }],
     });
     expect(session.messages).toHaveLength(1);
     expect(session.getVar('codex' as never)).toMatchObject({

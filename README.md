@@ -138,11 +138,17 @@ attributes.
 const agent = Agent.create()
   .user('Inspect this repository and suggest the next edit')
   .codexTurn({
-    transport: { kind: 'http', url: 'http://localhost:1455' },
+    transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
     cwd: process.cwd(),
-    model: 'gpt-5.4-nano',
-    sandboxPolicy: 'workspace-write',
+    sandboxPolicy: { type: 'readOnly' },
+    approvalPolicy: 'never',
   });
+```
+
+To run the live Codex App Server integration test:
+
+```bash
+CODEX_APP_SERVER_URL=ws://127.0.0.1:8390 pnpm --filter @prompttrail/core exec vitest --run src/__tests__/integration/codex_app_server.integration.test.ts
 ```
 
 ### Control Flow

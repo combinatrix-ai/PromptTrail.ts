@@ -35,12 +35,16 @@ export interface CodexTurnStartParams {
 
 export interface CodexThreadStartResult {
   threadId: string;
+  thread?: { id?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
 
 export interface CodexTurnEvent {
   method?: string;
   type?: string;
+  id?: number | string;
+  result?: unknown;
+  error?: unknown;
   item?: unknown;
   params?: Record<string, unknown>;
   [key: string]: unknown;
@@ -64,6 +68,7 @@ export interface CodexAppServerClient {
   startTurn(
     params: CodexTurnStartParams,
   ): Promise<CodexTurnResult | AsyncIterable<CodexTurnEvent>>;
+  close?(): Promise<void>;
 }
 
 export interface CodexAppServerHttpClientOptions {
@@ -132,6 +137,329 @@ export function createCodexAppServerHttpClient(
   return new CodexAppServerHttpClient(options);
 }
 
+export interface CodexAppServerWebSocketClientOptions {
+  url: string;
+  WebSocket?: typeof WebSocket;
+  timeoutMs?: number;
+  clientInfo?: {
+    name?: string;
+    title?: string;
+    version?: string;
+  };
+}
+
+export class CodexAppServerWebSocketClient implements CodexAppServerClient {
+  private socket?: WebSocket;
+  private nextId = 1;
+  private initialized = false;
+  private readonly pending = new Map<
+    number,
+    {
+      method: string;
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  private readonly pendingTurns = new Map<
+    string,
+    {
+      result: CodexTurnResult;
+      resolve: (value: CodexTurnResult) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  constructor(private readonly options: CodexAppServerWebSocketClientOptions) {}
+
+  async startThread(
+    params: CodexThreadStartParams,
+  ): Promise<CodexThreadStartResult> {
+    const result = (await this.request('thread/start', params)) as
+      | CodexThreadStartResult
+      | { thread?: { id?: string } };
+    const threadId =
+      'threadId' in result && typeof result.threadId === 'string'
+        ? result.threadId
+        : result.thread?.id;
+
+    if (!threadId) {
+      throw new Error('Codex App Server thread/start returned no thread id');
+    }
+
+    return { ...result, threadId };
+  }
+
+  async startTurn(params: CodexTurnStartParams): Promise<CodexTurnResult> {
+    const result = (await this.request('turn/start', params)) as {
+      turn?: {
+        id?: string;
+        status?: string;
+        items?: unknown[];
+        error?: unknown;
+      };
+    };
+    const turnId = result.turn?.id;
+    if (!turnId) {
+      throw new Error('Codex App Server turn/start returned no turn id');
+    }
+
+    return this.waitForTurnCompletion(params.threadId, turnId, result.turn);
+  }
+
+  async close(): Promise<void> {
+    if (this.socket && this.socket.readyState === 1) {
+      this.socket.close();
+    }
+    this.socket = undefined;
+    this.initialized = false;
+    this.rejectPending(new Error('Codex App Server WebSocket closed'));
+  }
+
+  private async waitForTurnCompletion(
+    threadId: string,
+    turnId: string,
+    turn: { status?: string; items?: unknown[]; error?: unknown } = {},
+  ): Promise<CodexTurnResult> {
+    const timeoutMs = this.options.timeoutMs ?? 120_000;
+    const initialItems = Array.isArray(turn.items) ? [...turn.items] : [];
+    const initialResult: CodexTurnResult = {
+      threadId,
+      turnId,
+      status: turn.status,
+      items: initialItems,
+      error: turn.error,
+    };
+
+    if (turn.status && turn.status !== 'inProgress') {
+      initialResult.finalAnswer = extractCodexFinalAnswer(initialResult);
+      return initialResult;
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingTurns.delete(turnId);
+        reject(new Error(`Codex App Server turn timed out: ${turnId}`));
+      }, timeoutMs);
+      this.pendingTurns.set(turnId, {
+        result: initialResult,
+        resolve,
+        reject,
+        timeout,
+      });
+    });
+  }
+
+  private async request(method: string, params?: unknown): Promise<unknown> {
+    await this.ensureInitialized();
+    const socket = this.socket;
+    if (!socket) {
+      throw new Error('Codex App Server WebSocket is not connected');
+    }
+
+    const id = this.nextId++;
+    const timeoutMs = this.options.timeoutMs ?? 120_000;
+    const request = {
+      method,
+      id,
+      ...(params === undefined ? {} : { params }),
+    };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Codex App Server request timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, { method, resolve, reject, timeout });
+      socket.send(JSON.stringify(request));
+    });
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized && this.socket?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    const WebSocketCtor = this.options.WebSocket ?? globalThis.WebSocket;
+    if (!WebSocketCtor) {
+      throw new Error(
+        'Codex App Server WebSocket transport requires a WebSocket implementation.',
+      );
+    }
+
+    const socket = new WebSocketCtor(this.options.url);
+    this.socket = socket;
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Codex App Server WebSocket connection timed out'));
+      }, this.options.timeoutMs ?? 120_000);
+
+      socket.addEventListener('open', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      socket.addEventListener('error', () => {
+        clearTimeout(timeout);
+        reject(new Error('Codex App Server WebSocket connection failed'));
+      });
+    });
+
+    socket.addEventListener('message', (event) => {
+      this.handleMessage(event.data);
+    });
+    socket.addEventListener('close', () => {
+      this.initialized = false;
+      this.rejectPending(new Error('Codex App Server WebSocket closed'));
+    });
+    socket.addEventListener('error', () => {
+      this.rejectPending(new Error('Codex App Server WebSocket error'));
+    });
+
+    await this.requestWithoutInitialization('initialize', {
+      clientInfo: {
+        name: 'prompttrail_ts',
+        title: 'PromptTrail.ts',
+        version: '0.0.1',
+        ...this.options.clientInfo,
+      },
+    });
+    socket.send(JSON.stringify({ method: 'initialized', params: {} }));
+    this.initialized = true;
+  }
+
+  private async requestWithoutInitialization(
+    method: string,
+    params?: unknown,
+  ): Promise<unknown> {
+    const socket = this.socket;
+    if (!socket) {
+      throw new Error('Codex App Server WebSocket is not connected');
+    }
+
+    const id = this.nextId++;
+    const timeoutMs = this.options.timeoutMs ?? 120_000;
+    const request = { method, id, ...(params === undefined ? {} : { params }) };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Codex App Server request timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, { method, resolve, reject, timeout });
+      socket.send(JSON.stringify(request));
+    });
+  }
+
+  private handleMessage(data: unknown): void {
+    const text =
+      typeof data === 'string'
+        ? data
+        : data instanceof ArrayBuffer
+          ? new TextDecoder().decode(data)
+          : String(data);
+    const message = JSON.parse(text) as CodexTurnEvent;
+
+    if (message.id !== undefined) {
+      const requestId =
+        typeof message.id === 'number' ? message.id : Number(message.id);
+      const pending = this.pending.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pending.delete(requestId);
+        if (message.error) {
+          pending.reject(
+            new Error(
+              `Codex App Server ${pending.method} error: ${formatUnknownError(message.error)}`,
+            ),
+          );
+        } else {
+          pending.resolve(message.result);
+        }
+        return;
+      }
+    }
+
+    this.handleNotification(message);
+  }
+
+  private handleNotification(message: CodexTurnEvent): void {
+    const params = message.params ?? {};
+    const turnId = getTurnIdFromNotification(message);
+    const turnState = turnId ? this.pendingTurns.get(turnId) : undefined;
+    if (!turnState) {
+      return;
+    }
+
+    if (
+      message.method === 'item/started' ||
+      message.method === 'item/completed'
+    ) {
+      const item = params.item;
+      if (item) {
+        turnState.result.items = [...(turnState.result.items ?? []), item];
+      }
+    }
+
+    if (message.method === 'item/agentMessage/delta') {
+      const delta = getDeltaText(params);
+      if (delta) {
+        turnState.result.finalAnswer = `${turnState.result.finalAnswer ?? ''}${delta}`;
+      }
+    }
+
+    if (message.method === 'turn/completed') {
+      if (!turnId) {
+        return;
+      }
+      clearTimeout(turnState.timeout);
+      this.pendingTurns.delete(turnId);
+      const turn = params.turn as
+        | { status?: string; error?: unknown; durationMs?: number }
+        | undefined;
+      turnState.result.status = turn?.status ?? turnState.result.status;
+      turnState.result.error = turn?.error;
+      turnState.result.durationMs = turn?.durationMs;
+
+      const finalAnswer = extractCodexFinalAnswer(turnState.result);
+      if (finalAnswer) {
+        turnState.result.finalAnswer = finalAnswer;
+      }
+
+      if (turnState.result.status === 'failed') {
+        turnState.reject(
+          new Error(
+            `Codex App Server turn failed: ${formatUnknownError(turnState.result.error)}`,
+          ),
+        );
+      } else {
+        turnState.resolve(turnState.result);
+      }
+    }
+  }
+
+  private rejectPending(error: Error): void {
+    for (const [requestId, pending] of this.pending) {
+      clearTimeout(pending.timeout);
+      this.pending.delete(requestId);
+      pending.reject(error);
+    }
+
+    for (const [turnId, pending] of this.pendingTurns) {
+      clearTimeout(pending.timeout);
+      this.pendingTurns.delete(turnId);
+      pending.reject(error);
+    }
+  }
+}
+
+export function createCodexAppServerWebSocketClient(
+  options: CodexAppServerWebSocketClientOptions,
+): CodexAppServerClient {
+  return new CodexAppServerWebSocketClient(options);
+}
+
 export interface CodexTurnOptions<
   TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
@@ -139,7 +467,9 @@ export interface CodexTurnOptions<
   threadId?: CodexThreadId;
   input?: CodexTurnInput;
   client?: CodexAppServerClient;
-  transport?: { kind: 'http'; url: string };
+  transport?:
+    | { kind: 'http'; url: string }
+    | { kind: 'websocket'; url: string; timeoutMs?: number };
   cwd?: string;
   model?: string;
   sandboxPolicy?: unknown;
@@ -259,4 +589,58 @@ function extractTextFromUnknown(value: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function getTurnIdFromNotification(
+  message: CodexTurnEvent,
+): string | undefined {
+  const params = message.params ?? {};
+  const turn = params.turn as { id?: unknown } | undefined;
+  const item = params.item as { turnId?: unknown } | undefined;
+
+  if (typeof params.turnId === 'string') {
+    return params.turnId;
+  }
+  if (typeof turn?.id === 'string') {
+    return turn.id;
+  }
+  if (typeof item?.turnId === 'string') {
+    return item.turnId;
+  }
+  return undefined;
+}
+
+function getDeltaText(params: Record<string, unknown>): string | undefined {
+  for (const key of ['delta', 'text', 'content']) {
+    const value = params[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+
+  const delta = params.delta as Record<string, unknown> | undefined;
+  if (delta && typeof delta.text === 'string') {
+    return delta.text;
+  }
+
+  return undefined;
+}
+
+function formatUnknownError(error: unknown): string {
+  if (!error) {
+    return 'unknown error';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+  return JSON.stringify(error);
 }
