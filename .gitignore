@@ -8,6 +8,7 @@ context.txt
 *.js
 *.js.map
 .DS_Store
+.envrc
 .vscode
 vscode-extension/
 readme_examples
