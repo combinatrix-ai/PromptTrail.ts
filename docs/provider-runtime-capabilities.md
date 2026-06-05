@@ -79,8 +79,7 @@ export type Capability =
   | PromptTrailTool
   | RuntimeSkill
   | BuiltinTool
-  | McpServer
-  | SubagentDefinition;
+  | McpServer;
 ```
 
 ### Tool
@@ -194,7 +193,6 @@ export type McpTransport =
       args?: string[];
       env?: Record<string, string>;
     }
-  | { kind: 'ws'; url: string }
   | { kind: 'http'; url: string; headers?: Record<string, string> }
   | { kind: 'sdk-in-process'; server: unknown }; // e.g. createSdkMcpServer() result
 
@@ -212,9 +210,9 @@ Like `inputSchema`, `transport` should be a typed union, not `unknown`. The
 Agent SDK's `createSdkMcpServer()` result) and reuses the same tool-execution
 path as a `PromptTrailTool`.
 
-Keep MCP WebSocket transport separate from the Codex App Server WebSocket
-transport. Use `kind: 'ws'` only for MCP servers that explicitly support
-WebSocket MCP transport.
+MCP WebSocket transport is deferred. Do not model it as a first-class transport
+until a target provider/runtime requires WebSocket MCP specifically. Keep it
+separate from the Codex App Server WebSocket transport.
 
 ### Builtin Tool
 
@@ -230,8 +228,17 @@ Examples:
 ### Subagent
 
 PromptTrail already has `subroutine()` for precise nested control. External
-agent runtimes may also expose subagents. These should be represented as a
-capability only when passed into a runtime that supports them.
+agent runtimes may also expose subagents, but `SubagentDefinition` is deferred
+and should not be part of the core `Capability` union yet.
+
+Reason: tools, skills, builtin tools, and MCP servers describe abilities that a
+turn may use. Subagents describe delegation to another execution structure. That
+overlaps PromptTrail's own `subroutine()` and the deferred general agent
+frameworks (`agentsTurn()` / `adkTurn()`), so adding `withCapabilities([subagent])`
+now would blur PromptTrail-owned nested control and runtime-owned delegation.
+If a runtime-specific subagent surface becomes important, add it first as a
+runtime adapter option (for example, `codexTurn({ subagents: [...] })`) after
+verifying the provider/runtime API.
 
 ## Execution Modes
 
@@ -758,14 +765,13 @@ own orchestration.
 
 ## Capability Mapping Matrix
 
-| PromptTrail concept  | OpenAI Responses                                                                | Anthropic Messages                                                                           | Codex App Server                                                   | Claude Agent SDK                                  |
-| -------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------- |
-| `PromptTrailTool`    | function tool, PromptTrail executes                                             | tool, PromptTrail executes                                                                   | `dynamicTools`, PromptTrail executes via `item/tool/call` callback | in-process MCP tool, PromptTrail executes via SDK |
-| `BuiltinTool`        | provider-hosted tool                                                            | server/provider tool                                                                         | runtime tool                                                       | runtime tool                                      |
-| `RuntimeSkill`       | shell environment skill mount when shell is enabled; else instruction injection | native `container.skill_id` + code execution tool (beta headers); else instruction injection | skill input item                                                   | `.claude/skills` plus `skills` filter             |
-| `McpServer`          | remote MCP tool                                                                 | MCP/server tool where supported                                                              | runtime MCP config                                                 | SDK MCP config                                    |
-| `SubagentDefinition` | out of scope; use PromptTrail `subroutine()`                                    | out of scope; use PromptTrail `subroutine()`                                                 | runtime subagent when supported                                    | SDK subagent when supported                       |
-| `ApprovalPolicy`     | PromptTrail tool loop policy                                                    | PromptTrail tool loop policy                                                                 | runtime approval bridge                                            | SDK permission bridge                             |
+| PromptTrail concept | OpenAI Responses                                                                | Anthropic Messages                                                                           | Codex App Server                                                   | Claude Agent SDK                                  |
+| ------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------- |
+| `PromptTrailTool`   | function tool, PromptTrail executes                                             | tool, PromptTrail executes                                                                   | `dynamicTools`, PromptTrail executes via `item/tool/call` callback | in-process MCP tool, PromptTrail executes via SDK |
+| `BuiltinTool`       | provider-hosted tool                                                            | server/provider tool                                                                         | runtime tool                                                       | runtime tool                                      |
+| `RuntimeSkill`      | shell environment skill mount when shell is enabled; else instruction injection | native `container.skill_id` + code execution tool (beta headers); else instruction injection | skill input item                                                   | `.claude/skills` plus `skills` filter             |
+| `McpServer`         | remote MCP tool                                                                 | MCP/server tool where supported                                                              | runtime MCP config                                                 | SDK MCP config                                    |
+| `ApprovalPolicy`    | PromptTrail tool loop policy                                                    | PromptTrail tool loop policy                                                                 | runtime approval bridge                                            | SDK permission bridge                             |
 
 ## Approval Model
 
@@ -910,5 +916,9 @@ the sections above:
 - Scope of native adapters (OpenAI/Anthropic/Google + ai-sdk) and deferral of
   the general agent frameworks (OpenAI Agents SDK, Google ADK) — Model API
   Adapter, OpenAI Agents SDK (deferred), Google ADK (deferred).
+- MCP WebSocket transport — deferred until a target provider/runtime requires
+  WebSocket MCP specifically.
+- `SubagentDefinition` as a core capability — deferred; keep subagents out of
+  `withCapabilities()` until a runtime-specific subagent API is verified.
 
 Add new questions here as they arise.
