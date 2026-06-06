@@ -1,5 +1,6 @@
 import { Message, type Message as PromptTrailMessage } from './message';
 import { bundle } from './runtime_bindings';
+import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 
 export type InboundKind = 'user' | 'system' | 'control';
@@ -821,4 +822,5 @@ export function manualSource(): EventSource & {
 export const PromptTrail = {
   app,
   bundle,
+  server,
 };

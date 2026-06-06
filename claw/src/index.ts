@@ -11,24 +11,19 @@ import {
 } from 'discord.js';
 import {
   PromptTrail,
-  AssistantDeliveryTracker,
   agent,
   bind,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
-  dispatchRuntimeBindingEvent,
   discord,
-  findRuntimeBinding,
   isConcreteDiscordDeliveryTarget,
   memoryStore,
-  mergeBindingDefaults,
-  passesDiscordBehavior,
-  resolveRuntimeDelivery,
-  resolveRuntimeInput,
   type ConcreteDiscordDeliveryTarget,
   type DiscordMessageEvent,
+  type RuntimeActivityHandle,
+  type RuntimeAdapter,
+  type RuntimeSourceContext,
 } from '@prompttrail/core';
-import type { Message as PromptTrailMessage } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
 
 interface ClawConfig {
@@ -98,69 +93,106 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-const deliveryTracker = new AssistantDeliveryTracker();
 const codexThreadIds = new Map<string, string>();
 
-client.once(Events.ClientReady, (readyClient) => {
-  console.log(`Claw Discord bot logged in as ${readyClient.user.tag}`);
-  console.log(`Allowed channels: ${config.allowedChannels.join(', ')}`);
-  console.log(`Reply mode: ${config.replyMode}`);
+const server = PromptTrail.server({
+  bundle,
+  runtime,
+  activity: { kind: 'typing' },
+  errorMessage: 'Claw failed to handle that message.',
+  adapters: [
+    discordGateway({
+      client,
+      token: config.token,
+      stripBotMention: true,
+    }),
+  ],
 });
 
-client.on(Events.MessageCreate, async (message) => {
-  try {
-    await handleMessage(message);
-  } catch (error) {
-    console.error('Failed to handle Discord message', error);
-    if (message.channel.isSendable()) {
-      await message.channel.send('Claw failed to handle that message.');
-    }
-  }
-});
+await server.start();
 
-await client.login(config.token);
+function discordGateway(options: {
+  client: Client;
+  token: string;
+  stripBotMention?: boolean;
+}): RuntimeAdapter {
+  const { client } = options;
+  return {
+    name: 'discord',
+    sources: [
+      {
+        type: 'discord.messages',
+        async start(ctx) {
+          client.once(Events.ClientReady, (readyClient) => {
+            console.log(
+              `Claw Discord bot logged in as ${readyClient.user.tag}`,
+            );
+            console.log(
+              `Allowed channels: ${config.allowedChannels.join(', ')}`,
+            );
+            console.log(`Reply mode: ${config.replyMode}`);
+          });
+          client.on(Events.MessageCreate, (message) => {
+            void handleDiscordMessage(ctx, message, options.stripBotMention);
+          });
+          await client.login(options.token);
+        },
+        async stop() {
+          client.destroy();
+        },
+      },
+    ],
+    deliveries: [
+      {
+        platform: 'discord',
+        async deliver(_ctx, target, message) {
+          if (!isConcreteDiscordDeliveryTarget(target)) {
+            return;
+          }
+          const channel = await resolveDiscordDeliveryChannel(client, target);
+          if (!channel?.isSendable()) {
+            console.warn('Discord delivery target is not sendable', target);
+            return;
+          }
+          await channel.send(message.content);
+        },
+      },
+    ],
+    activities: [
+      {
+        platform: 'discord',
+        async start(_ctx, target, activity) {
+          if (
+            !isConcreteDiscordDeliveryTarget(target) ||
+            (activity.kind !== 'typing' && activity.kind !== 'processing')
+          ) {
+            return undefined;
+          }
+          return startDiscordTyping(client, target);
+        },
+      },
+    ],
+  };
+}
 
-async function handleMessage(message: DiscordMessage): Promise<void> {
-  const event = toDiscordEvent(message);
+async function handleDiscordMessage(
+  ctx: RuntimeSourceContext<DiscordMessageEvent>,
+  message: DiscordMessage,
+  shouldStripBotMention: boolean | undefined,
+): Promise<void> {
+  const event = toDiscordEvent(message.client, message);
   if (!event) {
     return;
   }
-
-  const binding = findRuntimeBinding(bundle, 'discord.messages', event);
-  if (!binding) {
-    return;
-  }
-
-  const defaults = mergeBindingDefaults(bundle.defaults, binding.defaults);
-  if (!passesDiscordBehavior(event, defaults.behavior)) {
-    return;
-  }
-
-  const delivery = resolveRuntimeDelivery(defaults.delivery, event);
-  const discordDelivery = isConcreteDiscordDeliveryTarget(delivery)
-    ? delivery
-    : undefined;
-  const dispatched = await withTypingIndicator(discordDelivery, () =>
-    dispatchRuntimeBindingEvent({
-      app: runtime,
-      binding,
-      event,
-      defaults,
-      content: stripBotMention(
-        resolveRuntimeInput(binding, event),
-        client.user?.id,
-      ),
-    }),
-  );
-
-  await deliverNewAssistantMessages(
-    dispatched.conversationId,
-    discordDelivery,
-    dispatched.result.session.messages,
-  );
+  await ctx.emit(event, {
+    content: shouldStripBotMention
+      ? stripBotMention(event.content, message.client.user?.id)
+      : event.content,
+  });
 }
 
 function toDiscordEvent(
+  client: Client,
   message: DiscordMessage,
 ): DiscordMessageEvent | undefined {
   if (message.author.bot) {
@@ -191,29 +223,8 @@ function toDiscordEvent(
   };
 }
 
-async function deliverNewAssistantMessages(
-  conversationId: string,
-  delivery: ConcreteDiscordDeliveryTarget | undefined,
-  messages: readonly PromptTrailMessage[],
-): Promise<void> {
-  if (!delivery) {
-    return;
-  }
-  for (const deliveryAttempt of deliveryTracker.pending(
-    conversationId,
-    messages,
-  )) {
-    const target = await resolveDiscordDeliveryChannel(delivery);
-    if (!target?.isSendable()) {
-      console.warn('Discord delivery target is not sendable', delivery);
-      continue;
-    }
-    await target.send(deliveryAttempt.message.content);
-    deliveryTracker.markDelivered(deliveryAttempt);
-  }
-}
-
 async function resolveDiscordDeliveryChannel(
+  client: Client,
   delivery: ConcreteDiscordDeliveryTarget,
 ) {
   if (delivery.thread) {
@@ -227,16 +238,16 @@ async function resolveDiscordDeliveryChannel(
   return channel ?? client.channels.fetch(delivery.channel);
 }
 
-async function withTypingIndicator<T>(
-  delivery: ConcreteDiscordDeliveryTarget | undefined,
-  task: () => Promise<T>,
-): Promise<T> {
-  const target = delivery
-    ? await resolveDiscordDeliveryChannel(delivery).catch(() => undefined)
-    : undefined;
+async function startDiscordTyping(
+  client: Client,
+  delivery: ConcreteDiscordDeliveryTarget,
+): Promise<RuntimeActivityHandle | undefined> {
+  const target = await resolveDiscordDeliveryChannel(client, delivery).catch(
+    () => undefined,
+  );
   const sendTyping = getSendTyping(target);
   if (!sendTyping) {
-    return task();
+    return undefined;
   }
 
   await sendTyping().catch(() => undefined);
@@ -244,11 +255,11 @@ async function withTypingIndicator<T>(
     void sendTyping().catch(() => undefined);
   }, 8_000);
 
-  try {
-    return await task();
-  } finally {
-    clearInterval(interval);
-  }
+  return {
+    stop() {
+      clearInterval(interval);
+    },
+  };
 }
 
 function getSendTyping(

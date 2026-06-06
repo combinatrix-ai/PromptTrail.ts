@@ -17,6 +17,7 @@ export * from './runtime';
 export * from './runtime_bindings';
 export * from './runtime_dispatch';
 export * from './runtime_mocks';
+export * from './runtime_server';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
 export * from './skills';
