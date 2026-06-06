@@ -567,7 +567,7 @@ export function getAnthropicSystemPrompt(
     : systemMessages.map((message) => message.content).join('\n\n');
   const injected = appendSkillInstructions(
     typeof system === 'string' && system ? system : undefined,
-    options?.capabilities,
+    getAnthropicInstructionCapabilities(options?.capabilities),
     options?.skillInjection ?? 'warn',
   );
   warnSkillInstructionLoss(injected.warnings);
@@ -580,6 +580,15 @@ export function getAnthropicSystemPrompt(
     ];
   }
   return injected.instructions || undefined;
+}
+
+function getAnthropicInstructionCapabilities(
+  capabilities: CapabilitySet | undefined,
+): CapabilitySet | undefined {
+  return capabilities?.filter(
+    (capability) =>
+      capability.kind !== 'skill' || typeof capability.skillId !== 'string',
+  );
 }
 
 export function getAnthropicPromptTrailTools(

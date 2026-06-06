@@ -313,6 +313,37 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 
+  it('does not inject Anthropic native skills into the system prompt', () => {
+    const session = Session.create().addMessage({
+      type: 'system',
+      content: 'Be concise.',
+    });
+    const nativeSkill = {
+      kind: 'skill' as const,
+      name: 'presentations',
+      description: 'Create slide decks.',
+      instructions: 'Use the native presentation workflow.',
+      skillId: 'pptx',
+    };
+    const injectedSkill = {
+      kind: 'skill' as const,
+      name: 'style',
+      instructions: 'Use house style.',
+    };
+
+    expect(
+      getAnthropicSystemPrompt(session, {
+        capabilities: [nativeSkill, injectedSkill],
+      }),
+    ).toBe(
+      [
+        'Be concise.',
+        'Available runtime skills:',
+        'Skill: style\nUse house style.',
+      ].join('\n\n'),
+    );
+  });
+
   it('uploads temporary RuntimeSkills behind explicit approval', async () => {
     const approvals: unknown[] = [];
     const skill: RuntimeSkill = {
