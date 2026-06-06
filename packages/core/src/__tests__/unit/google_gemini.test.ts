@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  buildGeminiGenerationConfig,
   collectGeminiFunctionCalls,
+  convertMessagesToGeminiContents,
   convertSessionToGeminiContents,
   createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
@@ -56,6 +58,50 @@ describe('Google Gemini native adapter helpers', () => {
         ],
       },
     ]);
+  });
+
+  it('converts only messages after a cachedContent binding', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cached system.' })
+      .addMessage({ type: 'user', content: 'Cached prompt.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Cached answer.',
+        attrs: { google: { cachedContent: 'cachedContents/abc' } },
+      })
+      .addMessage({ type: 'user', content: 'Fresh tail.' });
+
+    expect(convertMessagesToGeminiContents(session.messages.slice(3))).toEqual([
+      { role: 'user', parts: [{ text: 'Fresh tail.' }] },
+    ]);
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        {
+          provider: {
+            type: 'google',
+            modelName: 'gemini-2.5-flash',
+          },
+          toolChoice: 'required',
+        },
+        [
+          {
+            kind: 'tool',
+            name: 'lookup',
+            description: 'Lookup docs',
+            inputSchema: z.object({ query: z.string() }),
+            execute: ({ query }) => ({ query }),
+          },
+        ],
+        [{ functionDeclarations: [{ name: 'lookup' }] }],
+        { provider: 'google', id: 'cachedContents/abc', messageIndex: 2 },
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/abc',
+      systemInstruction: undefined,
+      tools: undefined,
+      toolConfig: undefined,
+    });
   });
 
   it('maps PromptTrail tools to Gemini function declarations', () => {
@@ -147,12 +193,14 @@ describe('Google Gemini native adapter helpers', () => {
       provider: 'google',
       api: 'gemini',
       finishReason: 'STOP',
+      cachedContent: undefined,
       replayRequired: [],
     });
     expect(retainGeminiResponseMetadata(response, 'summary')).toEqual({
       provider: 'google',
       api: 'gemini',
       finishReason: 'STOP',
+      cachedContent: undefined,
       replayRequired: [],
       usage: { promptTokenCount: 1 },
       candidates: [
@@ -202,6 +250,20 @@ describe('Google Gemini native adapter helpers', () => {
           },
         },
       ],
+    });
+  });
+
+  it('retains Gemini cachedContent binding metadata', () => {
+    expect(
+      retainGeminiResponseMetadata(
+        {
+          cachedContent: { name: 'cachedContents/abc' },
+          candidates: [{ finishReason: 'STOP' }],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/abc',
     });
   });
 

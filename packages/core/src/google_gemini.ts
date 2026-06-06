@@ -1,6 +1,11 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
 import type { BuiltinTool, PromptTrailTool } from './capabilities';
 import { contentPartsToGeminiParts } from './content_parts';
+import {
+  deriveConversationBinding,
+  getMessagesAfterBinding,
+  type ConversationBinding,
+} from './conversation';
 import { mapGeminiThinkingConfig } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import type {
@@ -75,7 +80,13 @@ async function generateGoogleGeminiMessage<
   const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
-  let contents: unknown[] = convertSessionToGeminiContents(session);
+  const binding =
+    options.conversationBinding === 'auto'
+      ? deriveConversationBinding(session, 'google')
+      : undefined;
+  let contents: unknown[] = convertMessagesToGeminiContents(
+    getMessagesAfterBinding(session, binding),
+  );
   let response = await createGeminiContent(
     ai,
     contents,
@@ -83,6 +94,7 @@ async function generateGoogleGeminiMessage<
     options,
     tools,
     toolDefinitions,
+    binding,
     extraConfig,
   );
 
@@ -112,6 +124,7 @@ async function generateGoogleGeminiMessage<
       options,
       tools,
       toolDefinitions,
+      binding,
       extraConfig,
     );
   }
@@ -135,40 +148,71 @@ async function createGeminiContent(
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
+  binding?: ConversationBinding,
   extraConfig: Record<string, unknown> = {},
 ) {
   return ai.models.generateContent({
     model: options.provider.modelName,
     contents: contents as any,
-    config: {
-      systemInstruction: getGeminiSystemInstruction(session, options),
-      temperature: options.temperature,
-      topP: options.topP,
-      topK: options.topK,
-      maxOutputTokens: options.maxTokens,
-      thinkingConfig: mapGeminiThinkingConfig(options.thinking),
-      tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
-      toolConfig:
-        tools.length > 0 && options.toolChoice
-          ? {
-              functionCallingConfig: {
-                mode: mapGeminiFunctionCallingMode(options.toolChoice),
-                allowedFunctionNames:
-                  options.toolChoice === 'required'
-                    ? tools.map((tool) => tool.name)
-                    : undefined,
-              },
-            }
-          : undefined,
-      ...extraConfig,
-    },
+    config: buildGeminiGenerationConfig(
+      session,
+      options,
+      tools,
+      toolDefinitions,
+      binding,
+      extraConfig,
+    ) as any,
   });
+}
+
+export function buildGeminiGenerationConfig(
+  session: Session<any, any>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  tools: readonly PromptTrailTool[],
+  toolDefinitions: readonly unknown[],
+  binding?: ConversationBinding,
+  extraConfig: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    cachedContent: binding?.id,
+    systemInstruction: binding
+      ? undefined
+      : getGeminiSystemInstruction(session, options),
+    temperature: options.temperature,
+    topP: options.topP,
+    topK: options.topK,
+    maxOutputTokens: options.maxTokens,
+    thinkingConfig: mapGeminiThinkingConfig(options.thinking),
+    tools:
+      !binding && toolDefinitions.length > 0
+        ? (toolDefinitions as any)
+        : undefined,
+    toolConfig:
+      !binding && tools.length > 0 && options.toolChoice
+        ? {
+            functionCallingConfig: {
+              mode: mapGeminiFunctionCallingMode(options.toolChoice),
+              allowedFunctionNames:
+                options.toolChoice === 'required'
+                  ? tools.map((tool) => tool.name)
+                  : undefined,
+            },
+          }
+        : undefined,
+    ...extraConfig,
+  };
 }
 
 export function convertSessionToGeminiContents(
   session: Session<any, any>,
 ): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
-  return session.messages
+  return convertMessagesToGeminiContents(session.messages);
+}
+
+export function convertMessagesToGeminiContents(
+  messages: readonly Message<any>[],
+): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
+  return messages
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )
@@ -316,6 +360,7 @@ export function retainGeminiResponseMetadata(
     provider: 'google',
     api: 'gemini',
     finishReason: getGeminiFinishReason(response),
+    cachedContent: getGeminiCachedContent(response),
     replayRequired: extractGeminiReplayRequiredArtifacts(response),
   };
   if (retain === 'none') {
@@ -350,6 +395,19 @@ function getGeminiFinishReason(response: unknown): string | undefined {
   const first = candidates?.[0] as Record<string, unknown> | undefined;
   return typeof first?.finishReason === 'string'
     ? first.finishReason
+    : undefined;
+}
+
+function getGeminiCachedContent(response: unknown): string | undefined {
+  const record = response as Record<string, unknown>;
+  if (typeof record.cachedContent === 'string') {
+    return record.cachedContent;
+  }
+  const cachedContent = record.cachedContent as
+    | Record<string, unknown>
+    | undefined;
+  return typeof cachedContent?.name === 'string'
+    ? cachedContent.name
     : undefined;
 }
 
