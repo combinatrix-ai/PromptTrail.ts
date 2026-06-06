@@ -1,4 +1,5 @@
 import { Message, type Message as PromptTrailMessage } from './message';
+import { bundle } from './runtime_bindings';
 import { Session, type Attrs, type Vars } from './session';
 
 export type InboundKind = 'user' | 'system' | 'control';
@@ -89,6 +90,11 @@ type DurableNode<TVars extends Vars, TAttrs extends Attrs> =
   | { type: 'system'; id: string; content: string }
   | {
       type: 'assistant';
+      id: string;
+      handler: AssistantHandler<TVars, TAttrs>;
+    }
+  | {
+      type: 'chat';
       id: string;
       handler: AssistantHandler<TVars, TAttrs>;
     }
@@ -273,6 +279,11 @@ export class DurableAgent<
     return this;
   }
 
+  chat(id: string, handler: AssistantHandler<TVars, TAttrs>): this {
+    this.nodes.push({ type: 'chat', id, handler });
+    return this;
+  }
+
   turn(
     id: string,
     builder: (
@@ -315,6 +326,28 @@ export class DurableAgent<
           normalizeAssistantMessage(await node.handler(session)),
         );
         return session.addMessage(message);
+      }
+      case 'chat': {
+        let current = session;
+        let iteration = 0;
+        while (true) {
+          const inbound = await awaitInbound(
+            state,
+            `${nodePath}#${iteration}/input`,
+          );
+          current = current.addMessage(
+            Message.user(inbound.content, inbound.attrs as TAttrs | undefined),
+          );
+          state.session = current;
+          const message = await journaled(
+            state,
+            `${nodePath}#${iteration}/model`,
+            async () => normalizeAssistantMessage(await node.handler(current)),
+          );
+          current = current.addMessage(message);
+          state.session = current;
+          iteration++;
+        }
       }
       case 'runTools': {
         let next = session;
@@ -457,6 +490,7 @@ export interface DurableRunStore {
   set(runId: string, run: StoredRun<any, any>): void;
   has(runId: string): boolean;
   delete(runId: string): void;
+  entries(): Iterable<[string, StoredRun<any, any>]>;
 }
 
 export class MemoryRunStore implements DurableRunStore {
@@ -476,6 +510,10 @@ export class MemoryRunStore implements DurableRunStore {
 
   delete(runId: string): void {
     this.runs.delete(runId);
+  }
+
+  entries(): Iterable<[string, StoredRun<any, any>]> {
+    return this.runs.entries();
   }
 }
 
@@ -574,6 +612,7 @@ export class PromptTrailApp {
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof Suspend) {
+        run.result = state.session;
         return {
           status: 'suspended',
           runId,
@@ -781,4 +820,5 @@ export function manualSource(): EventSource & {
 
 export const PromptTrail = {
   app,
+  bundle,
 };
