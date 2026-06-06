@@ -118,9 +118,34 @@ export async function generateOpenAIResponsesWithSchema<
     schema: zodToJsonSchema(schemaOptions.schema, { openAiStrict: true }),
     strict: true,
   });
-  const parsedOutput = schemaOptions.schema.safeParse(
-    JSON.parse(message.content),
-  );
+  return finalizeOpenAIStructuredOutputMessage(message, schemaOptions);
+}
+
+export function finalizeOpenAIStructuredOutputMessage<TAttrs extends Attrs>(
+  message: Message<TAttrs>,
+  schemaOptions: SchemaGenerationOptions,
+): Message<TAttrs> & { structuredOutput?: unknown } {
+  const openai = (message.attrs as Record<string, unknown> | undefined)
+    ?.openai as Record<string, unknown> | undefined;
+  if (typeof openai?.refusal === 'string') {
+    return {
+      ...message,
+      structuredOutput: undefined,
+    };
+  }
+
+  let output: unknown;
+  try {
+    output = JSON.parse(message.content);
+  } catch (error) {
+    throw new Error(
+      `OpenAI structured output was not valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  const parsedOutput = schemaOptions.schema.safeParse(output);
   if (!parsedOutput.success) {
     throw new Error(`Schema validation failed: ${parsedOutput.error.message}`);
   }

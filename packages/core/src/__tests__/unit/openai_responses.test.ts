@@ -6,6 +6,7 @@ import {
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
   extractOpenAIResponseRefusal,
+  finalizeOpenAIStructuredOutputMessage,
   getOpenAIInstructionCapabilities,
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
@@ -319,6 +320,44 @@ describe('OpenAI Responses native adapter helpers', () => {
     ).toMatchObject({
       refusal: 'I cannot comply with that request.',
     });
+  });
+
+  it('returns OpenAI structured refusals without parsing assistant text', () => {
+    const message = {
+      type: 'assistant' as const,
+      content: ' ',
+      attrs: {
+        openai: {
+          provider: 'openai',
+          api: 'responses',
+          responseId: 'resp-1',
+          refusal: 'I cannot comply with that request.',
+        },
+      },
+    };
+
+    expect(
+      finalizeOpenAIStructuredOutputMessage(message, {
+        schema: z.object({ status: z.literal('ok') }),
+      }),
+    ).toEqual({
+      ...message,
+      structuredOutput: undefined,
+    });
+  });
+
+  it('raises a clear OpenAI structured output error for non-JSON text', () => {
+    expect(() =>
+      finalizeOpenAIStructuredOutputMessage(
+        {
+          type: 'assistant',
+          content: 'not json',
+        },
+        {
+          schema: z.object({ status: z.literal('ok') }),
+        },
+      ),
+    ).toThrow('OpenAI structured output was not valid JSON');
   });
 
   it('summarizes output items by default and keeps raw only at full retention', () => {
