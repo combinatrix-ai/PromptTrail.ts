@@ -1193,8 +1193,8 @@ export function normalizeCodexRuntimeEvent(
   }
 
   const params = event.params ?? {};
+  const item = getRecord(params.item);
   if (method === 'item/started' || method === 'item/completed') {
-    const item = params.item as Record<string, unknown> | undefined;
     const content = item?.content ?? item?.text ?? item?.message;
     return {
       type: method === 'item/started' ? 'item.started' : 'item.completed',
@@ -1225,73 +1225,63 @@ export function normalizeCodexRuntimeEvent(
     };
   }
 
-  if (method === 'item/commandExecution/requestApproval') {
+  const approvalAction = getCodexApprovalAction(method);
+  if (approvalAction) {
+    const type = method.toLowerCase().includes('request')
+      ? 'approval.requested'
+      : 'approval.resolved';
     return {
-      type: 'approval.requested',
+      type,
       id: getEventId(event),
-      action: 'commandExecution',
+      action: approvalAction,
       status: getString(params.status),
       raw: event,
     };
   }
 
-  if (method === 'item/fileChange/requestApproval') {
-    return {
-      type: 'approval.requested',
-      id: getEventId(event),
-      action: 'fileChange',
-      status: getString(params.status),
-      raw: event,
-    };
-  }
-
-  if (method === 'tool/requestUserInput') {
-    return {
-      type: 'approval.requested',
-      id: getEventId(event),
-      action: 'userInput',
-      status: getString(params.status),
-      raw: event,
-    };
-  }
-
-  if (method.includes('command')) {
-    const command = params.command as
-      | Record<string, unknown>
-      | string
-      | undefined;
+  if (method.toLowerCase().includes('command')) {
+    const commandRecord = getRecord(params.command);
+    const commandSource = commandRecord ?? item;
     return {
       type: 'command',
       id: getEventId(event),
       command:
-        typeof command === 'string'
-          ? command
-          : getString(command?.command ?? params.commandText),
-      exitCode: getNumber(params.exitCode),
-      status: getString(params.status),
-      outputPreview: getString(params.output ?? params.outputPreview),
+        typeof params.command === 'string'
+          ? params.command
+          : getString(
+              commandSource?.command ??
+                commandSource?.cmd ??
+                params.commandText,
+            ),
+      exitCode: getNumber(params.exitCode ?? commandSource?.exitCode),
+      status: getString(params.status ?? commandSource?.status),
+      outputPreview: getString(
+        params.output ??
+          params.outputPreview ??
+          commandSource?.output ??
+          commandSource?.outputPreview ??
+          commandSource?.stdout ??
+          commandSource?.stderr,
+      ),
       raw: event,
     };
   }
 
-  if (method.includes('diff') || method.includes('fileChange')) {
+  if (
+    method.toLowerCase().includes('diff') ||
+    method.toLowerCase().includes('filechange')
+  ) {
+    const diffRecord = getRecord(params.diff);
+    const diffSource = diffRecord ?? item;
     return {
       type: 'diff',
       id: getEventId(event),
-      path: getString(params.path),
-      added: getNumber(params.added),
-      removed: getNumber(params.removed),
-      status: getString(params.status),
-      raw: event,
-    };
-  }
-
-  if (method === 'tool/requestUserInput') {
-    return {
-      type: 'approval.requested',
-      id: getEventId(event),
-      action: 'userInput',
-      status: getString(params.status),
+      path: getString(
+        params.path ?? params.filePath ?? diffSource?.path ?? diffSource?.filePath,
+      ),
+      added: getNumber(params.added ?? diffSource?.added),
+      removed: getNumber(params.removed ?? diffSource?.removed),
+      status: getString(params.status ?? diffSource?.status),
       raw: event,
     };
   }
@@ -1389,9 +1379,11 @@ function getDeltaText(params: Record<string, unknown>): string | undefined {
 function getEventId(event: CodexTurnEvent): string {
   const params = event.params ?? {};
   const turnId = getTurnIdFromNotification(event);
+  const item = getRecord(params.item);
   const id =
     params.id ??
     params.itemId ??
+    item?.id ??
     event.id ??
     turnId ??
     event.method ??
@@ -1413,6 +1405,32 @@ function getString(value: unknown): string | undefined {
 
 function getNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
+}
+
+function getRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function getCodexApprovalAction(method: string): string | undefined {
+  const normalized = method.toLowerCase();
+  if (method === 'tool/requestUserInput') {
+    return 'userInput';
+  }
+  if (!normalized.includes('approval')) {
+    return undefined;
+  }
+  if (normalized.includes('commandexecution')) {
+    return 'commandExecution';
+  }
+  if (normalized.includes('filechange')) {
+    return 'fileChange';
+  }
+  if (normalized.includes('userinput')) {
+    return 'userInput';
+  }
+  return undefined;
 }
 
 function getCodexToolCallName(

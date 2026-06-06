@@ -144,6 +144,65 @@ describe('Codex App Server helpers', () => {
     });
   });
 
+  it('normalizes Codex command, diff, and approval runtime events from item payloads', () => {
+    expect(
+      normalizeCodexRuntimeEvent({
+        method: 'item/commandExecution/completed',
+        params: {
+          item: {
+            id: 'cmd-1',
+            command: 'pnpm test',
+            exitCode: 0,
+            status: 'completed',
+            stdout: '448 passed',
+          },
+        },
+      }),
+    ).toMatchObject({
+      type: 'command',
+      id: 'cmd-1',
+      command: 'pnpm test',
+      exitCode: 0,
+      status: 'completed',
+      outputPreview: '448 passed',
+    });
+
+    expect(
+      normalizeCodexRuntimeEvent({
+        method: 'item/fileChange/completed',
+        params: {
+          item: {
+            id: 'diff-1',
+            filePath: 'src/index.ts',
+            added: 12,
+            removed: 3,
+            status: 'completed',
+          },
+        },
+      }),
+    ).toMatchObject({
+      type: 'diff',
+      id: 'diff-1',
+      path: 'src/index.ts',
+      added: 12,
+      removed: 3,
+      status: 'completed',
+    });
+
+    expect(
+      normalizeCodexRuntimeEvent({
+        id: 'approval-1',
+        method: 'item/fileChange/approvalCompleted',
+        params: { status: 'approved' },
+      }),
+    ).toMatchObject({
+      type: 'approval.resolved',
+      id: 'approval-1',
+      action: 'fileChange',
+      status: 'approved',
+    });
+  });
+
   it('retains unknown runtime events as raw events', () => {
     expect(
       normalizeCodexRuntimeEvent({
