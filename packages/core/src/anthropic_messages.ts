@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PromptTrailTool } from './capabilities';
+import { contentPartsToAnthropicContent } from './content_parts';
 import { zodToJsonSchema } from './json_schema';
 import type {
   AnthropicProviderConfig,
@@ -164,14 +165,16 @@ async function createAnthropicMessage(
 
 export function convertSessionToAnthropicMessages(
   session: Session<any, any>,
-): Array<{ role: 'user' | 'assistant'; content: string }> {
+): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   return session.messages
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )
     .map((message) => ({
       role: message.type,
-      content: message.content,
+      content: message.contentParts
+        ? contentPartsToAnthropicContent(message.contentParts)
+        : message.content,
     }));
 }
 

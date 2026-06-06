@@ -1,5 +1,6 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
 import type { PromptTrailTool } from './capabilities';
+import { contentPartsToGeminiParts } from './content_parts';
 import { zodToJsonSchema } from './json_schema';
 import type {
   GoogleProviderConfig,
@@ -162,14 +163,16 @@ async function createGeminiContent(
 
 export function convertSessionToGeminiContents(
   session: Session<any, any>,
-): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
+): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
   return session.messages
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )
     .map((message) => ({
       role: message.type === 'assistant' ? 'model' : 'user',
-      parts: [{ text: message.content }],
+      parts: message.contentParts
+        ? contentPartsToGeminiParts(message.contentParts)
+        : [{ text: message.content }],
     }));
 }
 

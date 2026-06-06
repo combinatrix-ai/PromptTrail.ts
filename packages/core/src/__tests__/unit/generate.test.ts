@@ -55,4 +55,43 @@ describe('convertSessionToAiSdkMessages', () => {
     });
     expect(messages[1]).toEqual({ role: 'user', content: 'Use the skill.' });
   });
+
+  it('preserves user content parts for ai-sdk path', () => {
+    const messages = convertSessionToAiSdkMessages(
+      Session.create({
+        messages: [
+          {
+            type: 'user',
+            content: 'Inspect the image.',
+            contentParts: [
+              { kind: 'text', text: 'Inspect the image.' },
+              {
+                kind: 'image',
+                mimeType: 'image/png',
+                source: {
+                  type: 'uri',
+                  uri: 'https://example.com/image.png',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect the image.' },
+          {
+            type: 'image',
+            image: new URL('https://example.com/image.png'),
+            mimeType: 'image/png',
+            providerOptions: undefined,
+          },
+        ],
+      },
+    ]);
+  });
 });

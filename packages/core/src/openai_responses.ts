@@ -13,6 +13,7 @@ import {
   getMessagesAfterBinding,
   type ConversationBinding,
 } from './conversation';
+import { contentPartsToOpenAIInput } from './content_parts';
 import { zodToJsonSchema } from './json_schema';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
@@ -167,14 +168,16 @@ async function createOpenAIResponse(
 export function convertSessionToResponsesInput(
   session: Session<any, any>,
   binding?: ConversationBinding,
-): Array<{ role: 'user' | 'assistant'; content: string }> {
+): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   return getMessagesAfterBinding(session, binding)
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )
     .map((message) => ({
       role: message.type,
-      content: message.content,
+      content: message.contentParts
+        ? contentPartsToOpenAIInput(message.contentParts)
+        : message.content,
     }));
 }
 

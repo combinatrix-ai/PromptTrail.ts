@@ -26,6 +26,36 @@ describe('Google Gemini native adapter helpers', () => {
     ]);
   });
 
+  it('converts content parts into Gemini content parts', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Inspect this.',
+      contentParts: [
+        { kind: 'text', text: 'Inspect this.' },
+        {
+          kind: 'image',
+          mimeType: 'image/png',
+          source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+        },
+      ],
+    });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { text: 'Inspect this.' },
+          {
+            inlineData: {
+              mimeType: 'image/png',
+              data: 'AQID',
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   it('maps PromptTrail tools to Gemini function declarations', () => {
     const tool = Tool.create({
       name: 'lookup',

@@ -26,6 +26,38 @@ describe('Anthropic Messages native adapter helpers', () => {
     ]);
   });
 
+  it('converts content parts into Anthropic content blocks', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Inspect this.',
+      contentParts: [
+        { kind: 'text', text: 'Inspect this.' },
+        {
+          kind: 'image',
+          mimeType: 'image/png',
+          source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+        },
+      ],
+    });
+
+    expect(convertSessionToAnthropicMessages(session)).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect this.' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'AQID',
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   it('maps PromptTrail tools to Anthropic tool definitions', () => {
     const tool = Tool.create({
       name: 'lookup',

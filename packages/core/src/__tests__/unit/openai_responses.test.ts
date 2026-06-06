@@ -47,6 +47,36 @@ describe('OpenAI Responses native adapter helpers', () => {
     ).toEqual([{ role: 'user', content: 'Continue' }]);
   });
 
+  it('converts content parts into Responses input message blocks', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Inspect this.',
+      contentParts: [
+        { kind: 'text', text: 'Inspect this.' },
+        {
+          kind: 'image',
+          mimeType: 'image/png',
+          source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+          detail: 'high',
+        },
+      ],
+    });
+
+    expect(convertSessionToResponsesInput(session)).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'Inspect this.' },
+          {
+            type: 'input_image',
+            detail: 'high',
+            file_data: 'AQID',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('retains only binding-safe metadata at retain none', () => {
     expect(
       retainOpenAIResponseMetadata(

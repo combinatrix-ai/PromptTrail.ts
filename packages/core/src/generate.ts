@@ -22,6 +22,7 @@ import {
   generateOpenAIResponsesText,
   generateOpenAIResponsesWithSchema,
 } from './openai_responses';
+import { contentPartsToAiSdkContent } from './content_parts';
 import type { Session, Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './tool';
@@ -35,13 +36,13 @@ export function convertSessionToAiSdkMessages(
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): Array<{
   role: string;
-  content: string;
+  content: unknown;
   tool_call_id?: string;
   tool_calls?: Array<unknown>;
 }> {
   const messages: Array<{
     role: string;
-    content: string;
+    content: unknown;
     tool_call_id?: string;
     tool_calls?: Array<unknown>;
   }> = [];
@@ -72,15 +73,22 @@ export function convertSessionToAiSdkMessages(
     if (msg.type === 'system') {
       messages.push({ role: 'system', content: msg.content });
     } else if (msg.type === 'user') {
-      messages.push({ role: 'user', content: msg.content });
+      messages.push({
+        role: 'user',
+        content: msg.contentParts
+          ? contentPartsToAiSdkContent(msg.contentParts)
+          : msg.content,
+      });
     } else if (msg.type === 'assistant') {
       const assistantMsg: {
         role: string;
-        content: string;
+        content: unknown;
         tool_calls?: Array<unknown>;
       } = {
         role: 'assistant',
-        content: msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
+        content: msg.contentParts
+          ? contentPartsToAiSdkContent(msg.contentParts)
+          : msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
       };
 
       // Add tool calls if present
