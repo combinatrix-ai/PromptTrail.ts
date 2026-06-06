@@ -7,6 +7,8 @@ import type {
 } from '../../../codex_app_server';
 import { Agent } from '../../../templates';
 import { Session } from '../../../session';
+import { Tool } from '../../../tool';
+import { z } from 'zod';
 
 class FakeCodexClient implements CodexAppServerClient {
   threadStarts: CodexThreadStartParams[] = [];
@@ -169,5 +171,40 @@ describe('CodexTurn template', () => {
     expect(codex.diff).toBeUndefined();
     expect(codex.commands).toBeUndefined();
     expect(codex.raw).toBeUndefined();
+  });
+
+  it('should register PromptTrail tools as Codex dynamic tools on new threads', async () => {
+    const client = new FakeCodexClient();
+    const lookupTool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({
+        query: z.string(),
+      }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    await Agent.create()
+      .user('Use the tool')
+      .codexTurn({
+        client,
+        capabilities: [lookupTool],
+      })
+      .execute(Session.create());
+
+    expect(client.threadStarts[0].dynamicTools).toEqual([
+      {
+        name: 'lookup',
+        description: 'Lookup docs',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+      },
+    ]);
   });
 });

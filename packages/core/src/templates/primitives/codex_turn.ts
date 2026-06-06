@@ -1,8 +1,11 @@
 import {
   codexResultToMessage,
   collectCodexTurnResult,
+  createCodexToolRequestHandler,
   createCodexAppServerHttpClient,
   createCodexAppServerWebSocketClient,
+  getPromptTrailTools,
+  promptTrailToolToCodexDynamicTool,
   type CodexTurnOptions,
 } from '../../codex_app_server';
 import { retainRuntimeEvents } from '../../runtime';
@@ -22,6 +25,15 @@ export class CodexTurn<
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
+    const promptTrailTools = getPromptTrailTools(this.options.capabilities);
+    const onRequest =
+      promptTrailTools.length > 0
+        ? createCodexToolRequestHandler(
+            promptTrailTools,
+            currentSession,
+            this.options.onRequest,
+          )
+        : this.options.onRequest;
     const ownsClient = this.options.client === undefined;
     const client =
       this.options.client ??
@@ -32,7 +44,7 @@ export class CodexTurn<
               url: this.options.transport.url,
               timeoutMs: this.options.transport.timeoutMs,
               onEvent: this.options.onEvent,
-              onRequest: this.options.onRequest,
+              onRequest,
             })
           : undefined);
 
@@ -53,6 +65,10 @@ export class CodexTurn<
             model: this.options.model,
             sandboxPolicy: this.options.sandboxPolicy,
             approvalPolicy: this.options.approvalPolicy,
+            dynamicTools:
+              promptTrailTools.length > 0
+                ? promptTrailTools.map(promptTrailToolToCodexDynamicTool)
+                : undefined,
             ...(this.options.threadStart ?? {}),
           })
         ).threadId;

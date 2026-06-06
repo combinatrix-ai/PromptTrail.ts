@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CodexAppServerWebSocketClient,
   collectCodexTurnResult,
+  createCodexToolRequestHandler,
   normalizeCodexRuntimeEvent,
+  promptTrailToolToCodexDynamicTool,
   type CodexTurnEvent,
 } from '../../codex_app_server';
+import { createSession } from '../../session';
+import { Tool } from '../../tool';
+import { z } from 'zod';
 
 describe('Codex App Server helpers', () => {
   it('normalizes known runtime events', () => {
@@ -168,6 +173,62 @@ describe('Codex App Server helpers', () => {
         },
       },
     ]);
+  });
+
+  it('converts PromptTrail tools to Codex dynamic tool definitions', () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({
+        query: z.string(),
+        limit: z.number().optional(),
+      }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(promptTrailToolToCodexDynamicTool(tool)).toEqual({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          limit: { type: 'number' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it('executes PromptTrail tools from Codex tool call requests', async () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+      }),
+    });
+    const handler = createCodexToolRequestHandler([tool], createSession());
+
+    await expect(
+      handler({
+        id: 'call-1',
+        method: 'item/tool/call',
+        params: { name: 'lookup', input: { query: 'capabilities' } },
+        raw: { method: 'item/tool/call' },
+      }),
+    ).resolves.toEqual({
+      content: [
+        {
+          type: 'json',
+          json: { query: 'capabilities', provider: 'codex' },
+        },
+      ],
+      structuredContent: { query: 'capabilities', provider: 'codex' },
+    });
   });
 });
 

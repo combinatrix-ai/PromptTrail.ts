@@ -6,6 +6,9 @@ import {
   type RuntimeEvent,
   type RuntimeEventSummary,
 } from './runtime';
+import type { CapabilitySet, PromptTrailTool } from './capabilities';
+import { zodToJsonSchema, type JsonSchema } from './json_schema';
+import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 export type CodexThreadId =
   | string
@@ -26,6 +29,7 @@ export interface CodexThreadStartParams {
   model?: string;
   sandboxPolicy?: unknown;
   approvalPolicy?: unknown;
+  dynamicTools?: CodexDynamicToolDefinition[];
   [key: string]: unknown;
 }
 
@@ -66,6 +70,12 @@ export interface CodexInboundRequest {
 export type CodexInboundRequestHandler = (
   request: CodexInboundRequest,
 ) => unknown | Promise<unknown>;
+
+export interface CodexDynamicToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: JsonSchema;
+}
 
 export interface CodexTurnResult {
   threadId?: string;
@@ -560,6 +570,7 @@ export interface CodexTurnOptions<
   model?: string;
   sandboxPolicy?: unknown;
   approvalPolicy?: unknown;
+  capabilities?: CapabilitySet;
   includeItems?: 'none' | 'summary' | 'full';
   retain?: RetainLevel;
   onEvent?: (event: RuntimeEvent) => void | Promise<void>;
@@ -572,6 +583,55 @@ export interface CodexTurnOptions<
     parentSession: Session<TVars, TAttrs>,
     result: CodexTurnResult,
   ) => Session<TVars, TAttrs> | Promise<Session<TVars, TAttrs>>;
+}
+
+export function promptTrailToolToCodexDynamicTool(
+  tool: PromptTrailTool,
+): CodexDynamicToolDefinition {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: zodToJsonSchema(tool.inputSchema),
+  };
+}
+
+export function getPromptTrailTools(
+  capabilities: CapabilitySet | undefined,
+): PromptTrailTool[] {
+  return (capabilities ?? []).filter(isPromptTrailTool);
+}
+
+export function createCodexToolRequestHandler(
+  tools: readonly PromptTrailTool[],
+  session: Session<any, any>,
+  fallback?: CodexInboundRequestHandler,
+): CodexInboundRequestHandler {
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+
+  return async (request) => {
+    if (request.method !== 'item/tool/call') {
+      if (fallback) {
+        return fallback(request);
+      }
+      throw new Error(`No handler for ${request.method}`);
+    }
+
+    const toolName = getCodexToolCallName(request.params);
+    if (!toolName) {
+      throw new Error('Codex tool call request is missing a tool name.');
+    }
+
+    const tool = byName.get(toolName);
+    if (!tool) {
+      throw new Error(`Unknown Codex dynamic tool: ${toolName}`);
+    }
+
+    return executePromptTrailTool(tool, getCodexToolCallInput(request.params), {
+      session,
+      provider: 'codex',
+      raw: request.raw,
+    });
+  };
 }
 
 export function extractCodexFinalAnswer(result: CodexTurnResult): string {
@@ -869,6 +929,25 @@ function getString(value: unknown): string | undefined {
 
 function getNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
+}
+
+function getCodexToolCallName(
+  params: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!params) {
+    return undefined;
+  }
+  const tool = params.tool as Record<string, unknown> | undefined;
+  return getString(params.name ?? params.toolName ?? tool?.name);
+}
+
+function getCodexToolCallInput(
+  params: Record<string, unknown> | undefined,
+): unknown {
+  if (!params) {
+    return {};
+  }
+  return params.input ?? params.arguments ?? params.args ?? {};
 }
 
 function formatUnknownError(error: unknown): string {
