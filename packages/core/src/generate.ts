@@ -8,6 +8,7 @@ import {
   LanguageModelV1,
   Output,
 } from 'ai';
+import { generateAnthropicMessagesText } from './anthropic_messages';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import {
@@ -176,6 +177,16 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     options.provider.adapter === 'native'
   ) {
     return generateOpenAIResponsesText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter === 'native'
+  ) {
+    return generateAnthropicMessagesText(session, {
       ...options,
       provider: options.provider,
     });
