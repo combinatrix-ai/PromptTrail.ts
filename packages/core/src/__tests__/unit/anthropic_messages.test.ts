@@ -6,8 +6,11 @@ import {
   createAnthropicStructuredOutputTool,
   createAnthropicToolResultBlock,
   getAnthropicToolDefinitions,
+  getAnthropicRequestOptions,
+  getAnthropicSkillsContainer,
   getAnthropicSystemPrompt,
   promptTrailBuiltinToAnthropicTool,
+  promptTrailSkillToAnthropicContainerSkill,
   promptTrailToolToAnthropicTool,
   retainAnthropicMessageMetadata,
 } from '../../anthropic_messages';
@@ -150,6 +153,54 @@ describe('Anthropic Messages native adapter helpers', () => {
         max_uses: 2,
       },
     ]);
+  });
+
+  it('maps RuntimeSkill skill IDs to Anthropic native skills', () => {
+    const pptxSkill = {
+      kind: 'skill' as const,
+      name: 'presentations',
+      skillId: 'pptx',
+    };
+    const customSkill = {
+      kind: 'skill' as const,
+      name: 'finance',
+      skillId: 'skill_01AbCdEfGhIjKlMnOpQrStUv',
+      metadata: { version: '1759178010641129' },
+    };
+
+    expect(promptTrailSkillToAnthropicContainerSkill(pptxSkill)).toEqual({
+      type: 'anthropic',
+      skill_id: 'pptx',
+      version: 'latest',
+    });
+    expect(promptTrailSkillToAnthropicContainerSkill(customSkill)).toEqual({
+      type: 'custom',
+      skill_id: 'skill_01AbCdEfGhIjKlMnOpQrStUv',
+      version: '1759178010641129',
+    });
+    expect(
+      getAnthropicSkillsContainer({
+        capabilities: [pptxSkill, customSkill],
+      }),
+    ).toEqual({
+      skills: [
+        { type: 'anthropic', skill_id: 'pptx', version: 'latest' },
+        {
+          type: 'custom',
+          skill_id: 'skill_01AbCdEfGhIjKlMnOpQrStUv',
+          version: '1759178010641129',
+        },
+      ],
+    });
+    expect(getAnthropicToolDefinitions({ capabilities: [pptxSkill] })).toEqual([
+      { type: 'code_execution_20250825', name: 'code_execution' },
+    ]);
+    expect(getAnthropicRequestOptions({ capabilities: [pptxSkill] })).toEqual({
+      headers: {
+        'anthropic-beta':
+          'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14',
+      },
+    });
   });
 
   it('collects tool uses and creates tool result blocks', async () => {

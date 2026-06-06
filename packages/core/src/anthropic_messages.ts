@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { applyAnthropicCacheControl } from './cache';
-import type { BuiltinTool, PromptTrailTool } from './capabilities';
+import type {
+  BuiltinTool,
+  PromptTrailTool,
+  RuntimeSkill,
+} from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
 import {
   mapAnthropicCompaction,
@@ -102,18 +106,22 @@ export async function generateAnthropicMessagesWithSchema<
   });
   const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
   const structuredTool = createAnthropicStructuredOutputTool(schemaOptions);
-  const response = await client.messages.create({
-    model: options.provider.modelName,
-    max_tokens: options.maxTokens ?? 1024,
-    messages: convertSessionToAnthropicMessages(session) as any,
-    system: getAnthropicSystemPrompt(session, options),
-    temperature: options.temperature,
-    top_p: options.topP,
-    thinking: mapAnthropicThinking(options.thinking, 'required') as any,
-    context_management: mapAnthropicCompaction(options.compaction) as any,
-    tools: [structuredTool as any],
-    tool_choice: { type: 'tool', name: toolName } as any,
-  } as any);
+  const response = await client.messages.create(
+    {
+      model: options.provider.modelName,
+      max_tokens: options.maxTokens ?? 1024,
+      messages: convertSessionToAnthropicMessages(session) as any,
+      system: getAnthropicSystemPrompt(session, options),
+      temperature: options.temperature,
+      top_p: options.topP,
+      thinking: mapAnthropicThinking(options.thinking, 'required') as any,
+      context_management: mapAnthropicCompaction(options.compaction) as any,
+      container: getAnthropicSkillsContainer(options),
+      tools: [structuredTool as any],
+      tool_choice: { type: 'tool', name: toolName } as any,
+    } as any,
+    getAnthropicRequestOptions(options) as any,
+  );
   const toolUse = collectAnthropicToolUses(response.content).find(
     (candidate) => candidate.name === toolName,
   );
@@ -159,18 +167,25 @@ async function createAnthropicMessage(
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
 ) {
-  return client.messages.create({
-    model: options.provider.modelName,
-    max_tokens: options.maxTokens ?? 1024,
-    messages: messages as any,
-    system: getAnthropicSystemPrompt(session, options),
-    temperature: options.temperature,
-    top_p: options.topP,
-    thinking: mapAnthropicThinking(options.thinking, options.toolChoice) as any,
-    context_management: mapAnthropicCompaction(options.compaction) as any,
-    tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
-    tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
-  } as any);
+  return client.messages.create(
+    {
+      model: options.provider.modelName,
+      max_tokens: options.maxTokens ?? 1024,
+      messages: messages as any,
+      system: getAnthropicSystemPrompt(session, options),
+      temperature: options.temperature,
+      top_p: options.topP,
+      thinking: mapAnthropicThinking(
+        options.thinking,
+        options.toolChoice,
+      ) as any,
+      context_management: mapAnthropicCompaction(options.compaction) as any,
+      container: getAnthropicSkillsContainer(options),
+      tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
+      tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
+    } as any,
+    getAnthropicRequestOptions(options) as any,
+  );
 }
 
 export function convertSessionToAnthropicMessages(
@@ -240,16 +255,72 @@ export function getAnthropicPromptTrailTools(
 export function getAnthropicToolDefinitions(
   options: Pick<LLMOptions, 'capabilities' | 'tools'>,
 ): unknown[] {
+  const nativeSkills = getAnthropicNativeSkills(options.capabilities);
   return [
     ...getAnthropicPromptTrailTools(options).map(
       promptTrailToolToAnthropicTool,
     ),
+    ...(nativeSkills.length > 0
+      ? [{ type: 'code_execution_20250825', name: 'code_execution' }]
+      : []),
     ...(options.capabilities ?? []).flatMap((capability) =>
       capability.kind === 'builtin'
         ? promptTrailBuiltinToAnthropicTool(capability)
         : [],
     ),
   ];
+}
+
+export function getAnthropicNativeSkills(
+  capabilities: LLMOptions['capabilities'],
+): RuntimeSkill[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is RuntimeSkill =>
+      capability.kind === 'skill' && typeof capability.skillId === 'string',
+  );
+}
+
+export function getAnthropicSkillsContainer(
+  options: Pick<LLMOptions, 'capabilities'>,
+): Record<string, unknown> | undefined {
+  const skills = getAnthropicNativeSkills(options.capabilities).map(
+    promptTrailSkillToAnthropicContainerSkill,
+  );
+  return skills.length > 0 ? { skills } : undefined;
+}
+
+export function promptTrailSkillToAnthropicContainerSkill(
+  skill: RuntimeSkill,
+): Record<string, unknown> {
+  const source =
+    typeof skill.metadata?.source === 'string'
+      ? skill.metadata.source
+      : skill.skillId?.startsWith('skill_')
+        ? 'custom'
+        : 'anthropic';
+  return {
+    type: source,
+    skill_id: skill.skillId,
+    version:
+      typeof skill.metadata?.version === 'string'
+        ? skill.metadata.version
+        : 'latest',
+  };
+}
+
+export function getAnthropicRequestOptions(
+  options: Pick<LLMOptions, 'capabilities'>,
+): Record<string, unknown> | undefined {
+  if (getAnthropicNativeSkills(options.capabilities).length === 0) {
+    return undefined;
+  }
+
+  return {
+    headers: {
+      'anthropic-beta':
+        'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14',
+    },
+  };
 }
 
 export function promptTrailToolToAnthropicTool(tool: PromptTrailTool) {
