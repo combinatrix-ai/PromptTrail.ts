@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertExplicitNativeSchemaModeWhenToolsArePresent,
+  assertNativeStreamingToolLoopSupported,
   convertSessionToAiSdkMessages,
   createProvider,
   promptTrailStreamEventsToMessages,
@@ -133,6 +134,54 @@ describe('native schema/tool guard', () => {
       assertExplicitNativeSchemaModeWhenToolsArePresent(options, {
         schema: z.object({ status: z.literal('ok') }),
         mode: 'native',
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('assertNativeStreamingToolLoopSupported', () => {
+  it('rejects native first-party streaming when PromptTrail tools are present', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(() =>
+      assertNativeStreamingToolLoopSupported({
+        provider: {
+          type: 'openai',
+          apiKey: 'test-key',
+          modelName: 'gpt-5.4-nano',
+          api: 'responses',
+          adapter: 'native',
+        },
+        capabilities: [lookup],
+      }),
+    ).toThrow(
+      'Native streaming with PromptTrail tools is not supported yet.',
+    );
+  });
+
+  it('allows ai-sdk streaming tool calls', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(() =>
+      assertNativeStreamingToolLoopSupported({
+        provider: {
+          type: 'openai',
+          apiKey: 'test-key',
+          modelName: 'gpt-5.4-nano',
+          api: 'responses',
+          adapter: 'ai-sdk',
+        },
+        capabilities: [lookup],
       }),
     ).not.toThrow();
   });

@@ -451,6 +451,22 @@ export function assertExplicitNativeSchemaModeWhenToolsArePresent(
   );
 }
 
+export function assertNativeStreamingToolLoopSupported(
+  options: LLMOptions,
+): void {
+  if (
+    options.provider.adapter === 'ai-sdk' ||
+    !isFirstPartyNativeProvider(options) ||
+    !hasPromptTrailTools(options)
+  ) {
+    return;
+  }
+
+  throw new Error(
+    'Native streaming with PromptTrail tools is not supported yet. Use non-streaming generation for the native provider tool loop, or use adapter: "ai-sdk" for streaming tool calls.',
+  );
+}
+
 function isFirstPartyNativeProvider(options: LLMOptions): boolean {
   return (
     (options.provider.type === 'openai' &&
@@ -477,6 +493,8 @@ export async function* generateTextStream<
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  assertNativeStreamingToolLoopSupported(options);
+
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
