@@ -444,6 +444,47 @@ describe('Codex App Server helpers', () => {
     });
   });
 
+  it('uses approval handlers for Codex tool call requests', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+    const handler = createCodexToolRequestHandler(
+      [tool],
+      createSession(),
+      undefined,
+      async (request) => {
+        expect(request).toMatchObject({
+          provider: 'codex',
+          action: 'tool.execute',
+          capability: 'deleteRepo',
+          input: { path: '/repo' },
+        });
+        return { type: 'deny', reason: 'too risky' };
+      },
+    );
+
+    await expect(
+      handler({
+        id: 'call-approval',
+        method: 'item/tool/call',
+        params: { name: 'deleteRepo', input: { path: '/repo' } },
+        raw: { method: 'item/tool/call' },
+      }),
+    ).resolves.toEqual({
+      content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
+      isError: true,
+    });
+    expect(executed).toBe(false);
+  });
+
   it('maps Codex approval requests to the common approval handler', async () => {
     const handler = createCodexRuntimeRequestHandler({
       session: createSession(),

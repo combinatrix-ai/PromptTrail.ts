@@ -528,6 +528,53 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 
+  it('uses approval handlers for native Anthropic tool executions', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+
+    await expect(
+      createAnthropicToolResultBlock(
+        {
+          id: 'toolu-approval',
+          name: 'deleteRepo',
+          input: { path: '/repo' },
+          raw: { type: 'tool_use' },
+        },
+        [tool],
+        Session.create(),
+        async (request) => {
+          expect(request).toMatchObject({
+            provider: 'anthropic',
+            action: 'tool.execute',
+            capability: 'deleteRepo',
+            input: { path: '/repo' },
+          });
+          return { type: 'deny', reason: 'too risky' };
+        },
+      ),
+    ).resolves.toEqual({
+      type: 'tool_result',
+      tool_use_id: 'toolu-approval',
+      is_error: true,
+      content: JSON.stringify({
+        content: [
+          { type: 'text', text: 'Tool execution denied: too risky' },
+        ],
+        isError: true,
+      }),
+    });
+    expect(executed).toBe(false);
+  });
+
   it('relaxes required Anthropic tool choice after tool results are appended', () => {
     const options = {
       provider: {

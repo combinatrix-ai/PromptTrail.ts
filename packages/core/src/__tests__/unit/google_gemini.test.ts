@@ -579,6 +579,54 @@ describe('Google Gemini native adapter helpers', () => {
     });
   });
 
+  it('uses approval handlers for native Gemini function responses', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+
+    await expect(
+      createGeminiFunctionResponsePart(
+        {
+          id: 'call-approval',
+          name: 'deleteRepo',
+          args: { path: '/repo' },
+          raw: { functionCall: { name: 'deleteRepo' } },
+        },
+        [tool],
+        Session.create(),
+        async (request) => {
+          expect(request).toMatchObject({
+            provider: 'google',
+            action: 'tool.execute',
+            capability: 'deleteRepo',
+            input: { path: '/repo' },
+          });
+          return { type: 'deny', reason: 'too risky' };
+        },
+      ),
+    ).resolves.toEqual({
+      functionResponse: {
+        id: 'call-approval',
+        name: 'deleteRepo',
+        response: {
+          content: [
+            { type: 'text', text: 'Tool execution denied: too risky' },
+          ],
+          isError: true,
+        },
+      },
+    });
+    expect(executed).toBe(false);
+  });
+
   it('relaxes required Gemini tool choice after tool responses are appended', () => {
     const options = {
       provider: {

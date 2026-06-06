@@ -680,6 +680,52 @@ describe('OpenAI Responses native adapter helpers', () => {
     });
   });
 
+  it('uses approval handlers for native Responses tool executions', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+
+    const result = await createOpenAIToolOutputItem(
+      {
+        callId: 'call-approval',
+        name: 'deleteRepo',
+        arguments: { path: '/repo' },
+        raw: { type: 'function_call' },
+      },
+      [tool],
+      Session.create(),
+      async (request) => {
+        expect(request).toMatchObject({
+          provider: 'openai',
+          action: 'tool.execute',
+          capability: 'deleteRepo',
+          input: { path: '/repo' },
+        });
+        return { type: 'deny', reason: 'too risky' };
+      },
+    );
+
+    expect(executed).toBe(false);
+    expect(result).toEqual({
+      type: 'function_call_output',
+      call_id: 'call-approval',
+      output: JSON.stringify({
+        content: [
+          { type: 'text', text: 'Tool execution denied: too risky' },
+        ],
+        isError: true,
+      }),
+    });
+  });
+
   it('normalizes native Responses async streams without an API call', async () => {
     await expect(
       collectAsync(

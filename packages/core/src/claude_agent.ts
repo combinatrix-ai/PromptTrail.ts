@@ -130,6 +130,7 @@ export function getClaudeAllowedMcpToolNames(
 export function promptTrailToolToClaudeAgentToolDefinition(
   tool: PromptTrailTool,
   session: Session<any, any>,
+  approvalHandler?: ApprovalHandler,
 ): ClaudeAgentToolDefinition {
   return {
     name: tool.name,
@@ -140,6 +141,7 @@ export function promptTrailToolToClaudeAgentToolDefinition(
         session,
         provider: 'claude-agent',
         capability: tool.name,
+        approvalHandler,
       }),
   };
 }
@@ -149,9 +151,10 @@ export function createClaudePromptTrailMcpServer(
   session: Session<any, any>,
   sdk?: ClaudeAgentSdkLike,
   serverName = 'prompttrail',
+  approvalHandler?: ApprovalHandler,
 ): unknown {
   const definitions = tools.map((tool) =>
-    promptTrailToolToClaudeAgentToolDefinition(tool, session),
+    promptTrailToolToClaudeAgentToolDefinition(tool, session, approvalHandler),
   );
 
   if (sdk?.tool && sdk.createSdkMcpServer) {
@@ -202,6 +205,7 @@ export function getClaudeAgentMcpServers(
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
   sdk?: ClaudeAgentSdkLike,
+  approvalHandler?: ApprovalHandler,
 ): Record<string, unknown> | undefined {
   const servers: Record<string, unknown> = {};
   for (const server of getClaudeMcpServers(capabilities)) {
@@ -213,6 +217,7 @@ export function getClaudeAgentMcpServers(
       session,
       sdk,
       'prompttrail',
+      approvalHandler,
     );
   }
   return Object.keys(servers).length > 0 ? servers : undefined;
@@ -234,6 +239,7 @@ export function buildClaudeAgentQueryParams(
     tools,
     session,
     sdk,
+    options.approvalHandler,
   );
   const mcpAllowedTools = getClaudeAllowedMcpToolNames(
     getClaudeMcpServers(options.capabilities),

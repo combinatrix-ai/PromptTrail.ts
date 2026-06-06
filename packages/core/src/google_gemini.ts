@@ -1,5 +1,6 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
 import type {
+  ApprovalHandler,
   BuiltinTool,
   CallToolResult,
   PromptTrailTool,
@@ -190,7 +191,12 @@ async function generateGoogleGeminiMessage<
 
     const responseParts = await Promise.all(
       functionCalls.map((call) =>
-        createGeminiFunctionResponsePart(call, tools, session),
+        createGeminiFunctionResponsePart(
+          call,
+          tools,
+          session,
+          options.approvalHandler,
+        ),
       ),
     );
     contents = [
@@ -735,12 +741,14 @@ export async function createGeminiFunctionResponsePart(
   call: GeminiFunctionCall,
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
+  approvalHandler?: ApprovalHandler,
 ) {
   const tool = tools.find((candidate) => candidate.name === call.name);
   const result: CallToolResult = tool
     ? await executePromptTrailTool(tool, call.args, {
         session,
         provider: 'google',
+        approvalHandler,
         raw: call.raw,
       })
     : {

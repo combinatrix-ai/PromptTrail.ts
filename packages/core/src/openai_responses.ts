@@ -8,6 +8,7 @@ import type {
 } from './llm_types';
 import type { RetainLevel } from './runtime';
 import type {
+  ApprovalHandler,
   BuiltinTool,
   CapabilitySet,
   McpServer,
@@ -200,7 +201,12 @@ async function generateOpenAIResponsesMessage<
 
     const toolOutputs = await Promise.all(
       functionCalls.map((call) =>
-        createOpenAIToolOutputItem(call, tools, session),
+        createOpenAIToolOutputItem(
+          call,
+          tools,
+          session,
+          options.approvalHandler,
+        ),
       ),
     );
     input = [...input, ...(response.output as unknown[]), ...toolOutputs];
@@ -535,6 +541,7 @@ export async function createOpenAIToolOutputItem(
   call: OpenAIResponsesFunctionCall,
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
+  approvalHandler?: ApprovalHandler,
 ): Promise<Record<string, unknown>> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (!tool) {
@@ -551,6 +558,7 @@ export async function createOpenAIToolOutputItem(
   const result = await executePromptTrailTool(tool, call.arguments, {
     session,
     provider: 'openai',
+    approvalHandler,
     raw: call.raw,
   });
   return {

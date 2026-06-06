@@ -56,6 +56,39 @@ describe('Claude Agent SDK adapter helpers', () => {
     });
   });
 
+  it('uses approval handlers for Claude Agent in-process MCP tools', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+    const definition = promptTrailToolToClaudeAgentToolDefinition(
+      tool,
+      Session.create(),
+      async (request) => {
+        expect(request).toMatchObject({
+          provider: 'claude-agent',
+          action: 'tool.execute',
+          capability: 'deleteRepo',
+          input: { path: '/repo' },
+        });
+        return { type: 'deny', reason: 'too risky' };
+      },
+    );
+
+    await expect(definition.execute({ path: '/repo' })).resolves.toEqual({
+      content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
+      isError: true,
+    });
+    expect(executed).toBe(false);
+  });
+
   it('builds Claude Agent query params with MCP server and allowed tool names', () => {
     const lookupTool = Tool.create({
       name: 'lookup',

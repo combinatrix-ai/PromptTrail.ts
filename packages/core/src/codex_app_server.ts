@@ -991,6 +991,7 @@ export function createCodexToolRequestHandler(
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
   fallback?: CodexInboundRequestHandler,
+  approvalHandler?: ApprovalHandler,
 ): CodexInboundRequestHandler {
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
@@ -1015,6 +1016,7 @@ export function createCodexToolRequestHandler(
     return executePromptTrailTool(tool, getCodexToolCallInput(request.params), {
       session,
       provider: 'codex',
+      approvalHandler,
       raw: request.raw,
     });
   };
@@ -1028,7 +1030,12 @@ export function createCodexRuntimeRequestHandler(options: {
 }): CodexInboundRequestHandler {
   const toolHandler =
     options.tools && options.tools.length > 0
-      ? createCodexToolRequestHandler(options.tools, options.session)
+      ? createCodexToolRequestHandler(
+          options.tools,
+          options.session,
+          undefined,
+          options.approvalHandler,
+        )
       : undefined;
 
   return async (request) => {
