@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BuiltinTool, PromptTrailTool } from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
-import { mapAnthropicThinking } from './generation_options';
+import {
+  mapAnthropicCompaction,
+  mapAnthropicThinking,
+} from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import type {
   AnthropicProviderConfig,
@@ -106,6 +109,7 @@ export async function generateAnthropicMessagesWithSchema<
     temperature: options.temperature,
     top_p: options.topP,
     thinking: mapAnthropicThinking(options.thinking, 'required') as any,
+    context_management: mapAnthropicCompaction(options.compaction) as any,
     tools: [structuredTool as any],
     tool_choice: { type: 'tool', name: toolName } as any,
   } as any);
@@ -162,6 +166,7 @@ async function createAnthropicMessage(
     temperature: options.temperature,
     top_p: options.topP,
     thinking: mapAnthropicThinking(options.thinking, options.toolChoice) as any,
+    context_management: mapAnthropicCompaction(options.compaction) as any,
     tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
     tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
   } as any);

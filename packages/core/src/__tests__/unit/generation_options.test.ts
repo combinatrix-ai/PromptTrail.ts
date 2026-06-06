@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapAnthropicCompaction,
   mapAnthropicThinking,
+  mapOpenAICompaction,
   mapGeminiThinkingConfig,
   mapOpenAIReasoning,
   mapOpenAIResponsesRequestOptions,
@@ -13,11 +15,13 @@ describe('provider generation option mapping', () => {
         thinking: { effort: 'low', summary: true },
         cacheKey: 'stable-prefix',
         cacheRetention: '24h',
+        compaction: { mode: 'provider', threshold: 0.8 },
       }),
     ).toEqual({
       reasoning: { effort: 'low', summary: 'auto' },
       prompt_cache_key: 'stable-prefix',
       prompt_cache_retention: '24h',
+      context_management: { compact_threshold: 0.8 },
     });
   });
 
@@ -52,6 +56,30 @@ describe('provider generation option mapping', () => {
     ).toEqual({
       thinkingBudget: 2048,
       includeThoughts: true,
+    });
+  });
+
+  it('maps provider compaction only when explicitly enabled', () => {
+    expect(
+      mapOpenAICompaction({ mode: 'local', threshold: 0.8 }),
+    ).toBeUndefined();
+    expect(mapOpenAICompaction({ mode: 'provider', threshold: 0.8 })).toEqual({
+      compact_threshold: 0.8,
+    });
+    expect(
+      mapAnthropicCompaction({
+        mode: 'provider',
+        threshold: 12000,
+        pauseAfterCompaction: true,
+      }),
+    ).toEqual({
+      edits: [
+        {
+          type: 'compact_20260112',
+          trigger: { type: 'input_tokens', value: 12000 },
+          pause_after_compaction: true,
+        },
+      ],
     });
   });
 });

@@ -52,6 +52,7 @@ export interface LLMOptions {
   thinking?: ThinkingOptions;
   cacheKey?: string;
   cacheRetention?: 'in_memory' | '24h';
+  compaction?: CompactionOptions;
 }
 
 export interface SchemaGenerationOptions {
@@ -79,4 +80,10 @@ export interface ThinkingOptions {
   effort?: 'low' | 'medium' | 'high';
   budgetTokens?: number;
   summary?: boolean;
+}
+
+export interface CompactionOptions {
+  mode: 'provider' | 'local' | 'off';
+  threshold?: number;
+  pauseAfterCompaction?: boolean;
 }
