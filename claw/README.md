@@ -40,6 +40,19 @@ OPENAI_API_KEY=...
 CLAW_OPENAI_MODEL=...
 ```
 
+For Codex App Server-backed replies:
+
+```bash
+CLAW_REPLY_MODE=codex
+CODEX_APP_SERVER_URL=ws://127.0.0.1:8390
+# Optional. If omitted, Codex App Server chooses its default model.
+CLAW_CODEX_MODEL=
+```
+
+Codex mode starts one Codex thread per PromptTrail conversation id while the bot
+process is alive. It uses a read-only sandbox and `approvalPolicy: "never"` so a
+Discord message cannot trigger repository writes or approval prompts.
+
 ## Routing
 
 The bot uses these binding defaults:

@@ -13,6 +13,8 @@ import {
   PromptTrail,
   agent,
   bind,
+  collectCodexTurnResult,
+  createCodexAppServerWebSocketClient,
   discord,
   memoryStore,
   type BindingDefaults,
@@ -31,8 +33,12 @@ interface ClawConfig {
   freeResponseChannels: string[];
   requireMention: boolean;
   threadRequireMention: boolean;
-  replyMode: 'echo' | 'openai';
+  replyMode: 'echo' | 'openai' | 'codex';
   openaiModel?: string;
+  codexAppServerUrl: string;
+  codexModel?: string;
+  codexCwd: string;
+  codexTimeoutMs: number;
 }
 
 interface DeliveryRecord {
@@ -94,6 +100,7 @@ const client = new Client({
 });
 
 const deliveryRecords = new Map<string, DeliveryRecord>();
+const codexThreadIds = new Map<string, string>();
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Claw Discord bot logged in as ${readyClient.user.tag}`);
@@ -132,28 +139,30 @@ async function handleMessage(message: DiscordMessage): Promise<void> {
 
   const conversationId = binding.conversation(event);
   const delivery = resolveDelivery(defaults.delivery, event);
-  const result = await runtime.send({
-    agent: binding.agent,
-    runId: conversationId,
-    input: {
-      kind: 'user',
-      content: stripBotMention(message.content, client.user?.id),
-      attrs: {
-        source: 'discord',
-        author: event.author,
-        authorId: event.authorId,
-        channel: event.channel,
-        channelId: event.channelId,
-        thread: event.thread,
-        runtimeContext: {
-          conversationId,
-          delivery,
-          toolsets: defaults.toolsets,
+  const result = await withTypingIndicator(delivery, () =>
+    runtime.send({
+      agent: binding.agent,
+      runId: conversationId,
+      input: {
+        kind: 'user',
+        content: stripBotMention(message.content, client.user?.id),
+        attrs: {
+          source: 'discord',
+          author: event.author,
+          authorId: event.authorId,
+          channel: event.channel,
+          channelId: event.channelId,
+          thread: event.thread,
+          runtimeContext: {
+            conversationId,
+            delivery,
+            toolsets: defaults.toolsets,
+          },
         },
       },
-    },
-    durable: defaults.durable ?? true,
-  });
+      durable: defaults.durable ?? true,
+    }),
+  );
 
   await deliverNewAssistantMessages(
     conversationId,
@@ -311,11 +320,51 @@ async function resolveDiscordDeliveryChannel(
   return channel ?? client.channels.fetch(delivery.channel);
 }
 
+async function withTypingIndicator<T>(
+  delivery: ConcreteDiscordDeliveryTarget | undefined,
+  task: () => Promise<T>,
+): Promise<T> {
+  const target = delivery
+    ? await resolveDiscordDeliveryChannel(delivery).catch(() => undefined)
+    : undefined;
+  const sendTyping = getSendTyping(target);
+  if (!sendTyping) {
+    return task();
+  }
+
+  await sendTyping().catch(() => undefined);
+  const interval = setInterval(() => {
+    void sendTyping().catch(() => undefined);
+  }, 8_000);
+
+  try {
+    return await task();
+  } finally {
+    clearInterval(interval);
+  }
+}
+
+function getSendTyping(
+  target: Awaited<ReturnType<typeof resolveDiscordDeliveryChannel>> | undefined,
+): (() => Promise<void>) | undefined {
+  if (!target?.isSendable() || !('sendTyping' in target)) {
+    return undefined;
+  }
+  const sendTyping = target.sendTyping;
+  if (typeof sendTyping !== 'function') {
+    return undefined;
+  }
+  return () => sendTyping.call(target);
+}
+
 async function generateReply(session: Session): Promise<string> {
   const last = session.getLastMessage();
   const latest = last?.content ?? '';
   if (config.replyMode === 'echo') {
     return `ack: ${latest}`;
+  }
+  if (config.replyMode === 'codex') {
+    return generateCodexReply(session, latest);
   }
   if (!process.env.OPENAI_API_KEY) {
     return 'CLAW_REPLY_MODE=openai requires OPENAI_API_KEY.';
@@ -335,6 +384,79 @@ async function generateReply(session: Session): Promise<string> {
       })),
   });
   return result.text;
+}
+
+async function generateCodexReply(
+  session: Session,
+  latest: string,
+): Promise<string> {
+  const runtimeContext = getRuntimeContext(session);
+  const conversationId = runtimeContext?.conversationId ?? 'default';
+  const client = createCodexAppServerWebSocketClient({
+    url: config.codexAppServerUrl,
+    timeoutMs: config.codexTimeoutMs,
+    clientInfo: {
+      name: 'prompttrail_claw',
+      title: 'PromptTrail Claw',
+      version: '0.0.1',
+    },
+  });
+
+  try {
+    const threadId =
+      codexThreadIds.get(conversationId) ??
+      (
+        await client.startThread({
+          cwd: config.codexCwd,
+          model: config.codexModel,
+          sandboxPolicy: { type: 'readOnly' },
+          approvalPolicy: 'never',
+        })
+      ).threadId;
+    codexThreadIds.set(conversationId, threadId);
+
+    const rawResult = await client.startTurn({
+      threadId,
+      input: [
+        {
+          type: 'text',
+          text: latest,
+        },
+      ],
+      cwd: config.codexCwd,
+      model: config.codexModel,
+      sandboxPolicy: { type: 'readOnly' },
+      approvalPolicy: 'never',
+    });
+    const result = isAsyncIterable(rawResult)
+      ? await collectCodexTurnResult(rawResult, { threadId })
+      : rawResult;
+
+    const finalAnswer = result.finalAnswer?.trim();
+    if (!finalAnswer) {
+      throw new Error('Codex App Server returned no final answer.');
+    }
+    return finalAnswer;
+  } finally {
+    await client.close?.();
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Symbol.asyncIterator in value
+  );
+}
+
+function getRuntimeContext(
+  session: Session,
+): { conversationId?: string } | undefined {
+  const attrs = session.getLastMessage()?.attrs as
+    | { runtimeContext?: { conversationId?: string } }
+    | undefined;
+  return attrs?.runtimeContext;
 }
 
 function stripBotMention(content: string, botUserId?: string): string {
@@ -365,9 +487,22 @@ function readConfig(): ClawConfig {
     ),
     requireMention,
     threadRequireMention: readBoolean('DISCORD_THREAD_REQUIRE_MENTION', false),
-    replyMode: process.env.CLAW_REPLY_MODE === 'openai' ? 'openai' : 'echo',
-    openaiModel: process.env.CLAW_OPENAI_MODEL,
+    replyMode: readReplyMode(),
+    openaiModel: readOptionalString('CLAW_OPENAI_MODEL'),
+    codexAppServerUrl:
+      readOptionalString('CODEX_APP_SERVER_URL') ?? 'ws://127.0.0.1:8390',
+    codexModel: readOptionalString('CLAW_CODEX_MODEL'),
+    codexCwd: readOptionalString('CLAW_CODEX_CWD') ?? process.cwd(),
+    codexTimeoutMs: readInteger('CLAW_CODEX_TIMEOUT_MS', 120_000),
   };
+}
+
+function readReplyMode(): ClawConfig['replyMode'] {
+  const value = process.env.CLAW_REPLY_MODE;
+  if (value === 'openai' || value === 'codex') {
+    return value;
+  }
+  return 'echo';
 }
 
 function readList(name: string, fallback: string[]): string[] {
@@ -387,4 +522,18 @@ function readBoolean(name: string, fallback: boolean): boolean {
     return fallback;
   }
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function readOptionalString(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function readInteger(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (value === undefined || value.trim() === '') {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
