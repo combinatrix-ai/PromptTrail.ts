@@ -104,9 +104,9 @@ export interface PromptTrailTool<TInput = unknown, TResult = unknown> {
 }
 ```
 
-`Tool.create()` should eventually return this native PromptTrail type. ai-sdk
-tool objects can remain supported through an adapter, but they should not be the
-core tool representation.
+`Tool.create()` returns this native PromptTrail type. ai-sdk tool objects can
+remain supported through adapter helpers, but they are not the core tool
+representation.
 
 Result mapping: every adapter ultimately needs an MCP-style `CallToolResult`
 (`{ content, structuredContent?, isError? }`). The Claude Agent SDK and Codex
@@ -1175,14 +1175,10 @@ above:
 
 Remaining verification questions:
 
-- Provider-native structured output with an active tool loop: verify OpenAI
-  Responses `tools` + `text.format` sequencing and Gemini `functionCall` +
-  `responseJsonSchema` behavior in adapter tests before making this a default
-  native path.
-- Replay-required artifacts: verify the exact stateless replay requirements for
-  Anthropic signed thinking, Gemini `thoughtSignature`, OpenAI
-  `encrypted_content`, and provider compaction artifacts before allowing
-  `retain` to drop them.
+- Provider-native structured output with an active tool loop is covered by
+  adapter tests; real Gemini confirmation remains quota-sensitive.
+- Replay-required artifacts are pinned across retain levels in adapter tests.
+  Keep checking provider changelogs before relaxing these pins.
 - Provider caching: verify Gemini `CachedContent` creation constraints with
   `systemInstruction` and `tools`, and confirm the intended OpenAI
   `prompt_cache_key` mapping against current Responses behavior.
