@@ -307,6 +307,19 @@ describe('LlmSource', () => {
       );
     });
 
+    it('should set approval handler', async () => {
+      const approvalHandler = async () => ({ type: 'approve' as const });
+      const source = Source.llm().approvalHandler(approvalHandler);
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          approvalHandler,
+        }),
+      );
+    });
+
     it('should keep raw ai-sdk options scoped under aiSdk', async () => {
       const source = Source.llm({
         aiSdk: {

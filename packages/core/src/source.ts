@@ -1,7 +1,7 @@
 // content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
-import type { CapabilitySet } from './capabilities';
+import type { ApprovalHandler, CapabilitySet } from './capabilities';
 import type { PromptTrailTool } from './capabilities';
 import { ValidationError } from './errors';
 import { generateText, generateWithSchema } from './generate';
@@ -798,6 +798,10 @@ export class LlmSource extends ModelSource {
 
   skillInjection(policy: 'warn' | 'error' | 'silent'): LlmSource {
     return this.clone({ skillInjection: policy });
+  }
+
+  approvalHandler(handler: ApprovalHandler): LlmSource {
+    return this.clone({ approvalHandler: handler });
   }
 
   // Browser compatibility - returns new instance
