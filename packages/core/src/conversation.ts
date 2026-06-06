@@ -131,9 +131,21 @@ function getConversationHistoryFingerprint(
 ): string | undefined {
   const attrs = message.attrs as Record<string, unknown> | undefined;
   const openai = attrs?.openai as Record<string, unknown> | undefined;
-  return typeof openai?.historyFingerprint === 'string'
-    ? openai.historyFingerprint
-    : undefined;
+  if (typeof openai?.historyFingerprint === 'string') {
+    return openai.historyFingerprint;
+  }
+
+  const codex = attrs?.codex as Record<string, unknown> | undefined;
+  if (typeof codex?.historyFingerprint === 'string') {
+    return codex.historyFingerprint;
+  }
+
+  const claudeAgent = attrs?.claudeAgent as Record<string, unknown> | undefined;
+  if (typeof claudeAgent?.historyFingerprint === 'string') {
+    return claudeAgent.historyFingerprint;
+  }
+
+  return undefined;
 }
 
 function canonicalizeMessageForBinding(message: Message<any>) {

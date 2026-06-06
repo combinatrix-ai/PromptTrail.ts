@@ -120,4 +120,29 @@ describe('ConversationBinding helpers', () => {
       messageIndex: 1,
     });
   });
+
+  it('drops Codex bindings when the canonical prefix diverged', () => {
+    const assistant = {
+      type: 'assistant' as const,
+      content: 'Codex result',
+    };
+    const historyFingerprint = createConversationHistoryFingerprint([
+      { type: 'user', content: 'one' },
+      assistant,
+    ]);
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'edited' })
+      .addMessage({
+        ...assistant,
+        attrs: {
+          codex: {
+            threadId: 'thread-1',
+            historyFingerprint,
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'three' });
+
+    expect(deriveConversationBinding(session, 'codex')).toBeUndefined();
+  });
 });

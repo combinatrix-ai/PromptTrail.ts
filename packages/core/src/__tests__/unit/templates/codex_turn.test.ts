@@ -87,6 +87,7 @@ describe('CodexTurn template', () => {
           threadId: 'thread-1',
           turnId: 'turn-1',
           status: 'completed',
+          historyFingerprint: expect.stringMatching(/^fnv1a:/),
         },
       },
     });
@@ -137,6 +138,30 @@ describe('CodexTurn template', () => {
     });
     expect(session.getLastMessage()?.attrs?.codex).toMatchObject({
       threadId: 'thread-existing',
+    });
+  });
+
+  it('should start a new Codex thread when auto binding history diverged', async () => {
+    const originalClient = new FakeCodexClient();
+    const originalSession = await Agent.create()
+      .user('Original')
+      .codexTurn({ client: originalClient })
+      .execute(Session.create());
+    const previousAssistant = originalSession.getLastMessage();
+    const client = new FakeCodexClient();
+    const divergentSession = Session.create()
+      .addMessage({ type: 'user', content: 'Edited' })
+      .addMessage(previousAssistant!)
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    await Agent.create()
+      .codexTurn({ client, threadId: 'auto' })
+      .execute(divergentSession);
+
+    expect(client.threadStarts).toHaveLength(1);
+    expect(client.turnStarts[0]).toMatchObject({
+      threadId: 'thread-1',
+      input: [{ type: 'text', text: 'Continue' }],
     });
   });
 

@@ -13,7 +13,10 @@ import {
   promptTrailToolToCodexDynamicTool,
   type CodexTurnOptions,
 } from '../../codex_app_server';
-import { deriveConversationBinding } from '../../conversation';
+import {
+  createConversationHistoryFingerprint,
+  deriveConversationBinding,
+} from '../../conversation';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
@@ -123,9 +126,24 @@ export class CodexTurn<
         );
       }
 
-      return currentSession.addMessage(
-        codexResultToMessage<TAttrs>(sessionResult, this.options.attrsKey),
-      );
+      const attrsKey = this.options.attrsKey ?? 'codex';
+      const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
+      const historyFingerprint = createConversationHistoryFingerprint([
+        ...currentSession.messages,
+        message,
+      ]);
+      return currentSession.addMessage({
+        ...message,
+        attrs: {
+          ...message.attrs,
+          [attrsKey]: {
+            ...((message.attrs as Record<string, unknown> | undefined)?.[
+              attrsKey
+            ] as Record<string, unknown> | undefined),
+            historyFingerprint,
+          },
+        } as TAttrs,
+      });
     } finally {
       if (ownsClient) {
         await client.close?.();
