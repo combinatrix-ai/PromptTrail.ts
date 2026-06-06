@@ -608,9 +608,9 @@ summary so a server-side drop cannot evict them.
 
 Current state:
 
-- `Source.llm().openai()` defaults to `api: 'responses'`.
-- The implementation uses ai-sdk's OpenAI provider and
-  `openai.responses(model)`.
+- `Source.llm().openai()` defaults to `api: 'responses'` and
+  `adapter: 'native'`.
+- `adapter: 'ai-sdk'` remains available as an explicit compatibility path.
 
 Target state:
 
@@ -663,7 +663,8 @@ Compatibility:
 
 Current state:
 
-- `Source.llm().anthropic()` uses the ai-sdk Anthropic provider.
+- `Source.llm().anthropic()` defaults to `adapter: 'native'`.
+- `adapter: 'ai-sdk'` remains available as an explicit compatibility path.
 
 Target state:
 
@@ -703,7 +704,9 @@ Source.llm()
 
 Current state:
 
-- `Source.llm().google()` uses the ai-sdk Google provider.
+- `Source.llm().google()` defaults to `adapter: 'native'` using the official
+  Google GenAI SDK.
+- `adapter: 'ai-sdk'` remains available as an explicit compatibility path.
 
 Target state:
 
@@ -751,7 +754,7 @@ Policy (decided, assuming no backward-compatibility constraint):
 
 - ai-sdk is removed from the core abstraction. `PromptTrailTool` is the single
   core tool type; ai-sdk tool objects are an internal detail of the ai-sdk
-  adapter only, reached through a one-way `PromptTrailTool -> ai-sdk` mapping.
+  adapter only, reached through internal adapter helpers.
 - ai-sdk is removed from the public surface. `providerOptions` / `sdkOptions`
   and other raw ai-sdk objects are not part of the stable API; they live behind
   the ai-sdk adapter.
@@ -1047,8 +1050,8 @@ Avoid:
     favor of `ToolExecutionContext`.
   - `PromptTrailTool` → ai-sdk: map `inputSchema` to `parameters` and bridge the
     `ToolExecutionContext`, so native tools keep working on the ai-sdk path.
-- Keep current `Tool.create()` working (it can keep returning an ai-sdk tool
-  internally while the native type is introduced).
+- Keep current `Tool.create()` working while returning the native
+  `PromptTrailTool` type.
 
 ### Phase 2: Native Responses Adapter
 
@@ -1058,9 +1061,9 @@ Avoid:
   retention.
 - Add function tool loop.
 - Preserve raw response items in message attrs.
-- Keep ai-sdk as default until default parity is good. Remote MCP,
-  `tool_search`, `additional_tools`, shell skills, and exact item/event
-  preservation are deep-parity follow-ups, not blockers for the default switch.
+- Native is the default. Remote MCP, `tool_search`, `additional_tools`, shell
+  skills, and exact item/event preservation are deep-parity follow-ups, not
+  blockers for the default switch.
 
 ### Phase 3: Native Anthropic Messages Adapter
 
@@ -1077,7 +1080,7 @@ Avoid:
 - Implement text generation, streaming, structured output, error mapping, and
   basic metadata retention.
 - Implement function-declaration tool loop and `attrs.google` metadata.
-- Keep ai-sdk as default until default parity is good.
+- Native is the default; ai-sdk remains an explicit compatibility path.
 
 ### Phase 4: Runtime Event Common Layer
 
