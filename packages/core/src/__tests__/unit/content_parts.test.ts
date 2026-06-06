@@ -6,6 +6,7 @@ import {
   contentPartsToOpenAIInput,
   contentPartsToText,
   createProviderFileContentPart,
+  assertProviderFileReferenceUsable,
   isProviderFileReferenceExpired,
   makeContentPartsPersistenceSafe,
   type ContentPart,
@@ -214,5 +215,30 @@ describe('ContentPart provider serializers', () => {
       expiresAt: undefined,
     });
     expect(isProviderFileReferenceExpired(part)).toBe(false);
+  });
+
+  it('rejects expired provider file refs before serialization', () => {
+    const expired = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      provider: 'google',
+      fileId: 'files/expired',
+      uploadedAt: '2026-06-01T00:00:00.000Z',
+      expiresAt: '2026-06-02T00:00:00.000Z',
+      filename: 'expired.pdf',
+    });
+    const error =
+      'Provider file reference files/expired for google expired at 2026-06-02T00:00:00.000Z; re-upload before sending.';
+
+    expect(() =>
+      assertProviderFileReferenceUsable(
+        expired,
+        new Date('2026-06-03T00:00:00.000Z'),
+      ),
+    ).toThrow(error);
+    expect(() => contentPartsToAiSdkContent([expired])).toThrow(error);
+    expect(() => contentPartsToOpenAIInput([expired])).toThrow(error);
+    expect(() => contentPartsToAnthropicContent([expired])).toThrow(error);
+    expect(() => contentPartsToGeminiParts([expired])).toThrow(error);
   });
 });

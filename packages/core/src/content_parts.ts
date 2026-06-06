@@ -65,6 +65,21 @@ export function isProviderFileReferenceExpired(
   return Date.parse(part.source.expiresAt) <= now.getTime();
 }
 
+export function assertProviderFileReferenceUsable(
+  part: ContentPart,
+  now: Date = new Date(),
+): void {
+  if (part.kind === 'text' || part.source.type !== 'providerFile') {
+    return;
+  }
+  if (!isProviderFileReferenceExpired(part, now)) {
+    return;
+  }
+  throw new Error(
+    `Provider file reference ${part.source.fileId} for ${part.source.provider} expired at ${part.source.expiresAt}; re-upload before sending.`,
+  );
+}
+
 export type AiSdkContentPart =
   | { type: 'text'; text: string }
   | {
@@ -196,6 +211,7 @@ export function contentPartsToGeminiParts(
       };
     }
     if (part.source.type === 'providerFile') {
+      assertProviderFileReferenceUsable(part);
       return {
         fileData: {
           mimeType: part.mimeType,
@@ -222,6 +238,7 @@ function contentPartSourceToAiSdkData(
   providerOptions?: Record<string, unknown>;
 } {
   if (part.source.type === 'providerFile') {
+    assertProviderFileReferenceUsable(part);
     return {
       data: part.source.fileId,
       providerOptions: {
@@ -239,6 +256,7 @@ function contentPartSourceToAiSdkData(
 
 function openAIFileSource(part: Exclude<ContentPart, { kind: 'text' }>) {
   if (part.source.type === 'providerFile') {
+    assertProviderFileReferenceUsable(part);
     return { file_id: part.source.fileId };
   }
   if (part.source.type === 'uri') {
@@ -262,6 +280,7 @@ function anthropicSource(part: Exclude<ContentPart, { kind: 'text' }>) {
     };
   }
   if (part.source.type === 'providerFile') {
+    assertProviderFileReferenceUsable(part);
     return {
       type: 'file',
       file_id: part.source.fileId,
