@@ -5,8 +5,10 @@ import {
   collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
+  deriveOpenAIResponsesPromptCacheKey,
   extractOpenAIResponseRefusal,
   finalizeOpenAIStructuredOutputMessage,
+  getOpenAIResponsesCacheablePrefix,
   getOpenAIInstructionCapabilities,
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
@@ -20,6 +22,7 @@ import {
   promptTrailSkillToOpenAIShellSkill,
   promptTrailToolToOpenAIResponsesTool,
   retainOpenAIResponseMetadata,
+  withOpenAIResponsesPromptCacheKey,
 } from '../../openai_responses';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
@@ -142,6 +145,49 @@ describe('OpenAI Responses native adapter helpers', () => {
         { thinking: { effort: 'low' } },
         { provider: 'openai', id: 'resp-1', messageIndex: 1 },
       ),
+    ).toBeUndefined();
+  });
+
+  it('derives OpenAI prompt cache keys from cache hints', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Stable system.', cache: true })
+      .addMessage({ type: 'user', content: 'Fresh tail.' });
+    const provider = {
+      type: 'openai' as const,
+      apiKey: 'test-key',
+      modelName: 'gpt-5.4-nano',
+      api: 'responses' as const,
+    };
+    const cachedCapability = {
+      kind: 'builtin' as const,
+      name: 'web_search_preview',
+      executionMode: 'provider' as const,
+      cache: true as const,
+    };
+
+    const derived = deriveOpenAIResponsesPromptCacheKey(session, {
+      capabilities: [cachedCapability],
+    });
+
+    expect(derived).toMatch(/^prompttrail-[0-9a-f]{8}$/);
+    expect(getOpenAIResponsesCacheablePrefix(session)).toEqual({
+      messages: [session.messages[0]],
+      messageIndex: 0,
+    });
+    expect(
+      withOpenAIResponsesPromptCacheKey(session, {
+        provider,
+        capabilities: [cachedCapability],
+      }).cacheKey,
+    ).toBe(derived);
+    expect(
+      withOpenAIResponsesPromptCacheKey(session, {
+        provider,
+        cacheKey: 'explicit',
+      }).cacheKey,
+    ).toBe('explicit');
+    expect(
+      deriveOpenAIResponsesPromptCacheKey(Session.create(), {}),
     ).toBeUndefined();
   });
 

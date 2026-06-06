@@ -71,23 +71,24 @@ export async function* streamOpenAIResponsesEvents<
       options.dangerouslyAllowBrowser ??
       options.provider.dangerouslyAllowBrowser,
   });
-  const tools = getOpenAIPromptTrailTools(options);
-  await requireConfiguredCapabilityApprovals(options.capabilities, {
+  const requestOptions = withOpenAIResponsesPromptCacheKey(session, options);
+  const tools = getOpenAIPromptTrailTools(requestOptions);
+  await requireConfiguredCapabilityApprovals(requestOptions.capabilities, {
     provider: 'openai',
     session,
-    approvalHandler: options.approvalHandler,
+    approvalHandler: requestOptions.approvalHandler,
   });
-  const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
+  const toolDefinitions = getOpenAIResponsesToolDefinitions(requestOptions);
   const binding =
-    options.conversationBinding === 'auto'
+    requestOptions.conversationBinding === 'auto'
       ? deriveConversationBinding(session, 'openai')
       : undefined;
   const input: unknown[] = convertSessionToResponsesInput(session, binding);
-  const instructions = getResponsesInstructions(session, options);
+  const instructions = getResponsesInstructions(session, requestOptions);
   const stream = await client.responses.create(
     buildOpenAIResponsesRequestBody(
       input,
-      options,
+      requestOptions,
       toolDefinitions,
       instructions,
       textFormat,
@@ -180,23 +181,24 @@ async function generateOpenAIResponsesMessage<
       options.dangerouslyAllowBrowser ??
       options.provider.dangerouslyAllowBrowser,
   });
-  const tools = getOpenAIPromptTrailTools(options);
-  await requireConfiguredCapabilityApprovals(options.capabilities, {
+  const requestOptions = withOpenAIResponsesPromptCacheKey(session, options);
+  const tools = getOpenAIPromptTrailTools(requestOptions);
+  await requireConfiguredCapabilityApprovals(requestOptions.capabilities, {
     provider: 'openai',
     session,
-    approvalHandler: options.approvalHandler,
+    approvalHandler: requestOptions.approvalHandler,
   });
-  const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
+  const toolDefinitions = getOpenAIResponsesToolDefinitions(requestOptions);
   const binding =
-    options.conversationBinding === 'auto'
+    requestOptions.conversationBinding === 'auto'
       ? deriveConversationBinding(session, 'openai')
       : undefined;
   let input: unknown[] = convertSessionToResponsesInput(session, binding);
-  const instructions = getResponsesInstructions(session, options);
+  const instructions = getResponsesInstructions(session, requestOptions);
   let response = await createOpenAIResponse(
     client,
     input,
-    options,
+    requestOptions,
     tools,
     toolDefinitions,
     instructions,
@@ -216,7 +218,7 @@ async function generateOpenAIResponsesMessage<
           call,
           tools,
           session,
-          options.approvalHandler,
+          requestOptions.approvalHandler,
         ),
       ),
     );
@@ -224,7 +226,7 @@ async function generateOpenAIResponsesMessage<
     response = await createOpenAIResponse(
       client,
       input,
-      getOpenAIToolLoopContinuationOptions(options),
+      getOpenAIToolLoopContinuationOptions(requestOptions),
       tools,
       toolDefinitions,
       instructions,
@@ -245,10 +247,62 @@ async function generateOpenAIResponsesMessage<
     attrs: {
       openai: retainOpenAIResponseMetadata(
         response,
-        options.retain ?? 'summary',
+        requestOptions.retain ?? 'summary',
         historyFingerprint,
       ),
     } as unknown as TAttrs,
+  };
+}
+
+export function withOpenAIResponsesPromptCacheKey<
+  T extends LLMOptions & { provider: OpenAIProviderConfig },
+>(session: Session<any, any>, options: T): T {
+  const cacheKey = deriveOpenAIResponsesPromptCacheKey(session, options);
+  return cacheKey === options.cacheKey ? options : { ...options, cacheKey };
+}
+
+export function deriveOpenAIResponsesPromptCacheKey(
+  session: Session<any, any>,
+  options: Pick<LLMOptions, 'cacheKey' | 'capabilities'>,
+): string | undefined {
+  if (options.cacheKey) {
+    return options.cacheKey;
+  }
+  const cacheablePrefix = getOpenAIResponsesCacheablePrefix(session, options);
+  if (!cacheablePrefix) {
+    return undefined;
+  }
+  return `prompttrail-${fnv1a(
+    stableStringify({
+      messages: cacheablePrefix.messages.map(canonicalizeMessageForCache),
+      capabilities: getOpenAICacheableCapabilityKeys(options.capabilities),
+    }),
+  )}`;
+}
+
+export function getOpenAIResponsesCacheablePrefix(
+  session: Session<any, any>,
+  options: Pick<LLMOptions, 'capabilities'> = {},
+): { messages: readonly Message<any>[]; messageIndex: number } | undefined {
+  let lastCacheHintIndex = -1;
+  session.messages.forEach((message, index) => {
+    if (message.cache) {
+      lastCacheHintIndex = index;
+    }
+  });
+
+  const hasCachedCapability = (options.capabilities ?? []).some(
+    (capability) => !!capability.cache,
+  );
+  if (lastCacheHintIndex < 0 && hasCachedCapability) {
+    lastCacheHintIndex = session.messages.length - 1;
+  }
+  if (lastCacheHintIndex < 0) {
+    return undefined;
+  }
+  return {
+    messages: session.messages.slice(0, lastCacheHintIndex + 1),
+    messageIndex: lastCacheHintIndex,
   };
 }
 
@@ -528,6 +582,99 @@ export function promptTrailMcpToOpenAIResponsesTool(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function canonicalizeMessageForCache(message: Message<any>) {
+  return {
+    type: message.type,
+    content: message.content,
+    contentParts: message.contentParts,
+    cache: message.cache,
+    structuredContent: message.structuredContent,
+    toolCalls: message.toolCalls,
+  };
+}
+
+function getOpenAICacheableCapabilityKeys(
+  capabilities: CapabilitySet | undefined,
+) {
+  return (capabilities ?? [])
+    .filter((capability) => !!capability.cache)
+    .map((capability) => {
+      if (capability.kind === 'tool') {
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          description: capability.description,
+          cache: capability.cache,
+        };
+      }
+      if (capability.kind === 'skill') {
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          description: capability.description,
+          instructions: capability.instructions,
+          path: capability.path,
+          skillId: capability.skillId,
+          materialize: capability.materialize,
+          cache: capability.cache,
+        };
+      }
+      if (capability.kind === 'builtin') {
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          provider: capability.provider,
+          executionMode: capability.executionMode,
+          config: capability.config,
+          cache: capability.cache,
+        };
+      }
+      return {
+        kind: capability.kind,
+        name: capability.name,
+        transport: canonicalizeMcpTransportForCache(capability.transport),
+        tools: capability.tools,
+        cache: capability.cache,
+      };
+    });
+}
+
+function canonicalizeMcpTransportForCache(transport: McpServer['transport']) {
+  if (transport.kind === 'sdk-in-process') {
+    return { kind: transport.kind };
+  }
+  return transport;
+}
+
+function stableStringify(value: unknown): string {
+  if (value instanceof Uint8Array) {
+    return JSON.stringify({
+      type: 'Uint8Array',
+      data: Array.from(value),
+    });
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function fnv1a(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 export function collectOpenAIResponseFunctionCalls(
