@@ -17,6 +17,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Message } from './message';
+import { createAnthropicStreamNormalizer } from './provider_stream';
 import { extractAnthropicReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
@@ -90,6 +91,56 @@ export async function generateAnthropicMessagesText<
       ),
     } as unknown as TAttrs,
   };
+}
+
+export async function* streamAnthropicMessagesEvents<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: AnthropicProviderConfig },
+) {
+  const client = new Anthropic({
+    apiKey: options.provider.apiKey,
+    baseURL: options.provider.baseURL,
+    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+  });
+  const toolDefinitions = getAnthropicToolDefinitions(options);
+  const stream = await client.messages.create(
+    {
+      model: options.provider.modelName,
+      max_tokens: options.maxTokens ?? 1024,
+      messages: convertSessionToAnthropicMessages(session) as any,
+      system: getAnthropicSystemPrompt(session, options),
+      temperature: options.temperature,
+      top_p: options.topP,
+      thinking: mapAnthropicThinking(
+        options.thinking,
+        options.toolChoice,
+      ) as any,
+      context_management: mapAnthropicCompaction(options.compaction) as any,
+      container: getAnthropicSkillsContainer(options),
+      tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
+      tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
+      stream: true,
+    } as any,
+    getAnthropicRequestOptions(options) as any,
+  );
+
+  yield* normalizeAnthropicMessagesStream(
+    stream as unknown as AsyncIterable<unknown>,
+  );
+}
+
+export async function* normalizeAnthropicMessagesStream(
+  stream: AsyncIterable<unknown>,
+) {
+  const normalizer = createAnthropicStreamNormalizer();
+  for await (const event of stream) {
+    for (const normalized of normalizer.consume(event)) {
+      yield normalized;
+    }
+  }
 }
 
 export async function generateAnthropicMessagesWithSchema<

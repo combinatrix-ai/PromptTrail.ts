@@ -9,6 +9,7 @@ import {
   getAnthropicRequestOptions,
   getAnthropicSkillsContainer,
   getAnthropicSystemPrompt,
+  normalizeAnthropicMessagesStream,
   promptTrailBuiltinToAnthropicTool,
   promptTrailSkillToAnthropicContainerSkill,
   promptTrailToolToAnthropicTool,
@@ -251,6 +252,34 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 
+  it('normalizes native Anthropic async streams without an API call', async () => {
+    await expect(
+      collectAsync(
+        normalizeAnthropicMessagesStream(
+          stream([
+            {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'text_delta', text: 'Hi' },
+            },
+            {
+              type: 'message_stop',
+              stop_reason: 'end_turn',
+              usage: { input_tokens: 1 },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'text.delta', index: 0, delta: 'Hi' },
+      {
+        type: 'message.done',
+        finishReason: 'end_turn',
+        usage: { input_tokens: 1 },
+      },
+    ]);
+  });
+
   it('applies metadata retention levels', () => {
     const response = {
       id: 'msg-1',
@@ -343,3 +372,17 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 });
+
+async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function* stream(events: unknown[]) {
+  for (const event of events) {
+    yield event;
+  }
+}
