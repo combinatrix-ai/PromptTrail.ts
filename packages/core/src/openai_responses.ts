@@ -271,17 +271,44 @@ export function getOpenAIResponsesInclude(
 export function convertSessionToResponsesInput(
   session: Session<any, any>,
   binding?: ConversationBinding,
-): Array<{ role: 'user' | 'assistant'; content: unknown }> {
-  return getMessagesAfterBinding(session, binding)
-    .filter(
-      (message) => message.type === 'user' || message.type === 'assistant',
-    )
-    .map((message) => ({
+): unknown[] {
+  return getMessagesAfterBinding(session, binding).flatMap((message) => {
+    if (message.type !== 'user' && message.type !== 'assistant') {
+      return [];
+    }
+
+    const inputMessage = {
       role: message.type,
       content: message.contentParts
         ? contentPartsToOpenAIInput(message.contentParts)
         : message.content,
-    }));
+    };
+
+    if (message.type !== 'assistant') {
+      return [inputMessage];
+    }
+
+    return [...getOpenAIReplayRequiredInputItems(message), inputMessage];
+  });
+}
+
+function getOpenAIReplayRequiredInputItems(message: Message<any>): unknown[] {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  const openai = attrs?.openai as Record<string, unknown> | undefined;
+  const replayRequired = openai?.replayRequired;
+  if (!Array.isArray(replayRequired)) {
+    return [];
+  }
+
+  return replayRequired.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    return record.provider === 'openai' && record.artifact
+      ? [record.artifact]
+      : [];
+  });
 }
 
 export function getResponsesInstructions(

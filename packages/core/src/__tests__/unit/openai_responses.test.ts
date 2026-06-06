@@ -56,6 +56,50 @@ describe('OpenAI Responses native adapter helpers', () => {
     ).toEqual([{ role: 'user', content: 'Continue' }]);
   });
 
+  it('replays pinned OpenAI reasoning and compaction items in stateless input', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Use hidden reasoning.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Done.',
+        attrs: {
+          openai: {
+            replayRequired: [
+              {
+                provider: 'openai',
+                type: 'reasoning.encrypted_content',
+                id: 'rs_1',
+                artifact: {
+                  type: 'reasoning',
+                  id: 'rs_1',
+                  encrypted_content: 'encrypted',
+                },
+              },
+              {
+                provider: 'openai',
+                type: 'compaction',
+                id: 'cmp_1',
+                artifact: {
+                  type: 'compaction',
+                  id: 'cmp_1',
+                  encrypted_content: 'compact',
+                },
+              },
+            ],
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    expect(convertSessionToResponsesInput(session)).toEqual([
+      { role: 'user', content: 'Use hidden reasoning.' },
+      { type: 'reasoning', id: 'rs_1', encrypted_content: 'encrypted' },
+      { type: 'compaction', id: 'cmp_1', encrypted_content: 'compact' },
+      { role: 'assistant', content: 'Done.' },
+      { role: 'user', content: 'Continue' },
+    ]);
+  });
+
   it('builds Responses request bodies for streaming and cached bindings', () => {
     expect(
       buildOpenAIResponsesRequestBody(
