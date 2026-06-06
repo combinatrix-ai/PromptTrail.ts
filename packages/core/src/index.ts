@@ -2,6 +2,7 @@ export { tool } from 'ai';
 export * from './anthropic_messages';
 export * from './cache';
 export * from './capabilities';
+export * from './claude_agent';
 export * from './codex_app_server';
 export * from './content_parts';
 export * from './conversation';

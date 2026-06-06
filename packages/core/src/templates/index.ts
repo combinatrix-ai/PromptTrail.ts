@@ -9,6 +9,7 @@ export { Parallel } from './composite/parallel';
 export { Sequence } from './composite/sequence';
 export { Subroutine } from './composite/subroutine';
 export { Assistant } from './primitives/assistant';
+export { ClaudeTurn } from './primitives/claude_turn';
 export { CodexTurn } from './primitives/codex_turn';
 export { Conditional } from './primitives/conditional';
 export { GenerateMessages } from './primitives/messages';

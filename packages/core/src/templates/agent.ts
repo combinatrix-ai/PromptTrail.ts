@@ -1,5 +1,6 @@
 import type { Session } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
+import type { ClaudeTurnOptions } from '../claude_agent';
 import { ModelOutput, Source, ValidationOptions } from '../source';
 import { Attrs, Vars } from '../session';
 import { IValidator } from '../validators';
@@ -10,6 +11,7 @@ import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
 import { Subroutine } from './composite/subroutine';
 import { Assistant } from './primitives/assistant';
+import { ClaudeTurn } from './primitives/claude_turn';
 import { CodexTurn } from './primitives/codex_turn';
 import { Conditional } from './primitives/conditional';
 import {
@@ -119,6 +121,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   codexTurn(options: CodexTurnOptions<TM, TC>) {
     this.root.add(new CodexTurn(options));
+    return this;
+  }
+
+  claudeTurn(options: ClaudeTurnOptions<TM, TC>) {
+    this.root.add(new ClaudeTurn(options));
     return this;
   }
 

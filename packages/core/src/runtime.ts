@@ -62,10 +62,11 @@ export type RuntimeEvent =
 export interface RuntimeTurnResult {
   provider: 'codex' | 'claude-agent';
   threadId?: string;
+  sessionId?: string;
   turnId?: string;
   status: 'completed' | 'failed' | 'cancelled' | 'interrupted';
   finalAnswer: string;
-  events: RuntimeEvent[];
+  events: unknown[];
   raw?: unknown;
 }
 
