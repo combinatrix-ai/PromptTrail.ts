@@ -71,9 +71,8 @@ describe('Anthropic Messages native adapter helpers', () => {
           {
             type: 'image',
             source: {
-              type: 'base64',
-              media_type: 'image/png',
-              data: 'AQID',
+              type: 'url',
+              url: 'prompttrail://omitted-bytes/image',
             },
           },
         ],

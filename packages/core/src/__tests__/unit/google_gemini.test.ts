@@ -118,9 +118,9 @@ describe('Google Gemini native adapter helpers', () => {
         parts: [
           { text: 'Inspect this.' },
           {
-            inlineData: {
+            fileData: {
               mimeType: 'image/png',
-              data: 'AQID',
+              fileUri: 'prompttrail://omitted-bytes/image',
             },
           },
         ],

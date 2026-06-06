@@ -8,10 +8,14 @@ import type { Attrs, Vars } from './session_types';
  */
 export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   constructor(
-    public readonly messages: readonly Message<TAttrs>[] = [],
+    messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
     public readonly print: boolean = false,
-  ) {}
+  ) {
+    this.messages = messages.map(makeMessagePersistenceSafe);
+  }
+
+  public readonly messages: readonly Message<TAttrs>[];
   /**
    * Create a new session with additional message
    */

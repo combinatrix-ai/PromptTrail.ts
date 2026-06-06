@@ -144,7 +144,7 @@ describe('Session', () => {
     expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();
   });
 
-  it('should omit inline content part bytes from JSON persistence', () => {
+  it('should omit inline content part bytes from immutable sessions', () => {
     const session = createSession({
       messages: [
         {
@@ -163,12 +163,7 @@ describe('Session', () => {
       ],
     });
 
-    expect(session.messages[0].contentParts?.[1]).toMatchObject({
-      source: { type: 'bytes' },
-    });
-    expect(
-      JSON.parse(JSON.stringify(session)).messages[0].contentParts,
-    ).toEqual([
+    const expectedContentParts = [
       { kind: 'text', text: 'Inspect this.' },
       {
         kind: 'image',
@@ -179,7 +174,12 @@ describe('Session', () => {
           uri: 'prompttrail://omitted-bytes/chart.png',
         },
       },
-    ]);
+    ];
+
+    expect(session.messages[0].contentParts).toEqual(expectedContentParts);
+    expect(
+      JSON.parse(JSON.stringify(session)).messages[0].contentParts,
+    ).toEqual(expectedContentParts);
   });
 
   it('should create session with type inference', () => {

@@ -290,7 +290,7 @@ describe('OpenAI Responses native adapter helpers', () => {
           {
             type: 'input_image',
             detail: 'high',
-            file_data: 'AQID',
+            image_url: 'prompttrail://omitted-bytes/image',
           },
         ],
       },
