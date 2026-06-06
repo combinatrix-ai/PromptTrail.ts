@@ -447,11 +447,14 @@ native-adapter guarantee.
 - Google Gemini: `responseMimeType: 'application/json'` +
   `responseJsonSchema` (or the narrower `responseSchema`); `propertyOrdering`
   controls field order.
-- ai-sdk: `generateObject` / `streamObject`.
+- ai-sdk: `generateText` / `streamText` with `experimental_output:
+  Output.object(...)` for the current adapter path.
 
-Decided mapping: keep ai-sdk `generateObject` as the cross-provider default
-(convert Zod → JSON Schema once). Add an opt-in `mode: 'native' | 'tool'` that
-targets each provider's native field. A shared **Zod → JSON Schema
+Decided mapping: native OpenAI Responses, Anthropic Messages, and Google Gemini
+adapters target each provider's structured-output field directly; the ai-sdk
+compatibility path keeps AI SDK object output as its cross-provider behavior.
+Add an opt-in `mode: 'native' | 'tool'` that targets each provider's native
+field. A shared **Zod → JSON Schema
 normalization** layer is required because no single output satisfies all
 dialects: inject `additionalProperties: false`, rewrite optionals to nullable
 unions for OpenAI strict, and strip (or error on) the recursion/numeric
@@ -1179,8 +1182,9 @@ Remaining verification questions:
   adapter tests; real Gemini confirmation remains quota-sensitive.
 - Replay-required artifacts are pinned across retain levels in adapter tests.
   Keep checking provider changelogs before relaxing these pins.
-- Provider caching: verify Gemini `CachedContent` creation constraints with
-  `systemInstruction` and `tools`, and confirm the intended OpenAI
-  `prompt_cache_key` mapping against current Responses behavior.
+- Provider caching is covered by adapter tests: Gemini `CachedContent` creation
+  includes cacheable `systemInstruction` and `tools`, later `cachedContent`
+  requests omit those mutually exclusive fields, and OpenAI derives or preserves
+  the intended `prompt_cache_key`. Re-check provider docs if either API changes.
 
 Add new questions here as they arise.
