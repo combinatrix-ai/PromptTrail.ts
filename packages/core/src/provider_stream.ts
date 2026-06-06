@@ -7,6 +7,7 @@ export interface ProviderStreamNormalizer {
 export function createOpenAIStreamNormalizer(): ProviderStreamNormalizer {
   const toolNamesByIndex = new Map<number, string>();
   const toolCallIdsByItemId = new Map<string, string>();
+  const completedToolCallIds = new Set<string>();
 
   return {
     consume(event: unknown): PromptTrailStreamEvent[] {
@@ -60,12 +61,35 @@ export function createOpenAIStreamNormalizer(): ProviderStreamNormalizer {
         }
         case 'response.function_call_arguments.done': {
           const index = numberValue(raw.output_index) ?? 0;
+          const callId = openAICallId(raw, index);
+          completedToolCallIds.add(callId);
           return [
             {
               type: 'tool.args.done',
               index,
-              callId: openAICallId(raw, index),
+              callId,
               args: parseJsonValue(raw.arguments),
+            },
+          ];
+        }
+        case 'response.output_item.done': {
+          const item = asRecord(raw.item);
+          if (item?.type !== 'function_call') {
+            return [];
+          }
+          const index = numberValue(raw.output_index) ?? 0;
+          const callId =
+            stringValue(item.call_id ?? item.id) ?? openAICallId(raw, index);
+          if (completedToolCallIds.has(callId)) {
+            return [];
+          }
+          completedToolCallIds.add(callId);
+          return [
+            {
+              type: 'tool.args.done',
+              index,
+              callId,
+              args: parseJsonValue(item.arguments),
             },
           ];
         }

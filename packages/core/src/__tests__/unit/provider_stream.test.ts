@@ -84,6 +84,60 @@ describe('provider stream normalizers', () => {
     ]);
   });
 
+  it('normalizes OpenAI output_item.done function calls without duplicating completed args', () => {
+    const normalizer = createOpenAIStreamNormalizer();
+
+    expect(
+      normalizer.consume({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          id: 'item-1',
+          call_id: 'call-1',
+          name: 'lookup',
+          arguments: '{"query":"docs"}',
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'tool.args.done',
+        index: 0,
+        callId: 'call-1',
+        args: { query: 'docs' },
+      },
+    ]);
+
+    const withDeltaDone = createOpenAIStreamNormalizer();
+    expect(
+      withDeltaDone.consume({
+        type: 'response.function_call_arguments.done',
+        output_index: 0,
+        call_id: 'call-2',
+        arguments: '{"query":"docs"}',
+      }),
+    ).toEqual([
+      {
+        type: 'tool.args.done',
+        index: 0,
+        callId: 'call-2',
+        args: { query: 'docs' },
+      },
+    ]);
+    expect(
+      withDeltaDone.consume({
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          call_id: 'call-2',
+          name: 'lookup',
+          arguments: '{"query":"docs"}',
+        },
+      }),
+    ).toEqual([]);
+  });
+
   it('normalizes Anthropic content block deltas without parsing partial JSON', () => {
     const normalizer = createAnthropicStreamNormalizer();
     const events = [
