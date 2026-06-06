@@ -93,4 +93,42 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
 
     expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
   }, 60_000);
+
+  it('ignores sub-threshold cache hints before calling Gemini', async () => {
+    const output = await Source.llm({
+      cacheKey: 'prompttrail-short-gemini-prefix',
+      thinking: { budgetTokens: 0 },
+    })
+      .google({ adapter: 'native' })
+      .model('gemini-3.1-flash-lite')
+      .temperature(0)
+      .maxTokens(128)
+      .getContent(
+        Session.create({
+          messages: [
+            {
+              type: 'system',
+              content: 'Reply with exactly the requested text.',
+            },
+            {
+              type: 'user',
+              content: 'Short cached prefix.',
+              cache: true,
+            },
+            {
+              type: 'user',
+              content: 'Reply exactly: PROMPTTRAIL_GEMINI_CACHE_NOOP_OK',
+            },
+          ],
+        }),
+      );
+
+    expect(output.content.trim()).toBe('PROMPTTRAIL_GEMINI_CACHE_NOOP_OK');
+    expect(output.metadata?.google).toMatchObject({
+      provider: 'google',
+      api: 'gemini',
+    });
+    expect(output.metadata?.google?.cachedContent).toBeUndefined();
+    expect(output.metadata?.google?.cachedContentBinding).toBeUndefined();
+  }, 60_000);
 });

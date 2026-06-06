@@ -37,6 +37,11 @@ export interface GeminiCacheClient {
   caches: {
     create(params: Record<string, unknown>): Promise<{ name?: string }>;
   };
+  models?: {
+    countTokens(
+      params: Record<string, unknown>,
+    ): Promise<{ totalTokens?: number }>;
+  };
 }
 
 export interface GeminiCachedContentResolution {
@@ -264,15 +269,17 @@ export async function resolveGeminiCachedContent(
     return {};
   }
 
-  const cachedContent = await createGeminiCachedContent(
-    client,
-    buildGeminiCachedContentCreateParams(
-      prefix.session,
-      options,
-      tools,
-      toolDefinitions,
-    ),
+  const createParams = buildGeminiCachedContentCreateParams(
+    prefix.session,
+    options,
+    tools,
+    toolDefinitions,
   );
+  if (!(await shouldCreateGeminiCachedContent(client, createParams))) {
+    return {};
+  }
+
+  const cachedContent = await createGeminiCachedContent(client, createParams);
   const binding = {
     provider: 'google' as const,
     id: cachedContent,
@@ -389,6 +396,57 @@ export async function createGeminiCachedContent(
     );
   }
   return cached.name;
+}
+
+export async function shouldCreateGeminiCachedContent(
+  client: GeminiCacheClient,
+  params: Record<string, unknown>,
+): Promise<boolean> {
+  const tokenCount = await countGeminiCachedContentTokens(client, params);
+  if (tokenCount === undefined) {
+    return false;
+  }
+  return tokenCount >= getGeminiExplicitCacheMinTokens(String(params.model));
+}
+
+export async function countGeminiCachedContentTokens(
+  client: GeminiCacheClient,
+  params: Record<string, unknown>,
+): Promise<number | undefined> {
+  if (!client.models?.countTokens || typeof params.model !== 'string') {
+    return undefined;
+  }
+  const config = asRecord(params.config);
+  const contents = config?.contents;
+  if (!contents) {
+    return undefined;
+  }
+  const countConfig: Record<string, unknown> = {};
+  if (config.tools) {
+    countConfig.tools = config.tools;
+  }
+  const result = await client.models.countTokens({
+    model: params.model,
+    contents,
+    config: Object.keys(countConfig).length > 0 ? countConfig : undefined,
+  });
+  return typeof result.totalTokens === 'number'
+    ? result.totalTokens
+    : undefined;
+}
+
+export function getGeminiExplicitCacheMinTokens(modelName: string): number {
+  const normalized = modelName.toLowerCase().replace(/^models\//, '');
+  if (normalized.startsWith('gemini-2.5-')) {
+    return 2048;
+  }
+  return 4096;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 export function getGeminiCacheablePrefixSession(

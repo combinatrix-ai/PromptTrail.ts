@@ -5,11 +5,13 @@ import {
   buildGeminiGenerationConfig,
   buildGeminiCachedContentCreateParams,
   collectGeminiFunctionCalls,
+  countGeminiCachedContentTokens,
   convertMessagesToGeminiContents,
   convertSessionToGeminiContents,
   createGeminiCachedContent,
   createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
+  getGeminiExplicitCacheMinTokens,
   getGeminiCacheablePrefixSession,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
@@ -20,6 +22,7 @@ import {
   promptTrailToolToGeminiTool,
   retainGeminiResponseMetadata,
   resolveGeminiCachedContent,
+  shouldCreateGeminiCachedContent,
 } from '../../google_gemini';
 import { deriveConversationBinding } from '../../conversation';
 import { Session } from '../../session';
@@ -283,17 +286,78 @@ describe('Google Gemini native adapter helpers', () => {
     );
   });
 
+  it('counts Gemini CachedContent tokens with Developer API-compatible params', async () => {
+    const countCalls: unknown[] = [];
+    const params = {
+      model: 'gemini-3.1-flash-lite',
+      config: {
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        systemInstruction: 'Cache this system.',
+        tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        toolConfig: { ignoredByCountTokens: true },
+      },
+    };
+    const client = {
+      caches: {
+        create: async () => ({ name: 'cachedContents/abc' }),
+      },
+      models: {
+        countTokens: async (call: Record<string, unknown>) => {
+          countCalls.push(call);
+          return { totalTokens: 4096 };
+        },
+      },
+    };
+
+    await expect(countGeminiCachedContentTokens(client, params)).resolves.toBe(
+      4096,
+    );
+    await expect(shouldCreateGeminiCachedContent(client, params)).resolves.toBe(
+      true,
+    );
+    expect(countCalls).toEqual([
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: {
+          tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        },
+      },
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: {
+          tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        },
+      },
+    ]);
+  });
+
+  it('uses documented Gemini CachedContent minimum token thresholds', () => {
+    expect(getGeminiExplicitCacheMinTokens('gemini-3.1-flash-lite')).toBe(
+      4096,
+    );
+    expect(getGeminiExplicitCacheMinTokens('models/other-model')).toBe(4096);
+  });
+
   it('resolves cache hints into Gemini CachedContent bindings', async () => {
     const session = Session.create()
       .addMessage({ type: 'system', content: 'Cache this system.' })
       .addMessage({ type: 'user', content: 'Cache this prefix.', cache: true })
       .addMessage({ type: 'user', content: 'Use the cached prefix.' });
     const calls: unknown[] = [];
+    const countCalls: unknown[] = [];
     const client = {
       caches: {
         create: async (params: Record<string, unknown>) => {
           calls.push(params);
           return { name: 'cachedContents/prefix' };
+        },
+      },
+      models: {
+        countTokens: async (params: Record<string, unknown>) => {
+          countCalls.push(params);
+          return { totalTokens: 4096 };
         },
       },
     };
@@ -321,6 +385,13 @@ describe('Google Gemini native adapter helpers', () => {
         },
       },
     ]);
+    expect(countCalls).toEqual([
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: undefined,
+      },
+    ]);
     expect(cache).toEqual({
       cachedContent: 'cachedContents/prefix',
       binding: {
@@ -337,6 +408,33 @@ describe('Google Gemini native adapter helpers', () => {
     expect(convertMessagesToGeminiContents(session.messages.slice(2))).toEqual([
       { role: 'user', parts: [{ text: 'Use the cached prefix.' }] },
     ]);
+  });
+
+  it('silently ignores sub-threshold Gemini cache hints', async () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Short system.' })
+      .addMessage({ type: 'user', content: 'Short prefix.', cache: true })
+      .addMessage({ type: 'user', content: 'Continue.' });
+    const calls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/prefix' };
+        },
+      },
+      models: {
+        countTokens: async () => ({ totalTokens: 128 }),
+      },
+    };
+
+    await expect(
+      resolveGeminiCachedContent(client, session, {
+        provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+        cacheKey: 'short-prefix',
+      }),
+    ).resolves.toEqual({});
+    expect(calls).toEqual([]);
   });
 
   it('retains the Gemini CachedContent prefix index for later turns', () => {
