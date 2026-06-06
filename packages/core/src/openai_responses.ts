@@ -15,6 +15,7 @@ import type {
   RuntimeSkill,
 } from './capabilities';
 import {
+  createConversationHistoryFingerprint,
   deriveConversationBinding,
   getMessagesAfterBinding,
   type ConversationBinding,
@@ -190,13 +191,20 @@ async function generateOpenAIResponsesMessage<
     );
   }
 
+  const content = response.output_text || ' ';
+  const historyFingerprint = createConversationHistoryFingerprint([
+    ...session.messages,
+    { type: 'assistant', content },
+  ]);
+
   return {
     type: 'assistant',
-    content: response.output_text || ' ',
+    content,
     attrs: {
       openai: retainOpenAIResponseMetadata(
         response,
         options.retain ?? 'summary',
+        historyFingerprint,
       ),
     } as unknown as TAttrs,
   };
@@ -489,11 +497,13 @@ export function retainOpenAIResponseMetadata(
     incomplete_details?: unknown;
   },
   retain: RetainLevel,
+  historyFingerprint?: string,
 ): Record<string, unknown> {
   const base = {
     provider: 'openai',
     api: 'responses',
     responseId: response.id,
+    ...(historyFingerprint ? { historyFingerprint } : {}),
     status: response.status,
     error: response.error ?? undefined,
     incompleteDetails: response.incomplete_details ?? undefined,

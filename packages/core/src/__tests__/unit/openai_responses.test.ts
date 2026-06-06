@@ -127,15 +127,33 @@ describe('OpenAI Responses native adapter helpers', () => {
           usage: { input_tokens: 1 },
         },
         'none',
+        'fnv1a:test',
       ),
     ).toEqual({
       provider: 'openai',
       api: 'responses',
       responseId: 'resp-1',
+      historyFingerprint: 'fnv1a:test',
       status: 'completed',
       error: undefined,
       incompleteDetails: undefined,
       replayRequired: [],
+    });
+  });
+
+  it('stores an optional history fingerprint with the response binding', () => {
+    expect(
+      retainOpenAIResponseMetadata(
+        {
+          id: 'resp-1',
+          status: 'completed',
+        },
+        'none',
+        'fnv1a:test',
+      ),
+    ).toMatchObject({
+      responseId: 'resp-1',
+      historyFingerprint: 'fnv1a:test',
     });
   });
 
