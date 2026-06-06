@@ -255,8 +255,8 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, session),
     toolChoice: options.toolChoice,
-    providerOptions: options.providerOptions as any,
-    ...options.sdkOptions,
+    providerOptions: options.aiSdk?.providerOptions as any,
+    ...options.aiSdk?.sdkOptions,
   });
 
   // If there are tool calls, add them directly to the message
@@ -365,8 +365,8 @@ export async function generateWithSchema<
       experimental_output: Output.object({
         schema: schemaOptions.schema,
       }),
-      providerOptions: options.providerOptions as any,
-      ...options.sdkOptions,
+      providerOptions: options.aiSdk?.providerOptions as any,
+      ...options.aiSdk?.sdkOptions,
     });
 
     // Validate the structured output
@@ -493,8 +493,8 @@ export async function* generateTextStream<
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, session),
     toolChoice: options.toolChoice,
-    providerOptions: options.providerOptions as any,
-    ...options.sdkOptions,
+    providerOptions: options.aiSdk?.providerOptions as any,
+    ...options.aiSdk?.sdkOptions,
   });
 
   // Yield message chunks as they arrive

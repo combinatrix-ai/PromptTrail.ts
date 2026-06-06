@@ -33,6 +33,11 @@ export type ProviderConfig =
   | AnthropicProviderConfig
   | GoogleProviderConfig;
 
+export interface AiSdkAdapterOptions {
+  providerOptions?: Record<string, Record<string, unknown>>;
+  sdkOptions?: Record<string, unknown>;
+}
+
 export interface LLMOptions {
   provider: ProviderConfig;
   temperature?: number;
@@ -43,8 +48,7 @@ export interface LLMOptions {
   capabilities?: CapabilitySet;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
-  providerOptions?: Record<string, Record<string, unknown>>;
-  sdkOptions?: Record<string, unknown>;
+  aiSdk?: AiSdkAdapterOptions;
   maxCallLimit?: number;
   retain?: 'none' | 'summary' | 'full';
   conversationBinding?: 'off' | 'auto';

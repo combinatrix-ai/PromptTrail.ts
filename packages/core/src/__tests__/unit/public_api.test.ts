@@ -6,4 +6,8 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('tool');
     expect(prompttrail).toHaveProperty('Tool');
   });
+
+  it('does not expose root providerOptions fluent configuration', () => {
+    expect(prompttrail.Source.llm()).not.toHaveProperty('providerOptions');
+  });
 });

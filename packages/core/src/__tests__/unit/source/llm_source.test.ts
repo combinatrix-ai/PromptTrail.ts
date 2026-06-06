@@ -283,6 +283,26 @@ describe('LlmSource', () => {
         }),
       );
     });
+
+    it('should keep raw ai-sdk options scoped under aiSdk', async () => {
+      const source = Source.llm({
+        aiSdk: {
+          providerOptions: { openai: { store: false } },
+          sdkOptions: { headers: { 'x-test': 'yes' } },
+        },
+      });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          aiSdk: {
+            providerOptions: { openai: { store: false } },
+            sdkOptions: { headers: { 'x-test': 'yes' } },
+          },
+        }),
+      );
+    });
   });
 
   describe('Fluent API - Tool configuration', () => {

@@ -730,10 +730,6 @@ export class LlmSource extends ModelSource {
     });
   }
 
-  providerOptions(options: Record<string, Record<string, unknown>>): LlmSource {
-    return this.clone({ providerOptions: options });
-  }
-
   // Generation parameters - all return new instances
   temperature(value: number): LlmSource {
     return this.clone({ temperature: value });
