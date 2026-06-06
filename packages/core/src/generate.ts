@@ -7,11 +7,11 @@ import {
   streamText as aiSdkStreamText,
   LanguageModelV1,
   Output,
-  ToolSet,
 } from 'ai';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import type { Session, Attrs, Vars } from './session';
+import { toAiSdkToolSet } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -180,7 +180,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as ToolSet,
+    tools: toAiSdkToolSet(options.tools, session),
     toolChoice: options.toolChoice,
     providerOptions: options.providerOptions as any,
     ...options.sdkOptions,
@@ -332,7 +332,7 @@ export async function* generateTextStream<
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as ToolSet,
+    tools: toAiSdkToolSet(options.tools, session),
     toolChoice: options.toolChoice,
     providerOptions: options.providerOptions as any,
     ...options.sdkOptions,

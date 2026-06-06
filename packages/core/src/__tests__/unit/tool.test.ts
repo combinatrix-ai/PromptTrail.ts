@@ -1,75 +1,165 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { Tool } from '../../tool';
+import {
+  Tool,
+  aiSdkToolToPromptTrailTool,
+  executePromptTrailTool,
+  promptTrailToolToAiSdkTool,
+  toAiSdkToolSet,
+  toolResultToCallToolResult,
+} from '../../tool';
+import { createSession } from '../../session';
 
 describe('Tool namespace', () => {
   describe('Tool.create', () => {
-    it('should create a tool with correct properties', async () => {
+    it('creates a native PromptTrail tool', async () => {
       const testTool = Tool.create({
+        name: 'upper',
         description: 'Test tool',
-        parameters: z.object({
+        inputSchema: z.object({
           input: z.string(),
         }),
-        execute: async ({ input }) => {
-          return { output: input.toUpperCase() };
+        execute: async ({ input }, context) => {
+          return {
+            output: `${context.capability}:${input.toUpperCase()}`,
+          };
         },
       });
 
-      // Test that it has the expected structure (ai-sdk tools are objects)
-      expect(testTool).toBeDefined();
-      expect(typeof testTool).toBe('object');
+      expect(testTool).toMatchObject({
+        kind: 'tool',
+        name: 'upper',
+        description: 'Test tool',
+      });
+      expect(testTool.inputSchema.parse({ input: 'ok' })).toEqual({
+        input: 'ok',
+      });
+      await expect(
+        testTool.execute({ input: 'hello' }, { capability: testTool.name }),
+      ).resolves.toEqual({ output: 'upper:HELLO' });
     });
 
-    it('should execute tool with correct parameters', async () => {
-      const mockExecute = vi.fn().mockResolvedValue({ result: 'success' });
-
+    it('accepts the old parameters key while returning a native tool', () => {
       const testTool = Tool.create({
+        name: 'echo',
         description: 'Test execution',
         parameters: z.object({
           message: z.string(),
           count: z.number(),
         }),
-        execute: mockExecute,
+        execute: ({ message, count }) => ({ message, count }),
       });
 
-      // The tool function itself is what ai-sdk uses internally
-      // We can't directly test execution without the ai-sdk runtime
-      // But we can verify the tool was created correctly
-      expect(testTool).toBeDefined();
+      expect(testTool.kind).toBe('tool');
+      expect(testTool.name).toBe('echo');
+      expect(testTool.inputSchema.parse({ message: 'x', count: 2 })).toEqual({
+        message: 'x',
+        count: 2,
+      });
+    });
+  });
+
+  describe('ai-sdk adapters', () => {
+    it('converts PromptTrail tools to ai-sdk tools with execution context', async () => {
+      const session = createSession();
+      const execute = vi.fn().mockResolvedValue({ result: 'success' });
+      const promptTrailTool = Tool.create({
+        name: 'search',
+        description: 'Search',
+        inputSchema: z.object({ query: z.string() }),
+        execute,
+      });
+
+      const aiSdkTool = promptTrailToolToAiSdkTool(promptTrailTool, {
+        session,
+        provider: 'ai-sdk',
+      }) as unknown as {
+        execute: (input: unknown, raw: unknown) => Promise<unknown>;
+      };
+
+      await expect(
+        aiSdkTool.execute({ query: 'docs' }, { toolCallId: 'call-1' }),
+      ).resolves.toEqual({ result: 'success' });
+      expect(execute).toHaveBeenCalledWith(
+        { query: 'docs' },
+        {
+          session,
+          provider: 'ai-sdk',
+          capability: 'search',
+          raw: { toolCallId: 'call-1' },
+        },
+      );
     });
 
-    it('should work with complex parameter schemas', () => {
-      const complexTool = Tool.create({
-        description: 'Complex tool',
-        parameters: z.object({
-          user: z.object({
-            name: z.string(),
-            age: z.number().optional(),
-          }),
-          tags: z.array(z.string()),
-          settings: z.record(z.boolean()),
+    it('converts ai-sdk tools to PromptTrail tools', async () => {
+      const aiSdkTool = promptTrailToolToAiSdkTool(
+        Tool.create({
+          name: 'double',
+          description: 'Double a value',
+          inputSchema: z.object({ value: z.number() }),
+          execute: ({ value }) => ({ value: value * 2 }),
         }),
-        execute: async (params) => {
-          return { processed: true, userCount: 1 };
+      );
+
+      const promptTrailTool = aiSdkToolToPromptTrailTool('double', aiSdkTool);
+
+      expect(promptTrailTool).toMatchObject({
+        kind: 'tool',
+        name: 'double',
+        description: 'Double a value',
+      });
+      await expect(
+        promptTrailTool.execute({ value: 3 }, { raw: { id: 'call-2' } }),
+      ).resolves.toEqual({ value: 6 });
+    });
+
+    it('builds an ai-sdk tool set from mixed tool records', () => {
+      const promptTrailTool = Tool.create({
+        name: 'native',
+        description: 'Native',
+        inputSchema: z.object({ value: z.string() }),
+        execute: ({ value }) => value,
+      });
+      const aiSdkTool = promptTrailToolToAiSdkTool(promptTrailTool);
+
+      const toolSet = toAiSdkToolSet({
+        native: promptTrailTool,
+        existing: aiSdkTool,
+      });
+
+      expect(toolSet?.native).toBeDefined();
+      expect(toolSet?.existing).toBe(aiSdkTool);
+    });
+  });
+
+  describe('CallToolResult mapping', () => {
+    it('maps string and object results to MCP-style tool results', () => {
+      expect(toolResultToCallToolResult('done')).toEqual({
+        content: [{ type: 'text', text: 'done' }],
+      });
+
+      expect(toolResultToCallToolResult({ ok: true })).toEqual({
+        content: [{ type: 'json', json: { ok: true } }],
+        structuredContent: { ok: true },
+      });
+    });
+
+    it('normalizes thrown handler errors instead of propagating them', async () => {
+      const failingTool = Tool.create({
+        name: 'fail',
+        description: 'Fail',
+        inputSchema: z.object({ value: z.string() }),
+        execute: () => {
+          throw new Error('tool failed');
         },
       });
 
-      expect(complexTool).toBeDefined();
-    });
-
-    it('should handle async execute functions', () => {
-      const asyncTool = Tool.create({
-        description: 'Async tool',
-        parameters: z.object({
-          delay: z.number(),
-        }),
-        execute: async ({ delay }) => {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          return { completed: true };
-        },
+      await expect(
+        executePromptTrailTool(failingTool, { value: 'x' }),
+      ).resolves.toEqual({
+        content: [{ type: 'text', text: 'tool failed' }],
+        isError: true,
       });
-
-      expect(asyncTool).toBeDefined();
     });
   });
 });

@@ -1,4 +1,5 @@
 export { tool } from 'ai';
+export * from './capabilities';
 export * from './codex_app_server';
 export * from './generate';
 export * from './message';
