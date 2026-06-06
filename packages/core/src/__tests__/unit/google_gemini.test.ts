@@ -44,7 +44,7 @@ describe('Google Gemini native adapter helpers', () => {
       getGoogleGenAIClientOptions({
         type: 'google',
         apiKey: 'test-key',
-        modelName: 'gemini-3.1-flash-lite',
+        modelName: 'gemini-2.5-flash-lite',
         baseURL: 'https://google.test',
       }),
     ).toEqual({
@@ -181,7 +181,7 @@ describe('Google Gemini native adapter helpers', () => {
         {
           provider: {
             type: 'google',
-            modelName: 'gemini-3.1-flash-lite',
+            modelName: 'gemini-2.5-flash-lite',
           },
           toolChoice: 'required',
         },
@@ -220,14 +220,14 @@ describe('Google Gemini native adapter helpers', () => {
       buildGeminiCachedContentCreateParams(session, {
         provider: {
           type: 'google',
-          modelName: 'gemini-3.1-flash-lite',
+          modelName: 'gemini-2.5-flash-lite',
         },
         cacheKey: 'repo-prefix',
         capabilities: [tool],
         toolChoice: 'required',
       }),
     ).toEqual({
-      model: 'gemini-3.1-flash-lite',
+      model: 'gemini-2.5-flash-lite',
       config: {
         displayName: 'repo-prefix',
         contents: [{ role: 'user', parts: [{ text: 'Cache this prompt.' }] }],
@@ -270,13 +270,13 @@ describe('Google Gemini native adapter helpers', () => {
     };
 
     await expect(
-      createGeminiCachedContent(client, { model: 'gemini-3.1-flash-lite' }),
+      createGeminiCachedContent(client, { model: 'gemini-2.5-flash-lite' }),
     ).resolves.toBe('cachedContents/abc');
-    expect(calls).toEqual([{ model: 'gemini-3.1-flash-lite' }]);
+    expect(calls).toEqual([{ model: 'gemini-2.5-flash-lite' }]);
     await expect(
       createGeminiCachedContent(
         { caches: { create: async () => ({}) } },
-        { model: 'gemini-3.1-flash-lite' },
+        { model: 'gemini-2.5-flash-lite' },
       ),
     ).rejects.toThrow(
       'Gemini CachedContent create response did not include name.',
@@ -305,13 +305,13 @@ describe('Google Gemini native adapter helpers', () => {
     ]);
 
     const cache = await resolveGeminiCachedContent(client, session, {
-      provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+      provider: { type: 'google', modelName: 'gemini-2.5-flash-lite' },
       cacheKey: 'repo-prefix',
     });
 
     expect(calls).toEqual([
       {
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-2.5-flash-lite',
         config: {
           displayName: 'repo-prefix',
           contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
@@ -376,7 +376,7 @@ describe('Google Gemini native adapter helpers', () => {
     expect(
       buildGeminiGenerationConfig(
         session,
-        { provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' } },
+        { provider: { type: 'google', modelName: 'gemini-2.5-flash-lite' } },
         [],
         [],
         deriveConversationBinding(session, 'google'),
@@ -483,7 +483,7 @@ describe('Google Gemini native adapter helpers', () => {
     const options = {
       provider: {
         type: 'google' as const,
-        modelName: 'gemini-3.1-flash-lite',
+        modelName: 'gemini-2.5-flash-lite',
       },
       toolChoice: 'required' as const,
     };
@@ -491,7 +491,7 @@ describe('Google Gemini native adapter helpers', () => {
     expect(getGeminiToolLoopContinuationOptions(options)).toEqual({
       provider: {
         type: 'google',
-        modelName: 'gemini-3.1-flash-lite',
+        modelName: 'gemini-2.5-flash-lite',
       },
       toolChoice: 'auto',
     });
