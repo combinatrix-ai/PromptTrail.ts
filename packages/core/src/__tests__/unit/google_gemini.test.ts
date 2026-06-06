@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
+  assertGeminiProviderCompactionUnsupported,
   attachGeminiCachedContentMetadata,
   buildGeminiGenerationConfig,
   buildGeminiCachedContentCreateParams,
@@ -673,6 +674,41 @@ describe('Google Gemini native adapter helpers', () => {
         },
       },
     });
+  });
+
+  it('rejects unsupported Gemini provider compaction explicitly', () => {
+    expect(() =>
+      assertGeminiProviderCompactionUnsupported({
+        mode: 'provider',
+        threshold: 0.8,
+      }),
+    ).toThrow(
+      'Gemini does not support provider compaction; use compaction mode "local" or "off".',
+    );
+    expect(() =>
+      buildGeminiGenerationConfig(
+        Session.create(),
+        {
+          provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+          compaction: { mode: 'provider' },
+        },
+        [],
+        [],
+      ),
+    ).toThrow(
+      'Gemini does not support provider compaction; use compaction mode "local" or "off".',
+    );
+    expect(() =>
+      buildGeminiGenerationConfig(
+        Session.create(),
+        {
+          provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+          compaction: { mode: 'local', threshold: 0.8 },
+        },
+        [],
+        [],
+      ),
+    ).not.toThrow();
   });
 
   it('normalizes native Gemini async streams without an API call', async () => {

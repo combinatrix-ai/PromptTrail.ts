@@ -13,6 +13,7 @@ import {
 import { mapGeminiThinkingConfig } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import type {
+  CompactionOptions,
   GoogleProviderConfig,
   LLMOptions,
   SchemaGenerationOptions,
@@ -77,6 +78,7 @@ export async function* streamGoogleGeminiEvents<
   options: LLMOptions & { provider: GoogleProviderConfig },
 ) {
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
+  assertGeminiProviderCompactionUnsupported(options.compaction);
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
   const binding = await resolveGeminiCachedContentBinding(
@@ -155,6 +157,7 @@ async function generateGoogleGeminiMessage<
   extraConfig: Record<string, unknown> = {},
 ): Promise<Message<TAttrs>> {
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
+  assertGeminiProviderCompactionUnsupported(options.compaction);
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
   const cacheResolution = await resolveGeminiCachedContent(
@@ -354,6 +357,7 @@ export function buildGeminiGenerationConfig(
   binding?: ConversationBinding,
   extraConfig: Record<string, unknown> = {},
 ): Record<string, unknown> {
+  assertGeminiProviderCompactionUnsupported(options.compaction);
   return {
     cachedContent: binding?.id,
     systemInstruction: binding
@@ -382,6 +386,17 @@ export function buildGeminiGenerationConfig(
         : undefined,
     ...extraConfig,
   };
+}
+
+export function assertGeminiProviderCompactionUnsupported(
+  compaction: CompactionOptions | undefined,
+): void {
+  if (compaction?.mode !== 'provider') {
+    return;
+  }
+  throw new Error(
+    'Gemini does not support provider compaction; use compaction mode "local" or "off".',
+  );
 }
 
 export function buildGeminiCachedContentCreateParams(
