@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  buildOpenAIResponsesRequestBody,
   collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
   getResponsesInstructions,
+  normalizeOpenAIResponsesStream,
   promptTrailBuiltinToOpenAIResponsesTool,
   promptTrailMcpToOpenAIResponsesTool,
   promptTrailToolToOpenAIResponsesTool,
@@ -48,6 +50,38 @@ describe('OpenAI Responses native adapter helpers', () => {
         messageIndex: 1,
       }),
     ).toEqual([{ role: 'user', content: 'Continue' }]);
+  });
+
+  it('builds Responses request bodies for streaming and cached bindings', () => {
+    expect(
+      buildOpenAIResponsesRequestBody(
+        [{ role: 'user', content: 'Continue' }],
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          thinking: { effort: 'low', summary: true },
+          cacheKey: 'prefix',
+        },
+        [{ type: 'function', name: 'lookup' }],
+        'Be concise.',
+        undefined,
+        { provider: 'openai', id: 'resp-1', messageIndex: 1 },
+        true,
+      ),
+    ).toMatchObject({
+      model: 'gpt-5.4-nano',
+      input: [{ role: 'user', content: 'Continue' }],
+      instructions: 'Be concise.',
+      previous_response_id: 'resp-1',
+      reasoning: { effort: 'low', summary: 'auto' },
+      prompt_cache_key: 'prefix',
+      tools: [{ type: 'function', name: 'lookup' }],
+      stream: true,
+    });
   });
 
   it('converts content parts into Responses input message blocks', () => {
@@ -298,4 +332,45 @@ describe('OpenAI Responses native adapter helpers', () => {
       }),
     });
   });
+
+  it('normalizes native Responses async streams without an API call', async () => {
+    await expect(
+      collectAsync(
+        normalizeOpenAIResponsesStream(
+          stream([
+            {
+              type: 'response.output_text.delta',
+              output_index: 0,
+              delta: 'Hi',
+            },
+            {
+              type: 'response.completed',
+              response: { status: 'completed', usage: { input_tokens: 1 } },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'text.delta', index: 0, delta: 'Hi' },
+      {
+        type: 'message.done',
+        finishReason: 'completed',
+        usage: { input_tokens: 1 },
+      },
+    ]);
+  });
 });
+
+async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function* stream(events: unknown[]) {
+  for (const event of events) {
+    yield event;
+  }
+}

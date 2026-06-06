@@ -17,6 +17,7 @@ import { contentPartsToOpenAIInput } from './content_parts';
 import { mapOpenAIResponsesRequestOptions } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import { extractOpenAIReplayRequiredArtifacts } from './replay_pins';
+import { createOpenAIStreamNormalizer } from './provider_stream';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -43,6 +44,57 @@ export async function generateOpenAIResponsesText<
   options: LLMOptions & { provider: OpenAIProviderConfig },
 ): Promise<Message<TAttrs>> {
   return generateOpenAIResponsesMessage(session, options);
+}
+
+export async function* streamOpenAIResponsesEvents<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: OpenAIProviderConfig },
+  textFormat?: Record<string, unknown>,
+) {
+  const client = new OpenAI({
+    apiKey: options.provider.apiKey,
+    baseURL: options.provider.baseURL,
+    organization: options.provider.organization,
+    dangerouslyAllowBrowser:
+      options.dangerouslyAllowBrowser ??
+      options.provider.dangerouslyAllowBrowser,
+  });
+  const tools = getOpenAIPromptTrailTools(options);
+  const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
+  const binding =
+    options.conversationBinding === 'auto'
+      ? deriveConversationBinding(session, 'openai')
+      : undefined;
+  const input: unknown[] = convertSessionToResponsesInput(session, binding);
+  const instructions = getResponsesInstructions(session, options);
+  const stream = await client.responses.create(
+    buildOpenAIResponsesRequestBody(
+      input,
+      options,
+      toolDefinitions,
+      instructions,
+      textFormat,
+      binding,
+      true,
+    ) as any,
+  );
+  yield* normalizeOpenAIResponsesStream(
+    stream as unknown as AsyncIterable<unknown>,
+  );
+}
+
+export async function* normalizeOpenAIResponsesStream(
+  stream: AsyncIterable<unknown>,
+) {
+  const normalizer = createOpenAIStreamNormalizer();
+  for await (const event of stream as AsyncIterable<unknown>) {
+    for (const normalized of normalizer.consume(event)) {
+      yield normalized;
+    }
+  }
 }
 
 export async function generateOpenAIResponsesWithSchema<
@@ -154,7 +206,28 @@ async function createOpenAIResponse(
   textFormat?: Record<string, unknown>,
   binding?: ConversationBinding,
 ) {
-  return client.responses.create({
+  return client.responses.create(
+    buildOpenAIResponsesRequestBody(
+      input,
+      options,
+      toolDefinitions,
+      instructions,
+      textFormat,
+      binding,
+    ) as any,
+  );
+}
+
+export function buildOpenAIResponsesRequestBody(
+  input: unknown[],
+  options: LLMOptions & { provider: OpenAIProviderConfig },
+  toolDefinitions: readonly unknown[],
+  instructions: string | undefined,
+  textFormat?: Record<string, unknown>,
+  binding?: ConversationBinding,
+  stream?: boolean,
+): Record<string, unknown> {
+  return {
     model: options.provider.modelName,
     input: input as any,
     instructions,
@@ -166,7 +239,8 @@ async function createOpenAIResponse(
     ...mapOpenAIResponsesRequestOptions(options),
     tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
     tool_choice: options.toolChoice as any,
-  });
+    stream,
+  };
 }
 
 export function convertSessionToResponsesInput(
