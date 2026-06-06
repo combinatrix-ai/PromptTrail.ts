@@ -67,6 +67,7 @@ describe('ClaudeTurn template', () => {
           status: 'completed',
           sessionId: 'session-1',
           finalAnswer: 'Claude result',
+          historyFingerprint: expect.stringMatching(/^fnv1a:/),
         },
       },
     });

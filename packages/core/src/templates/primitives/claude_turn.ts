@@ -6,6 +6,7 @@ import {
   materializeClaudeAgentSkills,
   type ClaudeTurnOptions,
 } from '../../claude_agent';
+import { createConversationHistoryFingerprint } from '../../conversation';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
@@ -64,9 +65,24 @@ export class ClaudeTurn<
       );
     }
 
-    return currentSession.addMessage(
-      claudeAgentResultToMessage<TAttrs>(result, this.options.attrsKey),
-    );
+    const attrsKey = this.options.attrsKey ?? 'claudeAgent';
+    const message = claudeAgentResultToMessage<TAttrs>(result, attrsKey);
+    const historyFingerprint = createConversationHistoryFingerprint([
+      ...currentSession.messages,
+      message,
+    ]);
+    return currentSession.addMessage({
+      ...message,
+      attrs: {
+        ...message.attrs,
+        [attrsKey]: {
+          ...((message.attrs as Record<string, unknown> | undefined)?.[
+            attrsKey
+          ] as Record<string, unknown> | undefined),
+          historyFingerprint,
+        },
+      } as TAttrs,
+    });
   }
 
   private async resolveInput(session: Session<TVars, TAttrs>): Promise<string> {

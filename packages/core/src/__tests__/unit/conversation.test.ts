@@ -145,4 +145,29 @@ describe('ConversationBinding helpers', () => {
 
     expect(deriveConversationBinding(session, 'codex')).toBeUndefined();
   });
+
+  it('drops Claude Agent bindings when the canonical prefix diverged', () => {
+    const assistant = {
+      type: 'assistant' as const,
+      content: 'Claude result',
+    };
+    const historyFingerprint = createConversationHistoryFingerprint([
+      { type: 'user', content: 'one' },
+      assistant,
+    ]);
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'edited' })
+      .addMessage({
+        ...assistant,
+        attrs: {
+          claudeAgent: {
+            sessionId: 'session-1',
+            historyFingerprint,
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'three' });
+
+    expect(deriveConversationBinding(session, 'claude-agent')).toBeUndefined();
+  });
 });
