@@ -157,23 +157,42 @@ export async function generateAnthropicMessagesWithSchema<
     dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
   });
   const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
-  const structuredTool = createAnthropicStructuredOutputTool(schemaOptions);
   const response = await client.messages.create(
-    {
-      model: options.provider.modelName,
-      max_tokens: options.maxTokens ?? 1024,
-      messages: convertSessionToAnthropicMessages(session) as any,
-      system: getAnthropicSystemPrompt(session, options),
-      temperature: options.temperature,
-      top_p: options.topP,
-      thinking: mapAnthropicThinking(options.thinking, 'required') as any,
-      context_management: mapAnthropicCompaction(options.compaction) as any,
-      container: getAnthropicSkillsContainer(options),
-      tools: [structuredTool as any],
-      tool_choice: { type: 'tool', name: toolName } as any,
-    } as any,
+    buildAnthropicSchemaRequestBody(session, options, schemaOptions) as any,
     getAnthropicRequestOptions(options) as any,
   );
+
+  if (schemaOptions.mode === 'structured_output') {
+    const text = extractAnthropicText(response.content as unknown[]).trim();
+    let output: unknown;
+    try {
+      output = JSON.parse(text);
+    } catch (error) {
+      throw new Error(
+        `Anthropic structured output was not valid JSON: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const parsed = schemaOptions.schema.safeParse(output);
+    if (!parsed.success) {
+      throw new Error(`Schema validation failed: ${parsed.error.message}`);
+    }
+
+    return {
+      type: 'assistant',
+      content: JSON.stringify(parsed.data, null, 2),
+      structuredOutput: parsed.data,
+      attrs: {
+        anthropic: retainAnthropicMessageMetadata(
+          response,
+          options.retain ?? 'summary',
+        ),
+      } as unknown as TAttrs,
+    };
+  }
+
   const toolUse = collectAnthropicToolUses(response.content).find(
     (candidate) => candidate.name === toolName,
   );
@@ -198,6 +217,43 @@ export async function generateAnthropicMessagesWithSchema<
         options.retain ?? 'summary',
       ),
     } as unknown as TAttrs,
+  };
+}
+
+export function buildAnthropicSchemaRequestBody(
+  session: Session<any, any>,
+  options: LLMOptions & { provider: AnthropicProviderConfig },
+  schemaOptions: SchemaGenerationOptions,
+): Record<string, unknown> {
+  const base = {
+    model: options.provider.modelName,
+    max_tokens: options.maxTokens ?? 1024,
+    messages: convertSessionToAnthropicMessages(session),
+    system: getAnthropicSystemPrompt(session, options),
+    temperature: options.temperature,
+    top_p: options.topP,
+    thinking: mapAnthropicThinking(options.thinking, 'required'),
+    context_management: mapAnthropicCompaction(options.compaction),
+    container: getAnthropicSkillsContainer(options),
+  };
+
+  if (schemaOptions.mode === 'structured_output') {
+    return {
+      ...base,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: zodToJsonSchema(schemaOptions.schema),
+        },
+      },
+    };
+  }
+
+  const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
+  return {
+    ...base,
+    tools: [createAnthropicStructuredOutputTool(schemaOptions)],
+    tool_choice: { type: 'tool', name: toolName },
   };
 }
 

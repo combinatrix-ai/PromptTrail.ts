@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  buildAnthropicSchemaRequestBody,
   collectAnthropicToolUses,
   convertSessionToAnthropicMessages,
   createAnthropicStructuredOutputTool,
@@ -370,6 +371,96 @@ describe('Anthropic Messages native adapter helpers', () => {
         additionalProperties: false,
       },
     });
+  });
+
+  it('builds forced-tool schema requests by default', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Extract status and count.',
+    });
+
+    expect(
+      buildAnthropicSchemaRequestBody(
+        session,
+        {
+          provider: {
+            type: 'anthropic',
+            apiKey: 'test-key',
+            modelName: 'claude-haiku-4-5',
+          },
+        },
+        {
+          schema: z.object({
+            status: z.literal('ok'),
+            count: z.number(),
+          }),
+          functionName: 'StructuredResult',
+        },
+      ),
+    ).toMatchObject({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'Extract status and count.' }],
+      tools: [
+        {
+          name: 'StructuredResult',
+          input_schema: {
+            type: 'object',
+            required: ['status', 'count'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'StructuredResult' },
+    });
+  });
+
+  it('builds native output_config schema requests when requested', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Extract status and count.',
+    });
+
+    const body = buildAnthropicSchemaRequestBody(
+      session,
+      {
+        provider: {
+          type: 'anthropic',
+          apiKey: 'test-key',
+          modelName: 'claude-haiku-4-5',
+        },
+        maxTokens: 256,
+      },
+      {
+        mode: 'structured_output',
+        schema: z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+      },
+    );
+
+    expect(body).toMatchObject({
+      model: 'claude-haiku-4-5',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'Extract status and count.' }],
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', const: 'ok' },
+              count: { type: 'number' },
+            },
+            required: ['status', 'count'],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    expect(body).not.toHaveProperty('tools');
+    expect(body).not.toHaveProperty('tool_choice');
   });
 });
 
