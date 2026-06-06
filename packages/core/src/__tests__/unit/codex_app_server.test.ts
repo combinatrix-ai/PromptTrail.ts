@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CodexAppServerWebSocketClient,
   collectCodexTurnResult,
   normalizeCodexRuntimeEvent,
   type CodexTurnEvent,
@@ -99,6 +100,74 @@ describe('Codex App Server helpers', () => {
       type: 'item.completed',
       id: 'item-1',
     });
+  });
+
+  it('responds to inbound JSON-RPC requests over the WebSocket client', async () => {
+    const sent: unknown[] = [];
+    const client = new CodexAppServerWebSocketClient({
+      url: 'ws://127.0.0.1:1',
+      onRequest: async (request) => ({
+        method: request.method,
+        params: request.params,
+      }),
+    });
+    (client as any).socket = {
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+
+    (client as any).handleMessage(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 42,
+        method: 'item/tool/call',
+        params: { name: 'lookup', input: { query: 'docs' } },
+      }),
+    );
+
+    await Promise.resolve();
+
+    expect(sent).toEqual([
+      {
+        jsonrpc: '2.0',
+        id: 42,
+        result: {
+          method: 'item/tool/call',
+          params: { name: 'lookup', input: { query: 'docs' } },
+        },
+      },
+    ]);
+  });
+
+  it('returns JSON-RPC method errors for unhandled inbound requests', async () => {
+    const sent: unknown[] = [];
+    const client = new CodexAppServerWebSocketClient({
+      url: 'ws://127.0.0.1:1',
+    });
+    (client as any).socket = {
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+
+    (client as any).handleMessage(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'approval-1',
+        method: 'item/commandExecution/requestApproval',
+        params: { command: 'npm test' },
+      }),
+    );
+
+    await Promise.resolve();
+
+    expect(sent).toEqual([
+      {
+        jsonrpc: '2.0',
+        id: 'approval-1',
+        error: {
+          code: -32601,
+          message: 'No handler for item/commandExecution/requestApproval',
+        },
+      },
+    ]);
   });
 });
 

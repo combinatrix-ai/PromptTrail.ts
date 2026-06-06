@@ -32,6 +32,7 @@ export class CodexTurn<
               url: this.options.transport.url,
               timeoutMs: this.options.transport.timeoutMs,
               onEvent: this.options.onEvent,
+              onRequest: this.options.onRequest,
             })
           : undefined);
 

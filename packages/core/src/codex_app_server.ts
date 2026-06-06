@@ -56,6 +56,17 @@ export interface CodexTurnEvent {
   [key: string]: unknown;
 }
 
+export interface CodexInboundRequest {
+  id: number | string;
+  method: string;
+  params?: Record<string, unknown>;
+  raw: CodexTurnEvent;
+}
+
+export type CodexInboundRequestHandler = (
+  request: CodexInboundRequest,
+) => unknown | Promise<unknown>;
+
 export interface CodexTurnResult {
   threadId?: string;
   turnId?: string;
@@ -154,6 +165,7 @@ export interface CodexAppServerWebSocketClientOptions {
     version?: string;
   };
   onEvent?: (event: RuntimeEvent) => void | Promise<void>;
+  onRequest?: CodexInboundRequestHandler;
 }
 
 export class CodexAppServerWebSocketClient implements CodexAppServerClient {
@@ -388,9 +400,63 @@ export class CodexAppServerWebSocketClient implements CodexAppServerClient {
         }
         return;
       }
+
+      if (typeof message.method === 'string') {
+        void this.handleInboundRequest(message);
+        return;
+      }
     }
 
     this.handleNotification(message);
+  }
+
+  private async handleInboundRequest(message: CodexTurnEvent): Promise<void> {
+    const id = message.id;
+    const method = message.method;
+    if (id === undefined || typeof method !== 'string') {
+      return;
+    }
+
+    try {
+      if (!this.options.onRequest) {
+        this.sendJsonRpcError(id, -32601, `No handler for ${method}`);
+        return;
+      }
+
+      const result = await this.options.onRequest({
+        id,
+        method,
+        params: message.params,
+        raw: message,
+      });
+      this.sendJsonRpcResult(id, result ?? null);
+    } catch (error) {
+      this.sendJsonRpcError(id, -32603, formatUnknownError(error));
+    }
+  }
+
+  private sendJsonRpcResult(id: number | string, result: unknown): void {
+    this.socket?.send(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result,
+      }),
+    );
+  }
+
+  private sendJsonRpcError(
+    id: number | string,
+    code: number,
+    message: string,
+  ): void {
+    this.socket?.send(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: { code, message },
+      }),
+    );
   }
 
   private handleNotification(message: CodexTurnEvent): void {
@@ -497,6 +563,7 @@ export interface CodexTurnOptions<
   includeItems?: 'none' | 'summary' | 'full';
   retain?: RetainLevel;
   onEvent?: (event: RuntimeEvent) => void | Promise<void>;
+  onRequest?: CodexInboundRequestHandler;
   retainMessages?: boolean;
   attrsKey?: string;
   threadStart?: Record<string, unknown>;

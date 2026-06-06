@@ -20,6 +20,7 @@ describe.skipIf(!codexAppServerAvailable)(
             timeoutMs: 90_000,
           },
           cwd: process.cwd(),
+          model: 'gpt-5.4-nano',
           sandboxPolicy: { type: 'readOnly' },
           approvalPolicy: 'never',
         })
@@ -34,6 +35,35 @@ describe.skipIf(!codexAppServerAvailable)(
       });
       expect((lastMessage?.attrs as any)?.codex.threadId).toBeTruthy();
       expect((lastMessage?.attrs as any)?.codex.turnId).toBeTruthy();
+    }, 120_000);
+
+    it('should stream live runtime events through onEvent', async () => {
+      const events: unknown[] = [];
+      const session = await Agent.create()
+        .user('Reply exactly: PROMPTTRAIL_CODEX_EVENT_OK')
+        .codexTurn({
+          transport: {
+            kind: 'websocket',
+            url: codexAppServerUrl!,
+            timeoutMs: 90_000,
+          },
+          cwd: process.cwd(),
+          model: 'gpt-5.4-nano',
+          sandboxPolicy: { type: 'readOnly' },
+          approvalPolicy: 'never',
+          onEvent: (event) => {
+            events.push(event);
+          },
+        })
+        .execute();
+
+      expect(session.getLastMessage()?.content).toBe(
+        'PROMPTTRAIL_CODEX_EVENT_OK',
+      );
+      expect(events.length).toBeGreaterThan(0);
+      expect(events.some((event: any) => event.type === 'turn.completed')).toBe(
+        true,
+      );
     }, 120_000);
   },
 );
