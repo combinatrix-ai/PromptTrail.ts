@@ -1,4 +1,3 @@
-export { tool } from 'ai';
 export * from './anthropic_messages';
 export * from './cache';
 export * from './capabilities';
