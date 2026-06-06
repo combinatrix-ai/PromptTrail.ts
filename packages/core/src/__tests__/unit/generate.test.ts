@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertExplicitNativeSchemaModeWhenToolsArePresent,
   convertSessionToAiSdkMessages,
   createProvider,
   promptTrailStreamEventsToMessages,
 } from '../../generate';
 import { Session } from '../../session';
+import { Tool } from '../../tool';
+import { z } from 'zod';
 
 describe('createProvider', () => {
   it('should use OpenAI Responses API when requested', () => {
@@ -97,6 +100,41 @@ describe('convertSessionToAiSdkMessages', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('native schema/tool guard', () => {
+  it('requires explicit schema mode when native first-party adapters also have tools', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+    const options = {
+      provider: {
+        type: 'openai' as const,
+        apiKey: 'test-key',
+        modelName: 'gpt-5.4-nano',
+        api: 'responses' as const,
+        adapter: 'native' as const,
+      },
+      capabilities: [lookup],
+    };
+
+    expect(() =>
+      assertExplicitNativeSchemaModeWhenToolsArePresent(options, {
+        schema: z.object({ status: z.literal('ok') }),
+      }),
+    ).toThrow(
+      'Source.schema() with PromptTrail tools on a native first-party provider requires an explicit schema mode.',
+    );
+    expect(() =>
+      assertExplicitNativeSchemaModeWhenToolsArePresent(options, {
+        schema: z.object({ status: z.literal('ok') }),
+        mode: 'native',
+      }),
+    ).not.toThrow();
   });
 });
 

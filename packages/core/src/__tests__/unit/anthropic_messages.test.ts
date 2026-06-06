@@ -9,6 +9,7 @@ import {
   createAnthropicToolResultBlock,
   getAnthropicToolDefinitions,
   getAnthropicRequestOptions,
+  getAnthropicRequestContent,
   getAnthropicSkillsContainer,
   getAnthropicSystemPrompt,
   normalizeAnthropicMessagesStream,
@@ -32,6 +33,13 @@ describe('Anthropic Messages native adapter helpers', () => {
       .addMessage({ type: 'assistant', content: 'Hi' });
 
     expect(getAnthropicSystemPrompt(session)).toBe('Be concise.');
+    expect(getAnthropicRequestContent(session)).toEqual({
+      system: 'Be concise.',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi' },
+      ],
+    });
     expect(convertSessionToAnthropicMessages(session)).toEqual([
       { role: 'user', content: 'Hello' },
       { role: 'assistant', content: 'Hi' },

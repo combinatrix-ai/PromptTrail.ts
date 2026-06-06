@@ -34,6 +34,11 @@ export interface AnthropicToolUse {
   raw: unknown;
 }
 
+export interface AnthropicRequestContent {
+  messages: Array<{ role: 'user' | 'assistant'; content: unknown }>;
+  system: unknown;
+}
+
 export interface AnthropicSkillUploadResult {
   skillId: string;
   version?: string;
@@ -135,10 +140,12 @@ export async function generateAnthropicMessagesText<
   });
   const tools = getAnthropicPromptTrailTools(resolvedOptions);
   const toolDefinitions = getAnthropicToolDefinitions(resolvedOptions);
-  let messages: unknown[] = convertSessionToAnthropicMessages(session);
+  const requestContent = getAnthropicRequestContent(session, resolvedOptions);
+  let messages: unknown[] = requestContent.messages;
   let response = await createAnthropicMessage(
     client,
     messages,
+    requestContent.system,
     session,
     resolvedOptions,
     tools,
@@ -164,6 +171,7 @@ export async function generateAnthropicMessagesText<
     response = await createAnthropicMessage(
       client,
       messages,
+      requestContent.system,
       session,
       resolvedOptions,
       tools,
@@ -200,12 +208,13 @@ export async function* streamAnthropicMessagesEvents<
     dangerouslyAllowBrowser: resolvedOptions.dangerouslyAllowBrowser,
   });
   const toolDefinitions = getAnthropicToolDefinitions(resolvedOptions);
+  const requestContent = getAnthropicRequestContent(session, resolvedOptions);
   const stream = await client.messages.create(
     {
       model: resolvedOptions.provider.modelName,
       max_tokens: resolvedOptions.maxTokens ?? 1024,
-      messages: convertSessionToAnthropicMessages(session) as any,
-      system: getAnthropicSystemPrompt(session, resolvedOptions),
+      messages: requestContent.messages as any,
+      system: requestContent.system,
       temperature: resolvedOptions.temperature,
       top_p: resolvedOptions.topP,
       thinking: mapAnthropicThinking(
@@ -329,11 +338,12 @@ export function buildAnthropicSchemaRequestBody(
   options: LLMOptions & { provider: AnthropicProviderConfig },
   schemaOptions: SchemaGenerationOptions,
 ): Record<string, unknown> {
+  const requestContent = getAnthropicRequestContent(session, options);
   const base = {
     model: options.provider.modelName,
     max_tokens: options.maxTokens ?? 1024,
-    messages: convertSessionToAnthropicMessages(session),
-    system: getAnthropicSystemPrompt(session, options),
+    messages: requestContent.messages,
+    system: requestContent.system,
     temperature: options.temperature,
     top_p: options.topP,
     thinking: mapAnthropicThinking(options.thinking, 'required'),
@@ -374,6 +384,7 @@ export function createAnthropicStructuredOutputTool(
 async function createAnthropicMessage(
   client: Anthropic,
   messages: unknown[],
+  system: unknown,
   session: Session<any, any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   tools: readonly PromptTrailTool[],
@@ -384,7 +395,7 @@ async function createAnthropicMessage(
       model: options.provider.modelName,
       max_tokens: options.maxTokens ?? 1024,
       messages: messages as any,
-      system: getAnthropicSystemPrompt(session, options),
+      system,
       temperature: options.temperature,
       top_p: options.topP,
       thinking: mapAnthropicThinking(
@@ -416,6 +427,16 @@ export function convertSessionToAnthropicMessages(
         message.cache,
       ),
     }));
+}
+
+export function getAnthropicRequestContent(
+  session: Session<any, any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
+): AnthropicRequestContent {
+  return {
+    messages: convertSessionToAnthropicMessages(session),
+    system: getAnthropicSystemPrompt(session, options),
+  };
 }
 
 export function getAnthropicSystemPrompt(

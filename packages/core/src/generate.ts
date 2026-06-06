@@ -36,7 +36,7 @@ import { contentPartsToAiSdkContent } from './content_parts';
 import type { Session, Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './ai_sdk_tools';
-import { Tool } from './tool';
+import { Tool, isPromptTrailTool } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -306,6 +306,7 @@ export async function generateWithSchema<
   schemaOptions: SchemaGenerationOptions,
 ): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
   const schemaMode = normalizeSchemaGenerationMode(schemaOptions.mode);
+  assertExplicitNativeSchemaModeWhenToolsArePresent(options, schemaOptions);
 
   if (
     options.provider.type === 'openai' &&
@@ -427,6 +428,40 @@ export async function generateWithSchema<
 
     throw new Error('No valid schema tool call found in response');
   }
+}
+
+export function assertExplicitNativeSchemaModeWhenToolsArePresent(
+  options: LLMOptions,
+  schemaOptions: SchemaGenerationOptions,
+): void {
+  if (
+    schemaOptions.mode !== undefined ||
+    options.provider.adapter === 'ai-sdk' ||
+    !isFirstPartyNativeProvider(options) ||
+    !hasPromptTrailTools(options)
+  ) {
+    return;
+  }
+
+  throw new Error(
+    'Source.schema() with PromptTrail tools on a native first-party provider requires an explicit schema mode. Pass { mode: "native" } after verifying the provider-specific tool/schema sequencing, or { mode: "tool" } to force schema-as-tool generation.',
+  );
+}
+
+function isFirstPartyNativeProvider(options: LLMOptions): boolean {
+  return (
+    (options.provider.type === 'openai' &&
+      options.provider.api === 'responses') ||
+    options.provider.type === 'anthropic' ||
+    options.provider.type === 'google'
+  );
+}
+
+function hasPromptTrailTools(options: LLMOptions): boolean {
+  return (
+    Object.keys(options.tools ?? {}).length > 0 ||
+    (options.capabilities ?? []).some(isPromptTrailTool)
+  );
 }
 
 /**

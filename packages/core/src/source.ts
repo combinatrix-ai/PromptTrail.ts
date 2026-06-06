@@ -693,7 +693,7 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'google',
         apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
-        modelName: config?.modelName || 'gemini-2.5-flash',
+        modelName: config?.modelName || 'gemini-3.1-flash-lite',
         adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
       },
@@ -837,7 +837,7 @@ export class LlmSource extends ModelSource {
     const newSource = this.clone({});
     newSource.schemaConfig = {
       schema,
-      mode: options?.mode ?? 'native',
+      mode: options?.mode,
       functionName: options?.functionName || 'generateStructuredOutput',
     };
     return newSource;
