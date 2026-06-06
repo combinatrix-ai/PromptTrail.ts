@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   attachGeminiCachedContentMetadata,
@@ -35,6 +35,46 @@ describe('Google Gemini native adapter helpers', () => {
       { role: 'user', parts: [{ text: 'Hello' }] },
       { role: 'model', parts: [{ text: 'Hi' }] },
     ]);
+  });
+
+  it('injects RuntimeSkill instructions into Gemini system text and applies loss policy', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const session = Session.create().addMessage({
+        type: 'system',
+        content: 'Be concise.',
+      });
+      const skill = {
+        kind: 'skill' as const,
+        name: 'Review',
+        description: 'Review risky changes',
+        instructions: 'Prefer focused findings.',
+        materialize: 'temporary' as const,
+      };
+
+      expect(
+        getGeminiSystemInstruction(session, { capabilities: [skill] }),
+      ).toBe(
+        [
+          'Be concise.',
+          'Available runtime skills:',
+          'Skill: Review\nReview risky changes\nPrefer focused findings.',
+        ].join('\n\n'),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        'RuntimeSkill "Review" carries files or materialization metadata that cannot be represented by instruction injection.',
+      );
+      expect(() =>
+        getGeminiSystemInstruction(session, {
+          capabilities: [skill],
+          skillInjection: 'error',
+        }),
+      ).toThrow(
+        'RuntimeSkill "Review" carries files or materialization metadata that cannot be represented by instruction injection.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('converts content parts into Gemini content parts', () => {
