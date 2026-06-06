@@ -13,6 +13,7 @@ import {
   getGeminiCacheablePrefixSession,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
+  getGeminiToolLoopContinuationOptions,
   getGoogleGenAIClientOptions,
   normalizeGeminiContentStream,
   promptTrailBuiltinToGeminiTool,
@@ -43,7 +44,7 @@ describe('Google Gemini native adapter helpers', () => {
       getGoogleGenAIClientOptions({
         type: 'google',
         apiKey: 'test-key',
-        modelName: 'gemini-2.5-flash',
+        modelName: 'gemini-3.1-flash-lite',
         baseURL: 'https://google.test',
       }),
     ).toEqual({
@@ -142,7 +143,7 @@ describe('Google Gemini native adapter helpers', () => {
         {
           provider: {
             type: 'google',
-            modelName: 'gemini-2.5-flash',
+            modelName: 'gemini-3.1-flash-lite',
           },
           toolChoice: 'required',
         },
@@ -181,14 +182,14 @@ describe('Google Gemini native adapter helpers', () => {
       buildGeminiCachedContentCreateParams(session, {
         provider: {
           type: 'google',
-          modelName: 'gemini-2.5-flash',
+          modelName: 'gemini-3.1-flash-lite',
         },
         cacheKey: 'repo-prefix',
         capabilities: [tool],
         toolChoice: 'required',
       }),
     ).toEqual({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.1-flash-lite',
       config: {
         displayName: 'repo-prefix',
         contents: [{ role: 'user', parts: [{ text: 'Cache this prompt.' }] }],
@@ -231,13 +232,13 @@ describe('Google Gemini native adapter helpers', () => {
     };
 
     await expect(
-      createGeminiCachedContent(client, { model: 'gemini-2.5-flash' }),
+      createGeminiCachedContent(client, { model: 'gemini-3.1-flash-lite' }),
     ).resolves.toBe('cachedContents/abc');
-    expect(calls).toEqual([{ model: 'gemini-2.5-flash' }]);
+    expect(calls).toEqual([{ model: 'gemini-3.1-flash-lite' }]);
     await expect(
       createGeminiCachedContent(
         { caches: { create: async () => ({}) } },
-        { model: 'gemini-2.5-flash' },
+        { model: 'gemini-3.1-flash-lite' },
       ),
     ).rejects.toThrow(
       'Gemini CachedContent create response did not include name.',
@@ -266,13 +267,13 @@ describe('Google Gemini native adapter helpers', () => {
     ]);
 
     const cache = await resolveGeminiCachedContent(client, session, {
-      provider: { type: 'google', modelName: 'gemini-2.5-flash' },
+      provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
       cacheKey: 'repo-prefix',
     });
 
     expect(calls).toEqual([
       {
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite',
         config: {
           displayName: 'repo-prefix',
           contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
@@ -337,7 +338,7 @@ describe('Google Gemini native adapter helpers', () => {
     expect(
       buildGeminiGenerationConfig(
         session,
-        { provider: { type: 'google', modelName: 'gemini-2.5-flash' } },
+        { provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' } },
         [],
         [],
         deriveConversationBinding(session, 'google'),
@@ -395,8 +396,22 @@ describe('Google Gemini native adapter helpers', () => {
       execute: ({ query }, context) => ({ query, provider: context.provider }),
     });
     const calls = collectGeminiFunctionCalls({
-      functionCalls: [
-        { id: 'call-1', name: 'lookup', args: { query: 'capabilities' } },
+      functionCalls: [],
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                functionCall: {
+                  id: 'call-1',
+                  name: 'lookup',
+                  args: { query: 'capabilities' },
+                },
+                thoughtSignature: 'sig',
+              },
+            ],
+          },
+        },
       ],
     });
 
@@ -405,7 +420,14 @@ describe('Google Gemini native adapter helpers', () => {
         id: 'call-1',
         name: 'lookup',
         args: { query: 'capabilities' },
-        raw: { id: 'call-1', name: 'lookup', args: { query: 'capabilities' } },
+        raw: {
+          functionCall: {
+            id: 'call-1',
+            name: 'lookup',
+            args: { query: 'capabilities' },
+          },
+          thoughtSignature: 'sig',
+        },
       },
     ]);
     await expect(
@@ -414,17 +436,30 @@ describe('Google Gemini native adapter helpers', () => {
       functionResponse: {
         id: 'call-1',
         name: 'lookup',
-        response: {
-          content: [
-            {
-              type: 'json',
-              json: { query: 'capabilities', provider: 'google' },
-            },
-          ],
-          structuredContent: { query: 'capabilities', provider: 'google' },
-        },
+        response: { query: 'capabilities', provider: 'google' },
       },
     });
+  });
+
+  it('relaxes required Gemini tool choice after tool responses are appended', () => {
+    const options = {
+      provider: {
+        type: 'google' as const,
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      toolChoice: 'required' as const,
+    };
+
+    expect(getGeminiToolLoopContinuationOptions(options)).toEqual({
+      provider: {
+        type: 'google',
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      toolChoice: 'auto',
+    });
+    expect(
+      getGeminiToolLoopContinuationOptions({ ...options, toolChoice: 'auto' }),
+    ).toEqual({ ...options, toolChoice: 'auto' });
   });
 
   it('normalizes native Gemini async streams without an API call', async () => {

@@ -10,11 +10,11 @@ const googleAvailable =
 
 describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
   it('generates text and stores response metadata', async () => {
-    const output = await Source.llm()
+    const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-2.5-flash')
+      .model('gemini-3.1-flash-lite')
       .temperature(0)
-      .maxTokens(32)
+      .maxTokens(128)
       .getContent(
         Session.create({
           messages: [
@@ -45,11 +45,11 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
       execute: async ({ key }) => ({ value: `tool:${key}` }),
     });
 
-    const output = await Source.llm()
+    const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-2.5-flash')
+      .model('gemini-3.1-flash-lite')
       .temperature(0)
-      .maxTokens(64)
+      .maxTokens(128)
       .withCapabilities([lookup])
       .toolChoice('required')
       .getContent(
@@ -68,11 +68,11 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
   }, 60_000);
 
   it('generates structured output through native responseJsonSchema', async () => {
-    const output = await Source.llm()
+    const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-2.5-flash')
+      .model('gemini-3.1-flash-lite')
       .temperature(0)
-      .maxTokens(64)
+      .maxTokens(128)
       .withSchema(
         z.object({
           status: z.literal('ok'),

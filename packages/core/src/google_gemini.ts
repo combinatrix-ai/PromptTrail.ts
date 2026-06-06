@@ -1,5 +1,9 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
-import type { BuiltinTool, PromptTrailTool } from './capabilities';
+import type {
+  BuiltinTool,
+  CallToolResult,
+  PromptTrailTool,
+} from './capabilities';
 import { contentPartsToGeminiParts } from './content_parts';
 import {
   deriveConversationBinding,
@@ -185,7 +189,7 @@ async function generateGoogleGeminiMessage<
       ...contents,
       {
         role: 'model',
-        parts: functionCalls.map((call) => ({ functionCall: call.raw })),
+        parts: functionCalls.map((call) => call.raw),
       },
       { role: 'user', parts: responseParts },
     ];
@@ -193,7 +197,7 @@ async function generateGoogleGeminiMessage<
       ai,
       contents,
       session,
-      options,
+      getGeminiToolLoopContinuationOptions(options),
       tools,
       toolDefinitions,
       binding,
@@ -211,6 +215,14 @@ async function generateGoogleGeminiMessage<
       ),
     } as unknown as TAttrs,
   };
+}
+
+export function getGeminiToolLoopContinuationOptions(
+  options: LLMOptions & { provider: GoogleProviderConfig },
+): LLMOptions & { provider: GoogleProviderConfig } {
+  return options.toolChoice === 'required'
+    ? { ...options, toolChoice: 'auto' }
+    : options;
 }
 
 async function resolveGeminiCachedContentBinding(
@@ -542,6 +554,11 @@ function geminiBuiltinToolKey(name: string): string {
 export function collectGeminiFunctionCalls(
   response: unknown,
 ): GeminiFunctionCall[] {
+  const candidateCalls = collectGeminiFunctionCallParts(response);
+  if (candidateCalls.length > 0) {
+    return candidateCalls;
+  }
+
   const calls = (response as { functionCalls?: unknown[] }).functionCalls ?? [];
   return calls
     .filter(
@@ -552,8 +569,40 @@ export function collectGeminiFunctionCalls(
       id: typeof call.id === 'string' ? call.id : undefined,
       name: String(call.name),
       args: call.args ?? {},
-      raw: call,
+      raw: { functionCall: call },
     }));
+}
+
+function collectGeminiFunctionCallParts(
+  response: unknown,
+): GeminiFunctionCall[] {
+  const candidates = (response as { candidates?: unknown[] }).candidates ?? [];
+  return candidates.flatMap((candidate) => {
+    const content = (candidate as Record<string, unknown> | undefined)?.content;
+    const parts = (content as Record<string, unknown> | undefined)?.parts;
+    if (!Array.isArray(parts)) {
+      return [];
+    }
+
+    return parts.flatMap((part) => {
+      const record = part as Record<string, unknown> | undefined;
+      const functionCall = record?.functionCall as
+        | Record<string, unknown>
+        | undefined;
+      if (!functionCall) {
+        return [];
+      }
+
+      return [
+        {
+          id: typeof functionCall.id === 'string' ? functionCall.id : undefined,
+          name: String(functionCall.name),
+          args: functionCall.args ?? {},
+          raw: part,
+        },
+      ];
+    });
+  });
 }
 
 export async function createGeminiFunctionResponsePart(
@@ -562,14 +611,16 @@ export async function createGeminiFunctionResponsePart(
   session: Session<any, any>,
 ) {
   const tool = tools.find((candidate) => candidate.name === call.name);
-  const result = tool
+  const result: CallToolResult = tool
     ? await executePromptTrailTool(tool, call.args, {
         session,
         provider: 'google',
         raw: call.raw,
       })
     : {
-        content: [{ type: 'text', text: `Unknown tool: ${call.name}` }],
+        content: [
+          { type: 'text' as const, text: `Unknown tool: ${call.name}` },
+        ],
         isError: true,
       };
 
@@ -577,7 +628,10 @@ export async function createGeminiFunctionResponsePart(
     functionResponse: {
       id: call.id ?? call.name,
       name: call.name,
-      response: result,
+      response: result.structuredContent ?? {
+        content: result.content,
+        isError: result.isError,
+      },
     },
   };
 }

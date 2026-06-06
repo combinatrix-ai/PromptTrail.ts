@@ -201,7 +201,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'google',
-            modelName: 'gemini-2.5-flash',
+            modelName: 'gemini-3.1-flash-lite',
             apiKey: 'google-key',
             adapter: 'native',
           }),
