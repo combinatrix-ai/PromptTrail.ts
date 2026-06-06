@@ -42,6 +42,16 @@ export interface AiSdkAdapterOptions {
   sdkOptions?: Record<string, unknown>;
 }
 
+export type AnthropicToolChoice =
+  | { type: 'auto'; disable_parallel_tool_use?: boolean }
+  | { type: 'any'; disable_parallel_tool_use?: boolean }
+  | { type: 'none' }
+  | { type: 'tool'; name: string; disable_parallel_tool_use?: boolean };
+
+export interface AnthropicAdapterOptions {
+  toolChoice?: AnthropicToolChoice;
+}
+
 export interface LLMOptions {
   provider: ProviderConfig;
   temperature?: number;
@@ -53,6 +63,7 @@ export interface LLMOptions {
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
   aiSdk?: AiSdkAdapterOptions;
+  anthropic?: AnthropicAdapterOptions;
   maxCallLimit?: number;
   retain?: 'none' | 'summary' | 'full';
   conversationBinding?: 'off' | 'auto';

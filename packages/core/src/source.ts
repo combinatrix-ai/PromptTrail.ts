@@ -7,6 +7,7 @@ import { ValidationError } from './errors';
 import { generateText, generateWithSchema } from './generate';
 import type {
   AnthropicProviderConfig,
+  AnthropicToolChoice,
   GoogleProviderConfig,
   LLMOptions,
   ModelOutput,
@@ -633,6 +634,10 @@ export class LlmSource extends ModelSource {
         ...(this.options.capabilities ?? []),
         ...(newOptions.capabilities ?? []),
       ],
+      anthropic: {
+        ...this.options.anthropic,
+        ...newOptions.anthropic,
+      },
       // Preserve maxCallLimit unless explicitly overridden
       maxCallLimit: newOptions.maxCallLimit ?? this.maxCallLimit,
     };
@@ -790,6 +795,15 @@ export class LlmSource extends ModelSource {
 
   toolChoice(choice: 'auto' | 'required' | 'none'): LlmSource {
     return this.clone({ toolChoice: choice });
+  }
+
+  anthropicToolChoice(choice: AnthropicToolChoice): LlmSource {
+    return this.clone({
+      anthropic: {
+        ...this.options.anthropic,
+        toolChoice: choice,
+      },
+    });
   }
 
   conversationBinding(mode: 'off' | 'auto' = 'auto'): LlmSource {

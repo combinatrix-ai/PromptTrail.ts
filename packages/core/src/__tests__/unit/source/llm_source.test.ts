@@ -374,6 +374,30 @@ describe('LlmSource', () => {
       );
     });
 
+    it('should set Anthropic-specific tool choice', async () => {
+      const source = Source.llm()
+        .anthropic()
+        .anthropicToolChoice({
+          type: 'tool',
+          name: 'lookup',
+          disable_parallel_tool_use: true,
+        });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          anthropic: {
+            toolChoice: {
+              type: 'tool',
+              name: 'lookup',
+              disable_parallel_tool_use: true,
+            },
+          },
+        }),
+      );
+    });
+
     it('should add multiple tools', async () => {
       const weatherTool = { name: 'weather' };
       const calculatorTool = { name: 'calculator' };

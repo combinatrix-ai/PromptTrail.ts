@@ -15,6 +15,7 @@ import {
   getAnthropicSkillsContainer,
   getAnthropicSystemPrompt,
   limitAnthropicCacheControlBreakpoints,
+  mapAnthropicToolChoice,
   normalizeAnthropicMessagesStream,
   promptTrailBuiltinToAnthropicTool,
   promptTrailSkillToAnthropicContainerSkill,
@@ -814,6 +815,52 @@ describe('Anthropic Messages native adapter helpers', () => {
         { name: 'StructuredResult' },
       ],
       tool_choice: { type: 'tool', name: 'StructuredResult' },
+    });
+  });
+
+  it('uses Anthropic-specific tool choice when provided', () => {
+    const requestContent = {
+      messages: [{ role: 'user' as const, content: 'Lookup.' }],
+      system: undefined,
+    };
+    const options = {
+      provider: {
+        type: 'anthropic' as const,
+        apiKey: 'test-key',
+        modelName: 'claude-haiku-4-5',
+      },
+      toolChoice: 'required' as const,
+      anthropic: {
+        toolChoice: {
+          type: 'tool' as const,
+          name: 'lookup',
+          disable_parallel_tool_use: true,
+        },
+      },
+    };
+
+    expect(mapAnthropicToolChoice(options)).toEqual({
+      type: 'tool',
+      name: 'lookup',
+      disable_parallel_tool_use: true,
+    });
+    expect(
+      buildAnthropicSchemaRequestBodyFromContent(
+        requestContent,
+        options,
+        {
+          mode: 'tool',
+          schema: z.object({ status: z.literal('ok') }),
+          functionName: 'StructuredResult',
+        },
+        'auto',
+      ),
+    ).toMatchObject({
+      tool_choice: {
+        type: 'tool',
+        name: 'lookup',
+        disable_parallel_tool_use: true,
+      },
     });
   });
 

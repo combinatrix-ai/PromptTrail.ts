@@ -248,7 +248,7 @@ export async function* streamAnthropicMessagesEvents<
       ) as any,
       container: getAnthropicSkillsContainer(resolvedOptions),
       tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
-      tool_choice: mapAnthropicToolChoice(resolvedOptions.toolChoice) as any,
+      tool_choice: mapAnthropicToolChoice(resolvedOptions) as any,
       stream: true,
     } as any,
     getAnthropicRequestOptions(resolvedOptions) as any,
@@ -459,7 +459,7 @@ export function buildAnthropicSchemaRequestBodyFromContent(
     tool_choice:
       toolChoice === 'force'
         ? { type: 'tool', name: toolName }
-        : (mapAnthropicToolChoice(options.toolChoice) ?? { type: 'auto' }),
+        : (mapAnthropicToolChoice(options) ?? { type: 'auto' }),
   };
 }
 
@@ -497,7 +497,7 @@ async function createAnthropicMessage(
       context_management: mapAnthropicCompaction(options.compaction) as any,
       container: getAnthropicSkillsContainer(options),
       tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
-      tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
+      tool_choice: mapAnthropicToolChoice(options) as any,
     } as any,
     getAnthropicRequestOptions(options) as any,
   );
@@ -1024,7 +1024,13 @@ function summarizeAnthropicContent(block: unknown): Record<string, unknown> {
   };
 }
 
-function mapAnthropicToolChoice(choice: LLMOptions['toolChoice']) {
+export function mapAnthropicToolChoice(
+  options: Pick<LLMOptions, 'toolChoice' | 'anthropic'>,
+) {
+  if (options.anthropic?.toolChoice) {
+    return options.anthropic.toolChoice;
+  }
+  const choice = options.toolChoice;
   if (choice === 'required') {
     return { type: 'any' };
   }
