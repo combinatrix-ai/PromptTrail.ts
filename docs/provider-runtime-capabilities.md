@@ -400,6 +400,195 @@ This applies uniformly: `attrs.openai.outputItems`, `attrs.anthropic.content`,
 `attrs.google`, and `attrs.codex`/`attrs.claudeAgent` events all follow the same
 `retain` levels and the same summary shape.
 
+### Replay-required pins
+
+`retain` has a hard floor. Some provider artifacts must be replayed back to the
+provider **unchanged** on a later request, so they cannot be summarized or
+dropped even at `retain: 'summary'` or `'none'`:
+
+- Signed thinking blocks (Anthropic `signature`, Gemini `thoughtSignature`).
+- Encrypted reasoning items (OpenAI `encrypted_content` in stateless mode).
+- Opaque compaction artifacts (OpenAI encrypted compaction item, Anthropic
+  `compaction` block).
+
+Rule: any artifact marked **replay-required** is pinned and overrides `retain`
+until the turn it belongs to is *closed* — meaning there is no pending tool call
+to continue, and either the conversation ends or a `ConversationBinding` makes
+the provider hold that state server-side. Only then may `retain` drop it. These
+pinned artifacts are always treated as binding-scoped, opaque, and
+non-portable: PromptTrail's local messages remain canonical, and on a stateless
+fallback PromptTrail replays from its own history rather than the opaque
+artifact (see Reasoning and Thinking, Compaction).
+
+## Generation Capabilities
+
+These behaviors cut across the native model API adapters. Each exposes a single
+provider-neutral PromptTrail option that maps to per-provider mechanisms, and
+each interacts with `retain`, `ConversationBinding`, and the replay-required
+pin. The `ai-sdk` adapter provides best-effort coverage; deep behavior is a
+native-adapter guarantee.
+
+### Structured Output
+
+`Source.schema(zodSchema)` is the entry point. Per provider:
+
+- OpenAI Responses: `text.format = { type: 'json_schema', name, schema, strict }`.
+  Strict mode requires every property in `required` and
+  `additionalProperties: false` on every object; emulate optional fields with
+  nullable unions. Refusals surface in a `refusal` field.
+- Anthropic Messages: native `output_config.format = { type: 'json_schema',
+  schema }`, or the older forced-tool path (`tool_choice: { type: 'tool', name }`
+  + `input_schema`). No recursion, no numeric/length constraints,
+  `additionalProperties` must be `false`.
+- Google Gemini: `responseMimeType: 'application/json'` +
+  `responseJsonSchema` (or the narrower `responseSchema`); `propertyOrdering`
+  controls field order.
+- ai-sdk: `generateObject` / `streamObject`.
+
+Decided mapping: keep ai-sdk `generateObject` as the cross-provider default
+(convert Zod → JSON Schema once). Add an opt-in `mode: 'native' | 'tool'` that
+targets each provider's native field. A shared **Zod → JSON Schema
+normalization** layer is required because no single output satisfies all
+dialects: inject `additionalProperties: false`, rewrite optionals to nullable
+unions for OpenAI strict, and strip (or error on) the recursion/numeric
+constraints Anthropic rejects.
+
+Key interaction: structured output coexists with a tool-calling loop **only on
+Anthropic**. On OpenAI and Gemini the schema makes the turn terminal, so
+`Source.schema()` must not be combined with an open tool loop there.
+
+### Streaming
+
+Normalize every provider stream into one discriminated event type, parsed at the
+adapter boundary (extends the `RuntimeEvent` idea):
+
+```ts
+type PromptTrailStreamEvent =
+  | { type: 'text.delta'; index: number; delta: string }
+  | { type: 'reasoning.delta'; index: number; delta: string }
+  | { type: 'tool.start'; index: number; callId: string; name: string }
+  | { type: 'tool.args.delta'; index: number; callId: string; delta: string }
+  | { type: 'tool.args.done'; index: number; callId: string; args: unknown }
+  | { type: 'message.done'; finishReason: string; usage?: unknown }
+  | { type: 'error'; error: unknown };
+```
+
+Mapping: OpenAI `response.output_text.delta` / `function_call_arguments.delta` /
+`reasoning_summary_text.delta` / `response.completed|failed|incomplete`;
+Anthropic `text_delta` / `input_json_delta` / `thinking_delta` /
+`message_stop`; Gemini incremental text parts, `thought` parts, and **atomic
+`functionCall`** (no argument deltas — emit `tool.start` + a single
+`tool.args.done`).
+
+Interactions: the tool loop accumulates `tool.args.delta` per `callId` and parses
+at `tool.args.done` (never mid-stream — Anthropic `input_json_delta` is invalid
+JSON until block stop). The persisted message is produced by a **reducer over
+the event stream**, so `retain` controls what is stored independently of what is
+streamed live. Structured-output streaming only validates against the Zod schema
+at completion.
+
+### Reasoning and Thinking
+
+Common option `thinking: { effort?: 'low'|'medium'|'high'; budgetTokens?: number;
+summary?: boolean }`:
+
+- OpenAI: `reasoning.effort` + `reasoning.summary`; output is an encrypted
+  `reasoning` item. Replay via `previous_response_id`, or in stateless mode add
+  `reasoning.encrypted_content` to `include` and resend each item between the
+  function call and its output.
+- Anthropic: `thinking: { type: 'enabled', budget_tokens }`; `thinking` blocks
+  carry a `signature` and **must be replayed unchanged, in order, before the
+  `tool_use` block**; non-decryptable ones are `redacted_thinking`. Only
+  `tool_choice: auto | none` allowed.
+- Gemini: `thinkingConfig: { thinkingBudget, includeThoughts }`; parts carry
+  `thought: true` and `thoughtSignature`; return all parts/signatures intact.
+
+Store artifacts in `attrs.<provider>`. The critical rule is the
+**replay-required pin** above: while a turn is open (pending tool loop) or in
+stateless mode, signed/encrypted reasoning cannot be dropped by `retain`.
+PromptTrail may drop local reasoning only once the turn is closed, or when a
+`ConversationBinding` (OpenAI `previous_response_id`) lets the server hold it.
+Per provider: Anthropic and Gemini pin until the turn closes; OpenAI pins unless
+a binding is active.
+
+### Prompt Caching
+
+A per-message / per-capability `cache` hint (the Anthropic breakpoint model is
+the most expressive, so it is the common shape): `cache: true | '5m' | '1h' |
+'persist'`.
+
+- Anthropic: emit `cache_control: { type: 'ephemeral', ttl }` on the marked
+  block; cap at 4 breakpoints (longer TTL first); min ~1024 tokens.
+- OpenAI: caching is automatic/prefix-based, so placement is ignored; the hint
+  only derives a stable `prompt_cache_key`.
+- Gemini: when a contiguous cacheable prefix exceeds the threshold, lazily call
+  `caches.create` once, store the returned `cachedContent` name in session vars,
+  and pass `cachedContent` on later turns (it cannot be combined with
+  per-request `systemInstruction` / `tools`).
+
+Sub-threshold hints are silent no-ops (do not error). Immutability is an asset
+here: PromptTrail's append-only sessions form a stable growing prefix, which is
+exactly what prefix caching rewards — keep system/tools/few-shot at the head and
+variable data at the tail. Expose a session-level `cacheKey` to feed OpenAI's
+`prompt_cache_key` and to namespace Gemini `CachedContent` reuse. Caching is
+orthogonal to `ConversationBinding` (state vs token cache), though Gemini's
+`cachedContent` name is itself a binding-like handle stored alongside it.
+
+### Multimodal Input
+
+Introduce a provider-neutral message content-part model:
+
+```ts
+type ContentPart =
+  | { kind: 'text'; text: string }
+  | {
+      kind: 'image' | 'file' | 'audio';
+      mimeType: string;
+      source:
+        | { type: 'bytes'; data: Uint8Array | string /* base64 */ }
+        | { type: 'uri'; uri: string }
+        | { type: 'providerFile'; provider: string; fileId: string };
+      detail?: 'low' | 'high' | 'auto';
+      filename?: string;
+    };
+```
+
+Adapters serialize: OpenAI `input_image` / `input_file` (uri → `image_url`,
+providerFile → `file_id`); Anthropic `image` / `document` source variants;
+Gemini `inlineData` (bytes) / `fileData` (uri/providerFile). Delegate to ai-sdk's
+`image` / `file` parts where possible.
+
+Interaction with `retain`: never persist `bytes` inline in immutable sessions —
+default to storing a `uri` or `providerFile` reference and cache the uploaded
+id in `attrs.<provider>` so re-sends reference instead of re-encoding. Files API
+lifecycle is asymmetric and must be an explicit policy: **Gemini files expire
+after 48h** (breaking long-lived sessions), Anthropic/OpenAI persist until
+deleted. Treat provider file refs as ephemeral, track expiry, re-upload on miss,
+and decide cleanup ownership (framework vs caller) explicitly. A `providerFile`
+id is non-portable, so a session reused on another provider re-uploads.
+
+### Compaction
+
+Provider/runtime mechanisms: OpenAI `context_management.compact_threshold`
+(automatic in-stream, emits an encrypted compaction item); Anthropic beta
+`context_management.edits: [{ type: 'compact_20260112', trigger,
+pause_after_compaction }]` (emits a `compaction` block, auto-drops earlier
+blocks); Gemini has no API-level compaction (only caching); agent runtimes
+(Codex, Claude Agent SDK) compact internally per turn.
+
+Decided stance: **PromptTrail's local history stays canonical; provider-side
+compaction is opt-in and never mutates the session.** Default off — PromptTrail's
+own compaction plus immutable history win, consistent with the
+`ConversationBinding` "history wins" rule. A provider compaction artifact is
+stored as a binding-scoped opaque sidecar (like `previous_response_id`), not as
+canonical messages. Expose `compaction: { mode: 'provider' | 'local' | 'off';
+threshold? }` so truncation has exactly one owner — never both silently.
+
+Interactions: on a stateless fallback the opaque artifact is unusable, so
+PromptTrail replays from its full canonical history (re-compacting locally if
+needed). `retain`-flagged messages must be re-injected **after** any provider
+summary so a server-side drop cannot evict them.
+
 ## Model API Adapters
 
 ### OpenAI Responses API
@@ -912,6 +1101,27 @@ Avoid:
 - Preserve SDK stream events and final answer.
 - Map permissions, tools, skills, MCP, and cwd into SDK options.
 
+### Phase 7: Cross-Cutting Generation Capabilities
+
+Basic streaming and structured output land with each native adapter (Phases
+2–3b). This phase adds the deeper, shared behavior from Generation Capabilities:
+
+- Shared Zod → JSON Schema normalization for structured output (strict /
+  nullable-optional / drop-unsupported), plus the "no tool loop except Anthropic"
+  guard.
+- Normalized `PromptTrailStreamEvent` reducer feeding the tool loop and the
+  `retain`-aware persisted-message builder.
+- Common `thinking` option, `attrs.<provider>` reasoning storage, and the
+  **replay-required pin** that overrides `retain` until a turn closes or a
+  binding holds the state.
+- `cache` hint mapping (Anthropic breakpoints / OpenAI `prompt_cache_key` /
+  Gemini `CachedContent`), with session-level `cacheKey` and sub-threshold
+  no-ops.
+- Multimodal `ContentPart` model, reference-not-bytes persistence, and Files API
+  lifecycle/cleanup policy.
+- Opt-in provider `compaction` as a binding-scoped sidecar, with stateless
+  fallback replaying from canonical history.
+
 ## Open Questions
 
 None outstanding. The earlier open questions have been resolved and folded into
@@ -925,6 +1135,10 @@ the sections above:
 - Conversation state ownership (`ConversationBinding`) — Conversation State.
 - Raw-metadata volume and runtime diff/log exposure (`retain`) — Metadata
   Retention.
+- Structured output, streaming, reasoning/thinking, prompt caching, multimodal
+  input, and compaction across adapters — Generation Capabilities.
+- When `retain` may drop reasoning/compaction artifacts (`replay-required` pin)
+  — Metadata Retention, Reasoning and Thinking, Compaction.
 - Default adapter selection (native on default parity, deep parity as follow-up,
   ai-sdk escape hatch) — ai-sdk Adapter.
 - Scope of native adapters (OpenAI/Anthropic/Google + ai-sdk) and deferral of
