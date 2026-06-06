@@ -367,7 +367,7 @@ runtime diffs and command logs) in each message bloats memory and `toJSON()`
 output. The model decouples **live observability** from **persisted state**.
 
 Decided design — one common knob across every model-API adapter and runtime
-turn, generalizing the existing `codexTurn()` `includeItems` option:
+turn, including `codexTurn()` and `claudeTurn()`:
 
 ```ts
 retain?: 'none' | 'summary' | 'full'; // default 'summary'
@@ -838,8 +838,8 @@ Required additions:
   command events, diffs, approvals, errors, and turn completion. Each event
   carries an id so a `summary`-level stat can be correlated back to the full
   artifact captured via `onEvent`.
-- Align `includeItems` with the common `retain: 'none' | 'summary' | 'full'`
-  knob (default `summary`).
+- Use the common `retain: 'none' | 'summary' | 'full'` knob (default
+  `summary`) for persisted Codex items/events.
 - Thread reuse and explicit thread persistence.
 - Skill resolution through `skills/list`.
 - Skill input item insertion for requested `RuntimeSkill` values.
