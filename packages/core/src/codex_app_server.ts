@@ -818,7 +818,6 @@ export interface CodexTurnOptions<
   sandboxPolicy?: unknown;
   approvalPolicy?: unknown;
   capabilities?: CapabilitySet;
-  includeItems?: 'none' | 'summary' | 'full';
   retain?: RetainLevel;
   onEvent?: (event: RuntimeEvent) => void | Promise<void>;
   onRequest?: CodexInboundRequestHandler;

@@ -202,8 +202,7 @@ export class CodexTurn<
   private prepareSessionResult(
     result: Awaited<ReturnType<typeof collectCodexTurnResult>>,
   ) {
-    const retain =
-      this.options.retain ?? this.options.includeItems ?? 'summary';
+    const retain = this.options.retain ?? 'summary';
     if (retain === 'full') {
       return result;
     }
