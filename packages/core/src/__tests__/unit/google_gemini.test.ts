@@ -18,13 +18,16 @@ import {
   getGeminiSystemInstruction,
   getGeminiTurnExtraConfig,
   getGeminiToolLoopContinuationOptions,
+  getGoogleRetryDelayMs,
   getGoogleGenAIClientOptions,
+  isGoogleRetryableError,
   normalizeGeminiContentStream,
   promptTrailBuiltinToGeminiTool,
   promptTrailToolToGeminiTool,
   retainGeminiResponseMetadata,
   resolveGeminiCachedContent,
   shouldCreateGeminiCachedContent,
+  withGoogleProviderRetry,
 } from '../../google_gemini';
 import { deriveConversationBinding } from '../../conversation';
 import { Session } from '../../session';
@@ -107,6 +110,69 @@ describe('Google Gemini native adapter helpers', () => {
       apiKey: 'test-key',
       httpOptions: { baseUrl: 'https://google.test' },
     });
+  });
+
+  it('retries Google provider calls using RetryInfo delays', async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+    const quotaError = new Error(
+      JSON.stringify({
+        error: {
+          code: 429,
+          status: 'RESOURCE_EXHAUSTED',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+              retryDelay: '1.25s',
+            },
+          ],
+        },
+      }),
+    );
+    Object.assign(quotaError, { status: 429 });
+
+    await expect(
+      withGoogleProviderRetry(
+        async () => {
+          attempts++;
+          if (attempts === 1) {
+            throw quotaError;
+          }
+          return 'ok';
+        },
+        { maxRetries: 2 },
+        async (delayMs) => {
+          delays.push(delayMs);
+        },
+      ),
+    ).resolves.toBe('ok');
+
+    expect(attempts).toBe(2);
+    expect(delays).toEqual([1250]);
+    expect(getGoogleRetryDelayMs(quotaError)).toBe(1250);
+    expect(isGoogleRetryableError(quotaError, undefined)).toBe(true);
+  });
+
+  it('does not retry non-retryable Google provider errors', async () => {
+    const badRequest = new Error(JSON.stringify({ error: { code: 400 } }));
+    Object.assign(badRequest, { status: 400 });
+    let attempts = 0;
+
+    await expect(
+      withGoogleProviderRetry(
+        async () => {
+          attempts++;
+          throw badRequest;
+        },
+        { maxRetries: 2 },
+        async () => {
+          throw new Error('should not sleep');
+        },
+      ),
+    ).rejects.toBe(badRequest);
+
+    expect(attempts).toBe(1);
+    expect(isGoogleRetryableError(badRequest, undefined)).toBe(false);
   });
 
   it('injects RuntimeSkill instructions into Gemini system text and applies loss policy', () => {
@@ -748,12 +814,12 @@ describe('Google Gemini native adapter helpers', () => {
     expect(
       buildGeminiGenerationConfig(
         session,
-        getGeminiToolLoopContinuationOptions(options),
+        getGeminiToolLoopContinuationOptions(options, schemaConfig),
         [tool],
         toolDefinitions,
         undefined,
         getGeminiTurnExtraConfig(
-          getGeminiToolLoopContinuationOptions(options),
+          getGeminiToolLoopContinuationOptions(options, schemaConfig),
           [tool],
           schemaConfig,
         ),
@@ -768,7 +834,7 @@ describe('Google Gemini native adapter helpers', () => {
       tools: toolDefinitions,
       toolConfig: {
         functionCallingConfig: {
-          mode: 'AUTO',
+          mode: 'NONE',
           allowedFunctionNames: undefined,
         },
       },

@@ -701,6 +701,7 @@ export class LlmSource extends ModelSource {
         modelName: config?.modelName || 'gemini-3.1-flash-lite',
         adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
+        retry: config?.retry,
       },
     });
   }

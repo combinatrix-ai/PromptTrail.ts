@@ -192,7 +192,13 @@ describe('LlmSource', () => {
 
     it('should configure Google provider', async () => {
       process.env.GOOGLE_API_KEY = 'google-key';
-      const source = Source.llm().google();
+      const source = Source.llm().google({
+        retry: {
+          maxRetries: 2,
+          initialDelayMs: 100,
+          maxDelayMs: 1000,
+        },
+      });
 
       await source.getContent(Session.create());
 
@@ -204,6 +210,11 @@ describe('LlmSource', () => {
             modelName: 'gemini-3.1-flash-lite',
             apiKey: 'google-key',
             adapter: 'native',
+            retry: {
+              maxRetries: 2,
+              initialDelayMs: 100,
+              maxDelayMs: 1000,
+            },
           }),
         }),
       );

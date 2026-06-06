@@ -30,6 +30,7 @@ export interface GoogleProviderConfig {
   modelName: string;
   adapter?: 'native' | 'ai-sdk';
   baseURL?: string;
+  retry?: ProviderRetryOptions;
 }
 
 export type ProviderConfig =
@@ -117,4 +118,11 @@ export interface CompactionOptions {
   mode: 'provider' | 'local' | 'off';
   threshold?: number;
   pauseAfterCompaction?: boolean;
+}
+
+export interface ProviderRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  retryableStatuses?: number[];
 }

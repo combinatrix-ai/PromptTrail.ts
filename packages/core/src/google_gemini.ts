@@ -19,6 +19,7 @@ import type {
   CompactionOptions,
   GoogleProviderConfig,
   LLMOptions,
+  ProviderRetryOptions,
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Message } from './message';
@@ -102,17 +103,21 @@ export async function* streamGoogleGeminiEvents<
   const contents = convertMessagesToGeminiContents(
     getMessagesAfterBinding(session, binding),
   );
-  const stream = await ai.models.generateContentStream({
-    model: options.provider.modelName,
-    contents: contents as any,
-    config: buildGeminiGenerationConfig(
-      session,
-      options,
-      tools,
-      toolDefinitions,
-      binding,
-    ) as any,
-  });
+  const stream = await withGoogleProviderRetry(
+    () =>
+      ai.models.generateContentStream({
+        model: options.provider.modelName,
+        contents: contents as any,
+        config: buildGeminiGenerationConfig(
+          session,
+          options,
+          tools,
+          toolDefinitions,
+          binding,
+        ) as any,
+      }),
+    options.provider.retry,
+  );
 
   yield* normalizeGeminiContentStream(stream as AsyncIterable<unknown>);
 }
@@ -227,16 +232,20 @@ async function generateGoogleGeminiMessage<
       },
       { role: 'user', parts: responseParts },
     ];
+    const continuationOptions = getGeminiToolLoopContinuationOptions(
+      options,
+      extraConfig,
+    );
     response = await createGeminiContent(
       ai,
       contents,
       session,
-      getGeminiToolLoopContinuationOptions(options),
+      continuationOptions,
       tools,
       toolDefinitions,
       binding,
       getGeminiTurnExtraConfig(
-        getGeminiToolLoopContinuationOptions(options),
+        continuationOptions,
         tools,
         extraConfig,
       ),
@@ -257,7 +266,11 @@ async function generateGoogleGeminiMessage<
 
 export function getGeminiToolLoopContinuationOptions(
   options: LLMOptions & { provider: GoogleProviderConfig },
+  extraConfig: Record<string, unknown> = {},
 ): LLMOptions & { provider: GoogleProviderConfig } {
+  if (isGeminiStructuredOutputConfig(extraConfig)) {
+    return { ...options, toolChoice: 'none' };
+  }
   return options.toolChoice === 'required'
     ? { ...options, toolChoice: 'auto' }
     : options;
@@ -332,11 +345,21 @@ export async function resolveGeminiCachedContent(
     tools,
     toolDefinitions,
   );
-  if (!(await shouldCreateGeminiCachedContent(client, createParams))) {
+  if (
+    !(await shouldCreateGeminiCachedContent(
+      client,
+      createParams,
+      options.provider.retry,
+    ))
+  ) {
     return {};
   }
 
-  const cachedContent = await createGeminiCachedContent(client, createParams);
+  const cachedContent = await createGeminiCachedContent(
+    client,
+    createParams,
+    options.provider.retry,
+  );
   const binding = {
     provider: 'google' as const,
     id: cachedContent,
@@ -361,18 +384,22 @@ async function createGeminiContent(
   binding?: ConversationBinding,
   extraConfig: Record<string, unknown> = {},
 ) {
-  return ai.models.generateContent({
-    model: options.provider.modelName,
-    contents: contents as any,
-    config: buildGeminiGenerationConfig(
-      session,
-      options,
-      tools,
-      toolDefinitions,
-      binding,
-      extraConfig,
-    ) as any,
-  });
+  return withGoogleProviderRetry(
+    () =>
+      ai.models.generateContent({
+        model: options.provider.modelName,
+        contents: contents as any,
+        config: buildGeminiGenerationConfig(
+          session,
+          options,
+          tools,
+          toolDefinitions,
+          binding,
+          extraConfig,
+        ) as any,
+      }),
+    options.provider.retry,
+  );
 }
 
 export function buildGeminiGenerationConfig(
@@ -457,8 +484,12 @@ export function buildGeminiCachedContentCreateParams(
 export async function createGeminiCachedContent(
   client: GeminiCacheClient,
   params: Record<string, unknown>,
+  retry?: ProviderRetryOptions,
 ): Promise<string> {
-  const cached = await client.caches.create(params);
+  const cached = await withGoogleProviderRetry(
+    () => client.caches.create(params),
+    retry,
+  );
   if (!cached.name) {
     throw new Error(
       'Gemini CachedContent create response did not include name.',
@@ -470,8 +501,13 @@ export async function createGeminiCachedContent(
 export async function shouldCreateGeminiCachedContent(
   client: GeminiCacheClient,
   params: Record<string, unknown>,
+  retry?: ProviderRetryOptions,
 ): Promise<boolean> {
-  const tokenCount = await countGeminiCachedContentTokens(client, params);
+  const tokenCount = await countGeminiCachedContentTokens(
+    client,
+    params,
+    retry,
+  );
   if (tokenCount === undefined) {
     return false;
   }
@@ -481,6 +517,7 @@ export async function shouldCreateGeminiCachedContent(
 export async function countGeminiCachedContentTokens(
   client: GeminiCacheClient,
   params: Record<string, unknown>,
+  retry?: ProviderRetryOptions,
 ): Promise<number | undefined> {
   if (!client.models?.countTokens || typeof params.model !== 'string') {
     return undefined;
@@ -494,14 +531,155 @@ export async function countGeminiCachedContentTokens(
   if (config.tools) {
     countConfig.tools = config.tools;
   }
-  const result = await client.models.countTokens({
-    model: params.model,
-    contents,
-    config: Object.keys(countConfig).length > 0 ? countConfig : undefined,
-  });
+  const result = await withGoogleProviderRetry(
+    () =>
+      client.models!.countTokens({
+        model: params.model,
+        contents,
+        config: Object.keys(countConfig).length > 0 ? countConfig : undefined,
+      }),
+    retry,
+  );
   return typeof result.totalTokens === 'number'
     ? result.totalTokens
     : undefined;
+}
+
+export async function withGoogleProviderRetry<T>(
+  operation: () => Promise<T>,
+  retry: ProviderRetryOptions | undefined,
+  sleep: (delayMs: number) => Promise<void> = sleepMs,
+): Promise<T> {
+  const maxRetries = retry?.maxRetries ?? 0;
+  let attempt = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= maxRetries || !isGoogleRetryableError(error, retry)) {
+        throw error;
+      }
+      const delayMs = getCappedRetryDelayMs(error, attempt, retry);
+      await sleep(delayMs);
+      attempt++;
+    }
+  }
+}
+
+function getCappedRetryDelayMs(
+  error: unknown,
+  attempt: number,
+  retry: ProviderRetryOptions | undefined,
+): number {
+  const delayMs =
+    getGoogleRetryDelayMs(error) ?? getBackoffDelayMs(attempt, retry);
+  return Math.min(delayMs, retry?.maxDelayMs ?? 60000);
+}
+
+export function isGoogleRetryableError(
+  error: unknown,
+  retry: ProviderRetryOptions | undefined,
+): boolean {
+  const status = getGoogleErrorStatus(error);
+  if (status === undefined) {
+    return false;
+  }
+  const retryableStatuses = retry?.retryableStatuses ?? [
+    429, 500, 502, 503, 504,
+  ];
+  return retryableStatuses.includes(status);
+}
+
+export function getGoogleRetryDelayMs(error: unknown): number | undefined {
+  const details = getGoogleErrorDetails(error);
+  for (const detail of details) {
+    if (detail['@type'] !== 'type.googleapis.com/google.rpc.RetryInfo') {
+      continue;
+    }
+    const retryDelay = detail.retryDelay;
+    if (typeof retryDelay !== 'string') {
+      continue;
+    }
+    const match = retryDelay.match(/^(\d+(?:\.\d+)?)s$/);
+    if (!match) {
+      continue;
+    }
+    return Math.ceil(Number(match[1]) * 1000);
+  }
+  return undefined;
+}
+
+function getBackoffDelayMs(
+  attempt: number,
+  retry: ProviderRetryOptions | undefined,
+): number {
+  const initialDelayMs = retry?.initialDelayMs ?? 1000;
+  const maxDelayMs = retry?.maxDelayMs ?? 60000;
+  return Math.min(initialDelayMs * 2 ** attempt, maxDelayMs);
+}
+
+function sleepMs(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function getGoogleErrorStatus(error: unknown): number | undefined {
+  const directStatus = getNumberProperty(error, 'status');
+  if (directStatus !== undefined) {
+    return directStatus;
+  }
+  const parsed = parseGoogleErrorPayload(error);
+  const payloadStatus = getNumberProperty(parsed?.error, 'code');
+  if (payloadStatus !== undefined) {
+    return payloadStatus;
+  }
+  const statusText = getStringProperty(parsed?.error, 'status');
+  if (statusText === 'RESOURCE_EXHAUSTED') {
+    return 429;
+  }
+  if (statusText === 'UNAVAILABLE') {
+    return 503;
+  }
+  return undefined;
+}
+
+function getGoogleErrorDetails(error: unknown): Array<Record<string, unknown>> {
+  const parsed = parseGoogleErrorPayload(error);
+  const details = asRecord(parsed?.error)?.details;
+  return Array.isArray(details)
+    ? details.filter(
+        (detail): detail is Record<string, unknown> =>
+          !!detail && typeof detail === 'object',
+      )
+    : [];
+}
+
+function parseGoogleErrorPayload(
+  error: unknown,
+): Record<string, unknown> | undefined {
+  const message = getStringProperty(error, 'message');
+  if (!message) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(message);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getNumberProperty(value: unknown, key: string): number | undefined {
+  const record = asRecord(value);
+  const property = record?.[key];
+  return typeof property === 'number' ? property : undefined;
+}
+
+function getStringProperty(value: unknown, key: string): string | undefined {
+  const record = asRecord(value);
+  const property = record?.[key];
+  return typeof property === 'string' ? property : undefined;
 }
 
 export function getGeminiExplicitCacheMinTokens(modelName: string): number {

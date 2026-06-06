@@ -542,6 +542,12 @@ the most expressive, so it is the common shape): `cache: true | '5m' | '1h' |
   that should be cached must be included when creating the cache; they cannot be
   added beside `cachedContent` on the later generation request.
 
+Provider API retries are explicit provider configuration, not validation retry.
+For Gemini native calls, `provider.retry` retries retryable API statuses such as
+429 and honors Google `RetryInfo.retryDelay` before falling back to exponential
+backoff. Real API tests enable this for quota-sensitive `gemini-3.1-flash-lite`
+runs.
+
 Sub-threshold hints are silent no-ops (do not error). Immutability is an asset
 here: PromptTrail's append-only sessions form a stable growing prefix, which is
 exactly what prefix caching rewards — keep system/tools/few-shot at the head and
