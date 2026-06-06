@@ -36,6 +36,7 @@
     "@ai-sdk/google": "^1.2.16",
     "@ai-sdk/openai": "^1.2.6",
     "@anthropic-ai/sdk": "^0.36.3",
+    "@google/genai": "^2.8.0",
     "@modelcontextprotocol/sdk": "^1.6.0",
     "ai": "^4.1.63",
     "openai": "^4.85.4",

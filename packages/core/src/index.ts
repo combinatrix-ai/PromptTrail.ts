@@ -3,6 +3,7 @@ export * from './anthropic_messages';
 export * from './capabilities';
 export * from './codex_app_server';
 export * from './generate';
+export * from './google_gemini';
 export * from './json_schema';
 export * from './message';
 export * from './openai_responses';

@@ -9,6 +9,7 @@ import {
   Output,
 } from 'ai';
 import { generateAnthropicMessagesText } from './anthropic_messages';
+import { generateGoogleGeminiText } from './google_gemini';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import {
@@ -187,6 +188,16 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     options.provider.adapter === 'native'
   ) {
     return generateAnthropicMessagesText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter === 'native'
+  ) {
+    return generateGoogleGeminiText(session, {
       ...options,
       provider: options.provider,
     });
