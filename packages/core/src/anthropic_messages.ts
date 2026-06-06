@@ -9,6 +9,7 @@ import type {
 import type { Message } from './message';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
+import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 export interface AnthropicToolUse {
@@ -96,7 +97,7 @@ export async function generateAnthropicMessagesWithSchema<
     model: options.provider.modelName,
     max_tokens: options.maxTokens ?? 1024,
     messages: convertSessionToAnthropicMessages(session) as any,
-    system: getAnthropicSystemPrompt(session),
+    system: getAnthropicSystemPrompt(session, options),
     temperature: options.temperature,
     top_p: options.topP,
     tools: [structuredTool as any],
@@ -150,7 +151,7 @@ async function createAnthropicMessage(
     model: options.provider.modelName,
     max_tokens: options.maxTokens ?? 1024,
     messages: messages as any,
-    system: getAnthropicSystemPrompt(session),
+    system: getAnthropicSystemPrompt(session, options),
     temperature: options.temperature,
     top_p: options.topP,
     tools:
@@ -176,12 +177,19 @@ export function convertSessionToAnthropicMessages(
 
 export function getAnthropicSystemPrompt(
   session: Session<any, any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): string | undefined {
   const system = session.messages
     .filter((message) => message.type === 'system')
     .map((message) => message.content)
     .join('\n\n');
-  return system || undefined;
+  const injected = appendSkillInstructions(
+    system || undefined,
+    options?.capabilities,
+    options?.skillInjection ?? 'warn',
+  );
+  warnSkillInstructionLoss(injected.warnings);
+  return injected.instructions || undefined;
 }
 
 export function getAnthropicPromptTrailTools(

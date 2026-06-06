@@ -23,6 +23,7 @@ import {
   generateOpenAIResponsesWithSchema,
 } from './openai_responses';
 import type { Session, Attrs, Vars } from './session';
+import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
 
@@ -31,6 +32,7 @@ export type { SchemaGenerationOptions } from './llm_types';
  */
 export function convertSessionToAiSdkMessages(
   session: Session<any, any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): Array<{
   role: string;
   content: string;
@@ -53,6 +55,16 @@ export function convertSessionToAiSdkMessages(
         toolResultsMap.set(toolCallId, msg.content);
       }
     }
+  }
+
+  const skillInjection = appendSkillInstructions(
+    undefined,
+    options?.capabilities,
+    options?.skillInjection ?? 'warn',
+  );
+  warnSkillInstructionLoss(skillInjection.warnings);
+  if (skillInjection.instructions) {
+    messages.push({ role: 'system', content: skillInjection.instructions });
   }
 
   // Process messages in order, but handle tool results immediately after their assistant message
@@ -210,7 +222,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
   }
 
   // Convert session to AI SDK message format
-  const messages = convertSessionToAiSdkMessages(session);
+  const messages = convertSessionToAiSdkMessages(session, options);
 
   // Create the provider
   const provider = createProvider(options);
@@ -318,7 +330,7 @@ export async function generateWithSchema<
     );
   }
 
-  const messages = convertSessionToAiSdkMessages(session);
+  const messages = convertSessionToAiSdkMessages(session, options);
   const provider = createProvider(options);
 
   if (schemaOptions.mode === 'structured_output') {
@@ -406,7 +418,7 @@ export async function* generateTextStream<
   options: LLMOptions,
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
   // Convert session to AI SDK message format
-  const messages = convertSessionToAiSdkMessages(session);
+  const messages = convertSessionToAiSdkMessages(session, options);
 
   // Create the provider
   const provider = createProvider(options);

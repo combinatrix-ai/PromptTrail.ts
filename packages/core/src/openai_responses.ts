@@ -14,6 +14,7 @@ import {
   type ConversationBinding,
 } from './conversation';
 import { zodToJsonSchema } from './json_schema';
+import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 export interface OpenAIResponsesFunctionTool {
@@ -91,7 +92,7 @@ async function generateOpenAIResponsesMessage<
       ? deriveConversationBinding(session, 'openai')
       : undefined;
   let input: unknown[] = convertSessionToResponsesInput(session, binding);
-  const instructions = getResponsesInstructions(session);
+  const instructions = getResponsesInstructions(session, options);
   let response = await createOpenAIResponse(
     client,
     input,
@@ -179,12 +180,19 @@ export function convertSessionToResponsesInput(
 
 export function getResponsesInstructions(
   session: Session<any, any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): string | undefined {
   const instructions = session.messages
     .filter((message) => message.type === 'system')
     .map((message) => message.content)
     .join('\n\n');
-  return instructions || undefined;
+  const injected = appendSkillInstructions(
+    instructions || undefined,
+    options?.capabilities,
+    options?.skillInjection ?? 'warn',
+  );
+  warnSkillInstructionLoss(injected.warnings);
+  return injected.instructions || undefined;
 }
 
 export function getOpenAIPromptTrailTools(

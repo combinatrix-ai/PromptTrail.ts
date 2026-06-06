@@ -797,6 +797,10 @@ export class LlmSource extends ModelSource {
     return this.clone({ conversationBinding: mode });
   }
 
+  skillInjection(policy: 'warn' | 'error' | 'silent'): LlmSource {
+    return this.clone({ skillInjection: policy });
+  }
+
   // Browser compatibility - returns new instance
   dangerouslyAllowBrowser(allow: boolean = true): LlmSource {
     const newOptions: Partial<LLMOptions> = {

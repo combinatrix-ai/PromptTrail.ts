@@ -48,6 +48,7 @@ export interface LLMOptions {
   maxCallLimit?: number;
   retain?: 'none' | 'summary' | 'full';
   conversationBinding?: 'off' | 'auto';
+  skillInjection?: 'warn' | 'error' | 'silent';
 }
 
 export interface SchemaGenerationOptions {

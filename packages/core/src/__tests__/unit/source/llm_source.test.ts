@@ -271,6 +271,18 @@ describe('LlmSource', () => {
         }),
       );
     });
+
+    it('should set runtime skill injection policy', async () => {
+      const source = Source.llm().skillInjection('error');
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          skillInjection: 'error',
+        }),
+      );
+    });
   });
 
   describe('Fluent API - Tool configuration', () => {

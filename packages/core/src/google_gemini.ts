@@ -9,6 +9,7 @@ import type {
 import type { Message } from './message';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
+import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 export interface GeminiFunctionCall {
@@ -133,7 +134,7 @@ async function createGeminiContent(
     model: options.provider.modelName,
     contents: contents as any,
     config: {
-      systemInstruction: getGeminiSystemInstruction(session),
+      systemInstruction: getGeminiSystemInstruction(session, options),
       temperature: options.temperature,
       topP: options.topP,
       topK: options.topK,
@@ -174,12 +175,19 @@ export function convertSessionToGeminiContents(
 
 export function getGeminiSystemInstruction(
   session: Session<any, any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): string | undefined {
   const system = session.messages
     .filter((message) => message.type === 'system')
     .map((message) => message.content)
     .join('\n\n');
-  return system || undefined;
+  const injected = appendSkillInstructions(
+    system || undefined,
+    options?.capabilities,
+    options?.skillInjection ?? 'warn',
+  );
+  warnSkillInstructionLoss(injected.warnings);
+  return injected.instructions || undefined;
 }
 
 export function getGeminiPromptTrailTools(

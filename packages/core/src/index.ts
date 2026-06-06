@@ -11,6 +11,7 @@ export * from './openai_responses';
 export * from './runtime';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
+export * from './skills';
 export * from './stream';
 export * from './durable';
 export * from './templates';
