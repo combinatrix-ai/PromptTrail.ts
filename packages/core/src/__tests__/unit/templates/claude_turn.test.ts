@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ClaudeAgentClient,
   ClaudeAgentQueryParams,
@@ -90,5 +93,32 @@ describe('ClaudeTurn template', () => {
       finalAnswer: 'Claude result',
       sessionId: 'session-1',
     });
+  });
+
+  it('materializes workspace skills before querying the SDK', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-turn-'));
+    const client = new FakeClaudeAgentClient();
+    try {
+      await Agent.create()
+        .user('Review this')
+        .claudeTurn({
+          client,
+          cwd,
+          capabilities: [
+            {
+              kind: 'skill',
+              name: 'review',
+              instructions: 'Prefer focused diffs.',
+              materialize: 'workspace',
+            },
+          ],
+          approvalHandler: async () => ({ type: 'approve' }),
+        })
+        .execute(Session.create());
+
+      expect(client.queries[0].options.skills).toEqual(['review']);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });

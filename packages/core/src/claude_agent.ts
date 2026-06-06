@@ -1,4 +1,11 @@
-import type { CapabilitySet, PromptTrailTool } from './capabilities';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import type {
+  ApprovalHandler,
+  CapabilitySet,
+  PromptTrailTool,
+  RuntimeSkill,
+} from './capabilities';
 import { zodToJsonSchema } from './json_schema';
 import type { RetainLevel, RuntimeTurnResult } from './runtime';
 import type { Attrs, Session, Vars } from './session';
@@ -31,6 +38,7 @@ export interface ClaudeTurnOptions<
   settingSources?: string[];
   skills?: string[];
   capabilities?: CapabilitySet;
+  approvalHandler?: ApprovalHandler;
   retain?: RetainLevel;
   retainMessages?: boolean;
   attrsKey?: string;
@@ -60,10 +68,37 @@ export interface ClaudeAgentToolDefinition {
   execute: (input: unknown) => Promise<unknown>;
 }
 
+export interface ClaudeSkillMaterialization {
+  skill: RuntimeSkill;
+  name: string;
+  directory: string;
+  skillFile: string;
+}
+
 export function getClaudePromptTrailTools(
   capabilities: CapabilitySet | undefined,
 ): PromptTrailTool[] {
   return (capabilities ?? []).filter(isPromptTrailTool);
+}
+
+export function getClaudeRuntimeSkills(
+  capabilities: CapabilitySet | undefined,
+): RuntimeSkill[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is RuntimeSkill => capability.kind === 'skill',
+  );
+}
+
+export function getClaudeSkillNames(
+  capabilities: CapabilitySet | undefined,
+  explicitSkills: readonly string[] = [],
+): string[] {
+  return [
+    ...new Set([
+      ...explicitSkills,
+      ...getClaudeRuntimeSkills(capabilities).map((skill) => skill.name),
+    ]),
+  ];
 }
 
 export function getClaudeAllowedToolNames(
@@ -130,6 +165,7 @@ export function buildClaudeAgentQueryParams(
   sdk?: ClaudeAgentSdkLike,
 ): ClaudeAgentQueryParams {
   const tools = getClaudePromptTrailTools(options.capabilities);
+  const skillNames = getClaudeSkillNames(options.capabilities, options.skills);
   const mcpServers =
     tools.length > 0
       ? {
@@ -157,11 +193,100 @@ export function buildClaudeAgentQueryParams(
       disallowedTools: options.disallowedTools,
       permissionMode: options.permissionMode,
       settingSources: options.settingSources,
-      skills: options.skills,
+      skills: skillNames.length > 0 ? skillNames : undefined,
       mcpServers,
       ...(options.sdkOptions ?? {}),
     },
   };
+}
+
+export async function materializeClaudeAgentSkills(options: {
+  capabilities: CapabilitySet | undefined;
+  cwd: string | undefined;
+  approvalHandler: ApprovalHandler | undefined;
+  session: Session<any, any>;
+}): Promise<ClaudeSkillMaterialization[]> {
+  const skills = getClaudeRuntimeSkills(options.capabilities).filter(
+    (skill) => skill.materialize === 'workspace',
+  );
+  if (skills.length === 0) {
+    return [];
+  }
+  if (!options.cwd) {
+    throw new Error('Claude Agent skill materialization requires cwd.');
+  }
+  if (!options.approvalHandler) {
+    throw new Error(
+      'Claude Agent skill materialization requires an approvalHandler.',
+    );
+  }
+
+  const workspace = resolve(options.cwd);
+  const materialized: ClaudeSkillMaterialization[] = [];
+  for (const skill of skills) {
+    const name = sanitizeClaudeSkillName(skill.name);
+    const directory = resolve(workspace, '.claude', 'skills', name);
+    if (!directory.startsWith(`${workspace}/`) && directory !== workspace) {
+      throw new Error(
+        `Refusing to materialize skill outside cwd: ${skill.name}`,
+      );
+    }
+    const skillFile = resolve(directory, 'SKILL.md');
+    const decision = await options.approvalHandler(
+      {
+        provider: 'claude-agent',
+        action: 'materializeSkill',
+        capability: skill.name,
+        risk: 'write',
+        input: {
+          directory,
+          skillFile,
+          skill,
+        },
+      },
+      options.session,
+    );
+    if (decision.type === 'deny') {
+      throw new Error(
+        `Claude Agent skill materialization denied${decision.reason ? `: ${decision.reason}` : ''}`,
+      );
+    }
+    if (decision.type === 'ask-user') {
+      throw new Error(decision.question);
+    }
+
+    await mkdir(directory, { recursive: true });
+    await writeFile(skillFile, renderClaudeSkillMarkdown(skill), 'utf8');
+    materialized.push({ skill, name, directory, skillFile });
+  }
+
+  return materialized;
+}
+
+export function renderClaudeSkillMarkdown(skill: RuntimeSkill): string {
+  const lines = [
+    `# ${skill.name}`,
+    '',
+    skill.description,
+    '',
+    '## Instructions',
+    '',
+    skill.instructions || '',
+    '',
+  ];
+  return lines.filter((line) => line !== undefined).join('\n');
+}
+
+export function sanitizeClaudeSkillName(name: string): string {
+  const sanitized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!sanitized) {
+    throw new Error('Claude Agent skill name cannot be empty.');
+  }
+  return sanitized;
 }
 
 export async function collectClaudeAgentTurnResult(

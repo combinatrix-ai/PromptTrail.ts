@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
 import {
   buildClaudeAgentQueryParams,
   collectClaudeAgentTurnResult,
   createClaudePromptTrailMcpServer,
   getClaudeAllowedToolNames,
+  getClaudeSkillNames,
+  materializeClaudeAgentSkills,
   promptTrailToolToClaudeAgentToolDefinition,
+  renderClaudeSkillMarkdown,
+  sanitizeClaudeSkillName,
 } from '../../claude_agent';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
@@ -74,7 +81,11 @@ describe('Claude Agent SDK adapter helpers', () => {
         cwd: '/repo',
         model: 'claude-haiku-4-5',
         allowedTools: ['Read'],
-        capabilities: [lookupTool],
+        skills: ['code-review'],
+        capabilities: [
+          lookupTool,
+          { kind: 'skill', name: 'repo-docs', instructions: 'Use docs.' },
+        ],
       }),
     ).toMatchObject({
       prompt: 'Use the tool',
@@ -82,6 +93,7 @@ describe('Claude Agent SDK adapter helpers', () => {
         cwd: '/repo',
         model: 'claude-haiku-4-5',
         allowedTools: ['Read', 'mcp__prompttrail__lookup'],
+        skills: ['code-review', 'repo-docs'],
         mcpServers: {
           prompttrail: {
             name: 'prompttrail',
@@ -90,6 +102,72 @@ describe('Claude Agent SDK adapter helpers', () => {
         },
       },
     });
+  });
+
+  it('materializes workspace Claude skills behind approval', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-skill-'));
+    try {
+      const approvals: unknown[] = [];
+      const [materialized] = await materializeClaudeAgentSkills({
+        cwd,
+        capabilities: [
+          {
+            kind: 'skill',
+            name: 'Code Review',
+            description: 'Review code',
+            instructions: 'Prefer focused diffs.',
+            materialize: 'workspace',
+          },
+        ],
+        session: Session.create(),
+        approvalHandler: async (request) => {
+          approvals.push(request);
+          return { type: 'approve' };
+        },
+      });
+
+      expect(sanitizeClaudeSkillName('Code Review')).toBe('code-review');
+      expect(getClaudeSkillNames([{ kind: 'skill', name: 'docs' }])).toEqual([
+        'docs',
+      ]);
+      expect(materialized.name).toBe('code-review');
+      expect(approvals[0]).toMatchObject({
+        provider: 'claude-agent',
+        action: 'materializeSkill',
+        capability: 'Code Review',
+        risk: 'write',
+      });
+      await expect(readFile(materialized.skillFile, 'utf8')).resolves.toBe(
+        renderClaudeSkillMarkdown({
+          kind: 'skill',
+          name: 'Code Review',
+          description: 'Review code',
+          instructions: 'Prefer focused diffs.',
+          materialize: 'workspace',
+        }),
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('requires approval before Claude skill materialization', async () => {
+    await expect(
+      materializeClaudeAgentSkills({
+        cwd: '/tmp/prompttrail-denied',
+        capabilities: [
+          {
+            kind: 'skill',
+            name: 'docs',
+            materialize: 'workspace',
+          },
+        ],
+        session: Session.create(),
+        approvalHandler: undefined,
+      }),
+    ).rejects.toThrow(
+      'Claude Agent skill materialization requires an approvalHandler.',
+    );
   });
 
   it('collects streamed SDK events into a runtime result', async () => {

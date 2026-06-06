@@ -3,6 +3,7 @@ import {
   claudeAgentResultToMessage,
   collectClaudeAgentTurnResult,
   createDefaultClaudeAgentClient,
+  materializeClaudeAgentSkills,
   type ClaudeTurnOptions,
 } from '../../claude_agent';
 import type { Session } from '../../session';
@@ -24,6 +25,12 @@ export class ClaudeTurn<
     const client =
       this.options.client ?? (await createDefaultClaudeAgentClient());
     const prompt = await this.resolveInput(currentSession);
+    await materializeClaudeAgentSkills({
+      capabilities: this.options.capabilities,
+      cwd: this.options.cwd,
+      approvalHandler: this.options.approvalHandler,
+      session: currentSession,
+    });
     const params = buildClaudeAgentQueryParams(prompt, currentSession, {
       cwd: this.options.cwd,
       model: this.options.model,
@@ -33,6 +40,7 @@ export class ClaudeTurn<
       settingSources: this.options.settingSources,
       skills: this.options.skills,
       capabilities: this.options.capabilities,
+      approvalHandler: this.options.approvalHandler,
       retain: this.options.retain,
       retainMessages: this.options.retainMessages,
       attrsKey: this.options.attrsKey,
