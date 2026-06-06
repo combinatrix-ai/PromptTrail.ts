@@ -16,6 +16,7 @@ import {
 import { contentPartsToOpenAIInput } from './content_parts';
 import { mapOpenAIResponsesRequestOptions } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
+import { extractOpenAIReplayRequiredArtifacts } from './replay_pins';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -339,6 +340,7 @@ export function retainOpenAIResponseMetadata(
     status: response.status,
     error: response.error ?? undefined,
     incompleteDetails: response.incomplete_details ?? undefined,
+    replayRequired: extractOpenAIReplayRequiredArtifacts(response.output),
   };
 
   if (retain === 'none') {

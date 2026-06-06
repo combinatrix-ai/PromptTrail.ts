@@ -266,8 +266,10 @@ describe('Anthropic Messages native adapter helpers', () => {
       responseId: 'msg-1',
       stopReason: 'end_turn',
       model: 'claude-haiku-4-5',
+      replayRequired: [],
     });
     expect(retainAnthropicMessageMetadata(response, 'summary')).toMatchObject({
+      replayRequired: [],
       usage: { input_tokens: 1 },
       content: [
         {
@@ -281,6 +283,39 @@ describe('Anthropic Messages native adapter helpers', () => {
     expect(retainAnthropicMessageMetadata(response, 'full')).toMatchObject({
       raw: response,
       content: response.content,
+    });
+  });
+
+  it('pins Anthropic replay-required blocks even when retention is none', () => {
+    expect(
+      retainAnthropicMessageMetadata(
+        {
+          id: 'msg-1',
+          content: [
+            {
+              type: 'thinking',
+              id: 'think-1',
+              thinking: 'private',
+              signature: 'sig',
+            },
+          ],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      replayRequired: [
+        {
+          provider: 'anthropic',
+          type: 'thinking.signature',
+          id: 'think-1',
+          artifact: {
+            type: 'thinking',
+            id: 'think-1',
+            thinking: 'private',
+            signature: 'sig',
+          },
+        },
+      ],
     });
   });
 

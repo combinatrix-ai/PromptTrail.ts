@@ -17,6 +17,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Message } from './message';
+import { extractAnthropicReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
@@ -403,6 +404,7 @@ export function retainAnthropicMessageMetadata(
     responseId: response.id,
     stopReason: response.stop_reason,
     model: response.model,
+    replayRequired: extractAnthropicReplayRequiredArtifacts(response.content),
   };
   if (retain === 'none') {
     return base;

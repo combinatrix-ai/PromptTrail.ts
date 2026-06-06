@@ -98,6 +98,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       status: 'completed',
       error: undefined,
       incompleteDetails: undefined,
+      replayRequired: [],
     });
   });
 
@@ -123,6 +124,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       status: 'completed',
       error: undefined,
       incompleteDetails: undefined,
+      replayRequired: [],
       usage: { input_tokens: 1 },
       outputItems: [
         {
@@ -140,6 +142,37 @@ describe('OpenAI Responses native adapter helpers', () => {
       responseId: 'resp-1',
       outputItems: response.output,
       raw: response,
+    });
+  });
+
+  it('pins OpenAI replay-required artifacts even when retention is none', () => {
+    expect(
+      retainOpenAIResponseMetadata(
+        {
+          id: 'resp-1',
+          output: [
+            {
+              type: 'reasoning',
+              id: 'rs_1',
+              encrypted_content: 'encrypted',
+            },
+          ],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      replayRequired: [
+        {
+          provider: 'openai',
+          type: 'reasoning.encrypted_content',
+          id: 'rs_1',
+          artifact: {
+            type: 'reasoning',
+            id: 'rs_1',
+            encrypted_content: 'encrypted',
+          },
+        },
+      ],
     });
   });
 

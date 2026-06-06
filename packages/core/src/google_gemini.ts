@@ -9,6 +9,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Message } from './message';
+import { extractGeminiReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
@@ -315,6 +316,7 @@ export function retainGeminiResponseMetadata(
     provider: 'google',
     api: 'gemini',
     finishReason: getGeminiFinishReason(response),
+    replayRequired: extractGeminiReplayRequiredArtifacts(response),
   };
   if (retain === 'none') {
     return base;

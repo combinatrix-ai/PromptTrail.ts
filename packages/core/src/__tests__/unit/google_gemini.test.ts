@@ -147,11 +147,13 @@ describe('Google Gemini native adapter helpers', () => {
       provider: 'google',
       api: 'gemini',
       finishReason: 'STOP',
+      replayRequired: [],
     });
     expect(retainGeminiResponseMetadata(response, 'summary')).toEqual({
       provider: 'google',
       api: 'gemini',
       finishReason: 'STOP',
+      replayRequired: [],
       usage: { promptTokenCount: 1 },
       candidates: [
         {
@@ -163,6 +165,43 @@ describe('Google Gemini native adapter helpers', () => {
     expect(retainGeminiResponseMetadata(response, 'full')).toMatchObject({
       raw: response,
       candidates: response.candidates,
+    });
+  });
+
+  it('pins Gemini thought signatures even when retention is none', () => {
+    expect(
+      retainGeminiResponseMetadata(
+        {
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [
+                  {
+                    text: 'hidden',
+                    thought: true,
+                    thoughtSignature: 'sig',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      replayRequired: [
+        {
+          provider: 'google',
+          type: 'thoughtSignature',
+          id: '0:0',
+          artifact: {
+            text: 'hidden',
+            thought: true,
+            thoughtSignature: 'sig',
+          },
+        },
+      ],
     });
   });
 
