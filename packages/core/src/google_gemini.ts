@@ -1,5 +1,5 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
-import type { PromptTrailTool } from './capabilities';
+import type { BuiltinTool, PromptTrailTool } from './capabilities';
 import { contentPartsToGeminiParts } from './content_parts';
 import { mapGeminiThinkingConfig } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
@@ -73,6 +73,7 @@ async function generateGoogleGeminiMessage<
 ): Promise<Message<TAttrs>> {
   const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
   const tools = getGeminiPromptTrailTools(options);
+  const toolDefinitions = getGeminiToolDefinitions(options);
   let contents: unknown[] = convertSessionToGeminiContents(session);
   let response = await createGeminiContent(
     ai,
@@ -80,6 +81,7 @@ async function generateGoogleGeminiMessage<
     session,
     options,
     tools,
+    toolDefinitions,
     extraConfig,
   );
 
@@ -108,6 +110,7 @@ async function generateGoogleGeminiMessage<
       session,
       options,
       tools,
+      toolDefinitions,
       extraConfig,
     );
   }
@@ -130,6 +133,7 @@ async function createGeminiContent(
   session: Session<any, any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
+  toolDefinitions: readonly unknown[],
   extraConfig: Record<string, unknown> = {},
 ) {
   return ai.models.generateContent({
@@ -142,10 +146,7 @@ async function createGeminiContent(
       topK: options.topK,
       maxOutputTokens: options.maxTokens,
       thinkingConfig: mapGeminiThinkingConfig(options.thinking),
-      tools:
-        tools.length > 0
-          ? [{ functionDeclarations: tools.map(promptTrailToolToGeminiTool) }]
-          : undefined,
+      tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
       toolConfig:
         tools.length > 0 && options.toolChoice
           ? {
@@ -212,12 +213,54 @@ export function getGeminiPromptTrailTools(
   return [...tools.values()];
 }
 
+export function getGeminiToolDefinitions(
+  options: Pick<LLMOptions, 'capabilities' | 'tools'>,
+): unknown[] {
+  const promptTrailTools = getGeminiPromptTrailTools(options);
+  return [
+    ...(promptTrailTools.length > 0
+      ? [
+          {
+            functionDeclarations: promptTrailTools.map(
+              promptTrailToolToGeminiTool,
+            ),
+          },
+        ]
+      : []),
+    ...(options.capabilities ?? []).flatMap((capability) =>
+      capability.kind === 'builtin'
+        ? promptTrailBuiltinToGeminiTool(capability)
+        : [],
+    ),
+  ];
+}
+
 export function promptTrailToolToGeminiTool(tool: PromptTrailTool) {
   return {
     name: tool.name,
     description: tool.description,
     parametersJsonSchema: zodToJsonSchema(tool.inputSchema),
   };
+}
+
+export function promptTrailBuiltinToGeminiTool(
+  tool: BuiltinTool,
+): Record<string, unknown> {
+  const key = geminiBuiltinToolKey(tool.name);
+  return { [key]: tool.config ?? {} };
+}
+
+function geminiBuiltinToolKey(name: string): string {
+  if (name === 'google_search') {
+    return 'googleSearch';
+  }
+  if (name === 'code_execution') {
+    return 'codeExecution';
+  }
+  if (name === 'url_context') {
+    return 'urlContext';
+  }
+  return name;
 }
 
 export function collectGeminiFunctionCalls(

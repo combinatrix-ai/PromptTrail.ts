@@ -7,7 +7,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { RetainLevel } from './runtime';
-import type { PromptTrailTool } from './capabilities';
+import type { BuiltinTool, McpServer, PromptTrailTool } from './capabilities';
 import {
   deriveConversationBinding,
   getMessagesAfterBinding,
@@ -89,6 +89,7 @@ async function generateOpenAIResponsesMessage<
       options.provider.dangerouslyAllowBrowser,
   });
   const tools = getOpenAIPromptTrailTools(options);
+  const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
   const binding =
     options.conversationBinding === 'auto'
       ? deriveConversationBinding(session, 'openai')
@@ -100,6 +101,7 @@ async function generateOpenAIResponsesMessage<
     input,
     options,
     tools,
+    toolDefinitions,
     instructions,
     textFormat,
     binding,
@@ -122,6 +124,7 @@ async function generateOpenAIResponsesMessage<
       input,
       options,
       tools,
+      toolDefinitions,
       instructions,
       textFormat,
       binding,
@@ -145,6 +148,7 @@ async function createOpenAIResponse(
   input: unknown[],
   options: LLMOptions & { provider: OpenAIProviderConfig },
   tools: readonly PromptTrailTool[],
+  toolDefinitions: readonly unknown[],
   instructions: string | undefined,
   textFormat?: Record<string, unknown>,
   binding?: ConversationBinding,
@@ -159,10 +163,7 @@ async function createOpenAIResponse(
     max_output_tokens: options.maxTokens,
     text: textFormat ? { format: textFormat as any } : undefined,
     ...mapOpenAIResponsesRequestOptions(options),
-    tools:
-      tools.length > 0
-        ? tools.map(promptTrailToolToOpenAIResponsesTool)
-        : undefined,
+    tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
     tool_choice: options.toolChoice as any,
   });
 }
@@ -217,6 +218,25 @@ export function getOpenAIPromptTrailTools(
   return [...tools.values()];
 }
 
+export function getOpenAIResponsesToolDefinitions(
+  options: Pick<LLMOptions, 'capabilities' | 'tools'>,
+): unknown[] {
+  return [
+    ...getOpenAIPromptTrailTools(options).map(
+      promptTrailToolToOpenAIResponsesTool,
+    ),
+    ...(options.capabilities ?? []).flatMap((capability) => {
+      if (capability.kind === 'builtin') {
+        return promptTrailBuiltinToOpenAIResponsesTool(capability);
+      }
+      if (capability.kind === 'mcp') {
+        return promptTrailMcpToOpenAIResponsesTool(capability) ?? [];
+      }
+      return [];
+    }),
+  ];
+}
+
 export function promptTrailToolToOpenAIResponsesTool(
   tool: PromptTrailTool,
 ): OpenAIResponsesFunctionTool {
@@ -226,6 +246,31 @@ export function promptTrailToolToOpenAIResponsesTool(
     description: tool.description,
     parameters: zodToJsonSchema(tool.inputSchema, { openAiStrict: true }),
     strict: true,
+  };
+}
+
+export function promptTrailBuiltinToOpenAIResponsesTool(
+  tool: BuiltinTool,
+): Record<string, unknown> {
+  return {
+    type: tool.name,
+    ...(tool.config ?? {}),
+  };
+}
+
+export function promptTrailMcpToOpenAIResponsesTool(
+  server: McpServer,
+): Record<string, unknown> | undefined {
+  if (server.transport.kind !== 'http') {
+    return undefined;
+  }
+
+  return {
+    type: 'mcp',
+    server_label: server.name,
+    server_url: server.transport.url,
+    headers: server.transport.headers,
+    allowed_tools: server.tools === 'all' ? undefined : server.tools,
   };
 }
 

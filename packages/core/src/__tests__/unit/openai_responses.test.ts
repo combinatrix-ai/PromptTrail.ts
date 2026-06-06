@@ -4,8 +4,11 @@ import {
   collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
+  getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
   getResponsesInstructions,
+  promptTrailBuiltinToOpenAIResponsesTool,
+  promptTrailMcpToOpenAIResponsesTool,
   promptTrailToolToOpenAIResponsesTool,
   retainOpenAIResponseMetadata,
 } from '../../openai_responses';
@@ -167,6 +170,50 @@ describe('OpenAI Responses native adapter helpers', () => {
         additionalProperties: false,
       },
     });
+  });
+
+  it('maps provider-hosted builtins and HTTP MCP servers to Responses tools', () => {
+    const builtin = {
+      kind: 'builtin' as const,
+      name: 'web_search_preview',
+      provider: 'openai' as const,
+      executionMode: 'provider' as const,
+      config: { search_context_size: 'low' },
+    };
+    const mcp = {
+      kind: 'mcp' as const,
+      name: 'docs',
+      transport: {
+        kind: 'http' as const,
+        url: 'https://mcp.example.com',
+        headers: { Authorization: 'Bearer test' },
+      },
+      tools: ['lookup'],
+    };
+
+    expect(promptTrailBuiltinToOpenAIResponsesTool(builtin)).toEqual({
+      type: 'web_search_preview',
+      search_context_size: 'low',
+    });
+    expect(promptTrailMcpToOpenAIResponsesTool(mcp)).toEqual({
+      type: 'mcp',
+      server_label: 'docs',
+      server_url: 'https://mcp.example.com',
+      headers: { Authorization: 'Bearer test' },
+      allowed_tools: ['lookup'],
+    });
+    expect(
+      getOpenAIResponsesToolDefinitions({ capabilities: [builtin, mcp] }),
+    ).toEqual([
+      { type: 'web_search_preview', search_context_size: 'low' },
+      {
+        type: 'mcp',
+        server_label: 'docs',
+        server_url: 'https://mcp.example.com',
+        headers: { Authorization: 'Bearer test' },
+        allowed_tools: ['lookup'],
+      },
+    ]);
   });
 
   it('collects function calls and creates tool output items', async () => {

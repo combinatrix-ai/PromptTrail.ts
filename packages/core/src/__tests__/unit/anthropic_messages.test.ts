@@ -5,7 +5,9 @@ import {
   convertSessionToAnthropicMessages,
   createAnthropicStructuredOutputTool,
   createAnthropicToolResultBlock,
+  getAnthropicToolDefinitions,
   getAnthropicSystemPrompt,
+  promptTrailBuiltinToAnthropicTool,
   promptTrailToolToAnthropicTool,
   retainAnthropicMessageMetadata,
 } from '../../anthropic_messages';
@@ -78,6 +80,29 @@ describe('Anthropic Messages native adapter helpers', () => {
         additionalProperties: false,
       },
     });
+  });
+
+  it('maps Anthropic provider-hosted builtins into tool definitions', () => {
+    const builtin = {
+      kind: 'builtin' as const,
+      name: 'web_search_20250305',
+      provider: 'anthropic' as const,
+      executionMode: 'provider' as const,
+      config: { max_uses: 2 },
+    };
+
+    expect(promptTrailBuiltinToAnthropicTool(builtin)).toEqual({
+      type: 'web_search_20250305',
+      name: 'web_search_20250305',
+      max_uses: 2,
+    });
+    expect(getAnthropicToolDefinitions({ capabilities: [builtin] })).toEqual([
+      {
+        type: 'web_search_20250305',
+        name: 'web_search_20250305',
+        max_uses: 2,
+      },
+    ]);
   });
 
   it('collects tool uses and creates tool result blocks', async () => {

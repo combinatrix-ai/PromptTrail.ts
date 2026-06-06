@@ -5,7 +5,9 @@ import {
   convertSessionToGeminiContents,
   createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
+  getGeminiToolDefinitions,
   getGeminiSystemInstruction,
+  promptTrailBuiltinToGeminiTool,
   promptTrailToolToGeminiTool,
   retainGeminiResponseMetadata,
 } from '../../google_gemini';
@@ -76,6 +78,23 @@ describe('Google Gemini native adapter helpers', () => {
         additionalProperties: false,
       },
     });
+  });
+
+  it('maps Gemini provider-hosted builtins into tool definitions', () => {
+    const builtin = {
+      kind: 'builtin' as const,
+      name: 'google_search',
+      provider: 'google' as const,
+      executionMode: 'provider' as const,
+      config: {},
+    };
+
+    expect(promptTrailBuiltinToGeminiTool(builtin)).toEqual({
+      googleSearch: {},
+    });
+    expect(getGeminiToolDefinitions({ capabilities: [builtin] })).toEqual([
+      { googleSearch: {} },
+    ]);
   });
 
   it('collects function calls and creates function response parts', async () => {

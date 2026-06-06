@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { PromptTrailTool } from './capabilities';
+import type { BuiltinTool, PromptTrailTool } from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
 import { mapAnthropicThinking } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
@@ -34,6 +34,7 @@ export async function generateAnthropicMessagesText<
     dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
   });
   const tools = getAnthropicPromptTrailTools(options);
+  const toolDefinitions = getAnthropicToolDefinitions(options);
   let messages: unknown[] = convertSessionToAnthropicMessages(session);
   let response = await createAnthropicMessage(
     client,
@@ -41,6 +42,7 @@ export async function generateAnthropicMessagesText<
     session,
     options,
     tools,
+    toolDefinitions,
   );
 
   for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
@@ -65,6 +67,7 @@ export async function generateAnthropicMessagesText<
       session,
       options,
       tools,
+      toolDefinitions,
     );
   }
 
@@ -149,6 +152,7 @@ async function createAnthropicMessage(
   session: Session<any, any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   tools: readonly PromptTrailTool[],
+  toolDefinitions: readonly unknown[],
 ) {
   return client.messages.create({
     model: options.provider.modelName,
@@ -158,10 +162,7 @@ async function createAnthropicMessage(
     temperature: options.temperature,
     top_p: options.topP,
     thinking: mapAnthropicThinking(options.thinking, options.toolChoice) as any,
-    tools:
-      tools.length > 0
-        ? (tools.map(promptTrailToolToAnthropicTool) as any)
-        : undefined,
+    tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
     tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
   } as any);
 }
@@ -215,11 +216,36 @@ export function getAnthropicPromptTrailTools(
   return [...tools.values()];
 }
 
+export function getAnthropicToolDefinitions(
+  options: Pick<LLMOptions, 'capabilities' | 'tools'>,
+): unknown[] {
+  return [
+    ...getAnthropicPromptTrailTools(options).map(
+      promptTrailToolToAnthropicTool,
+    ),
+    ...(options.capabilities ?? []).flatMap((capability) =>
+      capability.kind === 'builtin'
+        ? promptTrailBuiltinToAnthropicTool(capability)
+        : [],
+    ),
+  ];
+}
+
 export function promptTrailToolToAnthropicTool(tool: PromptTrailTool) {
   return {
     name: tool.name,
     description: tool.description,
     input_schema: zodToJsonSchema(tool.inputSchema),
+  };
+}
+
+export function promptTrailBuiltinToAnthropicTool(
+  tool: BuiltinTool,
+): Record<string, unknown> {
+  return {
+    type: tool.name,
+    name: tool.name,
+    ...(tool.config ?? {}),
   };
 }
 
