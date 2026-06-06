@@ -6,6 +6,7 @@ export interface JsonSchemaOptions {
   openAiStrict?: boolean;
   additionalProperties?: boolean;
   unsupported?: 'strip' | 'error';
+  propertyOrdering?: boolean;
 }
 
 export function zodToJsonSchema(
@@ -16,6 +17,7 @@ export function zodToJsonSchema(
     openAiStrict: options.openAiStrict ?? false,
     additionalProperties: options.additionalProperties ?? false,
     unsupported: options.unsupported ?? 'error',
+    propertyOrdering: options.propertyOrdering ?? false,
   });
 }
 
@@ -72,12 +74,16 @@ function convertZodSchema(
       }
     }
 
-    return withDescription(schema, {
+    const objectSchema: JsonSchema = {
       type: 'object',
       properties,
       required,
       additionalProperties: options.additionalProperties,
-    });
+    };
+    if (options.propertyOrdering) {
+      objectSchema.propertyOrdering = Object.keys(shape);
+    }
+    return withDescription(schema, objectSchema);
   }
 
   if (schema instanceof z.ZodEnum) {

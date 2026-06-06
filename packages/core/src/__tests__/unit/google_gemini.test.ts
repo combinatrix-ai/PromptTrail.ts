@@ -890,6 +890,7 @@ describe('Google Gemini native adapter helpers', () => {
         },
         required: ['status', 'count'],
         additionalProperties: false,
+        propertyOrdering: ['status', 'count'],
       },
     });
   });

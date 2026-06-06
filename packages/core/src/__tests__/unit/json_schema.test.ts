@@ -62,6 +62,39 @@ describe('zodToJsonSchema', () => {
     expect(zodToJsonSchema(z.function(), { unsupported: 'strip' })).toEqual({});
   });
 
+  it('adds object property ordering when requested', () => {
+    expect(
+      zodToJsonSchema(
+        z.object({
+          status: z.string(),
+          nested: z.object({
+            count: z.number(),
+            label: z.string(),
+          }),
+        }),
+        { propertyOrdering: true },
+      ),
+    ).toEqual({
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        nested: {
+          type: 'object',
+          properties: {
+            count: { type: 'number' },
+            label: { type: 'string' },
+          },
+          required: ['count', 'label'],
+          additionalProperties: false,
+          propertyOrdering: ['count', 'label'],
+        },
+      },
+      required: ['status', 'nested'],
+      additionalProperties: false,
+      propertyOrdering: ['status', 'nested'],
+    });
+  });
+
   it('errors on unsupported schemas by default', () => {
     expect(() => zodToJsonSchema(z.function())).toThrow(
       'Unsupported Zod schema type',

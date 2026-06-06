@@ -155,7 +155,9 @@ export function createGeminiStructuredOutputConfig(
 ): Record<string, unknown> {
   return {
     responseMimeType: 'application/json',
-    responseJsonSchema: zodToJsonSchema(schemaOptions.schema),
+    responseJsonSchema: zodToJsonSchema(schemaOptions.schema, {
+      propertyOrdering: true,
+    }),
   };
 }
 
