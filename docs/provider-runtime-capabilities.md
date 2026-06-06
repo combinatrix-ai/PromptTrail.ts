@@ -560,7 +560,14 @@ type ContentPart =
       source:
         | { type: 'bytes'; data: Uint8Array | string /* base64 */ }
         | { type: 'uri'; uri: string }
-        | { type: 'providerFile'; provider: string; fileId: string };
+        | {
+            type: 'providerFile';
+            provider: string;
+            fileId: string;
+            uploadedAt?: string;
+            expiresAt?: string;
+            cleanup: 'caller' | 'prompttrail' | 'none';
+          };
       detail?: 'low' | 'high' | 'auto';
       filename?: string;
     };
@@ -577,8 +584,9 @@ id in `attrs.<provider>` so re-sends reference instead of re-encoding. Files API
 lifecycle is asymmetric and must be an explicit policy: **Gemini files expire
 after 48h** (breaking long-lived sessions), Anthropic/OpenAI persist until
 deleted. Treat provider file refs as ephemeral, track expiry, re-upload on miss,
-and decide cleanup ownership (framework vs caller) explicitly. A `providerFile`
-id is non-portable, so a session reused on another provider re-uploads.
+and persist cleanup ownership (`caller`, `prompttrail`, or `none`) explicitly. A
+`providerFile` id is non-portable, so a session reused on another provider
+re-uploads.
 
 ### Compaction
 

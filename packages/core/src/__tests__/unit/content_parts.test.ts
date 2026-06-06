@@ -35,6 +35,7 @@ describe('ContentPart provider serializers', () => {
         type: 'providerFile',
         provider: 'openai',
         fileId: 'file-123',
+        cleanup: 'caller',
       },
       filename: 'note.txt',
     },
@@ -178,6 +179,7 @@ describe('ContentPart provider serializers', () => {
         fileId: 'files/gemini-123',
         uploadedAt: '2026-06-06T00:00:00.000Z',
         expiresAt: '2026-06-08T00:00:00.000Z',
+        cleanup: 'caller',
       },
     });
     expect(
@@ -213,8 +215,26 @@ describe('ContentPart provider serializers', () => {
       fileId: 'file-openai-123',
       uploadedAt: undefined,
       expiresAt: undefined,
+      cleanup: 'caller',
     });
     expect(isProviderFileReferenceExpired(part)).toBe(false);
+  });
+
+  it('records explicit provider file cleanup ownership', () => {
+    expect(
+      createProviderFileContentPart({
+        kind: 'file',
+        mimeType: 'application/pdf',
+        provider: 'openai',
+        fileId: 'file-managed',
+        cleanup: 'prompttrail',
+      }).source,
+    ).toMatchObject({
+      type: 'providerFile',
+      provider: 'openai',
+      fileId: 'file-managed',
+      cleanup: 'prompttrail',
+    });
   });
 
   it('rejects expired provider file refs before serialization', () => {

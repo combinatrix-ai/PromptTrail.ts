@@ -1,3 +1,5 @@
+export type ProviderFileCleanupPolicy = 'caller' | 'prompttrail' | 'none';
+
 export type ContentPart =
   | { kind: 'text'; text: string }
   | {
@@ -12,6 +14,7 @@ export type ContentPart =
             fileId: string;
             uploadedAt?: string;
             expiresAt?: string;
+            cleanup: ProviderFileCleanupPolicy;
           };
       detail?: 'low' | 'high' | 'auto';
       filename?: string;
@@ -25,6 +28,7 @@ export function createProviderFileContentPart(options: {
   filename?: string;
   uploadedAt?: string | Date;
   expiresAt?: string | Date;
+  cleanup?: ProviderFileCleanupPolicy;
   detail?: 'low' | 'high' | 'auto';
 }): Exclude<ContentPart, { kind: 'text' }> {
   const uploadedAt =
@@ -48,6 +52,7 @@ export function createProviderFileContentPart(options: {
       fileId: options.fileId,
       uploadedAt,
       expiresAt,
+      cleanup: options.cleanup ?? 'caller',
     },
   };
 }
