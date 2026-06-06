@@ -738,7 +738,7 @@ Recommended API:
 ```ts
 Source.llm()
   .google({ adapter: 'native' })
-  .model('gemini-2.5-pro')
+  .model('gemini-3.1-flash-lite')
   .withCapabilities([weatherTool]);
 ```
 
