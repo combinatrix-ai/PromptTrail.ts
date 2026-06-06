@@ -1,7 +1,7 @@
 import {
   codexResultToMessage,
   collectCodexTurnResult,
-  createCodexToolRequestHandler,
+  createCodexRuntimeRequestHandler,
   createCodexAppServerHttpClient,
   createCodexAppServerWebSocketClient,
   getPromptTrailTools,
@@ -27,12 +27,13 @@ export class CodexTurn<
     const currentSession = this.ensureSession(session);
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
     const onRequest =
-      promptTrailTools.length > 0
-        ? createCodexToolRequestHandler(
-            promptTrailTools,
-            currentSession,
-            this.options.onRequest,
-          )
+      promptTrailTools.length > 0 || this.options.approvalHandler
+        ? createCodexRuntimeRequestHandler({
+            tools: promptTrailTools,
+            session: currentSession,
+            fallback: this.options.onRequest,
+            approvalHandler: this.options.approvalHandler,
+          })
         : this.options.onRequest;
     const ownsClient = this.options.client === undefined;
     const client =

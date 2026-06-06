@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CodexAppServerWebSocketClient,
   collectCodexTurnResult,
+  codexInboundRequestToApprovalRequest,
+  createCodexRuntimeRequestHandler,
   createCodexToolRequestHandler,
   normalizeCodexRuntimeEvent,
   promptTrailToolToCodexDynamicTool,
@@ -228,6 +230,48 @@ describe('Codex App Server helpers', () => {
         },
       ],
       structuredContent: { query: 'capabilities', provider: 'codex' },
+    });
+  });
+
+  it('maps Codex approval requests to the common approval handler', async () => {
+    const handler = createCodexRuntimeRequestHandler({
+      session: createSession(),
+      approvalHandler: async (request) => {
+        expect(request).toEqual({
+          provider: 'codex',
+          action: 'commandExecution',
+          input: { command: 'npm test' },
+          risk: 'execute',
+          raw: { method: 'item/commandExecution/requestApproval' },
+        });
+        return { type: 'deny', reason: 'tests are disabled' };
+      },
+    });
+
+    expect(
+      codexInboundRequestToApprovalRequest({
+        id: 'approval-1',
+        method: 'item/fileChange/requestApproval',
+        params: { path: 'src/index.ts' },
+        raw: { method: 'item/fileChange/requestApproval' },
+      }),
+    ).toEqual({
+      provider: 'codex',
+      action: 'fileChange',
+      input: { path: 'src/index.ts' },
+      risk: 'write',
+      raw: { method: 'item/fileChange/requestApproval' },
+    });
+    await expect(
+      handler({
+        id: 'approval-2',
+        method: 'item/commandExecution/requestApproval',
+        params: { command: 'npm test' },
+        raw: { method: 'item/commandExecution/requestApproval' },
+      }),
+    ).resolves.toEqual({
+      decision: 'deny',
+      reason: 'tests are disabled',
     });
   });
 });

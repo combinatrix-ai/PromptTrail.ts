@@ -6,7 +6,12 @@ import {
   type RuntimeEvent,
   type RuntimeEventSummary,
 } from './runtime';
-import type { CapabilitySet, PromptTrailTool } from './capabilities';
+import type {
+  ApprovalHandler,
+  ApprovalRequest,
+  CapabilitySet,
+  PromptTrailTool,
+} from './capabilities';
 import { zodToJsonSchema, type JsonSchema } from './json_schema';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -575,6 +580,7 @@ export interface CodexTurnOptions<
   retain?: RetainLevel;
   onEvent?: (event: RuntimeEvent) => void | Promise<void>;
   onRequest?: CodexInboundRequestHandler;
+  approvalHandler?: ApprovalHandler;
   retainMessages?: boolean;
   attrsKey?: string;
   threadStart?: Record<string, unknown>;
@@ -632,6 +638,78 @@ export function createCodexToolRequestHandler(
       raw: request.raw,
     });
   };
+}
+
+export function createCodexRuntimeRequestHandler(options: {
+  tools?: readonly PromptTrailTool[];
+  session: Session<any, any>;
+  fallback?: CodexInboundRequestHandler;
+  approvalHandler?: ApprovalHandler;
+}): CodexInboundRequestHandler {
+  const toolHandler =
+    options.tools && options.tools.length > 0
+      ? createCodexToolRequestHandler(options.tools, options.session)
+      : undefined;
+
+  return async (request) => {
+    if (request.method === 'item/tool/call' && toolHandler) {
+      return toolHandler(request);
+    }
+
+    const approvalRequest = codexInboundRequestToApprovalRequest(request);
+    if (approvalRequest && options.approvalHandler) {
+      const decision = await options.approvalHandler(
+        approvalRequest,
+        options.session,
+      );
+      if (decision.type === 'approve') {
+        return { decision: 'approve', reason: decision.reason };
+      }
+      if (decision.type === 'deny') {
+        return { decision: 'deny', reason: decision.reason };
+      }
+      return { decision: 'ask-user', question: decision.question };
+    }
+
+    if (options.fallback) {
+      return options.fallback(request);
+    }
+
+    throw new Error(`No handler for ${request.method}`);
+  };
+}
+
+export function codexInboundRequestToApprovalRequest(
+  request: CodexInboundRequest,
+): ApprovalRequest | undefined {
+  if (request.method === 'item/commandExecution/requestApproval') {
+    return {
+      provider: 'codex',
+      action: 'commandExecution',
+      input: request.params,
+      risk: 'execute',
+      raw: request.raw,
+    };
+  }
+  if (request.method === 'item/fileChange/requestApproval') {
+    return {
+      provider: 'codex',
+      action: 'fileChange',
+      input: request.params,
+      risk: 'write',
+      raw: request.raw,
+    };
+  }
+  if (request.method === 'tool/requestUserInput') {
+    return {
+      provider: 'codex',
+      action: 'userInput',
+      input: request.params,
+      raw: request.raw,
+    };
+  }
+
+  return undefined;
 }
 
 export function extractCodexFinalAnswer(result: CodexTurnResult): string {
