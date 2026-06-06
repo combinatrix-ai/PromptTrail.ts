@@ -420,13 +420,51 @@ export function convertSessionToAnthropicMessages(
     )
     .map((message) => ({
       role: message.type,
-      content: applyAnthropicCacheControl(
-        message.contentParts
-          ? contentPartsToAnthropicContent(message.contentParts)
-          : message.content,
-        message.cache,
-      ),
+      content: convertMessageToAnthropicContent(message),
     }));
+}
+
+function convertMessageToAnthropicContent(message: Message<any>): unknown {
+  const baseContent = message.contentParts
+    ? contentPartsToAnthropicContent(message.contentParts)
+    : message.content;
+  if (message.type !== 'assistant') {
+    return applyAnthropicCacheControl(baseContent, message.cache);
+  }
+
+  const replayRequired = getAnthropicReplayRequiredContentBlocks(message);
+  if (replayRequired.length === 0) {
+    return applyAnthropicCacheControl(baseContent, message.cache);
+  }
+
+  const contentBlocks = [
+    ...replayRequired,
+    ...(Array.isArray(baseContent)
+      ? baseContent
+      : [{ type: 'text', text: baseContent }]),
+  ];
+  return applyAnthropicCacheControl(contentBlocks, message.cache);
+}
+
+function getAnthropicReplayRequiredContentBlocks(
+  message: Message<any>,
+): unknown[] {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  const anthropic = attrs?.anthropic as Record<string, unknown> | undefined;
+  const replayRequired = anthropic?.replayRequired;
+  if (!Array.isArray(replayRequired)) {
+    return [];
+  }
+
+  return replayRequired.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    return record.provider === 'anthropic' && record.artifact
+      ? [record.artifact]
+      : [];
+  });
 }
 
 export function getAnthropicRequestContent(

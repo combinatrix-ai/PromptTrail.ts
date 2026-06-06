@@ -79,6 +79,54 @@ describe('Anthropic Messages native adapter helpers', () => {
     ]);
   });
 
+  it('replays pinned Anthropic thinking and compaction blocks in messages', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Use extended thinking.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Done.',
+        attrs: {
+          anthropic: {
+            replayRequired: [
+              {
+                provider: 'anthropic',
+                type: 'thinking.signature',
+                artifact: {
+                  type: 'thinking',
+                  thinking: 'private',
+                  signature: 'sig',
+                },
+              },
+              {
+                provider: 'anthropic',
+                type: 'compaction',
+                id: 'cmp_1',
+                artifact: {
+                  type: 'compaction',
+                  id: 'cmp_1',
+                  encrypted_content: 'compact',
+                },
+              },
+            ],
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    expect(convertSessionToAnthropicMessages(session)).toEqual([
+      { role: 'user', content: 'Use extended thinking.' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'private', signature: 'sig' },
+          { type: 'compaction', id: 'cmp_1', encrypted_content: 'compact' },
+          { type: 'text', text: 'Done.' },
+        ],
+      },
+      { role: 'user', content: 'Continue' },
+    ]);
+  });
+
   it('applies message cache hints to Anthropic content blocks', () => {
     const session = Session.create()
       .addMessage({ type: 'system', content: 'Cached system.', cache: '1h' })
