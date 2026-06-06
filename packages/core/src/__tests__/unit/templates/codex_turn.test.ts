@@ -26,7 +26,25 @@ class FakeCodexClient implements CodexAppServerClient {
       turnId: 'turn-1',
       status: 'completed',
       finalAnswer: 'Codex result',
+      items: [
+        {
+          id: 'item-1',
+          type: 'agentMessage',
+          status: 'completed',
+          content: 'x'.repeat(600),
+        },
+      ],
+      events: [
+        {
+          type: 'text.delta',
+          id: 'event-1',
+          delta: 'y'.repeat(600),
+          raw: { large: true },
+        },
+      ],
       diff: 'diff --git a/file b/file',
+      commands: [{ command: 'npm test', output: 'z'.repeat(600) }],
+      raw: { transport: 'fake' },
       plan: [{ step: 'inspect', status: 'completed' }],
     };
   }
@@ -95,5 +113,61 @@ describe('CodexTurn template', () => {
       finalAnswer: 'Codex result',
       threadId: 'thread-existing',
     });
+  });
+
+  it('should summarize retained runtime metadata by default', async () => {
+    const client = new FakeCodexClient();
+    const session = await Agent.create()
+      .user('Summarize')
+      .codexTurn({ client })
+      .execute(Session.create());
+
+    const codex = session.getLastMessage()?.attrs?.codex as any;
+
+    expect(codex.raw).toBeUndefined();
+    expect(codex.items[0]).toEqual({
+      type: 'agentMessage',
+      id: 'item-1',
+      status: 'completed',
+      content: 'x'.repeat(500),
+    });
+    expect(codex.events[0]).toMatchObject({
+      type: 'text.delta',
+      id: 'event-1',
+      preview: 'y'.repeat(500),
+      truncated: true,
+      fullLength: 600,
+    });
+    expect(codex.diff).toEqual({
+      preview: 'diff --git a/file b/file',
+      truncated: undefined,
+      fullLength: undefined,
+    });
+    expect(codex.commands[0]).toMatchObject({
+      command: 'npm test',
+      preview: 'z'.repeat(500),
+    });
+  });
+
+  it('should retain only binding and status metadata when retain is none', async () => {
+    const client = new FakeCodexClient();
+    const session = await Agent.create()
+      .user('Do not retain runtime artifacts')
+      .codexTurn({ client, retain: 'none' })
+      .execute(Session.create());
+
+    const codex = session.getLastMessage()?.attrs?.codex as any;
+
+    expect(codex).toMatchObject({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      status: 'completed',
+      finalAnswer: 'Codex result',
+    });
+    expect(codex.items).toBeUndefined();
+    expect(codex.events).toBeUndefined();
+    expect(codex.diff).toBeUndefined();
+    expect(codex.commands).toBeUndefined();
+    expect(codex.raw).toBeUndefined();
   });
 });

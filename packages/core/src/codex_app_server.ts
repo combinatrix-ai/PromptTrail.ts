@@ -1,5 +1,11 @@
 import type { Message } from './message';
 import type { Session, Attrs, Vars } from './session';
+import {
+  retainRuntimeEvents,
+  type RetainLevel,
+  type RuntimeEvent,
+  type RuntimeEventSummary,
+} from './runtime';
 
 export type CodexThreadId =
   | string
@@ -56,6 +62,7 @@ export interface CodexTurnResult {
   status?: string;
   finalAnswer?: string;
   items?: unknown[];
+  events?: RuntimeEvent[] | RuntimeEventSummary[];
   plan?: unknown;
   diff?: unknown;
   commands?: unknown[];
@@ -146,6 +153,7 @@ export interface CodexAppServerWebSocketClientOptions {
     title?: string;
     version?: string;
   };
+  onEvent?: (event: RuntimeEvent) => void | Promise<void>;
 }
 
 export class CodexAppServerWebSocketClient implements CodexAppServerClient {
@@ -230,6 +238,7 @@ export class CodexAppServerWebSocketClient implements CodexAppServerClient {
       turnId,
       status: turn.status,
       items: initialItems,
+      events: [],
       error: turn.error,
     };
 
@@ -388,6 +397,17 @@ export class CodexAppServerWebSocketClient implements CodexAppServerClient {
     const params = message.params ?? {};
     const turnId = getTurnIdFromNotification(message);
     const turnState = turnId ? this.pendingTurns.get(turnId) : undefined;
+    const runtimeEvent = normalizeCodexRuntimeEvent(message);
+    if (runtimeEvent) {
+      void this.options.onEvent?.(runtimeEvent);
+      if (turnState) {
+        turnState.result.events = [
+          ...((turnState.result.events as RuntimeEvent[] | undefined) ?? []),
+          runtimeEvent,
+        ];
+      }
+    }
+
     if (!turnState) {
       return;
     }
@@ -475,6 +495,8 @@ export interface CodexTurnOptions<
   sandboxPolicy?: unknown;
   approvalPolicy?: unknown;
   includeItems?: 'none' | 'summary' | 'full';
+  retain?: RetainLevel;
+  onEvent?: (event: RuntimeEvent) => void | Promise<void>;
   retainMessages?: boolean;
   attrsKey?: string;
   threadStart?: Record<string, unknown>;
@@ -511,15 +533,23 @@ export function extractCodexFinalAnswer(result: CodexTurnResult): string {
 export async function collectCodexTurnResult(
   turnResult: CodexTurnResult | AsyncIterable<CodexTurnEvent>,
   defaults?: Pick<CodexTurnResult, 'threadId'>,
+  onEvent?: (event: RuntimeEvent) => void | Promise<void>,
 ): Promise<CodexTurnResult> {
   if (!isAsyncIterable(turnResult)) {
     return { ...defaults, ...turnResult };
   }
 
   const items: unknown[] = [];
-  const result: CodexTurnResult = { ...defaults, items };
+  const events: RuntimeEvent[] = [];
+  const result: CodexTurnResult = { ...defaults, items, events };
 
   for await (const event of turnResult) {
+    const runtimeEvent = normalizeCodexRuntimeEvent(event);
+    if (runtimeEvent) {
+      events.push(runtimeEvent);
+      await onEvent?.(runtimeEvent);
+    }
+
     const params = event.params ?? {};
     if (typeof params.turnId === 'string') {
       result.turnId = params.turnId;
@@ -542,6 +572,125 @@ export async function collectCodexTurnResult(
 
   result.finalAnswer = extractCodexFinalAnswer(result);
   return result;
+}
+
+export function normalizeCodexRuntimeEvent(
+  event: CodexTurnEvent,
+): RuntimeEvent | undefined {
+  if (event.error) {
+    return {
+      type: 'error',
+      id: getEventId(event),
+      error: event.error,
+      raw: event,
+    };
+  }
+
+  const method = event.method ?? event.type;
+  if (!method) {
+    return undefined;
+  }
+
+  const params = event.params ?? {};
+  if (method === 'item/started' || method === 'item/completed') {
+    const item = params.item as Record<string, unknown> | undefined;
+    const content = item?.content ?? item?.text ?? item?.message;
+    return {
+      type: method === 'item/started' ? 'item.started' : 'item.completed',
+      id: getItemId(item, event),
+      itemType: getString(item?.type ?? item?.kind),
+      status: getString(item?.status),
+      preview: typeof content === 'string' ? content : undefined,
+      raw: event,
+    };
+  }
+
+  if (method === 'item/agentMessage/delta') {
+    return {
+      type: 'text.delta',
+      id: getEventId(event),
+      delta: getDeltaText(params) ?? '',
+      raw: event,
+    };
+  }
+
+  if (method === 'turn/completed') {
+    const turn = params.turn as Record<string, unknown> | undefined;
+    return {
+      type: 'turn.completed',
+      id: getString(turn?.id) ?? getEventId(event),
+      status: getString(turn?.status ?? params.status),
+      raw: event,
+    };
+  }
+
+  if (method === 'item/commandExecution/requestApproval') {
+    return {
+      type: 'approval.requested',
+      id: getEventId(event),
+      action: 'commandExecution',
+      status: getString(params.status),
+      raw: event,
+    };
+  }
+
+  if (method === 'item/fileChange/requestApproval') {
+    return {
+      type: 'approval.requested',
+      id: getEventId(event),
+      action: 'fileChange',
+      status: getString(params.status),
+      raw: event,
+    };
+  }
+
+  if (method === 'tool/requestUserInput') {
+    return {
+      type: 'approval.requested',
+      id: getEventId(event),
+      action: 'userInput',
+      status: getString(params.status),
+      raw: event,
+    };
+  }
+
+  if (method.includes('command')) {
+    const command = params.command as
+      | Record<string, unknown>
+      | string
+      | undefined;
+    return {
+      type: 'command',
+      id: getEventId(event),
+      command:
+        typeof command === 'string'
+          ? command
+          : getString(command?.command ?? params.commandText),
+      exitCode: getNumber(params.exitCode),
+      status: getString(params.status),
+      outputPreview: getString(params.output ?? params.outputPreview),
+      raw: event,
+    };
+  }
+
+  if (method.includes('diff') || method.includes('fileChange')) {
+    return {
+      type: 'diff',
+      id: getEventId(event),
+      path: getString(params.path),
+      added: getNumber(params.added),
+      removed: getNumber(params.removed),
+      status: getString(params.status),
+      raw: event,
+    };
+  }
+
+  return {
+    type: 'raw',
+    id: getEventId(event),
+    method,
+    raw: event,
+  };
 }
 
 export function codexResultToMessage<TAttrs extends Attrs = Attrs>(
@@ -624,6 +773,35 @@ function getDeltaText(params: Record<string, unknown>): string | undefined {
   }
 
   return undefined;
+}
+
+function getEventId(event: CodexTurnEvent): string {
+  const params = event.params ?? {};
+  const turnId = getTurnIdFromNotification(event);
+  const id =
+    params.id ??
+    params.itemId ??
+    event.id ??
+    turnId ??
+    event.method ??
+    event.type ??
+    'codex-event';
+  return String(id);
+}
+
+function getItemId(
+  item: Record<string, unknown> | undefined,
+  event: CodexTurnEvent,
+): string {
+  return getString(item?.id) ?? getEventId(event);
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
 }
 
 function formatUnknownError(error: unknown): string {

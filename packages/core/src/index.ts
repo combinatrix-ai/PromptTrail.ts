@@ -3,6 +3,7 @@ export * from './capabilities';
 export * from './codex_app_server';
 export * from './generate';
 export * from './message';
+export * from './runtime';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
 export * from './durable';

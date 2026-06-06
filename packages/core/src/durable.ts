@@ -434,7 +434,7 @@ export interface PromptTrailSendOptions {
   resumable?: boolean;
 }
 
-export interface RuntimeEvent {
+export interface InboundRuntimeEvent {
   source: string;
   agent: string;
   runId: string;
@@ -446,7 +446,9 @@ export interface RuntimeEvent {
 }
 
 export interface EventSource {
-  start(emit: (event: RuntimeEvent) => Promise<void>): Promise<void> | void;
+  start(
+    emit: (event: InboundRuntimeEvent) => Promise<void>,
+  ): Promise<void> | void;
   stop?(): Promise<void> | void;
 }
 
@@ -587,7 +589,7 @@ export class PromptTrailApp {
     return [...this.getRun(runId).journal.sequence];
   }
 
-  private async handleEvent(event: RuntimeEvent): Promise<void> {
+  private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
     await this.send({
       agent: event.agent,
       runId: event.runId,
@@ -761,9 +763,9 @@ export function app(options: PromptTrailAppOptions = {}): PromptTrailApp {
 }
 
 export function manualSource(): EventSource & {
-  emit(event: RuntimeEvent): Promise<void>;
+  emit(event: InboundRuntimeEvent): Promise<void>;
 } {
-  let emitEvent: ((event: RuntimeEvent) => Promise<void>) | undefined;
+  let emitEvent: ((event: InboundRuntimeEvent) => Promise<void>) | undefined;
   return {
     start(emit) {
       emitEvent = emit;

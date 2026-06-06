@@ -5,6 +5,7 @@ import {
   createCodexAppServerWebSocketClient,
   type CodexTurnOptions,
 } from '../../codex_app_server';
+import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
@@ -30,6 +31,7 @@ export class CodexTurn<
           ? createCodexAppServerWebSocketClient({
               url: this.options.transport.url,
               timeoutMs: this.options.transport.timeoutMs,
+              onEvent: this.options.onEvent,
             })
           : undefined);
 
@@ -63,7 +65,11 @@ export class CodexTurn<
         approvalPolicy: this.options.approvalPolicy,
         ...(this.options.turnStart ?? {}),
       });
-      const result = await collectCodexTurnResult(rawTurnResult, { threadId });
+      const result = await collectCodexTurnResult(
+        rawTurnResult,
+        { threadId },
+        this.options.onEvent,
+      );
       const sessionResult = this.prepareSessionResult(result);
 
       if (this.options.squashWith) {
@@ -121,19 +127,25 @@ export class CodexTurn<
   private prepareSessionResult(
     result: Awaited<ReturnType<typeof collectCodexTurnResult>>,
   ) {
-    const includeItems = this.options.includeItems ?? 'summary';
-    if (includeItems === 'full') {
+    const retain =
+      this.options.retain ?? this.options.includeItems ?? 'summary';
+    if (retain === 'full') {
       return result;
     }
 
-    const { items, raw: _raw, ...rest } = result;
-    if (includeItems === 'none') {
+    const { items, raw: _raw, events, diff, commands, ...rest } = result;
+    if (retain === 'none') {
       return rest;
     }
 
     return {
       ...rest,
       items: items?.map((item) => summarizeCodexItem(item)),
+      events: retainRuntimeEvents(events as never, retain),
+      diff: summarizeCodexArtifact(diff),
+      commands: Array.isArray(commands)
+        ? commands.map((command) => summarizeCodexArtifact(command))
+        : undefined,
     };
   }
 }
@@ -158,5 +170,39 @@ function summarizeCodexItem(item: unknown): unknown {
       typeof record.content === 'string'
         ? record.content.slice(0, 500)
         : undefined,
+  };
+}
+
+function summarizeCodexArtifact(artifact: unknown): unknown {
+  if (artifact === undefined) {
+    return undefined;
+  }
+  if (typeof artifact === 'string') {
+    return {
+      preview: artifact.slice(0, 500),
+      truncated: artifact.length > 500 ? true : undefined,
+      fullLength: artifact.length > 500 ? artifact.length : undefined,
+    };
+  }
+  if (!artifact || typeof artifact !== 'object') {
+    return artifact;
+  }
+
+  const record = artifact as Record<string, unknown>;
+  return {
+    type: record.type ?? record.kind,
+    id: record.id,
+    status: record.status,
+    path: record.path,
+    added: record.added,
+    removed: record.removed,
+    command: record.command,
+    exitCode: record.exitCode,
+    preview:
+      typeof record.output === 'string'
+        ? record.output.slice(0, 500)
+        : typeof record.content === 'string'
+          ? record.content.slice(0, 500)
+          : undefined,
   };
 }
