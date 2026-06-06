@@ -568,7 +568,7 @@ const anthropicConfig = Source.llm()
 ```typescript
 const googleConfig = Source.llm()
   .google()
-  .model('gemini-3.1-flash-lite')
+  .model('gemini-2.5-flash-lite')
   .temperature(0.8)
   .apiKey(process.env.GOOGLE_API_KEY);
 ```
