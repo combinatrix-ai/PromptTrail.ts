@@ -54,6 +54,7 @@ describe('ClaudeTurn template', () => {
           permissionMode: undefined,
           settingSources: undefined,
           skills: undefined,
+          resume: undefined,
           mcpServers: undefined,
         },
       },
@@ -93,6 +94,31 @@ describe('ClaudeTurn template', () => {
       status: 'completed',
       finalAnswer: 'Claude result',
       sessionId: 'session-1',
+    });
+  });
+
+  it('resumes a Claude Agent session when sessionId is auto', async () => {
+    const originalClient = new FakeClaudeAgentClient();
+    const originalSession = await Agent.create()
+      .user('Original')
+      .claudeTurn({ client: originalClient })
+      .execute(Session.create());
+    const client = new FakeClaudeAgentClient();
+
+    await Agent.create()
+      .claudeTurn({ client, sessionId: 'auto' })
+      .execute(
+        originalSession.addMessage({
+          type: 'user',
+          content: 'Continue',
+        }),
+      );
+
+    expect(client.queries[0]).toMatchObject({
+      prompt: 'Continue',
+      options: {
+        resume: 'session-1',
+      },
     });
   });
 

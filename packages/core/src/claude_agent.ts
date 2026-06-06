@@ -16,6 +16,14 @@ export type ClaudeAgentInput<TVars extends Vars, TAttrs extends Attrs> =
   | string
   | ((session: Session<TVars, TAttrs>) => string | Promise<string>);
 
+export type ClaudeAgentSessionId<TVars extends Vars, TAttrs extends Attrs> =
+  | string
+  | 'new'
+  | 'auto'
+  | ((
+      session: Session<TVars, TAttrs>,
+    ) => string | undefined | Promise<string | undefined>);
+
 export interface ClaudeAgentClient {
   query(params: ClaudeAgentQueryParams): AsyncIterable<unknown>;
 }
@@ -31,6 +39,7 @@ export interface ClaudeTurnOptions<
 > {
   client?: ClaudeAgentClient;
   input?: ClaudeAgentInput<TVars, TAttrs>;
+  sessionId?: ClaudeAgentSessionId<TVars, TAttrs>;
   cwd?: string;
   model?: string;
   allowedTools?: string[];
@@ -262,10 +271,21 @@ export function buildClaudeAgentQueryParams(
       permissionMode: options.permissionMode,
       settingSources: options.settingSources,
       skills: skillNames.length > 0 ? skillNames : undefined,
+      resume: getClaudeAgentResumeId(options.sessionId),
       mcpServers,
       ...(options.sdkOptions ?? {}),
     },
   };
+}
+
+function getClaudeAgentResumeId(
+  sessionId: ClaudeTurnOptions['sessionId'],
+): string | undefined {
+  return typeof sessionId === 'string' &&
+    sessionId !== 'new' &&
+    sessionId !== 'auto'
+    ? sessionId
+    : undefined;
 }
 
 export async function materializeClaudeAgentSkills(options: {

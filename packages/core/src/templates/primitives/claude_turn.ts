@@ -6,7 +6,10 @@ import {
   materializeClaudeAgentSkills,
   type ClaudeTurnOptions,
 } from '../../claude_agent';
-import { createConversationHistoryFingerprint } from '../../conversation';
+import {
+  createConversationHistoryFingerprint,
+  deriveConversationBinding,
+} from '../../conversation';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
@@ -26,6 +29,7 @@ export class ClaudeTurn<
     const client =
       this.options.client ?? (await createDefaultClaudeAgentClient());
     const prompt = await this.resolveInput(currentSession);
+    const sessionId = await this.resolveSessionId(currentSession);
     await materializeClaudeAgentSkills({
       capabilities: this.options.capabilities,
       cwd: this.options.cwd,
@@ -37,6 +41,7 @@ export class ClaudeTurn<
       model: this.options.model,
       allowedTools: this.options.allowedTools,
       disallowedTools: this.options.disallowedTools,
+      sessionId,
       permissionMode: this.options.permissionMode,
       settingSources: this.options.settingSources,
       skills: this.options.skills,
@@ -95,6 +100,25 @@ export class ClaudeTurn<
     }
 
     return this.options.input;
+  }
+
+  private async resolveSessionId(
+    session: Session<TVars, TAttrs>,
+  ): Promise<string | undefined> {
+    if (
+      this.options.sessionId === undefined ||
+      this.options.sessionId === 'new'
+    ) {
+      return undefined;
+    }
+    if (this.options.sessionId === 'auto') {
+      return deriveConversationBinding(session, 'claude-agent')?.id;
+    }
+    if (typeof this.options.sessionId === 'function') {
+      return this.options.sessionId(session);
+    }
+
+    return this.options.sessionId;
   }
 
   private prepareSessionResult(

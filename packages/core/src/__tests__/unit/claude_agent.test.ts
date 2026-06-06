@@ -116,6 +116,7 @@ describe('Claude Agent SDK adapter helpers', () => {
         cwd: '/repo',
         model: 'claude-haiku-4-5',
         allowedTools: ['Read'],
+        sessionId: 'session-existing',
         skills: ['code-review'],
         capabilities: [
           lookupTool,
@@ -128,6 +129,7 @@ describe('Claude Agent SDK adapter helpers', () => {
         cwd: '/repo',
         model: 'claude-haiku-4-5',
         allowedTools: ['Read', 'mcp__prompttrail__lookup'],
+        resume: 'session-existing',
         skills: ['code-review', 'repo-docs'],
         mcpServers: {
           prompttrail: {
