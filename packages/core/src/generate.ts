@@ -29,6 +29,7 @@ import {
 import {
   createPromptTrailStreamState,
   reducePromptTrailStreamEvent,
+  retainPromptTrailStreamMetadata,
   streamStateToAssistantMessage,
   type PromptTrailStreamEvent,
 } from './stream';
@@ -505,6 +506,7 @@ export async function* generateTextStream<
         ...options,
         provider: options.provider,
       }),
+      { attrsKey: 'openai', retain: options.retain },
     );
     return;
   }
@@ -518,6 +520,7 @@ export async function* generateTextStream<
         ...options,
         provider: options.provider,
       }),
+      { attrsKey: 'anthropic', retain: options.retain },
     );
     return;
   }
@@ -531,6 +534,7 @@ export async function* generateTextStream<
         ...options,
         provider: options.provider,
       }),
+      { attrsKey: 'google', retain: options.retain },
     );
     return;
   }
@@ -586,6 +590,7 @@ export async function* promptTrailStreamEventsToMessages<
   TAttrs extends Attrs = Attrs,
 >(
   events: AsyncIterable<PromptTrailStreamEvent>,
+  options: { attrsKey?: string; retain?: LLMOptions['retain'] } = {},
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
   let state = createPromptTrailStreamState();
   for await (const event of events) {
@@ -596,9 +601,30 @@ export async function* promptTrailStreamEventsToMessages<
         content: event.delta || ' ',
       } as Message<TAttrs>;
     } else if (event.type === 'tool.args.done') {
-      yield streamStateToAssistantMessage<TAttrs>(state);
+      yield streamStateToAssistantMessage<TAttrs>(
+        state,
+        createStreamMessageAttrs<TAttrs>(state, options),
+      );
     } else if (event.type === 'message.done') {
-      yield streamStateToAssistantMessage<TAttrs>(state);
+      yield streamStateToAssistantMessage<TAttrs>(
+        state,
+        createStreamMessageAttrs<TAttrs>(state, options),
+      );
     }
   }
+}
+
+function createStreamMessageAttrs<TAttrs extends Attrs>(
+  state: ReturnType<typeof createPromptTrailStreamState>,
+  options: { attrsKey?: string; retain?: LLMOptions['retain'] },
+): TAttrs | undefined {
+  if (!options.attrsKey) {
+    return undefined;
+  }
+  return {
+    [options.attrsKey]: retainPromptTrailStreamMetadata(
+      state,
+      options.retain ?? 'summary',
+    ),
+  } as TAttrs;
 }

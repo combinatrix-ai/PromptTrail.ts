@@ -238,6 +238,48 @@ describe('promptTrailStreamEventsToMessages', () => {
       },
     ]);
   });
+
+  it('attaches provider stream metadata on reduced stream messages', async () => {
+    await expect(
+      collectAsync(
+        promptTrailStreamEventsToMessages(
+          stream([
+            { type: 'text.delta', index: 0, delta: 'Hi' },
+            {
+              type: 'message.done',
+              finishReason: 'stop',
+              usage: { tokens: 1 },
+            },
+          ]),
+          { attrsKey: 'google', retain: 'summary' },
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'assistant', content: 'Hi' },
+      {
+        type: 'assistant',
+        content: 'Hi',
+        attrs: {
+          google: {
+            finishReason: 'stop',
+            usage: { tokens: 1 },
+            text: { preview: 'Hi' },
+            reasoning: { preview: '' },
+            tools: [],
+            errors: [],
+            events: [
+              { type: 'text.delta', index: 0, delta: { preview: 'Hi' } },
+              {
+                type: 'message.done',
+                finishReason: 'stop',
+                usage: { tokens: 1 },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
 });
 
 async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {

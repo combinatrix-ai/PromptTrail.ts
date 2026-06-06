@@ -1,4 +1,5 @@
 import type { Message } from './message';
+import type { RetainLevel } from './runtime';
 import type { Attrs } from './session';
 
 export type PromptTrailStreamEvent =
@@ -36,6 +37,28 @@ export interface PromptTrailStreamState {
   usage?: unknown;
   errors: unknown[];
   events: PromptTrailStreamEvent[];
+}
+
+export interface PromptTrailStreamMetadata {
+  finishReason?: string;
+  usage?: unknown;
+  text?: StreamTextSummary;
+  reasoning?: StreamTextSummary;
+  tools?: StreamToolSummary[];
+  errors?: unknown[];
+  events?: unknown[];
+}
+
+export interface StreamTextSummary {
+  preview: string;
+  truncated?: true;
+  fullLength?: number;
+}
+
+export interface StreamToolSummary {
+  id: string;
+  name?: string;
+  arguments?: unknown;
 }
 
 export function createPromptTrailStreamState(): PromptTrailStreamState {
@@ -112,6 +135,35 @@ export function reducePromptTrailStreamEvents(
   );
 }
 
+export function retainPromptTrailStreamMetadata(
+  state: PromptTrailStreamState,
+  retain: RetainLevel = 'summary',
+): PromptTrailStreamMetadata {
+  const metadata: PromptTrailStreamMetadata = {
+    finishReason: state.finishReason,
+    usage: state.usage,
+  };
+  if (retain === 'none') {
+    return metadata;
+  }
+
+  metadata.text = summarizeStreamText(state.text);
+  metadata.reasoning = summarizeStreamText(state.reasoning);
+  metadata.tools = Object.values(state.tools)
+    .sort((left, right) => left.index - right.index)
+    .map((tool) => ({
+      id: tool.callId,
+      name: tool.name,
+      arguments: normalizeToolArguments(tool),
+    }));
+  metadata.errors = state.errors.map(normalizeStreamError);
+  metadata.events =
+    retain === 'full'
+      ? state.events
+      : state.events.map(summarizePromptTrailStreamEvent);
+  return metadata;
+}
+
 export function streamStateToAssistantMessage<TAttrs extends Attrs = Attrs>(
   state: PromptTrailStreamState,
   attrs?: TAttrs,
@@ -147,6 +199,45 @@ function normalizeToolArguments(tool: PromptTrailStreamToolState) {
   } catch {
     return { value: tool.argsText };
   }
+}
+
+function summarizePromptTrailStreamEvent(event: PromptTrailStreamEvent) {
+  switch (event.type) {
+    case 'text.delta':
+    case 'reasoning.delta':
+    case 'tool.args.delta':
+      return {
+        ...event,
+        delta: summarizeStreamText(event.delta),
+      };
+    case 'error':
+      return {
+        type: event.type,
+        error: normalizeStreamError(event.error),
+      };
+    default:
+      return event;
+  }
+}
+
+function summarizeStreamText(text: string, maxPreviewLength = 500) {
+  return text.length > maxPreviewLength
+    ? {
+        preview: text.slice(0, maxPreviewLength),
+        truncated: true as const,
+        fullLength: text.length,
+      }
+    : { preview: text };
+}
+
+function normalizeStreamError(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+  return error;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   reducePromptTrailStreamEvents,
+  retainPromptTrailStreamMetadata,
   streamStateToAssistantMessage,
   type PromptTrailStreamEvent,
 } from '../../stream';
@@ -70,5 +71,48 @@ describe('PromptTrail stream reducer', () => {
     expect(streamStateToAssistantMessage(state).toolCalls).toEqual([
       { id: 'call-1', name: 'lookup', arguments: { query: 'gemini' } },
     ]);
+  });
+
+  it('retains stream metadata according to retain level', () => {
+    const state = reducePromptTrailStreamEvents([
+      { type: 'reasoning.delta', index: 0, delta: 'think' },
+      { type: 'text.delta', index: 0, delta: 'hello' },
+      { type: 'tool.start', index: 1, callId: 'call-1', name: 'lookup' },
+      {
+        type: 'tool.args.done',
+        index: 1,
+        callId: 'call-1',
+        args: { query: 'docs' },
+      },
+      { type: 'message.done', finishReason: 'stop', usage: { tokens: 3 } },
+    ]);
+
+    expect(retainPromptTrailStreamMetadata(state, 'none')).toEqual({
+      finishReason: 'stop',
+      usage: { tokens: 3 },
+    });
+    expect(retainPromptTrailStreamMetadata(state, 'summary')).toMatchObject({
+      finishReason: 'stop',
+      usage: { tokens: 3 },
+      text: { preview: 'hello' },
+      reasoning: { preview: 'think' },
+      tools: [
+        {
+          id: 'call-1',
+          name: 'lookup',
+          arguments: { query: 'docs' },
+        },
+      ],
+      events: [
+        { type: 'reasoning.delta', delta: { preview: 'think' } },
+        { type: 'text.delta', delta: { preview: 'hello' } },
+        { type: 'tool.start', callId: 'call-1', name: 'lookup' },
+        { type: 'tool.args.done', callId: 'call-1', args: { query: 'docs' } },
+        { type: 'message.done', finishReason: 'stop', usage: { tokens: 3 } },
+      ],
+    });
+    expect(retainPromptTrailStreamMetadata(state, 'full').events).toEqual(
+      state.events,
+    );
   });
 });
