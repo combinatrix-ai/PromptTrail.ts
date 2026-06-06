@@ -573,6 +573,8 @@ export async function* promptTrailStreamEventsToMessages<
       } as Message<TAttrs>;
     } else if (event.type === 'tool.args.done') {
       yield streamStateToAssistantMessage<TAttrs>(state);
+    } else if (event.type === 'message.done') {
+      yield streamStateToAssistantMessage<TAttrs>(state);
     }
   }
 }

@@ -139,6 +139,28 @@ describe('native schema/tool guard', () => {
 });
 
 describe('promptTrailStreamEventsToMessages', () => {
+  it('emits a final assistant message from the reduced stream state', async () => {
+    await expect(
+      collectAsync(
+        promptTrailStreamEventsToMessages(
+          stream([
+            { type: 'text.delta', index: 0, delta: 'Hel' },
+            { type: 'text.delta', index: 0, delta: 'lo' },
+            {
+              type: 'message.done',
+              finishReason: 'stop',
+              usage: { tokens: 3 },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'assistant', content: 'Hel' },
+      { type: 'assistant', content: 'lo' },
+      { type: 'assistant', content: 'Hello', attrs: undefined },
+    ]);
+  });
+
   it('converts normalized provider stream events into message chunks', async () => {
     await expect(
       collectAsync(
