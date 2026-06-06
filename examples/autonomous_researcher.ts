@@ -180,7 +180,7 @@ async function createAutonomousResearcher() {
   const llmSource = Source.llm()
     .openai()
     .apiKey(process.env.OPENAI_API_KEY || '')
-    .model('gpt-4.1')
+    .model('gpt-5.4-nano')
     .temperature(0.7);
 
   const scenario = Scenario.system(

@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     );
 
     const result = await streamText({
-      model: google('models/gemini-1.5-flash-latest'), // Using the provider instance to get a model
+      model: google('models/gemini-2.5-flash-lite'), // Using the provider instance to get a model
       messages: messagesForApi,
     });
 
