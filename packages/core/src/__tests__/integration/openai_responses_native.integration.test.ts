@@ -78,7 +78,7 @@ describe.skipIf(!openAIAvailable)('OpenAI Responses native integration', () => {
           status: z.literal('ok'),
           count: z.number(),
         }),
-        { mode: 'structured_output', functionName: 'NativeSchemaTest' },
+        { mode: 'native', functionName: 'NativeSchemaTest' },
       )
       .getContent(
         Session.create({

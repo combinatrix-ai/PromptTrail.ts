@@ -95,7 +95,7 @@ describe('Source.llm().mock()', () => {
 
       const mockWithSchema = Source.llm()
         .withSchema(schema, {
-          mode: 'structured_output',
+          mode: 'native',
           functionName: 'getUser',
         })
         .mock();

@@ -10,6 +10,7 @@ import type {
   LLMOptions,
   ModelOutput,
   OpenAIProviderConfig,
+  SchemaGenerationMode,
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Session, Vars } from './session';
@@ -827,18 +828,14 @@ export class LlmSource extends ModelSource {
   withSchema<T>(
     schema: z.ZodType<T>,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
     },
   ): LlmSource {
     const newSource = this.clone({});
     newSource.schemaConfig = {
       schema,
-      mode:
-        options?.mode ??
-        (this.options.provider.type === 'anthropic'
-          ? 'tool'
-          : 'structured_output'),
+      mode: options?.mode ?? 'native',
       functionName: options?.functionName || 'generateStructuredOutput',
     };
     return newSource;
@@ -1231,7 +1228,7 @@ export namespace Source {
   export function schema<T extends Record<string, unknown>>(
     schema: z.ZodType<T>,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
       maxAttempts?: number;
       raiseError?: boolean;

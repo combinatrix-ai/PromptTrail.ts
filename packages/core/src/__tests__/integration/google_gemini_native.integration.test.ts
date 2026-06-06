@@ -78,7 +78,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
           status: z.literal('ok'),
           count: z.number(),
         }),
-        { mode: 'structured_output' },
+        { mode: 'native' },
       )
       .getContent(
         Session.create({

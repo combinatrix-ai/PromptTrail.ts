@@ -1,5 +1,6 @@
 // structured.ts
 import { z } from 'zod';
+import type { SchemaGenerationMode } from '../../llm_types';
 import type { Session } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
 import { Attrs, Vars } from '../../session';
@@ -18,7 +19,7 @@ export class Structured<
   constructor(options: {
     source?: Source<ModelOutput>;
     schema: z.ZodType;
-    mode?: 'tool' | 'structured_output';
+    mode?: SchemaGenerationMode;
     functionName?: string;
     maxAttempts?: number;
   }) {
@@ -54,7 +55,7 @@ export class Structured<
   static withSchema<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
     schema: z.ZodType,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
       maxAttempts?: number;
     },
@@ -72,7 +73,7 @@ export class Structured<
     source: Source<ModelOutput>,
     schema: z.ZodType,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
     },
   ): Structured<TAttrs, TVars> {

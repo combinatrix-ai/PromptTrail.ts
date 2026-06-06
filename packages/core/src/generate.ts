@@ -18,6 +18,7 @@ import {
   generateGoogleGeminiWithSchema,
   streamGoogleGeminiEvents,
 } from './google_gemini';
+import { normalizeSchemaGenerationMode } from './llm_types';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import {
@@ -303,11 +304,13 @@ export async function generateWithSchema<
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
 ): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const schemaMode = normalizeSchemaGenerationMode(schemaOptions.mode);
+
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
     options.provider.adapter === 'native' &&
-    schemaOptions.mode === 'structured_output'
+    schemaMode === 'native'
   ) {
     return generateOpenAIResponsesWithSchema(
       session,
@@ -350,7 +353,7 @@ export async function generateWithSchema<
   const messages = convertSessionToAiSdkMessages(session, options);
   const provider = createProvider(options);
 
-  if (schemaOptions.mode === 'structured_output') {
+  if (schemaMode === 'native') {
     // Use AI SDK's experimental_output for structured generation
     const result = await aiSdkGenerateText({
       model: provider as LanguageModelV1,

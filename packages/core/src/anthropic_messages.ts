@@ -11,6 +11,7 @@ import {
   mapAnthropicThinking,
 } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
+import { normalizeSchemaGenerationMode } from './llm_types';
 import type {
   AnthropicProviderConfig,
   LLMOptions,
@@ -162,7 +163,7 @@ export async function generateAnthropicMessagesWithSchema<
     getAnthropicRequestOptions(options) as any,
   );
 
-  if (schemaOptions.mode === 'structured_output') {
+  if (normalizeSchemaGenerationMode(schemaOptions.mode) === 'native') {
     const text = extractAnthropicText(response.content as unknown[]).trim();
     let output: unknown;
     try {
@@ -237,7 +238,7 @@ export function buildAnthropicSchemaRequestBody(
     container: getAnthropicSkillsContainer(options),
   };
 
-  if (schemaOptions.mode === 'structured_output') {
+  if (normalizeSchemaGenerationMode(schemaOptions.mode) === 'native') {
     return {
       ...base,
       output_config: {

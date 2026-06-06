@@ -55,9 +55,20 @@ export interface LLMOptions {
   compaction?: CompactionOptions;
 }
 
+export type SchemaGenerationMode = 'native' | 'tool' | 'structured_output';
+
+export function normalizeSchemaGenerationMode(
+  mode: SchemaGenerationMode | undefined,
+): 'native' | 'tool' {
+  return mode === 'tool' ? 'tool' : 'native';
+}
+
 export interface SchemaGenerationOptions {
   schema: z.ZodType;
-  mode?: 'tool' | 'structured_output';
+  /**
+   * `structured_output` is kept as a deprecated alias for `native`.
+   */
+  mode?: SchemaGenerationMode;
   functionName?: string;
 }
 

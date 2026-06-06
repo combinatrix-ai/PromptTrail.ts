@@ -373,7 +373,7 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 
-  it('builds forced-tool schema requests by default', () => {
+  it('builds forced-tool schema requests when requested', () => {
     const session = Session.create().addMessage({
       type: 'user',
       content: 'Extract status and count.',
@@ -390,6 +390,7 @@ describe('Anthropic Messages native adapter helpers', () => {
           },
         },
         {
+          mode: 'tool',
           schema: z.object({
             status: z.literal('ok'),
             count: z.number(),
@@ -432,7 +433,7 @@ describe('Anthropic Messages native adapter helpers', () => {
         maxTokens: 256,
       },
       {
-        mode: 'structured_output',
+        mode: 'native',
         schema: z.object({
           status: z.literal('ok'),
           count: z.number(),
@@ -461,6 +462,33 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
     expect(body).not.toHaveProperty('tools');
     expect(body).not.toHaveProperty('tool_choice');
+  });
+
+  it('keeps structured_output as a native schema mode alias', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Extract status.',
+    });
+
+    const body = buildAnthropicSchemaRequestBody(
+      session,
+      {
+        provider: {
+          type: 'anthropic',
+          apiKey: 'test-key',
+          modelName: 'claude-haiku-4-5',
+        },
+      },
+      {
+        mode: 'structured_output',
+        schema: z.object({
+          status: z.literal('ok'),
+        }),
+      },
+    );
+
+    expect(body).toHaveProperty('output_config');
+    expect(body).not.toHaveProperty('tools');
   });
 });
 
