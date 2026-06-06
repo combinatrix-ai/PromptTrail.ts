@@ -8,8 +8,10 @@ import {
   collectClaudeAgentTurnResult,
   createClaudePromptTrailMcpServer,
   getClaudeAllowedToolNames,
+  getClaudeAgentMcpServers,
   getClaudeSkillNames,
   materializeClaudeAgentSkills,
+  promptTrailMcpToClaudeAgentMcpServer,
   promptTrailToolToClaudeAgentToolDefinition,
   renderClaudeSkillMarkdown,
   sanitizeClaudeSkillName,
@@ -99,6 +101,91 @@ describe('Claude Agent SDK adapter helpers', () => {
             name: 'prompttrail',
             tools: [{ name: 'lookup' }],
           },
+        },
+      },
+    });
+  });
+
+  it('maps MCP server capabilities into Claude Agent SDK options', () => {
+    const inProcessServer = { name: 'memory', tools: [] };
+    const capabilities = [
+      {
+        kind: 'mcp' as const,
+        name: 'docs',
+        transport: {
+          kind: 'http' as const,
+          url: 'https://mcp.example.com',
+          headers: { authorization: 'Bearer test' },
+        },
+        tools: ['search', 'fetch'],
+      },
+      {
+        kind: 'mcp' as const,
+        name: 'repo',
+        transport: {
+          kind: 'stdio' as const,
+          command: 'repo-mcp',
+          args: ['--root', '/repo'],
+          env: { NODE_ENV: 'test' },
+        },
+        tools: 'all' as const,
+      },
+      {
+        kind: 'mcp' as const,
+        name: 'memory',
+        transport: {
+          kind: 'sdk-in-process' as const,
+          server: inProcessServer,
+        },
+      },
+    ];
+
+    expect(promptTrailMcpToClaudeAgentMcpServer(capabilities[0])).toEqual({
+      type: 'http',
+      url: 'https://mcp.example.com',
+      headers: { authorization: 'Bearer test' },
+      allowedTools: ['search', 'fetch'],
+    });
+    expect(promptTrailMcpToClaudeAgentMcpServer(capabilities[1])).toEqual({
+      type: 'stdio',
+      command: 'repo-mcp',
+      args: ['--root', '/repo'],
+      env: { NODE_ENV: 'test' },
+      allowedTools: undefined,
+    });
+    expect(promptTrailMcpToClaudeAgentMcpServer(capabilities[2])).toBe(
+      inProcessServer,
+    );
+    expect(
+      getClaudeAgentMcpServers(capabilities, [], Session.create()),
+    ).toEqual({
+      docs: {
+        type: 'http',
+        url: 'https://mcp.example.com',
+        headers: { authorization: 'Bearer test' },
+        allowedTools: ['search', 'fetch'],
+      },
+      repo: {
+        type: 'stdio',
+        command: 'repo-mcp',
+        args: ['--root', '/repo'],
+        env: { NODE_ENV: 'test' },
+        allowedTools: undefined,
+      },
+      memory: inProcessServer,
+    });
+
+    expect(
+      buildClaudeAgentQueryParams('Use docs MCP', Session.create(), {
+        capabilities,
+      }),
+    ).toMatchObject({
+      options: {
+        allowedTools: ['mcp__docs__search', 'mcp__docs__fetch'],
+        mcpServers: {
+          docs: { type: 'http' },
+          repo: { type: 'stdio' },
+          memory: inProcessServer,
         },
       },
     });

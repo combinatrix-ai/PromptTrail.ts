@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type {
   ApprovalHandler,
   CapabilitySet,
+  McpServer,
   PromptTrailTool,
   RuntimeSkill,
 } from './capabilities';
@@ -89,6 +90,14 @@ export function getClaudeRuntimeSkills(
   );
 }
 
+export function getClaudeMcpServers(
+  capabilities: CapabilitySet | undefined,
+): McpServer[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is McpServer => capability.kind === 'mcp',
+  );
+}
+
 export function getClaudeSkillNames(
   capabilities: CapabilitySet | undefined,
   explicitSkills: readonly string[] = [],
@@ -106,6 +115,16 @@ export function getClaudeAllowedToolNames(
   serverName = 'prompttrail',
 ): string[] {
   return tools.map((tool) => `mcp__${serverName}__${tool.name}`);
+}
+
+export function getClaudeAllowedMcpToolNames(
+  servers: readonly McpServer[],
+): string[] {
+  return servers.flatMap((server) =>
+    Array.isArray(server.tools)
+      ? server.tools.map((tool) => `mcp__${server.name}__${tool}`)
+      : [],
+  );
 }
 
 export function promptTrailToolToClaudeAgentToolDefinition(
@@ -155,6 +174,50 @@ export function createClaudePromptTrailMcpServer(
   };
 }
 
+export function promptTrailMcpToClaudeAgentMcpServer(
+  server: McpServer,
+): unknown {
+  if (server.transport.kind === 'sdk-in-process') {
+    return server.transport.server;
+  }
+  if (server.transport.kind === 'http') {
+    return {
+      type: 'http',
+      url: server.transport.url,
+      headers: server.transport.headers,
+      allowedTools: server.tools === 'all' ? undefined : server.tools,
+    };
+  }
+  return {
+    type: 'stdio',
+    command: server.transport.command,
+    args: server.transport.args,
+    env: server.transport.env,
+    allowedTools: server.tools === 'all' ? undefined : server.tools,
+  };
+}
+
+export function getClaudeAgentMcpServers(
+  capabilities: CapabilitySet | undefined,
+  tools: readonly PromptTrailTool[],
+  session: Session<any, any>,
+  sdk?: ClaudeAgentSdkLike,
+): Record<string, unknown> | undefined {
+  const servers: Record<string, unknown> = {};
+  for (const server of getClaudeMcpServers(capabilities)) {
+    servers[server.name] = promptTrailMcpToClaudeAgentMcpServer(server);
+  }
+  if (tools.length > 0) {
+    servers.prompttrail = createClaudePromptTrailMcpServer(
+      tools,
+      session,
+      sdk,
+      'prompttrail',
+    );
+  }
+  return Object.keys(servers).length > 0 ? servers : undefined;
+}
+
 export function buildClaudeAgentQueryParams(
   prompt: string,
   session: Session<any, any>,
@@ -166,30 +229,29 @@ export function buildClaudeAgentQueryParams(
 ): ClaudeAgentQueryParams {
   const tools = getClaudePromptTrailTools(options.capabilities);
   const skillNames = getClaudeSkillNames(options.capabilities, options.skills);
-  const mcpServers =
-    tools.length > 0
-      ? {
-          prompttrail: createClaudePromptTrailMcpServer(
-            tools,
-            session,
-            sdk,
-            'prompttrail',
-          ),
-        }
-      : undefined;
+  const mcpServers = getClaudeAgentMcpServers(
+    options.capabilities,
+    tools,
+    session,
+    sdk,
+  );
+  const mcpAllowedTools = getClaudeAllowedMcpToolNames(
+    getClaudeMcpServers(options.capabilities),
+  );
+  const allowedTools = [
+    ...(options.allowedTools ?? []),
+    ...(tools.length > 0
+      ? getClaudeAllowedToolNames(tools, 'prompttrail')
+      : []),
+    ...mcpAllowedTools,
+  ];
 
   return {
     prompt,
     options: {
       cwd: options.cwd,
       model: options.model,
-      allowedTools:
-        tools.length > 0
-          ? [
-              ...(options.allowedTools ?? []),
-              ...getClaudeAllowedToolNames(tools, 'prompttrail'),
-            ]
-          : options.allowedTools,
+      allowedTools: allowedTools.length > 0 ? allowedTools : undefined,
       disallowedTools: options.disallowedTools,
       permissionMode: options.permissionMode,
       settingSources: options.settingSources,
