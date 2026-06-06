@@ -28,6 +28,12 @@ export interface GeminiFunctionCall {
   raw: unknown;
 }
 
+export interface GeminiCacheClient {
+  caches: {
+    create(params: Record<string, unknown>): Promise<{ name?: string }>;
+  };
+}
+
 export async function generateGoogleGeminiText<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -244,6 +250,48 @@ export function buildGeminiGenerationConfig(
         : undefined,
     ...extraConfig,
   };
+}
+
+export function buildGeminiCachedContentCreateParams(
+  session: Session<any, any>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  tools: readonly PromptTrailTool[] = getGeminiPromptTrailTools(options),
+  toolDefinitions: readonly unknown[] = getGeminiToolDefinitions(options),
+): Record<string, unknown> {
+  return {
+    model: options.provider.modelName,
+    config: {
+      displayName: options.cacheKey,
+      contents: convertSessionToGeminiContents(session),
+      systemInstruction: getGeminiSystemInstruction(session, options),
+      tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
+      toolConfig:
+        tools.length > 0 && options.toolChoice
+          ? {
+              functionCallingConfig: {
+                mode: mapGeminiFunctionCallingMode(options.toolChoice),
+                allowedFunctionNames:
+                  options.toolChoice === 'required'
+                    ? tools.map((tool) => tool.name)
+                    : undefined,
+              },
+            }
+          : undefined,
+    },
+  };
+}
+
+export async function createGeminiCachedContent(
+  client: GeminiCacheClient,
+  params: Record<string, unknown>,
+): Promise<string> {
+  const cached = await client.caches.create(params);
+  if (!cached.name) {
+    throw new Error(
+      'Gemini CachedContent create response did not include name.',
+    );
+  }
+  return cached.name;
 }
 
 export function convertSessionToGeminiContents(

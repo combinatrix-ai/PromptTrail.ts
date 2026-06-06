@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   buildGeminiGenerationConfig,
+  buildGeminiCachedContentCreateParams,
   collectGeminiFunctionCalls,
   convertMessagesToGeminiContents,
   convertSessionToGeminiContents,
+  createGeminiCachedContent,
   createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
   getGeminiToolDefinitions,
@@ -103,6 +105,84 @@ describe('Google Gemini native adapter helpers', () => {
       tools: undefined,
       toolConfig: undefined,
     });
+  });
+
+  it('builds Gemini CachedContent create params from canonical session history', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prompt.' });
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(
+      buildGeminiCachedContentCreateParams(session, {
+        provider: {
+          type: 'google',
+          modelName: 'gemini-2.5-flash',
+        },
+        cacheKey: 'repo-prefix',
+        capabilities: [tool],
+        toolChoice: 'required',
+      }),
+    ).toEqual({
+      model: 'gemini-2.5-flash',
+      config: {
+        displayName: 'repo-prefix',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prompt.' }] }],
+        systemInstruction: 'Cache this system.',
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: 'lookup',
+                description: 'Lookup docs',
+                parametersJsonSchema: {
+                  type: 'object',
+                  properties: { query: { type: 'string' } },
+                  required: ['query'],
+                  additionalProperties: false,
+                },
+              },
+            ],
+          },
+        ],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+            allowedFunctionNames: ['lookup'],
+          },
+        },
+      },
+    });
+  });
+
+  it('creates Gemini CachedContent through an injectable client', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/abc' };
+        },
+      },
+    };
+
+    await expect(
+      createGeminiCachedContent(client, { model: 'gemini-2.5-flash' }),
+    ).resolves.toBe('cachedContents/abc');
+    expect(calls).toEqual([{ model: 'gemini-2.5-flash' }]);
+    await expect(
+      createGeminiCachedContent(
+        { caches: { create: async () => ({}) } },
+        { model: 'gemini-2.5-flash' },
+      ),
+    ).rejects.toThrow(
+      'Gemini CachedContent create response did not include name.',
+    );
   });
 
   it('maps PromptTrail tools to Gemini function declarations', () => {
