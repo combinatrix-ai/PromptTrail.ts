@@ -15,6 +15,7 @@ export * from './provider_stream';
 export * from './replay_pins';
 export * from './runtime';
 export * from './runtime_bindings';
+export * from './runtime_dispatch';
 export * from './runtime_mocks';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';

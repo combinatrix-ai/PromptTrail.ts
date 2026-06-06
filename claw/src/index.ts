@@ -11,18 +11,22 @@ import {
 } from 'discord.js';
 import {
   PromptTrail,
+  AssistantDeliveryTracker,
   agent,
   bind,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
+  dispatchRuntimeBindingEvent,
   discord,
+  findRuntimeBinding,
+  isConcreteDiscordDeliveryTarget,
   memoryStore,
-  type BindingDefaults,
+  mergeBindingDefaults,
+  passesDiscordBehavior,
+  resolveRuntimeDelivery,
+  resolveRuntimeInput,
   type ConcreteDiscordDeliveryTarget,
-  type DeliveryTarget,
   type DiscordMessageEvent,
-  type RuntimeBinding,
-  type RuntimeBindingEvent,
 } from '@prompttrail/core';
 import type { Message as PromptTrailMessage } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
@@ -39,11 +43,6 @@ interface ClawConfig {
   codexModel?: string;
   codexCwd: string;
   codexTimeoutMs: number;
-}
-
-interface DeliveryRecord {
-  conversationId: string;
-  deliveredAssistantCount: number;
 }
 
 const config = readConfig();
@@ -99,7 +98,7 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-const deliveryRecords = new Map<string, DeliveryRecord>();
+const deliveryTracker = new AssistantDeliveryTracker();
 const codexThreadIds = new Map<string, string>();
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -127,47 +126,37 @@ async function handleMessage(message: DiscordMessage): Promise<void> {
     return;
   }
 
-  const binding = findBinding('discord.messages', event);
+  const binding = findRuntimeBinding(bundle, 'discord.messages', event);
   if (!binding) {
     return;
   }
 
-  const defaults = mergeDefaults(bundle.defaults, binding.defaults);
+  const defaults = mergeBindingDefaults(bundle.defaults, binding.defaults);
   if (!passesDiscordBehavior(event, defaults.behavior)) {
     return;
   }
 
-  const conversationId = binding.conversation(event);
-  const delivery = resolveDelivery(defaults.delivery, event);
-  const result = await withTypingIndicator(delivery, () =>
-    runtime.send({
-      agent: binding.agent,
-      runId: conversationId,
-      input: {
-        kind: 'user',
-        content: stripBotMention(message.content, client.user?.id),
-        attrs: {
-          source: 'discord',
-          author: event.author,
-          authorId: event.authorId,
-          channel: event.channel,
-          channelId: event.channelId,
-          thread: event.thread,
-          runtimeContext: {
-            conversationId,
-            delivery,
-            toolsets: defaults.toolsets,
-          },
-        },
-      },
-      durable: defaults.durable ?? true,
+  const delivery = resolveRuntimeDelivery(defaults.delivery, event);
+  const discordDelivery = isConcreteDiscordDeliveryTarget(delivery)
+    ? delivery
+    : undefined;
+  const dispatched = await withTypingIndicator(discordDelivery, () =>
+    dispatchRuntimeBindingEvent({
+      app: runtime,
+      binding,
+      event,
+      defaults,
+      content: stripBotMention(
+        resolveRuntimeInput(binding, event),
+        client.user?.id,
+      ),
     }),
   );
 
   await deliverNewAssistantMessages(
-    conversationId,
-    delivery,
-    result.session.messages,
+    dispatched.conversationId,
+    discordDelivery,
+    dispatched.result.session.messages,
   );
 }
 
@@ -202,84 +191,6 @@ function toDiscordEvent(
   };
 }
 
-function findBinding<TEvent extends RuntimeBindingEvent>(
-  sourceType: string,
-  event: TEvent,
-): RuntimeBinding<TEvent> | undefined {
-  return bundle.bindings.find(
-    (binding) =>
-      binding.source.type === sourceType &&
-      binding.filters.every((filter) =>
-        (filter as (candidate: TEvent) => boolean)(event),
-      ),
-  ) as RuntimeBinding<TEvent> | undefined;
-}
-
-function mergeDefaults(
-  base: BindingDefaults,
-  override: BindingDefaults,
-): BindingDefaults {
-  return {
-    ...base,
-    ...override,
-    context: { ...(base.context ?? {}), ...(override.context ?? {}) },
-    behavior: { ...(base.behavior ?? {}), ...(override.behavior ?? {}) },
-  };
-}
-
-function passesDiscordBehavior(
-  event: DiscordMessageEvent,
-  behavior: BindingDefaults['behavior'],
-): boolean {
-  if (!behavior) {
-    return true;
-  }
-  if (
-    behavior.allowedChannels &&
-    !behavior.allowedChannels.some((channel) => matchesChannel(event, channel))
-  ) {
-    return false;
-  }
-  if (event.thread && behavior.threadRequireMention === false) {
-    return true;
-  }
-  if (
-    behavior.freeResponseChannels?.some((channel) =>
-      matchesChannel(event, channel),
-    )
-  ) {
-    return true;
-  }
-  if (behavior.requireMention === false) {
-    return true;
-  }
-  return event.mentionsBot === true;
-}
-
-function matchesChannel(event: DiscordMessageEvent, channel: string): boolean {
-  return event.channel === channel || event.channelId === channel;
-}
-
-function resolveDelivery(
-  delivery: DeliveryTarget | undefined,
-  event: DiscordMessageEvent,
-): ConcreteDiscordDeliveryTarget | undefined {
-  if (!delivery) {
-    return undefined;
-  }
-  if (delivery.platform === 'discord' && 'kind' in delivery) {
-    return {
-      platform: 'discord',
-      channel: event.channel,
-      thread: event.thread,
-    };
-  }
-  if (delivery.platform === 'discord' && 'channel' in delivery) {
-    return delivery;
-  }
-  return undefined;
-}
-
 async function deliverNewAssistantMessages(
   conversationId: string,
   delivery: ConcreteDiscordDeliveryTarget | undefined,
@@ -288,22 +199,18 @@ async function deliverNewAssistantMessages(
   if (!delivery) {
     return;
   }
-  const assistants = messages.filter((message) => message.type === 'assistant');
-  const record = deliveryRecords.get(conversationId) ?? {
+  for (const deliveryAttempt of deliveryTracker.pending(
     conversationId,
-    deliveredAssistantCount: 0,
-  };
-  const pending = assistants.slice(record.deliveredAssistantCount);
-  for (const message of pending) {
+    messages,
+  )) {
     const target = await resolveDiscordDeliveryChannel(delivery);
     if (!target?.isSendable()) {
       console.warn('Discord delivery target is not sendable', delivery);
       continue;
     }
-    await target.send(message.content);
-    record.deliveredAssistantCount++;
+    await target.send(deliveryAttempt.message.content);
+    deliveryTracker.markDelivered(deliveryAttempt);
   }
-  deliveryRecords.set(conversationId, record);
 }
 
 async function resolveDiscordDeliveryChannel(
@@ -437,16 +344,26 @@ async function generateCodexReply(
       throw new Error('Codex App Server returned no final answer.');
     }
     return finalAnswer;
+  } catch (error) {
+    codexThreadIds.delete(conversationId);
+    console.error('Codex App Server reply failed', error);
+    return codexFailureMessage(error);
   } finally {
     await client.close?.();
   }
 }
 
+function codexFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('timed out')) {
+    return 'Codex App Server の応答がタイムアウトしました。次のメッセージでは新しい Codex thread で再試行します。';
+  }
+  return 'Codex App Server から応答を取得できませんでした。次のメッセージでは新しい Codex thread で再試行します。';
+}
+
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    Symbol.asyncIterator in value
+    typeof value === 'object' && value !== null && Symbol.asyncIterator in value
   );
 }
 
@@ -493,7 +410,7 @@ function readConfig(): ClawConfig {
       readOptionalString('CODEX_APP_SERVER_URL') ?? 'ws://127.0.0.1:8390',
     codexModel: readOptionalString('CLAW_CODEX_MODEL'),
     codexCwd: readOptionalString('CLAW_CODEX_CWD') ?? process.cwd(),
-    codexTimeoutMs: readInteger('CLAW_CODEX_TIMEOUT_MS', 120_000),
+    codexTimeoutMs: readInteger('CLAW_CODEX_TIMEOUT_MS', 300_000),
   };
 }
 

@@ -9,7 +9,6 @@ import type { Message } from './message';
 import type { Attrs } from './session';
 import {
   type BindingDefaults,
-  type ConcreteDiscordDeliveryTarget,
   type CronEvent,
   type DeliveryTarget,
   type DiscordMessageEvent,
@@ -17,6 +16,14 @@ import {
   type RuntimeBindingEvent,
   type RuntimeBundle,
 } from './runtime_bindings';
+import {
+  AssistantDeliveryTracker,
+  dispatchRuntimeBindingEvent,
+  findRuntimeBinding,
+  isConcreteDiscordDeliveryTarget,
+  mergeBindingDefaults,
+  passesDiscordBehavior,
+} from './runtime_dispatch';
 
 export interface MockChannel {
   id: string;
@@ -231,7 +238,7 @@ class MockRuntimeFixture {
     journal: () => EffectJournalEntry[];
   };
 
-  private readonly deliveredKeys = new Set<string>();
+  private readonly deliveryTracker = new AssistantDeliveryTracker();
   private readonly effectEntries: EffectJournalEntry[] = [];
 
   constructor(private readonly options: MockRuntimeFixtureOptions) {
@@ -316,12 +323,16 @@ class MockRuntimeFixture {
       isDM: message.isDM,
     };
 
-    const binding = this.findBinding('discord.messages', event);
+    const binding = findRuntimeBinding(
+      this.options.bundle,
+      'discord.messages',
+      event,
+    );
     if (!binding) {
       return;
     }
 
-    const defaults = mergeDefaults(
+    const defaults = mergeBindingDefaults(
       this.options.bundle.defaults,
       binding.defaults,
     );
@@ -367,21 +378,8 @@ class MockRuntimeFixture {
     await this.dispatch(
       binding,
       event,
-      mergeDefaults(this.options.bundle.defaults, binding.defaults),
+      mergeBindingDefaults(this.options.bundle.defaults, binding.defaults),
     );
-  }
-
-  private findBinding<TEvent extends RuntimeBindingEvent>(
-    sourceType: string,
-    event: TEvent,
-  ): RuntimeBinding<TEvent> | undefined {
-    return this.options.bundle.bindings.find(
-      (binding) =>
-        binding.source.type === sourceType &&
-        binding.filters.every((filter) =>
-          (filter as (event: TEvent) => boolean)(event),
-        ),
-    ) as RuntimeBinding<TEvent> | undefined;
   }
 
   private async dispatch<TEvent extends RuntimeBindingEvent>(
@@ -389,28 +387,11 @@ class MockRuntimeFixture {
     event: TEvent,
     defaults: BindingDefaults,
   ): Promise<void> {
-    const conversationId = binding.conversation(event);
-    const delivery = resolveDelivery(defaults.delivery, event);
-    const context = contextFromDefaults(
-      conversationId,
-      defaults,
-      delivery,
+    const { conversationId, result } = await dispatchRuntimeBindingEvent({
+      app: this.app,
+      binding,
       event,
-    );
-    const content = resolveInput(binding, event);
-    const result = await this.app.send({
-      agent: binding.agent,
-      runId: conversationId,
-      input: {
-        kind: 'user',
-        content,
-        attrs: {
-          source: event.source,
-          ...eventAttrs(event),
-          runtimeContext: context,
-        },
-      },
-      durable: defaults.durable ?? true,
+      defaults,
     });
     this.deliverUndelivered(conversationId, result.session.messages);
   }
@@ -419,43 +400,36 @@ class MockRuntimeFixture {
     conversationId: string,
     messages: readonly Message<Attrs>[],
   ): void {
-    const assistants = messages.filter(
-      (message) => message.type === 'assistant',
-    );
-    for (let index = 0; index < assistants.length; index++) {
-      const message = assistants[index];
+    for (const deliveryAttempt of this.deliveryTracker.pending(
+      conversationId,
+      messages,
+    )) {
+      const message = deliveryAttempt.message;
       const attrs = (message.attrs ?? {}) as Record<string, unknown>;
       const observed = (attrs.observed ?? {}) as Record<string, unknown>;
       const delivery = observed.delivery as DeliveryTarget | undefined;
-      const idempotencyKey = `${conversationId}:turn:${
-        index + 1
-      }:delivery:final`;
-      if (this.deliveredKeys.has(idempotencyKey)) {
-        continue;
-      }
-      this.deliveredKeys.add(idempotencyKey);
-      if (!delivery || delivery.platform !== 'discord') {
+      this.deliveryTracker.markDelivered(deliveryAttempt);
+      if (!isConcreteDiscordDeliveryTarget(delivery)) {
         this.effectEntries.push({
           kind: 'unresolvedDelivery',
-          idempotencyKey,
+          idempotencyKey: deliveryAttempt.idempotencyKey,
           status: 'skipped',
           target: delivery,
         });
         continue;
       }
-      const target = delivery as ConcreteDiscordDeliveryTarget;
       this.discord.deliver({
         platform: 'discord',
-        channel: target.channel,
-        thread: target.thread,
+        channel: delivery.channel,
+        thread: delivery.thread,
         content: message.content,
-        idempotencyKey,
+        idempotencyKey: deliveryAttempt.idempotencyKey,
       });
       this.effectEntries.push({
         kind: 'delivery',
-        idempotencyKey,
+        idempotencyKey: deliveryAttempt.idempotencyKey,
         status: 'completed',
-        target,
+        target: delivery,
       });
     }
   }
@@ -472,183 +446,6 @@ class MockRuntimeFixture {
     }
     return undefined;
   }
-}
-
-function resolveInput<TEvent extends RuntimeBindingEvent>(
-  binding: RuntimeBinding<TEvent>,
-  event: TEvent,
-): string {
-  if (typeof binding.input === 'function') {
-    return binding.input(event as TEvent & Record<string, unknown>);
-  }
-  if (typeof binding.input === 'string') {
-    return binding.input;
-  }
-  return 'content' in event ? event.content : event.job.name;
-}
-
-function mergeDefaults(
-  base: BindingDefaults,
-  override: BindingDefaults,
-): BindingDefaults {
-  return {
-    ...base,
-    ...override,
-    context: { ...(base.context ?? {}), ...(override.context ?? {}) },
-    behavior: { ...(base.behavior ?? {}), ...(override.behavior ?? {}) },
-  };
-}
-
-function resolveDelivery(
-  delivery: DeliveryTarget | undefined,
-  event: RuntimeBindingEvent,
-): DeliveryTarget | undefined {
-  if (!delivery) {
-    return undefined;
-  }
-  if (delivery.platform === 'origin') {
-    if (event.source === 'cron') {
-      return event.job.origin;
-    }
-    return discordOrigin(event);
-  }
-  if (delivery.platform === 'discord' && 'kind' in delivery) {
-    return event.source === 'discord' ? discordOrigin(event) : undefined;
-  }
-  return delivery;
-}
-
-function discordOrigin(
-  event: DiscordMessageEvent,
-): ConcreteDiscordDeliveryTarget {
-  return {
-    platform: 'discord',
-    channel: event.channel,
-    thread: event.thread,
-  };
-}
-
-function contextFromDefaults(
-  conversationId: string,
-  defaults: BindingDefaults,
-  delivery: DeliveryTarget | undefined,
-  event: RuntimeBindingEvent,
-): Record<string, unknown> {
-  const channelPrompt = resolveChannelPrompt(defaults, event);
-  const skills = resolveChannelSkills(defaults, event);
-  return {
-    ...(defaults.context ?? {}),
-    conversationId,
-    delivery,
-    toolsets: defaults.toolsets,
-    skills,
-    workdir: defaults.workdir,
-    historyBackfill: defaults.context?.historyBackfill,
-    channelPrompt,
-  };
-}
-
-function resolveChannelPrompt(
-  defaults: BindingDefaults,
-  event: RuntimeBindingEvent,
-): string | undefined {
-  if (event.source !== 'discord') {
-    return undefined;
-  }
-  const prompts = defaults.context?.channelPrompts as
-    | Record<string, string>
-    | undefined;
-  if (!prompts) {
-    return undefined;
-  }
-  return (
-    (event.thread ? prompts[event.thread] : undefined) ??
-    prompts[event.channel] ??
-    prompts[event.channelId]
-  );
-}
-
-function resolveChannelSkills(
-  defaults: BindingDefaults,
-  event: RuntimeBindingEvent,
-): readonly string[] | undefined {
-  if (event.source !== 'discord') {
-    return defaults.skills;
-  }
-  const bindings = defaults.context?.channelSkillBindings as
-    | Array<{ channel: string; skills: readonly string[] }>
-    | undefined;
-  if (!bindings) {
-    return defaults.skills;
-  }
-  const exactThread = event.thread
-    ? bindings.find((binding) => binding.channel === event.thread)
-    : undefined;
-  const parent = bindings.find(
-    (binding) =>
-      binding.channel === event.channel || binding.channel === event.channelId,
-  );
-  return exactThread?.skills ?? parent?.skills ?? defaults.skills;
-}
-
-function eventAttrs(event: RuntimeBindingEvent): Record<string, unknown> {
-  if (event.source === 'discord') {
-    return {
-      author: event.author,
-      authorId: event.authorId,
-      channel: event.channel,
-      channelId: event.channelId,
-      thread: event.thread,
-    };
-  }
-  return {
-    job: event.job.name,
-    jobId: event.job.id,
-  };
-}
-
-function passesDiscordBehavior(
-  event: DiscordMessageEvent,
-  behavior: BindingDefaults['behavior'],
-): boolean {
-  if (!behavior) {
-    return true;
-  }
-  if (
-    behavior.allowedChannels &&
-    !behavior.allowedChannels.some((channel) =>
-      matchesDiscordChannel(event, channel),
-    )
-  ) {
-    return false;
-  }
-  if (event.thread) {
-    const threadCanRespond =
-      behavior.threadResponseChannels?.some((channel) =>
-        matchesDiscordChannel(event, channel),
-      ) ?? true;
-    if (threadCanRespond && behavior.threadRequireMention === false) {
-      return true;
-    }
-  }
-  if (
-    behavior.freeResponseChannels?.some((channel) =>
-      matchesDiscordChannel(event, channel),
-    )
-  ) {
-    return true;
-  }
-  if (behavior.requireMention === false) {
-    return true;
-  }
-  return event.mentionsBot === true;
-}
-
-function matchesDiscordChannel(
-  event: DiscordMessageEvent,
-  channel: string,
-): boolean {
-  return event.channel === channel || event.channelId === channel;
 }
 
 function slug(value: string): string {
