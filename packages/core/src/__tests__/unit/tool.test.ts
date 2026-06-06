@@ -161,5 +161,87 @@ describe('Tool namespace', () => {
         isError: true,
       });
     });
+
+    it('runs approval handlers before executing tools', async () => {
+      const approvedTool = Tool.create({
+        name: 'approved',
+        description: 'Approved',
+        inputSchema: z.object({ value: z.string() }),
+        approval: async (request) => {
+          expect(request).toMatchObject({
+            provider: 'openai',
+            action: 'tool.execute',
+            capability: 'approved',
+            input: { value: 'x' },
+          });
+          return { type: 'approve' };
+        },
+        execute: ({ value }) => ({ value }),
+      });
+
+      await expect(
+        executePromptTrailTool(
+          approvedTool,
+          { value: 'x' },
+          { provider: 'openai' },
+        ),
+      ).resolves.toEqual({
+        content: [{ type: 'json', json: { value: 'x' } }],
+        structuredContent: { value: 'x' },
+      });
+    });
+
+    it('returns tool errors when approval is denied', async () => {
+      const deniedTool = Tool.create({
+        name: 'denied',
+        description: 'Denied',
+        inputSchema: z.object({ value: z.string() }),
+        approval: async () => ({ type: 'deny', reason: 'too risky' }),
+        execute: () => ({ unreachable: true }),
+      });
+
+      await expect(
+        executePromptTrailTool(deniedTool, { value: 'x' }),
+      ).resolves.toEqual({
+        content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
+        isError: true,
+      });
+    });
+
+    it('requires a context approval handler for policy-based approvals', async () => {
+      const needsApproval = Tool.create({
+        name: 'needsApproval',
+        description: 'Needs approval',
+        inputSchema: z.object({ value: z.string() }),
+        approval: 'always',
+        execute: ({ value }) => ({ value }),
+      });
+
+      await expect(
+        executePromptTrailTool(needsApproval, { value: 'x' }),
+      ).resolves.toEqual({
+        content: [
+          {
+            type: 'text',
+            text: 'Tool execution denied: Tool "needsApproval" requires approval but no approval handler was provided.',
+          },
+        ],
+        isError: true,
+      });
+
+      await expect(
+        executePromptTrailTool(
+          needsApproval,
+          { value: 'x' },
+          {
+            provider: 'anthropic',
+            approvalHandler: async () => ({ type: 'approve' }),
+          },
+        ),
+      ).resolves.toEqual({
+        content: [{ type: 'json', json: { value: 'x' } }],
+        structuredContent: { value: 'x' },
+      });
+    });
   });
 });

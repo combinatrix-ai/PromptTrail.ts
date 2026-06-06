@@ -29,6 +29,7 @@ export interface ToolExecutionContext {
   provider?: ApprovalRequest['provider'] | 'ai-sdk';
   capability?: string;
   raw?: unknown;
+  approvalHandler?: ApprovalHandler;
 }
 
 export type CallToolContent =

@@ -2,6 +2,8 @@ import { tool as aiTool, type Tool as AiTool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { Session } from './session';
 import type {
+  ApprovalDecision,
+  ApprovalPolicy,
   CallToolResult,
   PromptTrailTool,
   ToolExecutionContext,
@@ -28,6 +30,7 @@ export namespace Tool {
       input: TParams,
       context: ToolExecutionContext,
     ) => Promise<TResult> | TResult;
+    approval?: ApprovalPolicy;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -35,6 +38,7 @@ export namespace Tool {
     description: string;
     parameters: z.ZodType<TParams>;
     execute: (input: TParams) => Promise<TResult> | TResult;
+    approval?: ApprovalPolicy;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -48,6 +52,7 @@ export namespace Tool {
           context: ToolExecutionContext,
         ) => Promise<TResult> | TResult)
       | ((input: TParams) => Promise<TResult> | TResult);
+    approval?: ApprovalPolicy;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
     const inputSchema = config.inputSchema ?? config.parameters;
@@ -61,6 +66,7 @@ export namespace Tool {
       description: config.description,
       inputSchema,
       execute: async (input, context) => config.execute(input, context),
+      approval: config.approval,
       metadata: config.metadata,
     };
   }
@@ -159,6 +165,22 @@ export async function executePromptTrailTool<TInput, TResult>(
 ): Promise<CallToolResult> {
   try {
     const parsedInput = tool.inputSchema.parse(input);
+    const approval = await resolveToolApproval(tool, parsedInput, context);
+    if (approval.type !== 'approve') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              approval.type === 'deny'
+                ? `Tool execution denied${approval.reason ? `: ${approval.reason}` : ''}`
+                : approval.question,
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const result = await tool.execute(parsedInput, {
       ...context,
       capability: tool.name,
@@ -170,6 +192,40 @@ export async function executePromptTrailTool<TInput, TResult>(
       isError: true,
     };
   }
+}
+
+export async function resolveToolApproval<TInput>(
+  tool: PromptTrailTool<TInput, unknown>,
+  input: TInput,
+  context: ToolExecutionContext,
+): Promise<ApprovalDecision> {
+  if (!tool.approval || tool.approval === 'never') {
+    return { type: 'approve' };
+  }
+
+  const handler =
+    typeof tool.approval === 'function'
+      ? tool.approval
+      : context.approvalHandler;
+
+  if (!handler) {
+    return {
+      type: 'deny',
+      reason: `Tool "${tool.name}" requires approval but no approval handler was provided.`,
+    };
+  }
+
+  return handler(
+    {
+      provider: normalizeApprovalProvider(context.provider),
+      action: 'tool.execute',
+      capability: tool.name,
+      input,
+      risk: 'external',
+      raw: context.raw,
+    },
+    context.session as any,
+  );
 }
 
 export function toolResultToCallToolResult(result: unknown): CallToolResult {
@@ -227,4 +283,19 @@ function formatToolError(error: unknown): string {
     return error;
   }
   return JSON.stringify(error);
+}
+
+function normalizeApprovalProvider(
+  provider: ToolExecutionContext['provider'],
+): 'openai' | 'anthropic' | 'google' | 'codex' | 'claude-agent' {
+  if (
+    provider === 'openai' ||
+    provider === 'anthropic' ||
+    provider === 'google' ||
+    provider === 'codex' ||
+    provider === 'claude-agent'
+  ) {
+    return provider;
+  }
+  return 'openai';
 }
