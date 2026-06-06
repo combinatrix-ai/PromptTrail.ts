@@ -226,6 +226,25 @@ describe('Claude Agent SDK adapter helpers', () => {
     });
   });
 
+  it('maps BuiltinTool capabilities into Claude Agent allowed tools', () => {
+    expect(
+      buildClaudeAgentQueryParams('Read files', Session.create(), {
+        allowedTools: ['Read'],
+        capabilities: [
+          {
+            kind: 'builtin',
+            name: 'Bash',
+            executionMode: 'runtime',
+          },
+        ],
+      }),
+    ).toMatchObject({
+      options: {
+        allowedTools: ['Read', 'Bash'],
+      },
+    });
+  });
+
   it('materializes workspace Claude skills behind approval', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-skill-'));
     try {

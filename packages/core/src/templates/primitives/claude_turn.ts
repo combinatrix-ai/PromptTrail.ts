@@ -38,7 +38,7 @@ export class ClaudeTurn<
       session: currentSession,
     });
     await requireConfiguredCapabilityApprovals(
-      getClaudeMcpApprovalCapabilities(this.options.capabilities),
+      getClaudeConfiguredApprovalCapabilities(this.options.capabilities),
       {
         provider: 'claude-agent',
         session: currentSession,
@@ -150,10 +150,12 @@ export class ClaudeTurn<
   }
 }
 
-function getClaudeMcpApprovalCapabilities(
+function getClaudeConfiguredApprovalCapabilities(
   capabilities: ClaudeTurnOptions['capabilities'],
 ): ClaudeTurnOptions['capabilities'] {
-  return (capabilities ?? []).filter((capability) => capability.kind === 'mcp');
+  return (capabilities ?? []).filter(
+    (capability) => capability.kind === 'mcp' || capability.kind === 'builtin',
+  );
 }
 
 function summarizeClaudeAgentEvents(events: readonly unknown[]) {

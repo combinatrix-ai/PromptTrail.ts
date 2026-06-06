@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type {
   ApprovalHandler,
+  BuiltinTool,
   CapabilitySet,
   McpServer,
   PromptTrailTool,
@@ -96,6 +97,14 @@ export function getClaudeRuntimeSkills(
 ): RuntimeSkill[] {
   return (capabilities ?? []).filter(
     (capability): capability is RuntimeSkill => capability.kind === 'skill',
+  );
+}
+
+export function getClaudeBuiltinTools(
+  capabilities: CapabilitySet | undefined,
+): BuiltinTool[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is BuiltinTool => capability.kind === 'builtin',
   );
 }
 
@@ -253,8 +262,12 @@ export function buildClaudeAgentQueryParams(
   const mcpAllowedTools = getClaudeAllowedMcpToolNames(
     getClaudeMcpServers(options.capabilities),
   );
+  const builtinTools = getClaudeBuiltinTools(options.capabilities).map(
+    (tool) => tool.name,
+  );
   const allowedTools = [
     ...(options.allowedTools ?? []),
+    ...builtinTools,
     ...(tools.length > 0
       ? getClaudeAllowedToolNames(tools, 'prompttrail')
       : []),

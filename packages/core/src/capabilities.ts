@@ -226,17 +226,19 @@ function getConfiguredCapabilityRisk(
   if (capability.kind === 'mcp') {
     return 'external';
   }
+  const name = capability.name.toLowerCase();
   if (
-    capability.name.includes('shell') ||
-    capability.name.includes('code') ||
-    capability.name.includes('computer')
+    name.includes('shell') ||
+    name.includes('bash') ||
+    name.includes('code') ||
+    name.includes('computer')
   ) {
     return 'execute';
   }
   if (
-    capability.name.includes('search') ||
-    capability.name.includes('url') ||
-    capability.name.includes('web')
+    name.includes('search') ||
+    name.includes('url') ||
+    name.includes('web')
   ) {
     return 'network';
   }

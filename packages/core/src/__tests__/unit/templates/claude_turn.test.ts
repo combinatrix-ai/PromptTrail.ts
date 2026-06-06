@@ -167,6 +167,43 @@ describe('ClaudeTurn template', () => {
     });
   });
 
+  it('requires approval before enabling Claude Agent built-in tools', async () => {
+    const client = new FakeClaudeAgentClient();
+    const approvals: unknown[] = [];
+
+    await expect(
+      Agent.create()
+        .user('Run a command')
+        .claudeTurn({
+          client,
+          capabilities: [
+            {
+              kind: 'builtin',
+              name: 'Bash',
+              executionMode: 'runtime',
+              approval: 'always',
+            },
+          ],
+          approvalHandler: async (request) => {
+            approvals.push(request);
+            return { type: 'deny', reason: 'no shell' };
+          },
+        })
+        .execute(Session.create()),
+    ).rejects.toThrow('Capability "Bash" approval denied: no shell');
+
+    expect(client.queries).toHaveLength(0);
+    expect(approvals[0]).toMatchObject({
+      provider: 'claude-agent',
+      action: 'builtin.enable',
+      capability: 'Bash',
+      risk: 'execute',
+      input: {
+        executionMode: 'runtime',
+      },
+    });
+  });
+
   it('materializes workspace skills before querying the SDK', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-turn-'));
     const client = new FakeClaudeAgentClient();
