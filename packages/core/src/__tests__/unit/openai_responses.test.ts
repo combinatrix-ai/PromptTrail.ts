@@ -442,6 +442,27 @@ describe('OpenAI Responses native adapter helpers', () => {
     ]);
   });
 
+  it('rejects non-HTTP MCP servers for native Responses tools', () => {
+    const mcp = {
+      kind: 'mcp' as const,
+      name: 'local-docs',
+      transport: {
+        kind: 'stdio' as const,
+        command: 'docs-mcp',
+      },
+      tools: 'all' as const,
+    };
+
+    expect(() => promptTrailMcpToOpenAIResponsesTool(mcp)).toThrow(
+      'OpenAI Responses native MCP only supports HTTP transport; MCP server "local-docs" uses stdio.',
+    );
+    expect(() =>
+      getOpenAIResponsesToolDefinitions({ capabilities: [mcp] }),
+    ).toThrow(
+      'OpenAI Responses native MCP only supports HTTP transport; MCP server "local-docs" uses stdio.',
+    );
+  });
+
   it('mounts RuntimeSkills on explicitly enabled OpenAI shell tools', () => {
     const shell = {
       kind: 'builtin' as const,

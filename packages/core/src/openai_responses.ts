@@ -358,7 +358,7 @@ export function getOpenAIResponsesToolDefinitions(
         return promptTrailBuiltinToOpenAIResponsesTool(capability, shellSkills);
       }
       if (capability.kind === 'mcp') {
-        return promptTrailMcpToOpenAIResponsesTool(capability) ?? [];
+        return promptTrailMcpToOpenAIResponsesTool(capability);
       }
       return [];
     }),
@@ -460,9 +460,11 @@ function isOpenAIShellBuiltin(tool: BuiltinTool): boolean {
 
 export function promptTrailMcpToOpenAIResponsesTool(
   server: McpServer,
-): Record<string, unknown> | undefined {
+): Record<string, unknown> {
   if (server.transport.kind !== 'http') {
-    return undefined;
+    throw new Error(
+      `OpenAI Responses native MCP only supports HTTP transport; MCP server "${server.name}" uses ${server.transport.kind}.`,
+    );
   }
 
   return {
