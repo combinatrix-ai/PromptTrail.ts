@@ -7,7 +7,13 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { RetainLevel } from './runtime';
-import type { BuiltinTool, McpServer, PromptTrailTool } from './capabilities';
+import type {
+  BuiltinTool,
+  CapabilitySet,
+  McpServer,
+  PromptTrailTool,
+  RuntimeSkill,
+} from './capabilities';
 import {
   deriveConversationBinding,
   getMessagesAfterBinding,
@@ -269,7 +275,7 @@ export function getResponsesInstructions(
     .join('\n\n');
   const injected = appendSkillInstructions(
     instructions || undefined,
-    options?.capabilities,
+    getOpenAIInstructionCapabilities(options?.capabilities),
     options?.skillInjection ?? 'warn',
   );
   warnSkillInstructionLoss(injected.warnings);
@@ -296,13 +302,14 @@ export function getOpenAIPromptTrailTools(
 export function getOpenAIResponsesToolDefinitions(
   options: Pick<LLMOptions, 'capabilities' | 'tools'>,
 ): unknown[] {
+  const shellSkills = getOpenAIShellSkills(options.capabilities);
   return [
     ...getOpenAIPromptTrailTools(options).map(
       promptTrailToolToOpenAIResponsesTool,
     ),
     ...(options.capabilities ?? []).flatMap((capability) => {
       if (capability.kind === 'builtin') {
-        return promptTrailBuiltinToOpenAIResponsesTool(capability);
+        return promptTrailBuiltinToOpenAIResponsesTool(capability, shellSkills);
       }
       if (capability.kind === 'mcp') {
         return promptTrailMcpToOpenAIResponsesTool(capability) ?? [];
@@ -326,11 +333,83 @@ export function promptTrailToolToOpenAIResponsesTool(
 
 export function promptTrailBuiltinToOpenAIResponsesTool(
   tool: BuiltinTool,
+  skills: readonly RuntimeSkill[] = [],
 ): Record<string, unknown> {
+  if (isOpenAIShellBuiltin(tool) && skills.length > 0) {
+    const config = tool.config ?? {};
+    const currentEnvironment = isRecord(config.environment)
+      ? config.environment
+      : {};
+    return {
+      type: tool.name,
+      ...config,
+      environment: {
+        ...currentEnvironment,
+        skills: [
+          ...(Array.isArray(currentEnvironment.skills)
+            ? currentEnvironment.skills
+            : []),
+          ...skills.map(promptTrailSkillToOpenAIShellSkill),
+        ],
+      },
+    };
+  }
+
   return {
     type: tool.name,
     ...(tool.config ?? {}),
   };
+}
+
+export function getOpenAIShellSkills(
+  capabilities: CapabilitySet | undefined,
+): RuntimeSkill[] {
+  const hasShell = (capabilities ?? []).some(
+    (capability) =>
+      capability.kind === 'builtin' && isOpenAIShellBuiltin(capability),
+  );
+  if (!hasShell) {
+    return [];
+  }
+
+  return (capabilities ?? []).filter(
+    (capability): capability is RuntimeSkill =>
+      capability.kind === 'skill' &&
+      (typeof capability.skillId === 'string' ||
+        typeof capability.path === 'string'),
+  );
+}
+
+export function promptTrailSkillToOpenAIShellSkill(
+  skill: RuntimeSkill,
+): Record<string, unknown> {
+  if (isRecord(skill.metadata?.openai)) {
+    return skill.metadata.openai;
+  }
+  if (skill.skillId) {
+    return { id: skill.skillId, name: skill.name };
+  }
+  return { path: skill.path, name: skill.name };
+}
+
+export function getOpenAIInstructionCapabilities(
+  capabilities: CapabilitySet | undefined,
+): CapabilitySet | undefined {
+  const mounted = new Set(
+    getOpenAIShellSkills(capabilities).map((skill) => skill.name),
+  );
+  return capabilities?.filter(
+    (capability) =>
+      capability.kind !== 'skill' || !mounted.has(capability.name),
+  );
+}
+
+function isOpenAIShellBuiltin(tool: BuiltinTool): boolean {
+  return (
+    tool.name === 'shell' ||
+    tool.name === 'hosted_shell' ||
+    tool.name === 'local_shell'
+  );
 }
 
 export function promptTrailMcpToOpenAIResponsesTool(
@@ -347,6 +426,10 @@ export function promptTrailMcpToOpenAIResponsesTool(
     headers: server.transport.headers,
     allowed_tools: server.tools === 'all' ? undefined : server.tools,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function collectOpenAIResponseFunctionCalls(

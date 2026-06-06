@@ -5,12 +5,15 @@ import {
   collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
+  getOpenAIInstructionCapabilities,
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
+  getOpenAIShellSkills,
   getResponsesInstructions,
   normalizeOpenAIResponsesStream,
   promptTrailBuiltinToOpenAIResponsesTool,
   promptTrailMcpToOpenAIResponsesTool,
+  promptTrailSkillToOpenAIShellSkill,
   promptTrailToolToOpenAIResponsesTool,
   retainOpenAIResponseMetadata,
 } from '../../openai_responses';
@@ -281,6 +284,78 @@ describe('OpenAI Responses native adapter helpers', () => {
         allowed_tools: ['lookup'],
       },
     ]);
+  });
+
+  it('mounts RuntimeSkills on explicitly enabled OpenAI shell tools', () => {
+    const shell = {
+      kind: 'builtin' as const,
+      name: 'hosted_shell',
+      provider: 'openai' as const,
+      executionMode: 'provider' as const,
+      config: { environment: { image: 'python' } },
+    };
+    const mountedSkill = {
+      kind: 'skill' as const,
+      name: 'pptx',
+      skillId: 'skill_123',
+      instructions: 'Create slides.',
+    };
+    const localSkill = {
+      kind: 'skill' as const,
+      name: 'local-docs',
+      path: '.codex/skills/local-docs',
+    };
+    const instructionOnlySkill = {
+      kind: 'skill' as const,
+      name: 'style',
+      instructions: 'Use house style.',
+    };
+
+    expect(
+      getOpenAIShellSkills([
+        shell,
+        mountedSkill,
+        localSkill,
+        instructionOnlySkill,
+      ]),
+    ).toEqual([mountedSkill, localSkill]);
+    expect(promptTrailSkillToOpenAIShellSkill(mountedSkill)).toEqual({
+      id: 'skill_123',
+      name: 'pptx',
+    });
+    expect(
+      promptTrailBuiltinToOpenAIResponsesTool(shell, [mountedSkill]),
+    ).toEqual({
+      type: 'hosted_shell',
+      environment: {
+        image: 'python',
+        skills: [{ id: 'skill_123', name: 'pptx' }],
+      },
+    });
+    expect(
+      getOpenAIResponsesToolDefinitions({
+        capabilities: [shell, mountedSkill, localSkill, instructionOnlySkill],
+      }),
+    ).toEqual([
+      {
+        type: 'hosted_shell',
+        environment: {
+          image: 'python',
+          skills: [
+            { id: 'skill_123', name: 'pptx' },
+            { path: '.codex/skills/local-docs', name: 'local-docs' },
+          ],
+        },
+      },
+    ]);
+    expect(
+      getOpenAIInstructionCapabilities([
+        shell,
+        mountedSkill,
+        localSkill,
+        instructionOnlySkill,
+      ]),
+    ).toEqual([shell, instructionOnlySkill]);
   });
 
   it('collects function calls and creates tool output items', async () => {
