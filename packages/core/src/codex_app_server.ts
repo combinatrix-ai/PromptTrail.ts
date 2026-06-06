@@ -1,3 +1,10 @@
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createConnection, type Socket } from 'node:net';
+import {
+  createInterface,
+  type Interface as ReadlineInterface,
+} from 'node:readline';
+import type { Readable, Writable } from 'node:stream';
 import type { Message } from './message';
 import type { Session, Attrs, Vars } from './session';
 import {
@@ -171,6 +178,199 @@ export function createCodexAppServerHttpClient(
   options: CodexAppServerHttpClientOptions,
 ): CodexAppServerClient {
   return new CodexAppServerHttpClient(options);
+}
+
+export interface CodexAppServerLineJsonRpcClientOptions {
+  readable: Readable;
+  writable: Writable;
+  timeoutMs?: number;
+  close?: () => void | Promise<void>;
+}
+
+export class CodexAppServerLineJsonRpcClient implements CodexAppServerClient {
+  private nextId = 1;
+  private readonly lines: ReadlineInterface;
+  private readonly pending = new Map<
+    number,
+    {
+      method: string;
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  constructor(
+    private readonly options: CodexAppServerLineJsonRpcClientOptions,
+  ) {
+    this.lines = createInterface({ input: options.readable });
+    this.lines.on('line', (line) => this.handleLine(line));
+    this.lines.on('close', () => {
+      this.rejectPending(new Error('Codex App Server line transport closed'));
+    });
+    this.lines.on('error', () => {
+      this.rejectPending(new Error('Codex App Server line transport error'));
+    });
+  }
+
+  async startThread(
+    params: CodexThreadStartParams,
+  ): Promise<CodexThreadStartResult> {
+    return this.request<CodexThreadStartResult>('thread/start', params);
+  }
+
+  async startTurn(params: CodexTurnStartParams): Promise<CodexTurnResult> {
+    return this.request<CodexTurnResult>('turn/start', params);
+  }
+
+  async close(): Promise<void> {
+    this.lines.close();
+    await this.options.close?.();
+    this.rejectPending(new Error('Codex App Server line transport closed'));
+  }
+
+  private request<T>(method: string, params?: unknown): Promise<T> {
+    const id = this.nextId++;
+    const timeoutMs = this.options.timeoutMs ?? 120_000;
+    const request = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      ...(params === undefined ? {} : { params }),
+    };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Codex App Server request timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        method,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timeout,
+      });
+      this.options.writable.write(`${JSON.stringify(request)}\n`);
+    });
+  }
+
+  private handleLine(line: string): void {
+    if (!line.trim()) {
+      return;
+    }
+    const message = JSON.parse(line) as {
+      id?: number | string;
+      error?: unknown;
+      result?: unknown;
+    };
+    if (message.id === undefined) {
+      return;
+    }
+    const id = typeof message.id === 'number' ? message.id : Number(message.id);
+    const pending = this.pending.get(id);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timeout);
+    this.pending.delete(id);
+    if (message.error) {
+      pending.reject(
+        new Error(
+          `Codex App Server ${pending.method} error: ${formatUnknownError(message.error)}`,
+        ),
+      );
+      return;
+    }
+    pending.resolve(message.result);
+  }
+
+  private rejectPending(error: Error): void {
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+}
+
+export interface CodexAppServerStdioClientOptions {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export class CodexAppServerStdioClient
+  extends CodexAppServerLineJsonRpcClient
+  implements CodexAppServerClient
+{
+  private readonly child: ChildProcessWithoutNullStreams;
+
+  constructor(options: CodexAppServerStdioClientOptions) {
+    const child = spawn(options.command, options.args ?? [], {
+      cwd: options.cwd,
+      env: { ...process.env, ...(options.env ?? {}) },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    child.stderr.pipe(process.stderr);
+    super({
+      readable: child.stdout,
+      writable: child.stdin,
+      timeoutMs: options.timeoutMs,
+      close: () => {
+        child.kill();
+      },
+    });
+    this.child = child;
+  }
+
+  override async close(): Promise<void> {
+    await super.close();
+    this.child.kill();
+  }
+}
+
+export function createCodexAppServerStdioClient(
+  options: CodexAppServerStdioClientOptions,
+): CodexAppServerClient {
+  return new CodexAppServerStdioClient(options);
+}
+
+export interface CodexAppServerUnixSocketClientOptions {
+  path: string;
+  timeoutMs?: number;
+}
+
+export class CodexAppServerUnixSocketClient
+  extends CodexAppServerLineJsonRpcClient
+  implements CodexAppServerClient
+{
+  private readonly socket: Socket;
+
+  constructor(options: CodexAppServerUnixSocketClientOptions) {
+    const socket = createConnection(options.path);
+    super({
+      readable: socket,
+      writable: socket,
+      timeoutMs: options.timeoutMs,
+      close: () => {
+        socket.end();
+      },
+    });
+    this.socket = socket;
+  }
+
+  override async close(): Promise<void> {
+    await super.close();
+    this.socket.end();
+  }
+}
+
+export function createCodexAppServerUnixSocketClient(
+  options: CodexAppServerUnixSocketClientOptions,
+): CodexAppServerClient {
+  return new CodexAppServerUnixSocketClient(options);
 }
 
 export interface CodexAppServerWebSocketClientOptions {
@@ -573,7 +773,16 @@ export interface CodexTurnOptions<
   client?: CodexAppServerClient;
   transport?:
     | { kind: 'http'; url: string }
-    | { kind: 'websocket'; url: string; timeoutMs?: number };
+    | { kind: 'websocket'; url: string; timeoutMs?: number }
+    | {
+        kind: 'stdio';
+        command: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+        timeoutMs?: number;
+      }
+    | { kind: 'unix'; path: string; timeoutMs?: number };
   cwd?: string;
   model?: string;
   sandboxPolicy?: unknown;

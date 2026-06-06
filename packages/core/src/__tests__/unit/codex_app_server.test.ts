@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PassThrough } from 'node:stream';
 import {
+  CodexAppServerLineJsonRpcClient,
   CodexAppServerWebSocketClient,
   collectCodexTurnResult,
   codexInboundRequestToApprovalRequest,
@@ -18,6 +20,64 @@ import { Tool } from '../../tool';
 import { z } from 'zod';
 
 describe('Codex App Server helpers', () => {
+  it('sends JSON-RPC over line transports for stdio and unix clients', async () => {
+    const serverToClient = new PassThrough();
+    const clientToServer = new PassThrough();
+    const client = new CodexAppServerLineJsonRpcClient({
+      readable: serverToClient,
+      writable: clientToServer,
+      timeoutMs: 1_000,
+    });
+    const writes: string[] = [];
+    clientToServer.on('data', (chunk) => {
+      writes.push(chunk.toString('utf8'));
+    });
+
+    const threadPromise = client.startThread({ cwd: '/repo' });
+    await waitFor(() => writes.length > 0);
+    expect(JSON.parse(writes.join('').trim())).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'thread/start',
+      params: { cwd: '/repo' },
+    });
+    serverToClient.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { threadId: 'thread-1' } })}\n`,
+    );
+    await expect(threadPromise).resolves.toEqual({ threadId: 'thread-1' });
+
+    writes.length = 0;
+    const turnPromise = client.startTurn({
+      threadId: 'thread-1',
+      input: 'hello',
+    });
+    await waitFor(() => writes.length > 0);
+    expect(JSON.parse(writes.join('').trim())).toMatchObject({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'turn/start',
+      params: { threadId: 'thread-1', input: 'hello' },
+    });
+    serverToClient.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          status: 'completed',
+          finalAnswer: 'done',
+        },
+      })}\n`,
+    );
+    await expect(turnPromise).resolves.toMatchObject({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      finalAnswer: 'done',
+    });
+    await client.close();
+  });
+
   it('normalizes known runtime events', () => {
     expect(
       normalizeCodexRuntimeEvent({
@@ -381,4 +441,14 @@ async function* eventStream(events: CodexTurnEvent[]) {
   for (const event of events) {
     yield event;
   }
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('Timed out waiting for condition');
 }

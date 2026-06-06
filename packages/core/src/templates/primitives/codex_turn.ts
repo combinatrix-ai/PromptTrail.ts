@@ -3,6 +3,8 @@ import {
   collectCodexTurnResult,
   createCodexRuntimeRequestHandler,
   createCodexAppServerHttpClient,
+  createCodexAppServerStdioClient,
+  createCodexAppServerUnixSocketClient,
   createCodexAppServerWebSocketClient,
   getCodexMcpServerConfig,
   getCodexRuntimeSkills,
@@ -46,14 +48,27 @@ export class CodexTurn<
       this.options.client ??
       (this.options.transport?.kind === 'http'
         ? createCodexAppServerHttpClient({ url: this.options.transport.url })
-        : this.options.transport?.kind === 'websocket'
-          ? createCodexAppServerWebSocketClient({
-              url: this.options.transport.url,
+        : this.options.transport?.kind === 'stdio'
+          ? createCodexAppServerStdioClient({
+              command: this.options.transport.command,
+              args: this.options.transport.args,
+              cwd: this.options.transport.cwd,
+              env: this.options.transport.env,
               timeoutMs: this.options.transport.timeoutMs,
-              onEvent: this.options.onEvent,
-              onRequest,
             })
-          : undefined);
+          : this.options.transport?.kind === 'unix'
+            ? createCodexAppServerUnixSocketClient({
+                path: this.options.transport.path,
+                timeoutMs: this.options.transport.timeoutMs,
+              })
+            : this.options.transport?.kind === 'websocket'
+              ? createCodexAppServerWebSocketClient({
+                  url: this.options.transport.url,
+                  timeoutMs: this.options.transport.timeoutMs,
+                  onEvent: this.options.onEvent,
+                  onRequest,
+                })
+              : undefined);
 
     if (!client) {
       throw new Error(
