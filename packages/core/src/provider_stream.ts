@@ -129,6 +129,7 @@ export function createOpenAIStreamNormalizer(): ProviderStreamNormalizer {
 
 export function createAnthropicStreamNormalizer(): ProviderStreamNormalizer {
   const toolCallsByIndex = new Map<number, { callId: string; name: string }>();
+  const toolArgsByIndex = new Map<number, string>();
 
   return {
     consume(event: unknown): PromptTrailStreamEvent[] {
@@ -172,12 +173,17 @@ export function createAnthropicStreamNormalizer(): ProviderStreamNormalizer {
           }
           if (delta?.type === 'input_json_delta') {
             const tool = toolCallsByIndex.get(index);
+            const partialJson = stringValue(delta.partial_json) ?? '';
+            toolArgsByIndex.set(
+              index,
+              `${toolArgsByIndex.get(index) ?? ''}${partialJson}`,
+            );
             return [
               {
                 type: 'tool.args.delta',
                 index,
                 callId: tool?.callId ?? String(index),
-                delta: stringValue(delta.partial_json) ?? '',
+                delta: partialJson,
               },
             ];
           }
@@ -194,7 +200,7 @@ export function createAnthropicStreamNormalizer(): ProviderStreamNormalizer {
               type: 'tool.args.done',
               index,
               callId: tool.callId,
-              args: undefined,
+              args: parseJsonValue(toolArgsByIndex.get(index)),
             },
           ];
         }

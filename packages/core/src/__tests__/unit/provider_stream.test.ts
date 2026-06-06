@@ -180,7 +180,7 @@ describe('provider stream normalizers', () => {
     expect(state.tools['toolu-1']).toMatchObject({
       name: 'lookup',
       argsText: '{"query":"docs"}',
-      args: undefined,
+      args: { query: 'docs' },
     });
     expect(state.finishReason).toBe('tool_use');
   });
