@@ -26,6 +26,29 @@ describe('ConversationBinding helpers', () => {
         attrs: { codex: { threadId: 'thread-1' } },
       }),
     ).toEqual({ provider: 'codex', id: 'thread-1', messageIndex: -1 });
+
+    expect(
+      deriveConversationBindingFromMessage(
+        {
+          type: 'assistant',
+          content: 'ok',
+          attrs: {
+            google: {
+              cachedContent: 'cachedContents/prefix',
+              cachedContentBinding: {
+                id: 'cachedContents/prefix',
+                messageIndex: 1,
+              },
+            },
+          },
+        },
+        4,
+      ),
+    ).toEqual({
+      provider: 'google',
+      id: 'cachedContents/prefix',
+      messageIndex: 1,
+    });
   });
 
   it('derives the last matching binding from a session without session state', () => {
