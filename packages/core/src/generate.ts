@@ -254,7 +254,10 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: toAiSdkToolSet(options.tools, session),
+    tools: toAiSdkToolSet(options.tools, {
+      session,
+      approvalHandler: options.approvalHandler,
+    }),
     toolChoice: options.toolChoice,
     providerOptions: options.aiSdk?.providerOptions as any,
     ...options.aiSdk?.sdkOptions,
@@ -528,7 +531,10 @@ export async function* generateTextStream<
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: toAiSdkToolSet(options.tools, session),
+    tools: toAiSdkToolSet(options.tools, {
+      session,
+      approvalHandler: options.approvalHandler,
+    }),
     toolChoice: options.toolChoice,
     providerOptions: options.aiSdk?.providerOptions as any,
     ...options.aiSdk?.sdkOptions,

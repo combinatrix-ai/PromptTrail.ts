@@ -1,8 +1,12 @@
 import { tool as aiTool, type Tool as AiTool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import type { PromptTrailTool, ToolExecutionContext } from './capabilities';
+import type {
+  CallToolResult,
+  PromptTrailTool,
+  ToolExecutionContext,
+} from './capabilities';
 import type { Session } from './session';
-import { isPromptTrailTool } from './tool';
+import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 type AiSdkTool<TParams = any, TResult = any> = AiTool<
   z.ZodType<TParams>,
@@ -12,14 +16,13 @@ type AiSdkTool<TParams = any, TResult = any> = AiTool<
 export function promptTrailToolToAiSdkTool<TInput, TResult>(
   promptTrailTool: PromptTrailTool<TInput, TResult>,
   context?: Omit<ToolExecutionContext, 'capability'>,
-): AiSdkTool<TInput, TResult> {
-  return aiTool<z.ZodType<TInput>, TResult>({
+): AiSdkTool<TInput, CallToolResult> {
+  return aiTool<z.ZodType<TInput>, CallToolResult>({
     description: promptTrailTool.description,
     parameters: promptTrailTool.inputSchema,
     execute: async (input, raw) =>
-      promptTrailTool.execute(input, {
+      executePromptTrailTool(promptTrailTool, input, {
         ...context,
-        capability: promptTrailTool.name,
         raw,
       }),
   });
@@ -27,7 +30,9 @@ export function promptTrailToolToAiSdkTool<TInput, TResult>(
 
 export function toAiSdkToolSet(
   tools: Record<string, PromptTrailTool<any, any>> | undefined,
-  session?: Session<any, any>,
+  context?: Omit<ToolExecutionContext, 'provider' | 'capability'> & {
+    session?: Session<any, any>;
+  },
 ): ToolSet | undefined {
   if (!tools) {
     return undefined;
@@ -39,7 +44,7 @@ export function toAiSdkToolSet(
       continue;
     }
     toolSet[name] = promptTrailToolToAiSdkTool(value, {
-      session,
+      ...context,
       provider: 'ai-sdk',
     });
   }
