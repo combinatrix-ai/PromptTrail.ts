@@ -1,8 +1,9 @@
-import { CoreTool, tool } from 'ai';
 import { z } from 'zod';
+import type { PromptTrailTool } from '../capabilities';
 import { Session } from '../session';
 import { LlmSource, Source } from '../source';
 import { Attrs, Vars } from '../session';
+import { Tool } from '../tool';
 import { Agent } from './agent';
 import type { Template } from './base';
 
@@ -96,7 +97,7 @@ export interface ScenarioConfig {
   /**
    * Additional tools available to all steps
    */
-  tools?: Record<string, CoreTool>;
+  tools?: Record<string, PromptTrailTool<any, any>>;
 
   /**
    * LLM source to use for all assistant steps
@@ -292,7 +293,7 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
           return subAgent.loop(
             (loopAgent: Agent<TVars, TAttrs>) => {
               // Build the tools for this step
-              const tools: Record<string, CoreTool> = {};
+              const tools: Record<string, PromptTrailTool<any, any>> = {};
 
               // For interactive steps, only provide ask_user and check_goal initially
               if (step.options.allow_interaction) {
@@ -397,13 +398,16 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
   /**
    * Creates the ask_user tool for LLM interaction
    */
-  private createAskUserTool(stepOptions: StepOptions): CoreTool {
+  private createAskUserTool(
+    stepOptions: StepOptions,
+  ): PromptTrailTool<any, any> {
     const userInputSource = this.config.userInputSource!;
 
-    return tool({
+    return Tool.create({
+      name: 'ask_user',
       description:
         'REQUIRED for interactive steps: Ask the user for input. You MUST use this tool when allow_interaction is true.',
-      parameters: z.object({
+      inputSchema: z.object({
         prompt: z.string().describe('The question or prompt to show the user'),
       }),
       execute: async ({ prompt }: { prompt: string }) => {
@@ -489,10 +493,11 @@ export class Scenario<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>
       goal: string,
     ) => boolean | Promise<boolean>,
     getSession?: () => Session<any, any>,
-  ): CoreTool {
-    return tool({
+  ): PromptTrailTool<any, any> {
+    return Tool.create({
+      name: 'check_goal',
       description: `REQUIRED: Check if you have satisfied the goal: "${goal}". You MUST call this tool after gathering information to evaluate your progress.`,
-      parameters: z.object({
+      inputSchema: z.object({
         reasoning: z
           .string()
           .describe(

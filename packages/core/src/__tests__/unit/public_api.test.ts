@@ -4,6 +4,9 @@ import * as prompttrail from '../../index';
 describe('public API surface', () => {
   it('does not re-export ai-sdk tool helpers from core', () => {
     expect(prompttrail).not.toHaveProperty('tool');
+    expect(prompttrail).not.toHaveProperty('aiSdkToolToPromptTrailTool');
+    expect(prompttrail).not.toHaveProperty('promptTrailToolToAiSdkTool');
+    expect(prompttrail).not.toHaveProperty('toAiSdkToolSet');
     expect(prompttrail).toHaveProperty('Tool');
   });
 

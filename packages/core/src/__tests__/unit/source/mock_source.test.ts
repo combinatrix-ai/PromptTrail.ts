@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
+import { Tool } from '../../../tool';
 import { Validation } from '../../../validators';
 
 describe('Source.llm().mock()', () => {
@@ -43,7 +44,15 @@ describe('Source.llm().mock()', () => {
         .openai({ modelName: 'gpt-4' })
         .temperature(0.8)
         .maxTokens(1000)
-        .withTool('weather', { name: 'weather' })
+        .withTool(
+          'weather',
+          Tool.create({
+            name: 'weather',
+            description: 'Get weather',
+            inputSchema: z.object({ location: z.string() }),
+            execute: ({ location }) => ({ location }),
+          }),
+        )
         .validate(Validation.length({ min: 10 }))
         .mock();
 

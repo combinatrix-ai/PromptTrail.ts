@@ -2,6 +2,7 @@
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
 import type { CapabilitySet } from './capabilities';
+import type { PromptTrailTool } from './capabilities';
 import { ValidationError } from './errors';
 import { generateText, generateWithSchema } from './generate';
 import type {
@@ -748,7 +749,7 @@ export class LlmSource extends ModelSource {
   }
 
   // Tool configuration - all return new instances
-  addTool(name: string, tool: unknown): LlmSource {
+  addTool(name: string, tool: PromptTrailTool<any, any>): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
@@ -757,7 +758,7 @@ export class LlmSource extends ModelSource {
     });
   }
 
-  withTool(name: string, tool: unknown): LlmSource {
+  withTool(name: string, tool: PromptTrailTool<any, any>): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
@@ -766,7 +767,7 @@ export class LlmSource extends ModelSource {
     });
   }
 
-  withTools(tools: Record<string, unknown>): LlmSource {
+  withTools(tools: Record<string, PromptTrailTool<any, any>>): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,

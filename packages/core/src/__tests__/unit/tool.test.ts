@@ -1,14 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   Tool,
-  aiSdkToolToPromptTrailTool,
   executePromptTrailTool,
-  promptTrailToolToAiSdkTool,
-  toAiSdkToolSet,
   toolResultToCallToolResult,
 } from '../../tool';
-import { createSession } from '../../session';
 
 describe('Tool namespace', () => {
   describe('Tool.create', () => {
@@ -56,79 +52,6 @@ describe('Tool namespace', () => {
         message: 'x',
         count: 2,
       });
-    });
-  });
-
-  describe('ai-sdk adapters', () => {
-    it('converts PromptTrail tools to ai-sdk tools with execution context', async () => {
-      const session = createSession();
-      const execute = vi.fn().mockResolvedValue({ result: 'success' });
-      const promptTrailTool = Tool.create({
-        name: 'search',
-        description: 'Search',
-        inputSchema: z.object({ query: z.string() }),
-        execute,
-      });
-
-      const aiSdkTool = promptTrailToolToAiSdkTool(promptTrailTool, {
-        session,
-        provider: 'ai-sdk',
-      }) as unknown as {
-        execute: (input: unknown, raw: unknown) => Promise<unknown>;
-      };
-
-      await expect(
-        aiSdkTool.execute({ query: 'docs' }, { toolCallId: 'call-1' }),
-      ).resolves.toEqual({ result: 'success' });
-      expect(execute).toHaveBeenCalledWith(
-        { query: 'docs' },
-        {
-          session,
-          provider: 'ai-sdk',
-          capability: 'search',
-          raw: { toolCallId: 'call-1' },
-        },
-      );
-    });
-
-    it('converts ai-sdk tools to PromptTrail tools', async () => {
-      const aiSdkTool = promptTrailToolToAiSdkTool(
-        Tool.create({
-          name: 'double',
-          description: 'Double a value',
-          inputSchema: z.object({ value: z.number() }),
-          execute: ({ value }) => ({ value: value * 2 }),
-        }),
-      );
-
-      const promptTrailTool = aiSdkToolToPromptTrailTool('double', aiSdkTool);
-
-      expect(promptTrailTool).toMatchObject({
-        kind: 'tool',
-        name: 'double',
-        description: 'Double a value',
-      });
-      await expect(
-        promptTrailTool.execute({ value: 3 }, { raw: { id: 'call-2' } }),
-      ).resolves.toEqual({ value: 6 });
-    });
-
-    it('builds an ai-sdk tool set from mixed tool records', () => {
-      const promptTrailTool = Tool.create({
-        name: 'native',
-        description: 'Native',
-        inputSchema: z.object({ value: z.string() }),
-        execute: ({ value }) => value,
-      });
-      const aiSdkTool = promptTrailToolToAiSdkTool(promptTrailTool);
-
-      const toolSet = toAiSdkToolSet({
-        native: promptTrailTool,
-        existing: aiSdkTool,
-      });
-
-      expect(toolSet?.native).toBeDefined();
-      expect(toolSet?.existing).toBe(aiSdkTool);
     });
   });
 

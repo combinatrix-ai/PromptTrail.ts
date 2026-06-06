@@ -35,7 +35,8 @@ import {
 import { contentPartsToAiSdkContent } from './content_parts';
 import type { Session, Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
-import { toAiSdkToolSet } from './tool';
+import { toAiSdkToolSet } from './ai_sdk_tools';
+import { Tool } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -392,11 +393,12 @@ export async function generateWithSchema<
       ...options,
       tools: {
         ...options.tools,
-        [functionName]: {
+        [functionName]: Tool.create({
           name: functionName,
           description: 'Generate structured output according to schema',
           parameters: schemaOptions.schema,
-        },
+          execute: (input) => input,
+        }),
       },
       toolChoice: 'required',
     };

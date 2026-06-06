@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { CapabilitySet } from './capabilities';
+import type { CapabilitySet, PromptTrailTool } from './capabilities';
 
 export interface OpenAIProviderConfig {
   type: 'openai';
@@ -44,7 +44,7 @@ export interface LLMOptions {
   maxTokens?: number;
   topP?: number;
   topK?: number;
-  tools?: Record<string, unknown>;
+  tools?: Record<string, PromptTrailTool<any, any>>;
   capabilities?: CapabilitySet;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
