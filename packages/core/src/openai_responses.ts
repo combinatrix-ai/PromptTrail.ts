@@ -3,6 +3,24 @@ import type { Message } from './message';
 import type { Attrs, Session, Vars } from './session';
 import type { LLMOptions, OpenAIProviderConfig } from './llm_types';
 import type { RetainLevel } from './runtime';
+import type { PromptTrailTool } from './capabilities';
+import { zodToJsonSchema } from './json_schema';
+import { executePromptTrailTool, isPromptTrailTool } from './tool';
+
+export interface OpenAIResponsesFunctionTool {
+  type: 'function';
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  strict: boolean;
+}
+
+export interface OpenAIResponsesFunctionCall {
+  callId: string;
+  name: string;
+  arguments: unknown;
+  raw: unknown;
+}
 
 export async function generateOpenAIResponsesText<
   TVars extends Vars,
@@ -19,14 +37,37 @@ export async function generateOpenAIResponsesText<
       options.dangerouslyAllowBrowser ??
       options.provider.dangerouslyAllowBrowser,
   });
-  const response = await client.responses.create({
-    model: options.provider.modelName,
-    input: convertSessionToResponsesInput(session),
-    instructions: getResponsesInstructions(session),
-    temperature: options.temperature,
-    top_p: options.topP,
-    max_output_tokens: options.maxTokens,
-  });
+  const tools = getOpenAIPromptTrailTools(options);
+  let input: unknown[] = convertSessionToResponsesInput(session);
+  const instructions = getResponsesInstructions(session);
+  let response = await createOpenAIResponse(
+    client,
+    input,
+    options,
+    tools,
+    instructions,
+  );
+
+  for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
+    const functionCalls = collectOpenAIResponseFunctionCalls(response.output);
+    if (functionCalls.length === 0) {
+      break;
+    }
+
+    const toolOutputs = await Promise.all(
+      functionCalls.map((call) =>
+        createOpenAIToolOutputItem(call, tools, session),
+      ),
+    );
+    input = [...input, ...(response.output as unknown[]), ...toolOutputs];
+    response = await createOpenAIResponse(
+      client,
+      input,
+      options,
+      tools,
+      instructions,
+    );
+  }
 
   return {
     type: 'assistant',
@@ -38,6 +79,28 @@ export async function generateOpenAIResponsesText<
       ),
     } as unknown as TAttrs,
   };
+}
+
+async function createOpenAIResponse(
+  client: OpenAI,
+  input: unknown[],
+  options: LLMOptions & { provider: OpenAIProviderConfig },
+  tools: readonly PromptTrailTool[],
+  instructions: string | undefined,
+) {
+  return client.responses.create({
+    model: options.provider.modelName,
+    input: input as any,
+    instructions,
+    temperature: options.temperature,
+    top_p: options.topP,
+    max_output_tokens: options.maxTokens,
+    tools:
+      tools.length > 0
+        ? tools.map(promptTrailToolToOpenAIResponsesTool)
+        : undefined,
+    tool_choice: options.toolChoice as any,
+  });
 }
 
 export function convertSessionToResponsesInput(
@@ -61,6 +124,82 @@ export function getResponsesInstructions(
     .map((message) => message.content)
     .join('\n\n');
   return instructions || undefined;
+}
+
+export function getOpenAIPromptTrailTools(
+  options: Pick<LLMOptions, 'capabilities' | 'tools'>,
+): PromptTrailTool[] {
+  const tools = new Map<string, PromptTrailTool>();
+  for (const capability of options.capabilities ?? []) {
+    if (isPromptTrailTool(capability)) {
+      tools.set(capability.name, capability);
+    }
+  }
+  for (const [name, tool] of Object.entries(options.tools ?? {})) {
+    if (isPromptTrailTool(tool)) {
+      tools.set(tool.name || name, tool);
+    }
+  }
+  return [...tools.values()];
+}
+
+export function promptTrailToolToOpenAIResponsesTool(
+  tool: PromptTrailTool,
+): OpenAIResponsesFunctionTool {
+  return {
+    type: 'function',
+    name: tool.name,
+    description: tool.description,
+    parameters: zodToJsonSchema(tool.inputSchema, { openAiStrict: true }),
+    strict: true,
+  };
+}
+
+export function collectOpenAIResponseFunctionCalls(
+  output: unknown[] | undefined,
+): OpenAIResponsesFunctionCall[] {
+  return (output ?? [])
+    .filter(
+      (item): item is Record<string, unknown> =>
+        !!item &&
+        typeof item === 'object' &&
+        (item as Record<string, unknown>).type === 'function_call',
+    )
+    .map((item) => ({
+      callId: String(item.call_id),
+      name: String(item.name),
+      arguments: parseFunctionCallArguments(item.arguments),
+      raw: item,
+    }));
+}
+
+export async function createOpenAIToolOutputItem(
+  call: OpenAIResponsesFunctionCall,
+  tools: readonly PromptTrailTool[],
+  session: Session<any, any>,
+): Promise<Record<string, unknown>> {
+  const tool = tools.find((candidate) => candidate.name === call.name);
+  if (!tool) {
+    return {
+      type: 'function_call_output',
+      call_id: call.callId,
+      output: JSON.stringify({
+        content: [{ type: 'text', text: `Unknown tool: ${call.name}` }],
+        isError: true,
+      }),
+    };
+  }
+
+  const result = await executePromptTrailTool(tool, call.arguments, {
+    session,
+    provider: 'openai',
+    raw: call.raw,
+  });
+  return {
+    type: 'function_call_output',
+    call_id: call.callId,
+    output: JSON.stringify(result),
+  };
 }
 
 export function retainOpenAIResponseMetadata(
@@ -135,4 +274,16 @@ function extractOutputContentPreview(content: unknown): string {
   }
   const record = content as Record<string, unknown>;
   return typeof record.text === 'string' ? record.text : '';
+}
+
+function parseFunctionCallArguments(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value ?? {};
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }

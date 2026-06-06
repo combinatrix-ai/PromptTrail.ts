@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
+  collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
+  createOpenAIToolOutputItem,
+  getOpenAIPromptTrailTools,
   getResponsesInstructions,
+  promptTrailToolToOpenAIResponsesTool,
   retainOpenAIResponseMetadata,
 } from '../../openai_responses';
 import { Session } from '../../session';
+import { Tool } from '../../tool';
 
 describe('OpenAI Responses native adapter helpers', () => {
   it('converts PromptTrail messages into Responses input and instructions', () => {
@@ -82,6 +88,85 @@ describe('OpenAI Responses native adapter helpers', () => {
       responseId: 'resp-1',
       outputItems: response.output,
       raw: response,
+    });
+  });
+
+  it('maps PromptTrail tools to strict Responses function tools', () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({
+        query: z.string(),
+        limit: z.number().optional(),
+      }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(getOpenAIPromptTrailTools({ capabilities: [tool] })).toEqual([tool]);
+    expect(promptTrailToolToOpenAIResponsesTool(tool)).toEqual({
+      type: 'function',
+      name: 'lookup',
+      description: 'Lookup docs',
+      strict: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          limit: { type: ['number', 'null'] },
+        },
+        required: ['query', 'limit'],
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it('collects function calls and creates tool output items', async () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+      }),
+    });
+    const calls = collectOpenAIResponseFunctionCalls([
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'lookup',
+        arguments: JSON.stringify({ query: 'capabilities' }),
+      },
+    ]);
+
+    expect(calls).toEqual([
+      {
+        callId: 'call-1',
+        name: 'lookup',
+        arguments: { query: 'capabilities' },
+        raw: {
+          type: 'function_call',
+          call_id: 'call-1',
+          name: 'lookup',
+          arguments: JSON.stringify({ query: 'capabilities' }),
+        },
+      },
+    ]);
+
+    await expect(
+      createOpenAIToolOutputItem(calls[0], [tool], Session.create()),
+    ).resolves.toEqual({
+      type: 'function_call_output',
+      call_id: 'call-1',
+      output: JSON.stringify({
+        content: [
+          {
+            type: 'json',
+            json: { query: 'capabilities', provider: 'openai' },
+          },
+        ],
+        structuredContent: { query: 'capabilities', provider: 'openai' },
+      }),
     });
   });
 });
