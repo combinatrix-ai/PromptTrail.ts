@@ -191,6 +191,45 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('requires approval before enabling Codex builtin runtime tools', async () => {
+    const client = new FakeCodexClient();
+    const approvals: unknown[] = [];
+    const agent = Agent.create().user('Run commands').codexTurn({
+      client,
+      capabilities: [
+        {
+          kind: 'builtin',
+          name: 'shell',
+          provider: 'codex',
+          executionMode: 'runtime',
+          config: { sandboxPolicy: 'workspace-write' },
+          approval: 'always',
+        },
+      ],
+      approvalHandler: async (request) => {
+        approvals.push(request);
+        return { type: 'deny', reason: 'shell disabled' };
+      },
+    });
+
+    await expect(agent.execute(Session.create())).rejects.toThrow(
+      'Capability "shell" approval denied: shell disabled',
+    );
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts).toHaveLength(0);
+    expect(approvals[0]).toMatchObject({
+      provider: 'codex',
+      action: 'builtin.enable',
+      capability: 'shell',
+      risk: 'execute',
+      input: {
+        executionMode: 'runtime',
+        config: { sandboxPolicy: 'workspace-write' },
+      },
+    });
+  });
+
   it('should start a new Codex thread when auto binding history diverged', async () => {
     const originalClient = new FakeCodexClient();
     const originalSession = await Agent.create()

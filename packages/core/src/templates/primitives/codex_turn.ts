@@ -39,7 +39,7 @@ export class CodexTurn<
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
     const rawRuntimeSkills = getCodexRuntimeSkills(this.options.capabilities);
     await requireConfiguredCapabilityApprovals(
-      getCodexMcpApprovalCapabilities(this.options.capabilities),
+      getCodexConfiguredApprovalCapabilities(this.options.capabilities),
       {
         provider: 'codex',
         session: currentSession,
@@ -224,10 +224,15 @@ export class CodexTurn<
   }
 }
 
-function getCodexMcpApprovalCapabilities(
+function getCodexConfiguredApprovalCapabilities(
   capabilities: CodexTurnOptions['capabilities'],
 ): CodexTurnOptions['capabilities'] {
-  return (capabilities ?? []).filter((capability) => capability.kind === 'mcp');
+  return (capabilities ?? []).filter(
+    (capability) =>
+      capability.kind === 'mcp' ||
+      (capability.kind === 'builtin' &&
+        (!capability.provider || capability.provider === 'codex')),
+  );
 }
 
 function normalizeCodexInput(
