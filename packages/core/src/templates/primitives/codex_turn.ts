@@ -8,6 +8,7 @@ import {
   promptTrailToolToCodexDynamicTool,
   type CodexTurnOptions,
 } from '../../codex_app_server';
+import { deriveConversationBinding } from '../../conversation';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
@@ -119,6 +120,9 @@ export class CodexTurn<
       this.options.threadId === 'new'
     ) {
       return undefined;
+    }
+    if (this.options.threadId === 'auto') {
+      return deriveConversationBinding(session, 'codex')?.id;
     }
 
     if (typeof this.options.threadId === 'function') {

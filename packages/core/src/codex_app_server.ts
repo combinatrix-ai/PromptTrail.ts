@@ -18,6 +18,7 @@ import { executePromptTrailTool, isPromptTrailTool } from './tool';
 export type CodexThreadId =
   | string
   | 'new'
+  | 'auto'
   | ((
       session: Session<any, any>,
     ) => string | undefined | Promise<string | undefined>);

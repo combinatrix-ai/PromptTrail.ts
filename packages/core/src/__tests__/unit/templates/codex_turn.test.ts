@@ -117,6 +117,29 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('should derive an existing Codex thread when threadId is auto', async () => {
+    const client = new FakeCodexClient();
+    const initialSession = Session.create()
+      .addMessage({
+        type: 'assistant',
+        content: 'Previous result',
+        attrs: { codex: { threadId: 'thread-existing' } },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+    const session = await Agent.create()
+      .codexTurn({ client, threadId: 'auto' })
+      .execute(initialSession);
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts[0]).toMatchObject({
+      threadId: 'thread-existing',
+      input: [{ type: 'text', text: 'Continue' }],
+    });
+    expect(session.getLastMessage()?.attrs?.codex).toMatchObject({
+      threadId: 'thread-existing',
+    });
+  });
+
   it('should summarize retained runtime metadata by default', async () => {
     const client = new FakeCodexClient();
     const session = await Agent.create()
