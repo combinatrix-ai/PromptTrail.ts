@@ -255,6 +255,36 @@ describe('OpenAI Responses native adapter helpers', () => {
     });
   });
 
+  it('keeps modern or unknown OpenAI output item types at full retention', () => {
+    const response = {
+      id: 'resp-1',
+      status: 'completed',
+      output: [
+        {
+          type: 'tool_search_call',
+          id: 'search-1',
+          status: 'completed',
+          query: 'docs',
+        },
+        {
+          type: 'mcp_approval_request',
+          id: 'approval-1',
+          server_label: 'docs',
+        },
+        {
+          type: 'future_item_type',
+          id: 'future-1',
+          payload: { opaque: true },
+        },
+      ],
+    };
+
+    expect(retainOpenAIResponseMetadata(response, 'full')).toMatchObject({
+      outputItems: response.output,
+      raw: response,
+    });
+  });
+
   it('pins OpenAI replay-required artifacts even when retention is none', () => {
     expect(
       retainOpenAIResponseMetadata(
