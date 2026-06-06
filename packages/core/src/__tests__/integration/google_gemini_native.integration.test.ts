@@ -12,7 +12,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
   it('generates text and stores response metadata', async () => {
     const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-3.1-flash-lite')
+      .model('gemini-2.5-flash-lite')
       .temperature(0)
       .maxTokens(128)
       .getContent(
@@ -47,7 +47,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
 
     const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-3.1-flash-lite')
+      .model('gemini-2.5-flash-lite')
       .temperature(0)
       .maxTokens(128)
       .withCapabilities([lookup])
@@ -70,7 +70,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
   it('generates structured output through native responseJsonSchema', async () => {
     const output = await Source.llm({ thinking: { budgetTokens: 0 } })
       .google({ adapter: 'native' })
-      .model('gemini-3.1-flash-lite')
+      .model('gemini-2.5-flash-lite')
       .temperature(0)
       .maxTokens(128)
       .withSchema(
