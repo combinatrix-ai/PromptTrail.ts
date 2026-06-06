@@ -13,6 +13,7 @@ import {
   getGeminiCacheablePrefixSession,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
+  getGoogleGenAIClientOptions,
   normalizeGeminiContentStream,
   promptTrailBuiltinToGeminiTool,
   promptTrailToolToGeminiTool,
@@ -35,6 +36,20 @@ describe('Google Gemini native adapter helpers', () => {
       { role: 'user', parts: [{ text: 'Hello' }] },
       { role: 'model', parts: [{ text: 'Hi' }] },
     ]);
+  });
+
+  it('maps Google provider baseURL into GenAI httpOptions', () => {
+    expect(
+      getGoogleGenAIClientOptions({
+        type: 'google',
+        apiKey: 'test-key',
+        modelName: 'gemini-2.5-flash',
+        baseURL: 'https://google.test',
+      }),
+    ).toEqual({
+      apiKey: 'test-key',
+      httpOptions: { baseUrl: 'https://google.test' },
+    });
   });
 
   it('injects RuntimeSkill instructions into Gemini system text and applies loss policy', () => {

@@ -51,6 +51,15 @@ export async function generateGoogleGeminiText<
   return generateGoogleGeminiMessage(session, options);
 }
 
+export function getGoogleGenAIClientOptions(
+  provider: GoogleProviderConfig,
+): ConstructorParameters<typeof GoogleGenAI>[0] {
+  return {
+    apiKey: provider.apiKey,
+    httpOptions: provider.baseURL ? { baseUrl: provider.baseURL } : undefined,
+  };
+}
+
 export async function* streamGoogleGeminiEvents<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -58,7 +67,7 @@ export async function* streamGoogleGeminiEvents<
   session: Session<TVars, TAttrs>,
   options: LLMOptions & { provider: GoogleProviderConfig },
 ) {
-  const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
+  const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
   const binding = await resolveGeminiCachedContentBinding(
@@ -136,7 +145,7 @@ async function generateGoogleGeminiMessage<
   options: LLMOptions & { provider: GoogleProviderConfig },
   extraConfig: Record<string, unknown> = {},
 ): Promise<Message<TAttrs>> {
-  const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
+  const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
   const cacheResolution = await resolveGeminiCachedContent(
