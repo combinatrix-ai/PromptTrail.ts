@@ -13,6 +13,38 @@ type AiSdkTool<TParams = any, TResult = any> = AiTool<
   TResult
 >;
 
+export function aiSdkToolToPromptTrailTool<TInput, TResult>(
+  name: string,
+  aiSdkTool: AiTool<any, TResult>,
+): PromptTrailTool<TInput, TResult> {
+  const parameters = getAiSdkToolParameters(aiSdkTool as AiTool<any, any>);
+  if (!isZodType<TInput>(parameters)) {
+    throw new Error(
+      `ai-sdk tool "${name}" must use a Zod parameters schema to convert to PromptTrailTool.`,
+    );
+  }
+  if (typeof aiSdkTool.execute !== 'function') {
+    throw new Error(
+      `ai-sdk tool "${name}" must include execute to convert to PromptTrailTool.`,
+    );
+  }
+
+  return {
+    kind: 'tool',
+    name,
+    description: aiSdkTool.description ?? name,
+    inputSchema: parameters,
+    execute: (input, context) =>
+      Promise.resolve(
+        aiSdkTool.execute!(input, {
+          toolCallId: getAiSdkToolCallId(context),
+          messages: [],
+          abortSignal: getAiSdkAbortSignal(context),
+        }),
+      ),
+  };
+}
+
 export function promptTrailToolToAiSdkTool<TInput, TResult>(
   promptTrailTool: PromptTrailTool<TInput, TResult>,
   context?: Omit<ToolExecutionContext, 'capability'>,
@@ -50,4 +82,30 @@ export function toAiSdkToolSet(
   }
 
   return toolSet;
+}
+
+function getAiSdkToolParameters(tool: AiTool<any, any>): unknown {
+  return (tool as { parameters?: unknown; inputSchema?: unknown }).parameters;
+}
+
+function isZodType<TInput>(value: unknown): value is z.ZodType<TInput> {
+  return value instanceof z.ZodType;
+}
+
+function getAiSdkToolCallId(context: ToolExecutionContext): string {
+  const raw = context.raw as Record<string, unknown> | undefined;
+  if (typeof raw?.toolCallId === 'string') {
+    return raw.toolCallId;
+  }
+  if (typeof raw?.id === 'string') {
+    return raw.id;
+  }
+  return context.capability ?? 'prompttrail-tool-call';
+}
+
+function getAiSdkAbortSignal(
+  context: ToolExecutionContext,
+): AbortSignal | undefined {
+  const raw = context.raw as Record<string, unknown> | undefined;
+  return raw?.abortSignal instanceof AbortSignal ? raw.abortSignal : undefined;
 }

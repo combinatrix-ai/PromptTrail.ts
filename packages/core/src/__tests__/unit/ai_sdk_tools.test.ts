@@ -1,10 +1,77 @@
 import { describe, expect, it, vi } from 'vitest';
+import { tool as aiTool } from 'ai';
 import { z } from 'zod';
-import { promptTrailToolToAiSdkTool, toAiSdkToolSet } from '../../ai_sdk_tools';
+import {
+  aiSdkToolToPromptTrailTool,
+  promptTrailToolToAiSdkTool,
+  toAiSdkToolSet,
+} from '../../ai_sdk_tools';
 import { createSession } from '../../session';
-import { Tool } from '../../tool';
+import { executePromptTrailTool, Tool } from '../../tool';
 
 describe('ai-sdk tool adapter internals', () => {
+  it('converts executable ai-sdk Zod tools to PromptTrail tools', async () => {
+    const execute = vi.fn().mockResolvedValue({ result: 'docs' });
+    const aiSdkTool = aiTool({
+      description: 'Search docs',
+      parameters: z.object({ query: z.string() }),
+      execute,
+    });
+    const promptTrailTool = aiSdkToolToPromptTrailTool(
+      'searchDocs',
+      aiSdkTool,
+    );
+
+    expect(promptTrailTool).toMatchObject({
+      kind: 'tool',
+      name: 'searchDocs',
+      description: 'Search docs',
+    });
+    await expect(
+      executePromptTrailTool(
+        promptTrailTool,
+        { query: 'capabilities' },
+        { raw: { toolCallId: 'call-1' } },
+      ),
+    ).resolves.toEqual({
+      content: [{ type: 'json', json: { result: 'docs' } }],
+      structuredContent: { result: 'docs' },
+    });
+    expect(execute).toHaveBeenCalledWith(
+      { query: 'capabilities' },
+      {
+        toolCallId: 'call-1',
+        messages: [],
+        abortSignal: undefined,
+      },
+    );
+  });
+
+  it('rejects ai-sdk provider-defined tools without executable Zod parameters', () => {
+    expect(() =>
+      aiSdkToolToPromptTrailTool('webSearch', {
+        type: 'provider-defined',
+        id: 'openai.web_search',
+        args: {},
+        parameters: {} as unknown as z.ZodTypeAny,
+      }),
+    ).toThrow(
+      'ai-sdk tool "webSearch" must use a Zod parameters schema to convert to PromptTrailTool.',
+    );
+
+    expect(() =>
+      aiSdkToolToPromptTrailTool(
+        'deferred',
+        aiTool({
+          description: 'Deferred execution',
+          parameters: z.object({ value: z.string() }),
+        }),
+      ),
+    ).toThrow(
+      'ai-sdk tool "deferred" must include execute to convert to PromptTrailTool.',
+    );
+  });
+
   it('converts PromptTrail tools to ai-sdk tools with execution context', async () => {
     const session = createSession();
     const execute = vi.fn().mockResolvedValue({ result: 'success' });
