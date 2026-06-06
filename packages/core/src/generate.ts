@@ -11,17 +11,26 @@ import {
 import {
   generateAnthropicMessagesText,
   generateAnthropicMessagesWithSchema,
+  streamAnthropicMessagesEvents,
 } from './anthropic_messages';
 import {
   generateGoogleGeminiText,
   generateGoogleGeminiWithSchema,
+  streamGoogleGeminiEvents,
 } from './google_gemini';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import {
   generateOpenAIResponsesText,
   generateOpenAIResponsesWithSchema,
+  streamOpenAIResponsesEvents,
 } from './openai_responses';
+import {
+  createPromptTrailStreamState,
+  reducePromptTrailStreamEvent,
+  streamStateToAssistantMessage,
+  type PromptTrailStreamEvent,
+} from './stream';
 import { contentPartsToAiSdkContent } from './content_parts';
 import type { Session, Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
@@ -425,6 +434,46 @@ export async function* generateTextStream<
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter === 'native'
+  ) {
+    yield* promptTrailStreamEventsToMessages(
+      streamOpenAIResponsesEvents(session, {
+        ...options,
+        provider: options.provider,
+      }),
+    );
+    return;
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter === 'native'
+  ) {
+    yield* promptTrailStreamEventsToMessages(
+      streamAnthropicMessagesEvents(session, {
+        ...options,
+        provider: options.provider,
+      }),
+    );
+    return;
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter === 'native'
+  ) {
+    yield* promptTrailStreamEventsToMessages(
+      streamGoogleGeminiEvents(session, {
+        ...options,
+        provider: options.provider,
+      }),
+    );
+    return;
+  }
+
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session, options);
 
@@ -465,6 +514,25 @@ export async function* generateTextStream<
         content: ' ', // Ensure content is never empty for Anthropic compatibility
         toolCalls: [toolCall],
       };
+    }
+  }
+}
+
+export async function* promptTrailStreamEventsToMessages<
+  TAttrs extends Attrs = Attrs,
+>(
+  events: AsyncIterable<PromptTrailStreamEvent>,
+): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  let state = createPromptTrailStreamState();
+  for await (const event of events) {
+    state = reducePromptTrailStreamEvent(state, event);
+    if (event.type === 'text.delta') {
+      yield {
+        type: 'assistant',
+        content: event.delta || ' ',
+      } as Message<TAttrs>;
+    } else if (event.type === 'tool.args.done') {
+      yield streamStateToAssistantMessage<TAttrs>(state);
     }
   }
 }

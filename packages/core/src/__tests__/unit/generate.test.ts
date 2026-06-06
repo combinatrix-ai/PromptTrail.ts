@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { convertSessionToAiSdkMessages, createProvider } from '../../generate';
+import {
+  convertSessionToAiSdkMessages,
+  createProvider,
+  promptTrailStreamEventsToMessages,
+} from '../../generate';
 import { Session } from '../../session';
 
 describe('createProvider', () => {
@@ -95,3 +99,48 @@ describe('convertSessionToAiSdkMessages', () => {
     ]);
   });
 });
+
+describe('promptTrailStreamEventsToMessages', () => {
+  it('converts normalized provider stream events into message chunks', async () => {
+    await expect(
+      collectAsync(
+        promptTrailStreamEventsToMessages(
+          stream([
+            { type: 'text.delta', index: 0, delta: 'Hi' },
+            { type: 'tool.start', index: 1, callId: 'call-1', name: 'lookup' },
+            {
+              type: 'tool.args.done',
+              index: 1,
+              callId: 'call-1',
+              args: { query: 'docs' },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'assistant', content: 'Hi' },
+      {
+        type: 'assistant',
+        content: 'Hi',
+        attrs: undefined,
+        toolCalls: [
+          { id: 'call-1', name: 'lookup', arguments: { query: 'docs' } },
+        ],
+      },
+    ]);
+  });
+});
+
+async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function* stream(events: any[]) {
+  for (const event of events) {
+    yield event;
+  }
+}
