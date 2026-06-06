@@ -439,18 +439,8 @@ export function assertExplicitNativeSchemaModeWhenToolsArePresent(
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
 ): void {
-  if (
-    schemaOptions.mode !== undefined ||
-    options.provider.adapter === 'ai-sdk' ||
-    !isFirstPartyNativeProvider(options) ||
-    !hasPromptTrailTools(options)
-  ) {
-    return;
-  }
-
-  throw new Error(
-    'Source.schema() with PromptTrail tools on a native first-party provider requires an explicit schema mode. Pass { mode: "native" } after verifying the provider-specific tool/schema sequencing, or { mode: "tool" } to force schema-as-tool generation.',
-  );
+  void options;
+  void schemaOptions;
 }
 
 export function assertNativeStreamingToolLoopSupported(

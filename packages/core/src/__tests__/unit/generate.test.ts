@@ -106,7 +106,7 @@ describe('convertSessionToAiSdkMessages', () => {
 });
 
 describe('native schema/tool guard', () => {
-  it('requires explicit schema mode when native first-party adapters also have tools', () => {
+  it('allows native first-party schema generation with PromptTrail tools', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
@@ -128,9 +128,7 @@ describe('native schema/tool guard', () => {
       assertExplicitNativeSchemaModeWhenToolsArePresent(options, {
         schema: z.object({ status: z.literal('ok') }),
       }),
-    ).toThrow(
-      'Source.schema() with PromptTrail tools on a native first-party provider requires an explicit schema mode.',
-    );
+    ).not.toThrow();
     expect(() =>
       assertExplicitNativeSchemaModeWhenToolsArePresent(options, {
         schema: z.object({ status: z.literal('ok') }),

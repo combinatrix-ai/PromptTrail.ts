@@ -459,16 +459,13 @@ constraints Anthropic rejects.
 
 Key interaction: structured final output with an active tool loop is
 provider-specific. Anthropic supports the forced-tool path naturally. OpenAI
-Responses should support a function-tool loop followed by a final structured
-message because `tools` and `text.format` are both request fields, but the exact
-sequencing must be verified in native adapter tests. Gemini rejects forced
+Responses supports a function-tool loop followed by a final structured message
+because `tools` and `text.format` are both request fields. Gemini rejects forced
 function calling (`ANY`) when `responseMimeType: 'application/json'` is on the
-same request, so the Gemini native adapter must omit `responseJsonSchema` on the
-initial required-tool request and restore it on the post-tool continuation
-request. Gemini's full end-to-end behavior still needs provider-specific real
-API confirmation.
-Until those tests exist, `Source.schema()` plus tools should either use the
-ai-sdk path or require an explicit provider-native mode.
+same request, so the Gemini native adapter omits `responseJsonSchema` on the
+initial required-tool request and restores it on the post-tool continuation
+request. Native adapter tests cover this sequencing; real Gemini tests are
+still subject to provider quota.
 
 ### Streaming
 
@@ -1123,8 +1120,8 @@ Basic streaming and structured output land with each native adapter (Phases
 2–3b). This phase adds the deeper, shared behavior from Generation Capabilities:
 
 - Shared Zod → JSON Schema normalization for structured output (strict /
-  nullable-optional / drop-unsupported), plus the "no tool loop except Anthropic"
-  guard.
+  nullable-optional / drop-unsupported), plus provider-specific native
+  tool-loop sequencing for structured final output.
 - Normalized `PromptTrailStreamEvent` reducer feeding the tool loop and the
   `retain`-aware persisted-message builder.
 - Common `thinking` option, `attrs.<provider>` reasoning storage, and the
