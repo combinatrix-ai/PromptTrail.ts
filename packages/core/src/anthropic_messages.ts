@@ -173,7 +173,7 @@ export async function generateAnthropicMessagesText<
       messages,
       requestContent.system,
       session,
-      resolvedOptions,
+      getAnthropicToolLoopContinuationOptions(resolvedOptions),
       tools,
       toolDefinitions,
     );
@@ -265,17 +265,18 @@ export async function generateAnthropicMessagesWithSchema<
     baseURL: resolvedOptions.provider.baseURL,
     dangerouslyAllowBrowser: resolvedOptions.dangerouslyAllowBrowser,
   });
+  const tools = getAnthropicPromptTrailTools(resolvedOptions);
   const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
-  const response = await client.messages.create(
-    buildAnthropicSchemaRequestBody(
-      session,
-      resolvedOptions,
-      schemaOptions,
-    ) as any,
-    getAnthropicRequestOptions(resolvedOptions) as any,
-  );
 
   if (normalizeSchemaGenerationMode(schemaOptions.mode) === 'native') {
+    const response = await client.messages.create(
+      buildAnthropicSchemaRequestBody(
+        session,
+        resolvedOptions,
+        schemaOptions,
+      ) as any,
+      getAnthropicRequestOptions(resolvedOptions) as any,
+    );
     const text = extractAnthropicText(response.content as unknown[]).trim();
     let output: unknown;
     try {
@@ -306,39 +307,89 @@ export async function generateAnthropicMessagesWithSchema<
     };
   }
 
-  const toolUse = collectAnthropicToolUses(response.content).find(
-    (candidate) => candidate.name === toolName,
-  );
-  if (!toolUse) {
-    throw new Error(
-      `Anthropic structured output tool was not called: ${toolName}`,
+  const requestContent = getAnthropicRequestContent(session, resolvedOptions);
+  let messages: AnthropicRequestContent['messages'] = requestContent.messages;
+  let forceStructuredTool = tools.length === 0;
+
+  for (let i = 0; i < (resolvedOptions.maxCallLimit ?? 10); i++) {
+    const response = await client.messages.create(
+      buildAnthropicSchemaRequestBodyFromContent(
+        { messages, system: requestContent.system },
+        resolvedOptions,
+        schemaOptions,
+        forceStructuredTool ? 'force' : 'auto',
+      ) as any,
+      getAnthropicRequestOptions(resolvedOptions) as any,
     );
-  }
 
-  const parsed = schemaOptions.schema.safeParse(toolUse.input);
-  if (!parsed.success) {
-    throw new Error(`Schema validation failed: ${parsed.error.message}`);
-  }
+    const toolUses = collectAnthropicToolUses(response.content as unknown[]);
+    const structuredToolUse = toolUses.find(
+      (candidate) => candidate.name === toolName,
+    );
+    if (structuredToolUse) {
+      const parsed = schemaOptions.schema.safeParse(structuredToolUse.input);
+      if (!parsed.success) {
+        throw new Error(`Schema validation failed: ${parsed.error.message}`);
+      }
 
-  return {
-    type: 'assistant',
-    content: JSON.stringify(parsed.data, null, 2),
-    structuredOutput: parsed.data,
-    attrs: {
-      anthropic: retainAnthropicMessageMetadata(
-        response,
-        resolvedOptions.retain ?? 'summary',
+      return {
+        type: 'assistant',
+        content: JSON.stringify(parsed.data, null, 2),
+        structuredOutput: parsed.data,
+        attrs: {
+          anthropic: retainAnthropicMessageMetadata(
+            response,
+            resolvedOptions.retain ?? 'summary',
+          ),
+        } as unknown as TAttrs,
+      };
+    }
+
+    if (toolUses.length === 0) {
+      throw new Error(
+        `Anthropic structured output tool was not called: ${toolName}`,
+      );
+    }
+
+    const toolResults = await Promise.all(
+      toolUses.map((toolUse) =>
+        createAnthropicToolResultBlock(toolUse, tools, session),
       ),
-    } as unknown as TAttrs,
-  };
+    );
+    messages = [
+      ...messages,
+      { role: 'assistant', content: response.content },
+      { role: 'user', content: toolResults },
+    ];
+    forceStructuredTool = true;
+  }
+
+  throw new Error(
+    `Anthropic structured output tool was not called within ${resolvedOptions.maxCallLimit ?? 10} calls: ${toolName}`,
+  );
 }
 
 export function buildAnthropicSchemaRequestBody(
   session: Session<any, any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   schemaOptions: SchemaGenerationOptions,
+  toolChoice: 'auto' | 'force' = 'force',
 ): Record<string, unknown> {
   const requestContent = getAnthropicRequestContent(session, options);
+  return buildAnthropicSchemaRequestBodyFromContent(
+    requestContent,
+    options,
+    schemaOptions,
+    toolChoice,
+  );
+}
+
+export function buildAnthropicSchemaRequestBodyFromContent(
+  requestContent: AnthropicRequestContent,
+  options: LLMOptions & { provider: AnthropicProviderConfig },
+  schemaOptions: SchemaGenerationOptions,
+  toolChoice: 'auto' | 'force' = 'force',
+): Record<string, unknown> {
   const base = {
     model: options.provider.modelName,
     max_tokens: options.maxTokens ?? 1024,
@@ -366,8 +417,14 @@ export function buildAnthropicSchemaRequestBody(
   const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
   return {
     ...base,
-    tools: [createAnthropicStructuredOutputTool(schemaOptions)],
-    tool_choice: { type: 'tool', name: toolName },
+    tools: [
+      ...getAnthropicToolDefinitions(options),
+      createAnthropicStructuredOutputTool(schemaOptions),
+    ],
+    tool_choice:
+      toolChoice === 'force'
+        ? { type: 'tool', name: toolName }
+        : (mapAnthropicToolChoice(options.toolChoice) ?? { type: 'auto' }),
   };
 }
 
@@ -625,6 +682,14 @@ export function getAnthropicToolDefinitions(
         : [],
     ),
   ];
+}
+
+export function getAnthropicToolLoopContinuationOptions<T extends LLMOptions>(
+  options: T,
+): T {
+  return options.toolChoice === 'required'
+    ? { ...options, toolChoice: 'auto' }
+    : options;
 }
 
 export function getAnthropicNativeSkills(

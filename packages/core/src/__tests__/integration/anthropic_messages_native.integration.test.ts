@@ -96,6 +96,46 @@ describe.skipIf(!anthropicAvailable)(
       expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
     }, 60_000);
 
+    it('runs a tool loop before native forced-tool structured output', async () => {
+      const lookup = Tool.create({
+        name: 'lookup',
+        description: 'Lookup a fixed test value',
+        inputSchema: z.object({ key: z.string() }),
+        execute: async ({ key }) => ({ value: `tool:${key}` }),
+      });
+
+      const output = await Source.llm()
+        .anthropic({ adapter: 'native' })
+        .model('claude-haiku-4-5')
+        .temperature(0)
+        .maxTokens(128)
+        .withCapabilities([lookup])
+        .toolChoice('required')
+        .withSchema(
+          z.object({
+            status: z.literal('ok'),
+            value: z.string(),
+          }),
+          { mode: 'tool', functionName: 'StructuredResult' },
+        )
+        .getContent(
+          Session.create({
+            messages: [
+              {
+                type: 'user',
+                content:
+                  'First call lookup with key "schema-loop". Then return structured output with status ok and value set to the lookup result value.',
+              },
+            ],
+          }),
+        );
+
+      expect(output.structuredOutput).toEqual({
+        status: 'ok',
+        value: 'tool:schema-loop',
+      });
+    }, 60_000);
+
     it('generates structured output through native output_config', async () => {
       const output = await Source.llm()
         .anthropic({ adapter: 'native' })

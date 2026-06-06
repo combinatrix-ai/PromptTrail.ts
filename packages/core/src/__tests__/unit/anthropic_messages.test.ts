@@ -3,11 +3,13 @@ import { z } from 'zod';
 import {
   AnthropicSkillsHttpClient,
   buildAnthropicSchemaRequestBody,
+  buildAnthropicSchemaRequestBodyFromContent,
   collectAnthropicToolUses,
   convertSessionToAnthropicMessages,
   createAnthropicStructuredOutputTool,
   createAnthropicToolResultBlock,
   getAnthropicToolDefinitions,
+  getAnthropicToolLoopContinuationOptions,
   getAnthropicRequestOptions,
   getAnthropicRequestContent,
   getAnthropicSkillsContainer,
@@ -526,6 +528,28 @@ describe('Anthropic Messages native adapter helpers', () => {
     });
   });
 
+  it('relaxes required Anthropic tool choice after tool results are appended', () => {
+    const options = {
+      provider: {
+        type: 'anthropic' as const,
+        apiKey: 'test-key',
+        modelName: 'claude-haiku-4-5',
+      },
+      toolChoice: 'required' as const,
+    };
+
+    expect(getAnthropicToolLoopContinuationOptions(options)).toEqual({
+      ...options,
+      toolChoice: 'auto',
+    });
+    expect(
+      getAnthropicToolLoopContinuationOptions({
+        ...options,
+        toolChoice: 'auto',
+      }),
+    ).toEqual({ ...options, toolChoice: 'auto' });
+  });
+
   it('normalizes native Anthropic async streams without an API call', async () => {
     await expect(
       collectAsync(
@@ -684,6 +708,64 @@ describe('Anthropic Messages native adapter helpers', () => {
             additionalProperties: false,
           },
         },
+      ],
+      tool_choice: { type: 'tool', name: 'StructuredResult' },
+    });
+  });
+
+  it('keeps PromptTrail tools available before forcing Anthropic structured output', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+    const requestContent = {
+      system: undefined,
+      messages: [{ role: 'user' as const, content: 'Lookup then extract.' }],
+    };
+    const options = {
+      provider: {
+        type: 'anthropic' as const,
+        apiKey: 'test-key',
+        modelName: 'claude-haiku-4-5',
+      },
+      capabilities: [lookup],
+      toolChoice: 'required' as const,
+    };
+    const schemaOptions = {
+      mode: 'tool' as const,
+      schema: z.object({
+        status: z.literal('ok'),
+      }),
+      functionName: 'StructuredResult',
+    };
+
+    expect(
+      buildAnthropicSchemaRequestBodyFromContent(
+        requestContent,
+        options,
+        schemaOptions,
+        'auto',
+      ),
+    ).toMatchObject({
+      tools: [
+        { name: 'lookup' },
+        { name: 'StructuredResult' },
+      ],
+      tool_choice: { type: 'any' },
+    });
+    expect(
+      buildAnthropicSchemaRequestBodyFromContent(
+        requestContent,
+        options,
+        schemaOptions,
+        'force',
+      ),
+    ).toMatchObject({
+      tools: [
+        { name: 'lookup' },
+        { name: 'StructuredResult' },
       ],
       tool_choice: { type: 'tool', name: 'StructuredResult' },
     });
