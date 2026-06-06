@@ -68,5 +68,32 @@ describe.skipIf(!anthropicAvailable)(
 
       expect(output.content.trim()).toBe('tool:native');
     }, 60_000);
+
+    it('generates structured output through the native forced-tool path', async () => {
+      const output = await Source.llm()
+        .anthropic({ adapter: 'native' })
+        .model('claude-haiku-4-5')
+        .temperature(0)
+        .maxTokens(64)
+        .withSchema(
+          z.object({
+            status: z.literal('ok'),
+            count: z.number(),
+          }),
+          { mode: 'tool', functionName: 'StructuredResult' },
+        )
+        .getContent(
+          Session.create({
+            messages: [
+              {
+                type: 'user',
+                content: 'Return status ok and count 3.',
+              },
+            ],
+          }),
+        );
+
+      expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
+    }, 60_000);
   },
 );

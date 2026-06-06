@@ -1,7 +1,11 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
 import type { PromptTrailTool } from './capabilities';
 import { zodToJsonSchema } from './json_schema';
-import type { GoogleProviderConfig, LLMOptions } from './llm_types';
+import type {
+  GoogleProviderConfig,
+  LLMOptions,
+  SchemaGenerationOptions,
+} from './llm_types';
 import type { Message } from './message';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
@@ -21,6 +25,49 @@ export async function generateGoogleGeminiText<
   session: Session<TVars, TAttrs>,
   options: LLMOptions & { provider: GoogleProviderConfig },
 ): Promise<Message<TAttrs>> {
+  return generateGoogleGeminiMessage(session, options);
+}
+
+export async function generateGoogleGeminiWithSchema<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  schemaOptions: SchemaGenerationOptions,
+): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const message = await generateGoogleGeminiMessage(session, options, {
+    ...createGeminiStructuredOutputConfig(schemaOptions),
+  });
+  const parsed = schemaOptions.schema.safeParse(JSON.parse(message.content));
+  if (!parsed.success) {
+    throw new Error(`Schema validation failed: ${parsed.error.message}`);
+  }
+
+  return {
+    ...message,
+    content: JSON.stringify(parsed.data, null, 2),
+    structuredOutput: parsed.data,
+  };
+}
+
+export function createGeminiStructuredOutputConfig(
+  schemaOptions: SchemaGenerationOptions,
+): Record<string, unknown> {
+  return {
+    responseMimeType: 'application/json',
+    responseJsonSchema: zodToJsonSchema(schemaOptions.schema),
+  };
+}
+
+async function generateGoogleGeminiMessage<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  extraConfig: Record<string, unknown> = {},
+): Promise<Message<TAttrs>> {
   const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
   const tools = getGeminiPromptTrailTools(options);
   let contents: unknown[] = convertSessionToGeminiContents(session);
@@ -30,6 +77,7 @@ export async function generateGoogleGeminiText<
     session,
     options,
     tools,
+    extraConfig,
   );
 
   for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
@@ -51,7 +99,14 @@ export async function generateGoogleGeminiText<
       },
       { role: 'user', parts: responseParts },
     ];
-    response = await createGeminiContent(ai, contents, session, options, tools);
+    response = await createGeminiContent(
+      ai,
+      contents,
+      session,
+      options,
+      tools,
+      extraConfig,
+    );
   }
 
   return {
@@ -72,6 +127,7 @@ async function createGeminiContent(
   session: Session<any, any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
+  extraConfig: Record<string, unknown> = {},
 ) {
   return ai.models.generateContent({
     model: options.provider.modelName,
@@ -98,6 +154,7 @@ async function createGeminiContent(
               },
             }
           : undefined,
+      ...extraConfig,
     },
   });
 }

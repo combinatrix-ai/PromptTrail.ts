@@ -66,4 +66,31 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
 
     expect(output.content.trim()).toBe('tool:native');
   }, 60_000);
+
+  it('generates structured output through native responseJsonSchema', async () => {
+    const output = await Source.llm()
+      .google({ adapter: 'native' })
+      .model('gemini-2.5-flash')
+      .temperature(0)
+      .maxTokens(64)
+      .withSchema(
+        z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+        { mode: 'structured_output' },
+      )
+      .getContent(
+        Session.create({
+          messages: [
+            {
+              type: 'user',
+              content: 'Return status ok and count 3.',
+            },
+          ],
+        }),
+      );
+
+    expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
+  }, 60_000);
 });

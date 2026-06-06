@@ -1,7 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PromptTrailTool } from './capabilities';
 import { zodToJsonSchema } from './json_schema';
-import type { AnthropicProviderConfig, LLMOptions } from './llm_types';
+import type {
+  AnthropicProviderConfig,
+  LLMOptions,
+  SchemaGenerationOptions,
+} from './llm_types';
 import type { Message } from './message';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
@@ -70,6 +74,68 @@ export async function generateAnthropicMessagesText<
         options.retain ?? 'summary',
       ),
     } as unknown as TAttrs,
+  };
+}
+
+export async function generateAnthropicMessagesWithSchema<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: AnthropicProviderConfig },
+  schemaOptions: SchemaGenerationOptions,
+): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const client = new Anthropic({
+    apiKey: options.provider.apiKey,
+    baseURL: options.provider.baseURL,
+    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+  });
+  const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
+  const structuredTool = createAnthropicStructuredOutputTool(schemaOptions);
+  const response = await client.messages.create({
+    model: options.provider.modelName,
+    max_tokens: options.maxTokens ?? 1024,
+    messages: convertSessionToAnthropicMessages(session) as any,
+    system: getAnthropicSystemPrompt(session),
+    temperature: options.temperature,
+    top_p: options.topP,
+    tools: [structuredTool as any],
+    tool_choice: { type: 'tool', name: toolName } as any,
+  });
+  const toolUse = collectAnthropicToolUses(response.content).find(
+    (candidate) => candidate.name === toolName,
+  );
+  if (!toolUse) {
+    throw new Error(
+      `Anthropic structured output tool was not called: ${toolName}`,
+    );
+  }
+
+  const parsed = schemaOptions.schema.safeParse(toolUse.input);
+  if (!parsed.success) {
+    throw new Error(`Schema validation failed: ${parsed.error.message}`);
+  }
+
+  return {
+    type: 'assistant',
+    content: JSON.stringify(parsed.data, null, 2),
+    structuredOutput: parsed.data,
+    attrs: {
+      anthropic: retainAnthropicMessageMetadata(
+        response,
+        options.retain ?? 'summary',
+      ),
+    } as unknown as TAttrs,
+  };
+}
+
+export function createAnthropicStructuredOutputTool(
+  schemaOptions: SchemaGenerationOptions,
+) {
+  return {
+    name: schemaOptions.functionName ?? 'generateStructuredOutput',
+    description: 'Generate structured output according to the JSON schema.',
+    input_schema: zodToJsonSchema(schemaOptions.schema),
   };
 }
 

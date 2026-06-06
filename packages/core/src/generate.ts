@@ -8,8 +8,14 @@ import {
   LanguageModelV1,
   Output,
 } from 'ai';
-import { generateAnthropicMessagesText } from './anthropic_messages';
-import { generateGoogleGeminiText } from './google_gemini';
+import {
+  generateAnthropicMessagesText,
+  generateAnthropicMessagesWithSchema,
+} from './anthropic_messages';
+import {
+  generateGoogleGeminiText,
+  generateGoogleGeminiWithSchema,
+} from './google_gemini';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
 import {
@@ -275,6 +281,34 @@ export async function generateWithSchema<
     schemaOptions.mode === 'structured_output'
   ) {
     return generateOpenAIResponsesWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter === 'native'
+  ) {
+    return generateAnthropicMessagesWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter === 'native'
+  ) {
+    return generateGoogleGeminiWithSchema(
       session,
       {
         ...options,

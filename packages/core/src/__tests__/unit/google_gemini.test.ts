@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   collectGeminiFunctionCalls,
   convertSessionToGeminiContents,
+  createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
   getGeminiSystemInstruction,
   promptTrailToolToGeminiTool,
@@ -113,6 +114,28 @@ describe('Google Gemini native adapter helpers', () => {
     expect(retainGeminiResponseMetadata(response, 'full')).toMatchObject({
       raw: response,
       candidates: response.candidates,
+    });
+  });
+
+  it('creates response JSON schema config for native structured output', () => {
+    expect(
+      createGeminiStructuredOutputConfig({
+        schema: z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+      }),
+    ).toEqual({
+      responseMimeType: 'application/json',
+      responseJsonSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', const: 'ok' },
+          count: { type: 'number' },
+        },
+        required: ['status', 'count'],
+        additionalProperties: false,
+      },
     });
   });
 });

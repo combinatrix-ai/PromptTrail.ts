@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   collectAnthropicToolUses,
   convertSessionToAnthropicMessages,
+  createAnthropicStructuredOutputTool,
   createAnthropicToolResultBlock,
   getAnthropicSystemPrompt,
   promptTrailToolToAnthropicTool,
@@ -125,6 +126,30 @@ describe('Anthropic Messages native adapter helpers', () => {
     expect(retainAnthropicMessageMetadata(response, 'full')).toMatchObject({
       raw: response,
       content: response.content,
+    });
+  });
+
+  it('creates forced-tool definitions for native structured output', () => {
+    expect(
+      createAnthropicStructuredOutputTool({
+        schema: z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+        functionName: 'StructuredResult',
+      }),
+    ).toEqual({
+      name: 'StructuredResult',
+      description: 'Generate structured output according to the JSON schema.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', const: 'ok' },
+          count: { type: 'number' },
+        },
+        required: ['status', 'count'],
+        additionalProperties: false,
+      },
     });
   });
 });
