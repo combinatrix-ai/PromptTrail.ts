@@ -1,5 +1,6 @@
 import type { Attrs } from './session_types';
 import type { ContentPart } from './content_parts';
+import type { CacheHint } from './cache';
 
 /**
  * Represents the role of a message in a conversation
@@ -12,6 +13,7 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 export interface BaseMessage<TAttrs extends Attrs = Attrs> {
   content: string;
   contentParts?: ContentPart[];
+  cache?: CacheHint;
   attrs?: TAttrs;
   structuredContent?: Record<string, unknown>;
   toolCalls?: Array<{

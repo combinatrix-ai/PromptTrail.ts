@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { CacheHint } from './cache';
 import type { Session } from './session';
 
 export type ExecutionMode = 'prompttrail' | 'provider' | 'runtime';
@@ -52,6 +53,7 @@ export interface PromptTrailTool<TInput = unknown, TResult = unknown> {
     context: ToolExecutionContext,
   ) => Promise<TResult> | TResult;
   approval?: ApprovalPolicy;
+  cache?: CacheHint;
   metadata?: Record<string, unknown>;
 }
 
@@ -63,6 +65,7 @@ export interface RuntimeSkill {
   path?: string;
   skillId?: string;
   materialize?: 'never' | 'workspace' | 'temporary';
+  cache?: CacheHint;
   metadata?: Record<string, unknown>;
 }
 
@@ -82,6 +85,7 @@ export interface McpServer {
   transport: McpTransport;
   tools?: 'all' | string[];
   approval?: ApprovalPolicy;
+  cache?: CacheHint;
 }
 
 export interface BuiltinTool {
@@ -91,6 +95,7 @@ export interface BuiltinTool {
   executionMode: Exclude<ExecutionMode, 'prompttrail'>;
   config?: Record<string, unknown>;
   approval?: ApprovalPolicy;
+  cache?: CacheHint;
   metadata?: Record<string, unknown>;
 }
 

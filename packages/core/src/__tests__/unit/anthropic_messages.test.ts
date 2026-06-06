@@ -60,6 +60,53 @@ describe('Anthropic Messages native adapter helpers', () => {
     ]);
   });
 
+  it('applies message cache hints to Anthropic content blocks', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cached system.', cache: '1h' })
+      .addMessage({
+        type: 'user',
+        content: 'Inspect this.',
+        cache: true,
+        contentParts: [
+          { kind: 'text', text: 'Inspect this.' },
+          {
+            kind: 'file',
+            mimeType: 'application/pdf',
+            source: {
+              type: 'uri',
+              uri: 'https://example.com/report.pdf',
+            },
+            filename: 'report.pdf',
+          },
+        ],
+      });
+
+    expect(getAnthropicSystemPrompt(session)).toEqual([
+      {
+        type: 'text',
+        text: 'Cached system.',
+        cache_control: { type: 'ephemeral', ttl: '1h' },
+      },
+    ]);
+    expect(convertSessionToAnthropicMessages(session)).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect this.' },
+          {
+            type: 'document',
+            source: {
+              type: 'url',
+              url: 'https://example.com/report.pdf',
+            },
+            title: 'report.pdf',
+            cache_control: { type: 'ephemeral', ttl: '5m' },
+          },
+        ],
+      },
+    ]);
+  });
+
   it('maps PromptTrail tools to Anthropic tool definitions', () => {
     const tool = Tool.create({
       name: 'lookup',

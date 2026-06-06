@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { applyAnthropicCacheControl } from './cache';
 import type { BuiltinTool, PromptTrailTool } from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
 import {
@@ -181,26 +182,41 @@ export function convertSessionToAnthropicMessages(
     )
     .map((message) => ({
       role: message.type,
-      content: message.contentParts
-        ? contentPartsToAnthropicContent(message.contentParts)
-        : message.content,
+      content: applyAnthropicCacheControl(
+        message.contentParts
+          ? contentPartsToAnthropicContent(message.contentParts)
+          : message.content,
+        message.cache,
+      ),
     }));
 }
 
 export function getAnthropicSystemPrompt(
   session: Session<any, any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
-): string | undefined {
-  const system = session.messages
-    .filter((message) => message.type === 'system')
-    .map((message) => message.content)
-    .join('\n\n');
+): unknown {
+  const systemMessages = session.messages.filter(
+    (message) => message.type === 'system',
+  );
+  const system = systemMessages.some((message) => message.cache)
+    ? systemMessages.map((message) =>
+        applyAnthropicCacheControl(message.content, message.cache),
+      )
+    : systemMessages.map((message) => message.content).join('\n\n');
   const injected = appendSkillInstructions(
-    system || undefined,
+    typeof system === 'string' && system ? system : undefined,
     options?.capabilities,
     options?.skillInjection ?? 'warn',
   );
   warnSkillInstructionLoss(injected.warnings);
+  if (Array.isArray(system)) {
+    return [
+      ...system.flatMap((content) => (Array.isArray(content) ? content : [])),
+      ...(injected.instructions
+        ? [{ type: 'text', text: injected.instructions }]
+        : []),
+    ];
+  }
   return injected.instructions || undefined;
 }
 
