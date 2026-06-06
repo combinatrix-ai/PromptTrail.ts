@@ -10,6 +10,7 @@ export * from './google_gemini';
 export * from './json_schema';
 export * from './message';
 export * from './openai_responses';
+export * from './provider_stream';
 export * from './runtime';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
