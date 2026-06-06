@@ -9,6 +9,9 @@ context.txt
 *.js.map
 .DS_Store
 .envrc
+.env
+.env.*
+!.env.example
 .vscode
 vscode-extension/
 readme_examples

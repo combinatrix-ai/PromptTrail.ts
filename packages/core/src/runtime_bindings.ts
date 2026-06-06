@@ -117,7 +117,7 @@ export interface RuntimeBundleOptions {
   name: string;
   agents?: Record<string, DurableAgent<any, any>>;
   defaults?: BindingDefaults;
-  bindings?: RuntimeBindingLike<RuntimeBindingEvent>[];
+  bindings?: RuntimeBindingLike<any>[];
 }
 
 export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
@@ -261,7 +261,13 @@ export function bundle(options: RuntimeBundleOptions): RuntimeBundle {
     agents: options.agents ?? {},
     defaults: options.defaults ?? {},
     bindings: (options.bindings ?? []).map((bindingLike) =>
-      bindingLike instanceof BindingBuilder ? bindingLike.build() : bindingLike,
+      isBindingBuilder(bindingLike) ? bindingLike.build() : bindingLike,
     ),
   };
+}
+
+function isBindingBuilder<TEvent extends RuntimeBindingEvent>(
+  bindingLike: RuntimeBindingLike<TEvent>,
+): bindingLike is BindingBuilder<TEvent> {
+  return typeof (bindingLike as { build?: unknown }).build === 'function';
 }
