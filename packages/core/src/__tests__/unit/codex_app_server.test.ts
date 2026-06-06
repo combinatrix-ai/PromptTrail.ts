@@ -174,7 +174,13 @@ describe('Codex App Server helpers', () => {
         },
         {
           method: 'turn/completed',
-          params: { turn: { id: 'turn-1', status: 'completed' } },
+          params: {
+            turn: {
+              id: 'turn-1',
+              status: 'completed',
+              error: undefined,
+            },
+          },
         },
       ]),
       { threadId: 'thread-1' },
@@ -184,6 +190,8 @@ describe('Codex App Server helpers', () => {
     expect(result).toMatchObject({
       threadId: 'thread-1',
       turnId: 'turn-1',
+      status: 'completed',
+      error: undefined,
       finalAnswer: 'Codex result',
       items: [{ id: 'item-1' }],
     });

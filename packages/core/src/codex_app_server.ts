@@ -1149,6 +1149,16 @@ export async function collectCodexTurnResult(
     if (typeof params.status === 'string') {
       result.status = params.status;
     }
+    const turn = params.turn as Record<string, unknown> | undefined;
+    if (typeof turn?.id === 'string') {
+      result.turnId = turn.id;
+    }
+    if (typeof turn?.status === 'string') {
+      result.status = turn.status;
+    }
+    if ('error' in (turn ?? {})) {
+      result.error = turn?.error;
+    }
     if ('plan' in params) {
       result.plan = params.plan;
     }
