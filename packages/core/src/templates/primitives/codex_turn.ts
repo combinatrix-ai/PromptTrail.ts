@@ -11,6 +11,7 @@ import {
   getPromptTrailTools,
   promptTrailSkillToCodexInputItem,
   promptTrailToolToCodexDynamicTool,
+  resolveCodexRuntimeSkills,
   type CodexTurnOptions,
 } from '../../codex_app_server';
 import {
@@ -35,7 +36,7 @@ export class CodexTurn<
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
-    const runtimeSkills = getCodexRuntimeSkills(this.options.capabilities);
+    const rawRuntimeSkills = getCodexRuntimeSkills(this.options.capabilities);
     const mcpServers = getCodexMcpServerConfig(this.options.capabilities);
     const onRequest =
       promptTrailTools.length > 0 || this.options.approvalHandler
@@ -80,6 +81,10 @@ export class CodexTurn<
     }
 
     try {
+      const runtimeSkills = await resolveCodexRuntimeSkills(
+        client,
+        rawRuntimeSkills,
+      );
       const resolvedThreadId = await this.resolveThreadId(currentSession);
       const input = await this.resolveInput(currentSession);
       const threadId =

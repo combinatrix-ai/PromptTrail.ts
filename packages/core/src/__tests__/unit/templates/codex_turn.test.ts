@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   CodexAppServerClient,
+  CodexSkillListResult,
   CodexThreadStartParams,
   CodexThreadStartResult,
   CodexTurnStartParams,
@@ -13,6 +14,11 @@ import { z } from 'zod';
 class FakeCodexClient implements CodexAppServerClient {
   threadStarts: CodexThreadStartParams[] = [];
   turnStarts: CodexTurnStartParams[] = [];
+  skillsResult?: CodexSkillListResult | unknown[];
+
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return this.skillsResult ?? { skills: [] };
+  }
 
   async startThread(
     params: CodexThreadStartParams,
@@ -286,6 +292,47 @@ describe('CodexTurn template', () => {
         instructions: 'Prefer focused diffs.',
         skillId: undefined,
         path: undefined,
+        materialize: undefined,
+      },
+      { type: 'text', text: 'Review this' },
+    ]);
+  });
+
+  it('should resolve RuntimeSkill input items through Codex skills/list', async () => {
+    const client = new FakeCodexClient();
+    client.skillsResult = {
+      skills: [
+        {
+          name: 'review',
+          id: 'skill-review',
+          path: '.codex/skills/review',
+          description: 'Review code',
+          instructions: 'Prefer focused diffs.',
+        },
+      ],
+    };
+
+    await Agent.create()
+      .user('Review this')
+      .codexTurn({
+        client,
+        capabilities: [
+          {
+            kind: 'skill',
+            name: 'review',
+          },
+        ],
+      })
+      .execute(Session.create());
+
+    expect(client.turnStarts[0].input).toEqual([
+      {
+        type: 'skill',
+        name: 'review',
+        description: 'Review code',
+        instructions: 'Prefer focused diffs.',
+        skillId: 'skill-review',
+        path: '.codex/skills/review',
         materialize: undefined,
       },
       { type: 'text', text: 'Review this' },

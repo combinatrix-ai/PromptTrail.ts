@@ -106,7 +106,23 @@ export interface CodexTurnResult {
   [key: string]: unknown;
 }
 
+export interface CodexSkillListResult {
+  skills?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface CodexRuntimeSkillInfo {
+  name?: string;
+  description?: string;
+  instructions?: string;
+  skillId?: string;
+  id?: string;
+  path?: string;
+  [key: string]: unknown;
+}
+
 export interface CodexAppServerClient {
+  listSkills?(): Promise<CodexSkillListResult | unknown[]>;
   startThread(params: CodexThreadStartParams): Promise<CodexThreadStartResult>;
   startTurn(
     params: CodexTurnStartParams,
@@ -137,7 +153,11 @@ export class CodexAppServerHttpClient implements CodexAppServerClient {
     return this.request<CodexTurnResult>('turn/start', params);
   }
 
-  private async request<T>(method: string, params: unknown): Promise<T> {
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return this.request<CodexSkillListResult | unknown[]>('skills/list');
+  }
+
+  private async request<T>(method: string, params?: unknown): Promise<T> {
     const response = await this.fetchImpl(this.options.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -145,7 +165,7 @@ export class CodexAppServerHttpClient implements CodexAppServerClient {
         jsonrpc: '2.0',
         id: this.nextId++,
         method,
-        params,
+        ...(params === undefined ? {} : { params }),
       }),
     });
 
@@ -221,6 +241,10 @@ export class CodexAppServerLineJsonRpcClient implements CodexAppServerClient {
 
   async startTurn(params: CodexTurnStartParams): Promise<CodexTurnResult> {
     return this.request<CodexTurnResult>('turn/start', params);
+  }
+
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return this.request<CodexSkillListResult | unknown[]>('skills/list');
   }
 
   async close(): Promise<void> {
@@ -445,6 +469,12 @@ export class CodexAppServerWebSocketClient implements CodexAppServerClient {
     }
 
     return this.waitForTurnCompletion(params.threadId, turnId, result.turn);
+  }
+
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return this.request('skills/list') as Promise<
+      CodexSkillListResult | unknown[]
+    >;
   }
 
   async close(): Promise<void> {
@@ -825,6 +855,75 @@ export function getCodexRuntimeSkills(
   return (capabilities ?? []).filter(
     (capability): capability is RuntimeSkill => capability.kind === 'skill',
   );
+}
+
+export async function resolveCodexRuntimeSkills(
+  client: CodexAppServerClient,
+  skills: readonly RuntimeSkill[],
+): Promise<RuntimeSkill[]> {
+  if (skills.length === 0 || !client.listSkills) {
+    return [...skills];
+  }
+
+  const listedSkills = normalizeCodexSkillListResult(await client.listSkills());
+  if (listedSkills.length === 0) {
+    return [...skills];
+  }
+
+  const skillsByName = new Map(
+    listedSkills
+      .map((skill) => [getStringProperty(skill, 'name'), skill] as const)
+      .filter((entry): entry is readonly [string, CodexRuntimeSkillInfo] =>
+        Boolean(entry[0]),
+      ),
+  );
+
+  return skills.map((skill) => {
+    const listedSkill = skillsByName.get(skill.name);
+    if (!listedSkill) {
+      return skill;
+    }
+
+    return {
+      ...skill,
+      description:
+        skill.description ?? getStringProperty(listedSkill, 'description'),
+      instructions:
+        skill.instructions ?? getStringProperty(listedSkill, 'instructions'),
+      skillId:
+        skill.skillId ??
+        getStringProperty(listedSkill, 'skillId') ??
+        getStringProperty(listedSkill, 'id'),
+      path: skill.path ?? getStringProperty(listedSkill, 'path'),
+      metadata: {
+        ...(skill.metadata ?? {}),
+        codexSkill: listedSkill,
+      },
+    };
+  });
+}
+
+function normalizeCodexSkillListResult(
+  result: CodexSkillListResult | unknown[],
+): CodexRuntimeSkillInfo[] {
+  const rawSkills = Array.isArray(result)
+    ? result
+    : Array.isArray(result.skills)
+      ? result.skills
+      : [];
+  return rawSkills.filter(isCodexRuntimeSkillInfo);
+}
+
+function isCodexRuntimeSkillInfo(value: unknown): value is CodexRuntimeSkillInfo {
+  return Boolean(value) && typeof value === 'object';
+}
+
+function getStringProperty(
+  value: CodexRuntimeSkillInfo,
+  key: string,
+): string | undefined {
+  const property = value[key];
+  return typeof property === 'string' ? property : undefined;
 }
 
 export function getCodexMcpServers(

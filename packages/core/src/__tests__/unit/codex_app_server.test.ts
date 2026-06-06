@@ -13,6 +13,7 @@ import {
   promptTrailMcpToCodexMcpServer,
   promptTrailSkillToCodexInputItem,
   promptTrailToolToCodexDynamicTool,
+  resolveCodexRuntimeSkills,
   type CodexTurnEvent,
 } from '../../codex_app_server';
 import { createSession } from '../../session';
@@ -74,6 +75,27 @@ describe('Codex App Server helpers', () => {
       threadId: 'thread-1',
       turnId: 'turn-1',
       finalAnswer: 'done',
+    });
+
+    writes.length = 0;
+    const skillsPromise = client.listSkills();
+    await waitFor(() => writes.length > 0);
+    expect(JSON.parse(writes.join('').trim())).toEqual({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'skills/list',
+    });
+    serverToClient.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        result: {
+          skills: [{ name: 'review', id: 'skill-1' }],
+        },
+      })}\n`,
+    );
+    await expect(skillsPromise).resolves.toEqual({
+      skills: [{ name: 'review', id: 'skill-1' }],
     });
     await client.close();
   });
@@ -287,6 +309,59 @@ describe('Codex App Server helpers', () => {
       path: '.codex/skills/review',
       materialize: 'workspace',
     });
+  });
+
+  it('resolves RuntimeSkill capabilities from Codex skills/list results', async () => {
+    await expect(
+      resolveCodexRuntimeSkills(
+        {
+          async listSkills() {
+            return {
+              skills: [
+                {
+                  name: 'review',
+                  id: 'skill-review',
+                  path: '.codex/skills/review',
+                  description: 'Resolved review skill',
+                  instructions: 'Resolved instructions',
+                },
+              ],
+            };
+          },
+          async startThread() {
+            return { threadId: 'thread-1' };
+          },
+          async startTurn() {
+            return { finalAnswer: 'done' };
+          },
+        },
+        [
+          {
+            kind: 'skill',
+            name: 'review',
+            description: 'Explicit description',
+          },
+        ],
+      ),
+    ).resolves.toEqual([
+      {
+        kind: 'skill',
+        name: 'review',
+        description: 'Explicit description',
+        instructions: 'Resolved instructions',
+        skillId: 'skill-review',
+        path: '.codex/skills/review',
+        metadata: {
+          codexSkill: {
+            name: 'review',
+            id: 'skill-review',
+            path: '.codex/skills/review',
+            description: 'Resolved review skill',
+            instructions: 'Resolved instructions',
+          },
+        },
+      },
+    ]);
   });
 
   it('maps MCP server capabilities to Codex runtime MCP config', () => {
