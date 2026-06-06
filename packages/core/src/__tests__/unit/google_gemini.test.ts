@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  attachGeminiCachedContentMetadata,
   buildGeminiGenerationConfig,
   buildGeminiCachedContentCreateParams,
   collectGeminiFunctionCalls,
@@ -9,13 +10,16 @@ import {
   createGeminiCachedContent,
   createGeminiStructuredOutputConfig,
   createGeminiFunctionResponsePart,
+  getGeminiCacheablePrefixSession,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
   normalizeGeminiContentStream,
   promptTrailBuiltinToGeminiTool,
   promptTrailToolToGeminiTool,
   retainGeminiResponseMetadata,
+  resolveGeminiCachedContent,
 } from '../../google_gemini';
+import { deriveConversationBinding } from '../../conversation';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 
@@ -183,6 +187,110 @@ describe('Google Gemini native adapter helpers', () => {
     ).rejects.toThrow(
       'Gemini CachedContent create response did not include name.',
     );
+  });
+
+  it('resolves cache hints into Gemini CachedContent bindings', async () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prefix.', cache: true })
+      .addMessage({ type: 'user', content: 'Use the cached prefix.' });
+    const calls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/prefix' };
+        },
+      },
+    };
+
+    const prefix = getGeminiCacheablePrefixSession(session);
+    expect(prefix?.messageIndex).toBe(1);
+    expect(convertSessionToGeminiContents(prefix!.session)).toEqual([
+      { role: 'user', parts: [{ text: 'Cache this prefix.' }] },
+    ]);
+
+    const cache = await resolveGeminiCachedContent(client, session, {
+      provider: { type: 'google', modelName: 'gemini-2.5-flash' },
+      cacheKey: 'repo-prefix',
+    });
+
+    expect(calls).toEqual([
+      {
+        model: 'gemini-2.5-flash',
+        config: {
+          displayName: 'repo-prefix',
+          contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+          systemInstruction: 'Cache this system.',
+          tools: undefined,
+          toolConfig: undefined,
+        },
+      },
+    ]);
+    expect(cache).toEqual({
+      cachedContent: 'cachedContents/prefix',
+      binding: {
+        provider: 'google',
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+      metadataBinding: {
+        provider: 'google',
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+    });
+    expect(convertMessagesToGeminiContents(session.messages.slice(2))).toEqual([
+      { role: 'user', parts: [{ text: 'Use the cached prefix.' }] },
+    ]);
+  });
+
+  it('retains the Gemini CachedContent prefix index for later turns', () => {
+    const metadata = attachGeminiCachedContentMetadata(
+      { provider: 'google', api: 'gemini' },
+      {
+        cachedContent: 'cachedContents/prefix',
+        metadataBinding: {
+          provider: 'google',
+          id: 'cachedContents/prefix',
+          messageIndex: 1,
+        },
+      },
+    );
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prefix.', cache: true })
+      .addMessage({
+        type: 'assistant',
+        content: 'Cached.',
+        attrs: { google: metadata },
+      })
+      .addMessage({ type: 'user', content: 'Continue.' });
+
+    expect(metadata).toMatchObject({
+      cachedContent: 'cachedContents/prefix',
+      cachedContentBinding: {
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+    });
+    expect(deriveConversationBinding(session, 'google')).toEqual({
+      provider: 'google',
+      id: 'cachedContents/prefix',
+      messageIndex: 1,
+    });
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        { provider: { type: 'google', modelName: 'gemini-2.5-flash' } },
+        [],
+        [],
+        deriveConversationBinding(session, 'google'),
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/prefix',
+      systemInstruction: undefined,
+    });
   });
 
   it('maps PromptTrail tools to Gemini function declarations', () => {

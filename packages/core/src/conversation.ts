@@ -65,6 +65,19 @@ export function deriveConversationBindingFromMessage(
   }
 
   const google = attrs?.google as Record<string, unknown> | undefined;
+  const googleCachedContentBinding = google?.cachedContentBinding as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    typeof googleCachedContentBinding?.id === 'string' &&
+    typeof googleCachedContentBinding?.messageIndex === 'number'
+  ) {
+    return {
+      provider: 'google',
+      id: googleCachedContentBinding.id,
+      messageIndex: googleCachedContentBinding.messageIndex,
+    };
+  }
   if (typeof google?.cachedContent === 'string') {
     return {
       provider: 'google',

@@ -17,7 +17,8 @@ import type { Message } from './message';
 import { geminiStreamEventToPromptTrailEvents } from './provider_stream';
 import { extractGeminiReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
-import type { Attrs, Session, Vars } from './session';
+import { Session } from './session';
+import type { Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -32,6 +33,12 @@ export interface GeminiCacheClient {
   caches: {
     create(params: Record<string, unknown>): Promise<{ name?: string }>;
   };
+}
+
+export interface GeminiCachedContentResolution {
+  binding?: ConversationBinding;
+  cachedContent?: string;
+  metadataBinding?: ConversationBinding;
 }
 
 export async function generateGoogleGeminiText<
@@ -54,10 +61,13 @@ export async function* streamGoogleGeminiEvents<
   const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
-  const binding =
-    options.conversationBinding === 'auto'
-      ? deriveConversationBinding(session, 'google')
-      : undefined;
+  const binding = await resolveGeminiCachedContentBinding(
+    ai as unknown as GeminiCacheClient,
+    session,
+    options,
+    tools,
+    toolDefinitions,
+  );
   const contents = convertMessagesToGeminiContents(
     getMessagesAfterBinding(session, binding),
   );
@@ -129,10 +139,14 @@ async function generateGoogleGeminiMessage<
   const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
   const tools = getGeminiPromptTrailTools(options);
   const toolDefinitions = getGeminiToolDefinitions(options);
-  const binding =
-    options.conversationBinding === 'auto'
-      ? deriveConversationBinding(session, 'google')
-      : undefined;
+  const cacheResolution = await resolveGeminiCachedContent(
+    ai as unknown as GeminiCacheClient,
+    session,
+    options,
+    tools,
+    toolDefinitions,
+  );
+  const binding = cacheResolution.binding;
   let contents: unknown[] = convertMessagesToGeminiContents(
     getMessagesAfterBinding(session, binding),
   );
@@ -182,11 +196,73 @@ async function generateGoogleGeminiMessage<
     type: 'assistant',
     content: getGeminiText(response) || ' ',
     attrs: {
-      google: retainGeminiResponseMetadata(
-        response,
-        options.retain ?? 'summary',
+      google: attachGeminiCachedContentMetadata(
+        retainGeminiResponseMetadata(response, options.retain ?? 'summary'),
+        cacheResolution,
       ),
     } as unknown as TAttrs,
+  };
+}
+
+async function resolveGeminiCachedContentBinding(
+  ai: GeminiCacheClient,
+  session: Session<any, any>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  tools: readonly PromptTrailTool[],
+  toolDefinitions: readonly unknown[],
+): Promise<ConversationBinding | undefined> {
+  return (
+    await resolveGeminiCachedContent(
+      ai,
+      session,
+      options,
+      tools,
+      toolDefinitions,
+    )
+  ).binding;
+}
+
+export async function resolveGeminiCachedContent(
+  client: GeminiCacheClient,
+  session: Session<any, any>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+  tools: readonly PromptTrailTool[] = getGeminiPromptTrailTools(options),
+  toolDefinitions: readonly unknown[] = getGeminiToolDefinitions(options),
+): Promise<GeminiCachedContentResolution> {
+  const existingBinding = deriveConversationBinding(session, 'google');
+  if (existingBinding) {
+    return {
+      binding: existingBinding,
+      cachedContent: existingBinding.id,
+      metadataBinding: existingBinding,
+    };
+  }
+
+  const prefix = getGeminiCacheablePrefixSession(session, options);
+  if (!prefix) {
+    return {};
+  }
+
+  const cachedContent = await createGeminiCachedContent(
+    client,
+    buildGeminiCachedContentCreateParams(
+      prefix.session,
+      options,
+      tools,
+      toolDefinitions,
+    ),
+  );
+  const binding = {
+    provider: 'google' as const,
+    id: cachedContent,
+    messageIndex: prefix.messageIndex,
+  };
+
+  return {
+    cachedContent,
+    metadataBinding: binding,
+    binding:
+      prefix.messageIndex < session.messages.length - 1 ? binding : undefined,
   };
 }
 
@@ -292,6 +368,61 @@ export async function createGeminiCachedContent(
     );
   }
   return cached.name;
+}
+
+export function getGeminiCacheablePrefixSession(
+  session: Session<any, any>,
+  options: Pick<LLMOptions, 'capabilities'> = {},
+):
+  | {
+      session: Session<any, any>;
+      messageIndex: number;
+    }
+  | undefined {
+  let lastCacheHintIndex = -1;
+  session.messages.forEach((message, index) => {
+    if (message.cache) {
+      lastCacheHintIndex = index;
+    }
+  });
+
+  const hasCachedCapability = (options.capabilities ?? []).some(
+    (capability) => !!capability.cache,
+  );
+  if (lastCacheHintIndex < 0 && hasCachedCapability) {
+    lastCacheHintIndex = session.messages.length - 1;
+  }
+  if (lastCacheHintIndex < 0) {
+    return undefined;
+  }
+
+  return {
+    session: new Session(
+      session.messages.slice(0, lastCacheHintIndex + 1),
+      session.vars,
+      session.print,
+    ),
+    messageIndex: lastCacheHintIndex,
+  };
+}
+
+export function attachGeminiCachedContentMetadata(
+  metadata: Record<string, unknown>,
+  cache: GeminiCachedContentResolution,
+): Record<string, unknown> {
+  if (!cache.cachedContent) {
+    return metadata;
+  }
+  return {
+    ...metadata,
+    cachedContent: metadata.cachedContent ?? cache.cachedContent,
+    cachedContentBinding: cache.metadataBinding
+      ? {
+          id: cache.metadataBinding.id,
+          messageIndex: cache.metadataBinding.messageIndex,
+        }
+      : undefined,
+  };
 }
 
 export function convertSessionToGeminiContents(
