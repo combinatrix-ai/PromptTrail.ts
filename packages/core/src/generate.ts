@@ -10,6 +10,7 @@ import {
 } from 'ai';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
+import { generateOpenAIResponsesText } from './openai_responses';
 import type { Session, Attrs, Vars } from './session';
 import { toAiSdkToolSet } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
@@ -166,6 +167,17 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
 ): Promise<Message<TAttrs>> {
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter === 'native'
+  ) {
+    return generateOpenAIResponsesText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
   // Convert session to AI SDK message format
   const messages = convertSessionToAiSdkMessages(session);
 

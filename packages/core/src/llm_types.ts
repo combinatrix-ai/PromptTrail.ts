@@ -6,6 +6,7 @@ export interface OpenAIProviderConfig {
   apiKey: string;
   modelName: string;
   api?: 'chat' | 'responses';
+  adapter?: 'native' | 'ai-sdk';
   baseURL?: string;
   organization?: string;
   dangerouslyAllowBrowser?: boolean;
@@ -15,6 +16,7 @@ export interface AnthropicProviderConfig {
   type: 'anthropic';
   apiKey: string;
   modelName: string;
+  adapter?: 'native' | 'ai-sdk';
   baseURL?: string;
 }
 
@@ -22,6 +24,7 @@ export interface GoogleProviderConfig {
   type: 'google';
   apiKey?: string;
   modelName: string;
+  adapter?: 'native' | 'ai-sdk';
   baseURL?: string;
 }
 
@@ -43,6 +46,7 @@ export interface LLMOptions {
   providerOptions?: Record<string, Record<string, unknown>>;
   sdkOptions?: Record<string, unknown>;
   maxCallLimit?: number;
+  retain?: 'none' | 'summary' | 'full';
 }
 
 export interface SchemaGenerationOptions {

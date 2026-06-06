@@ -4,6 +4,7 @@ export * from './codex_app_server';
 export * from './generate';
 export * from './json_schema';
 export * from './message';
+export * from './openai_responses';
 export * from './runtime';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
