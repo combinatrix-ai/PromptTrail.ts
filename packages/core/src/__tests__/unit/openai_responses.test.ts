@@ -10,6 +10,7 @@ import {
   getOpenAIPromptTrailTools,
   getOpenAIShellSkills,
   getOpenAIResponsesInclude,
+  getOpenAIToolLoopContinuationOptions,
   getResponsesInstructions,
   normalizeOpenAIResponsesStream,
   promptTrailBuiltinToOpenAIResponsesTool,
@@ -193,6 +194,29 @@ describe('OpenAI Responses native adapter helpers', () => {
       ],
       tool_choice: 'required',
     });
+  });
+
+  it('relaxes required OpenAI tool choice after tool outputs are appended', () => {
+    const options = {
+      provider: {
+        type: 'openai' as const,
+        apiKey: 'test-key',
+        modelName: 'gpt-5.4-nano',
+        api: 'responses' as const,
+      },
+      toolChoice: 'required' as const,
+    };
+
+    expect(getOpenAIToolLoopContinuationOptions(options)).toEqual({
+      ...options,
+      toolChoice: 'auto',
+    });
+    expect(
+      getOpenAIToolLoopContinuationOptions({
+        ...options,
+        toolChoice: 'auto',
+      }),
+    ).toEqual({ ...options, toolChoice: 'auto' });
   });
 
   it('converts content parts into Responses input message blocks', () => {

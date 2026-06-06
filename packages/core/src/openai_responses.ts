@@ -182,7 +182,7 @@ async function generateOpenAIResponsesMessage<
     response = await createOpenAIResponse(
       client,
       input,
-      options,
+      getOpenAIToolLoopContinuationOptions(options),
       tools,
       toolDefinitions,
       instructions,
@@ -363,6 +363,14 @@ export function getOpenAIResponsesToolDefinitions(
       return [];
     }),
   ];
+}
+
+export function getOpenAIToolLoopContinuationOptions<T extends LLMOptions>(
+  options: T,
+): T {
+  return options.toolChoice === 'required'
+    ? { ...options, toolChoice: 'auto' }
+    : options;
 }
 
 export function promptTrailToolToOpenAIResponsesTool(
