@@ -1,7 +1,11 @@
 import OpenAI from 'openai';
 import type { Message } from './message';
 import type { Attrs, Session, Vars } from './session';
-import type { LLMOptions, OpenAIProviderConfig } from './llm_types';
+import type {
+  LLMOptions,
+  OpenAIProviderConfig,
+  SchemaGenerationOptions,
+} from './llm_types';
 import type { RetainLevel } from './runtime';
 import type { PromptTrailTool } from './capabilities';
 import { zodToJsonSchema } from './json_schema';
@@ -29,6 +33,45 @@ export async function generateOpenAIResponsesText<
   session: Session<TVars, TAttrs>,
   options: LLMOptions & { provider: OpenAIProviderConfig },
 ): Promise<Message<TAttrs>> {
+  return generateOpenAIResponsesMessage(session, options);
+}
+
+export async function generateOpenAIResponsesWithSchema<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: OpenAIProviderConfig },
+  schemaOptions: SchemaGenerationOptions,
+): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const message = await generateOpenAIResponsesMessage(session, options, {
+    type: 'json_schema',
+    name: schemaOptions.functionName ?? 'structured_output',
+    schema: zodToJsonSchema(schemaOptions.schema, { openAiStrict: true }),
+    strict: true,
+  });
+  const parsedOutput = schemaOptions.schema.safeParse(
+    JSON.parse(message.content),
+  );
+  if (!parsedOutput.success) {
+    throw new Error(`Schema validation failed: ${parsedOutput.error.message}`);
+  }
+
+  return {
+    ...message,
+    content: JSON.stringify(parsedOutput.data, null, 2),
+    structuredOutput: parsedOutput.data,
+  };
+}
+
+async function generateOpenAIResponsesMessage<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: OpenAIProviderConfig },
+  textFormat?: Record<string, unknown>,
+): Promise<Message<TAttrs>> {
   const client = new OpenAI({
     apiKey: options.provider.apiKey,
     baseURL: options.provider.baseURL,
@@ -46,6 +89,7 @@ export async function generateOpenAIResponsesText<
     options,
     tools,
     instructions,
+    textFormat,
   );
 
   for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
@@ -66,6 +110,7 @@ export async function generateOpenAIResponsesText<
       options,
       tools,
       instructions,
+      textFormat,
     );
   }
 
@@ -87,6 +132,7 @@ async function createOpenAIResponse(
   options: LLMOptions & { provider: OpenAIProviderConfig },
   tools: readonly PromptTrailTool[],
   instructions: string | undefined,
+  textFormat?: Record<string, unknown>,
 ) {
   return client.responses.create({
     model: options.provider.modelName,
@@ -95,6 +141,7 @@ async function createOpenAIResponse(
     temperature: options.temperature,
     top_p: options.topP,
     max_output_tokens: options.maxTokens,
+    text: textFormat ? { format: textFormat as any } : undefined,
     tools:
       tools.length > 0
         ? tools.map(promptTrailToolToOpenAIResponsesTool)

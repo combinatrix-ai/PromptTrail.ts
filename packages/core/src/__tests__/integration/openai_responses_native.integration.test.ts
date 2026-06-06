@@ -66,4 +66,31 @@ describe.skipIf(!openAIAvailable)('OpenAI Responses native integration', () => {
 
     expect(output.content.trim()).toBe('tool:native');
   }, 60_000);
+
+  it('generates structured output with native Responses json_schema', async () => {
+    const output = await Source.llm()
+      .openai({ adapter: 'native' })
+      .model('gpt-5.4-nano')
+      .temperature(0)
+      .maxTokens(64)
+      .withSchema(
+        z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+        { mode: 'structured_output', functionName: 'NativeSchemaTest' },
+      )
+      .getContent(
+        Session.create({
+          messages: [
+            {
+              type: 'user',
+              content: 'Return status ok and count 3.',
+            },
+          ],
+        }),
+      );
+
+    expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
+  }, 60_000);
 });

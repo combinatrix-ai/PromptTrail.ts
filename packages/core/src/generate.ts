@@ -10,7 +10,10 @@ import {
 } from 'ai';
 import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
-import { generateOpenAIResponsesText } from './openai_responses';
+import {
+  generateOpenAIResponsesText,
+  generateOpenAIResponsesWithSchema,
+} from './openai_responses';
 import type { Session, Attrs, Vars } from './session';
 import { toAiSdkToolSet } from './tool';
 export type { SchemaGenerationOptions } from './llm_types';
@@ -243,6 +246,22 @@ export async function generateWithSchema<
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
 ): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter === 'native' &&
+    schemaOptions.mode === 'structured_output'
+  ) {
+    return generateOpenAIResponsesWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
   const messages = convertSessionToAiSdkMessages(session);
   const provider = createProvider(options);
 
