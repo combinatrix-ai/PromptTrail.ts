@@ -286,6 +286,31 @@ describe('Codex App Server helpers', () => {
       risk: 'write',
       raw: { method: 'item/fileChange/requestApproval' },
     });
+    expect(
+      codexInboundRequestToApprovalRequest({
+        id: 'input-1',
+        method: 'tool/requestUserInput',
+        params: { question: 'Pick an option' },
+        raw: { method: 'tool/requestUserInput' },
+      }),
+    ).toEqual({
+      provider: 'codex',
+      action: 'userInput',
+      input: { question: 'Pick an option' },
+      raw: { method: 'tool/requestUserInput' },
+    });
+    expect(
+      normalizeCodexRuntimeEvent({
+        id: 'input-2',
+        method: 'tool/requestUserInput',
+        params: { status: 'pending' },
+      }),
+    ).toMatchObject({
+      type: 'approval.requested',
+      id: 'input-2',
+      action: 'userInput',
+      status: 'pending',
+    });
     await expect(
       handler({
         id: 'approval-2',

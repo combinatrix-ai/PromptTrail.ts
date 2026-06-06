@@ -914,6 +914,16 @@ export function normalizeCodexRuntimeEvent(
     };
   }
 
+  if (method === 'tool/requestUserInput') {
+    return {
+      type: 'approval.requested',
+      id: getEventId(event),
+      action: 'userInput',
+      status: getString(params.status),
+      raw: event,
+    };
+  }
+
   return {
     type: 'raw',
     id: getEventId(event),
