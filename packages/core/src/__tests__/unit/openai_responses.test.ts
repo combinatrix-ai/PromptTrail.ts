@@ -9,6 +9,7 @@ import {
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
   getOpenAIShellSkills,
+  getOpenAIResponsesInclude,
   getResponsesInstructions,
   normalizeOpenAIResponsesStream,
   promptTrailBuiltinToOpenAIResponsesTool,
@@ -81,10 +82,20 @@ describe('OpenAI Responses native adapter helpers', () => {
       instructions: 'Be concise.',
       previous_response_id: 'resp-1',
       reasoning: { effort: 'low', summary: 'auto' },
+      include: undefined,
       prompt_cache_key: 'prefix',
       tools: [{ type: 'function', name: 'lookup' }],
       stream: true,
     });
+    expect(getOpenAIResponsesInclude({ thinking: { effort: 'low' } })).toEqual([
+      'reasoning.encrypted_content',
+    ]);
+    expect(
+      getOpenAIResponsesInclude(
+        { thinking: { effort: 'low' } },
+        { provider: 'openai', id: 'resp-1', messageIndex: 1 },
+      ),
+    ).toBeUndefined();
   });
 
   it('converts content parts into Responses input message blocks', () => {

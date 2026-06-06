@@ -251,10 +251,21 @@ export function buildOpenAIResponsesRequestBody(
     max_output_tokens: options.maxTokens,
     text: textFormat ? { format: textFormat as any } : undefined,
     ...mapOpenAIResponsesRequestOptions(options),
+    include: getOpenAIResponsesInclude(options, binding),
     tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
     tool_choice: options.toolChoice as any,
     stream,
   };
+}
+
+export function getOpenAIResponsesInclude(
+  options: Pick<LLMOptions, 'thinking'>,
+  binding?: ConversationBinding,
+): string[] | undefined {
+  if (!options.thinking || binding) {
+    return undefined;
+  }
+  return ['reasoning.encrypted_content'];
 }
 
 export function convertSessionToResponsesInput(
