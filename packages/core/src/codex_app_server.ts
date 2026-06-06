@@ -10,6 +10,7 @@ import type {
   ApprovalHandler,
   ApprovalRequest,
   CapabilitySet,
+  McpServer,
   PromptTrailTool,
   RuntimeSkill,
 } from './capabilities';
@@ -615,6 +616,53 @@ export function getCodexRuntimeSkills(
   return (capabilities ?? []).filter(
     (capability): capability is RuntimeSkill => capability.kind === 'skill',
   );
+}
+
+export function getCodexMcpServers(
+  capabilities: CapabilitySet | undefined,
+): McpServer[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is McpServer => capability.kind === 'mcp',
+  );
+}
+
+export function promptTrailMcpToCodexMcpServer(
+  server: McpServer,
+): Record<string, unknown> {
+  if (server.transport.kind === 'sdk-in-process') {
+    return {
+      type: 'sdk-in-process',
+      server: server.transport.server,
+      tools: server.tools,
+    };
+  }
+  if (server.transport.kind === 'http') {
+    return {
+      type: 'http',
+      url: server.transport.url,
+      headers: server.transport.headers,
+      tools: server.tools,
+    };
+  }
+  return {
+    type: 'stdio',
+    command: server.transport.command,
+    args: server.transport.args,
+    env: server.transport.env,
+    tools: server.tools,
+  };
+}
+
+export function getCodexMcpServerConfig(
+  capabilities: CapabilitySet | undefined,
+): Record<string, unknown> | undefined {
+  const servers = Object.fromEntries(
+    getCodexMcpServers(capabilities).map((server) => [
+      server.name,
+      promptTrailMcpToCodexMcpServer(server),
+    ]),
+  );
+  return Object.keys(servers).length > 0 ? servers : undefined;
 }
 
 export function promptTrailSkillToCodexInputItem(

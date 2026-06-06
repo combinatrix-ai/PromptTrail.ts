@@ -5,8 +5,10 @@ import {
   codexInboundRequestToApprovalRequest,
   createCodexRuntimeRequestHandler,
   createCodexToolRequestHandler,
+  getCodexMcpServerConfig,
   getCodexRuntimeSkills,
   normalizeCodexRuntimeEvent,
+  promptTrailMcpToCodexMcpServer,
   promptTrailSkillToCodexInputItem,
   promptTrailToolToCodexDynamicTool,
   type CodexTurnEvent,
@@ -224,6 +226,56 @@ describe('Codex App Server helpers', () => {
       skillId: undefined,
       path: '.codex/skills/review',
       materialize: 'workspace',
+    });
+  });
+
+  it('maps MCP server capabilities to Codex runtime MCP config', () => {
+    const server = {
+      kind: 'mcp' as const,
+      name: 'docs',
+      transport: {
+        kind: 'http' as const,
+        url: 'https://mcp.example.com',
+        headers: { authorization: 'Bearer test' },
+      },
+      tools: ['search', 'fetch'],
+    };
+
+    expect(promptTrailMcpToCodexMcpServer(server)).toEqual({
+      type: 'http',
+      url: 'https://mcp.example.com',
+      headers: { authorization: 'Bearer test' },
+      tools: ['search', 'fetch'],
+    });
+    expect(
+      getCodexMcpServerConfig([
+        server,
+        {
+          kind: 'mcp',
+          name: 'repo',
+          transport: {
+            kind: 'stdio',
+            command: 'repo-mcp',
+            args: ['--root', '/repo'],
+            env: { NODE_ENV: 'test' },
+          },
+          tools: 'all',
+        },
+      ]),
+    ).toEqual({
+      docs: {
+        type: 'http',
+        url: 'https://mcp.example.com',
+        headers: { authorization: 'Bearer test' },
+        tools: ['search', 'fetch'],
+      },
+      repo: {
+        type: 'stdio',
+        command: 'repo-mcp',
+        args: ['--root', '/repo'],
+        env: { NODE_ENV: 'test' },
+        tools: 'all',
+      },
     });
   });
 

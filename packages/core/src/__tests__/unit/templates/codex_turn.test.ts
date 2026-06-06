@@ -262,4 +262,36 @@ describe('CodexTurn template', () => {
       { type: 'text', text: 'Review this' },
     ]);
   });
+
+  it('should pass MCP server capabilities to Codex thread start', async () => {
+    const client = new FakeCodexClient();
+
+    await Agent.create()
+      .user('Use MCP')
+      .codexTurn({
+        client,
+        capabilities: [
+          {
+            kind: 'mcp',
+            name: 'docs',
+            transport: {
+              kind: 'http',
+              url: 'https://mcp.example.com',
+              headers: { authorization: 'Bearer test' },
+            },
+            tools: ['search'],
+          },
+        ],
+      })
+      .execute(Session.create());
+
+    expect(client.threadStarts[0].mcpServers).toEqual({
+      docs: {
+        type: 'http',
+        url: 'https://mcp.example.com',
+        headers: { authorization: 'Bearer test' },
+        tools: ['search'],
+      },
+    });
+  });
 });
