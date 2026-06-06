@@ -1,6 +1,7 @@
 import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai';
 import type { PromptTrailTool } from './capabilities';
 import { contentPartsToGeminiParts } from './content_parts';
+import { mapGeminiThinkingConfig } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import type {
   GoogleProviderConfig,
@@ -140,6 +141,7 @@ async function createGeminiContent(
       topP: options.topP,
       topK: options.topK,
       maxOutputTokens: options.maxTokens,
+      thinkingConfig: mapGeminiThinkingConfig(options.thinking),
       tools:
         tools.length > 0
           ? [{ functionDeclarations: tools.map(promptTrailToolToGeminiTool) }]

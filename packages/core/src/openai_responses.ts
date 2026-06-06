@@ -14,6 +14,7 @@ import {
   type ConversationBinding,
 } from './conversation';
 import { contentPartsToOpenAIInput } from './content_parts';
+import { mapOpenAIResponsesRequestOptions } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
@@ -157,6 +158,7 @@ async function createOpenAIResponse(
     top_p: options.topP,
     max_output_tokens: options.maxTokens,
     text: textFormat ? { format: textFormat as any } : undefined,
+    ...mapOpenAIResponsesRequestOptions(options),
     tools:
       tools.length > 0
         ? tools.map(promptTrailToolToOpenAIResponsesTool)

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PromptTrailTool } from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
+import { mapAnthropicThinking } from './generation_options';
 import { zodToJsonSchema } from './json_schema';
 import type {
   AnthropicProviderConfig,
@@ -101,9 +102,10 @@ export async function generateAnthropicMessagesWithSchema<
     system: getAnthropicSystemPrompt(session, options),
     temperature: options.temperature,
     top_p: options.topP,
+    thinking: mapAnthropicThinking(options.thinking, 'required') as any,
     tools: [structuredTool as any],
     tool_choice: { type: 'tool', name: toolName } as any,
-  });
+  } as any);
   const toolUse = collectAnthropicToolUses(response.content).find(
     (candidate) => candidate.name === toolName,
   );
@@ -155,12 +157,13 @@ async function createAnthropicMessage(
     system: getAnthropicSystemPrompt(session, options),
     temperature: options.temperature,
     top_p: options.topP,
+    thinking: mapAnthropicThinking(options.thinking, options.toolChoice) as any,
     tools:
       tools.length > 0
         ? (tools.map(promptTrailToolToAnthropicTool) as any)
         : undefined,
     tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
-  });
+  } as any);
 }
 
 export function convertSessionToAnthropicMessages(

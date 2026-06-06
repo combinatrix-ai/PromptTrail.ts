@@ -49,6 +49,9 @@ export interface LLMOptions {
   retain?: 'none' | 'summary' | 'full';
   conversationBinding?: 'off' | 'auto';
   skillInjection?: 'warn' | 'error' | 'silent';
+  thinking?: ThinkingOptions;
+  cacheKey?: string;
+  cacheRetention?: 'in_memory' | '24h';
 }
 
 export interface SchemaGenerationOptions {
@@ -70,4 +73,10 @@ export interface ModelOutput {
   }>;
   structuredOutput?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+}
+
+export interface ThinkingOptions {
+  effort?: 'low' | 'medium' | 'high';
+  budgetTokens?: number;
+  summary?: boolean;
 }

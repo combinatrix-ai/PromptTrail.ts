@@ -5,6 +5,7 @@ export * from './codex_app_server';
 export * from './content_parts';
 export * from './conversation';
 export * from './generate';
+export * from './generation_options';
 export * from './google_gemini';
 export * from './json_schema';
 export * from './message';
