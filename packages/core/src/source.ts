@@ -1,6 +1,7 @@
 // content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
+import type { CapabilitySet } from './capabilities';
 import { ValidationError } from './errors';
 import { generateText, generateWithSchema } from './generate';
 import type {
@@ -12,6 +13,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Session, Vars } from './session';
+import { isPromptTrailTool } from './tool';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
@@ -624,6 +626,10 @@ export class LlmSource extends ModelSource {
         ...this.options.tools,
         ...newOptions.tools,
       },
+      capabilities: [
+        ...(this.options.capabilities ?? []),
+        ...(newOptions.capabilities ?? []),
+      ],
       // Preserve maxCallLimit unless explicitly overridden
       maxCallLimit: newOptions.maxCallLimit ?? this.maxCallLimit,
     };
@@ -766,6 +772,17 @@ export class LlmSource extends ModelSource {
         ...this.options.tools,
         ...tools,
       },
+    });
+  }
+
+  withCapabilities(capabilities: CapabilitySet): LlmSource {
+    return this.clone({
+      capabilities,
+      tools: Object.fromEntries(
+        capabilities
+          .filter(isPromptTrailTool)
+          .map((capability) => [capability.name, capability]),
+      ),
     });
   }
 

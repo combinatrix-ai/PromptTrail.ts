@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { CapabilitySet } from './capabilities';
 
 export interface OpenAIProviderConfig {
   type: 'openai';
@@ -36,6 +37,7 @@ export interface LLMOptions {
   topP?: number;
   topK?: number;
   tools?: Record<string, unknown>;
+  capabilities?: CapabilitySet;
   toolChoice?: 'auto' | 'required' | 'none';
   dangerouslyAllowBrowser?: boolean;
   providerOptions?: Record<string, Record<string, unknown>>;

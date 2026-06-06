@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { generateText } from '../../../generate';
 import { Session } from '../../../session';
 import { LlmSource, Source } from '../../../source';
+import { Tool } from '../../../tool';
 import { CustomValidator } from '../../../validators/custom';
 
 // Mock the generate module
@@ -423,6 +425,32 @@ describe('LlmSource', () => {
           tools: expect.objectContaining({
             ...tools,
             search: searchTool,
+          }),
+        }),
+      );
+    });
+
+    it('should add PromptTrail tools through withCapabilities', async () => {
+      const lookupTool = Tool.create({
+        name: 'lookup',
+        description: 'Lookup docs',
+        inputSchema: z.object({ query: z.string() }),
+        execute: ({ query }) => ({ query }),
+      });
+
+      const source = Source.llm()
+        .withCapabilities([lookupTool])
+        .temperature(0.1);
+
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          temperature: 0.1,
+          capabilities: [lookupTool],
+          tools: expect.objectContaining({
+            lookup: lookupTool,
           }),
         }),
       );
