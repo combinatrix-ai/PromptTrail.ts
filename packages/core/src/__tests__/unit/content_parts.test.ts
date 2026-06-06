@@ -5,6 +5,8 @@ import {
   contentPartsToGeminiParts,
   contentPartsToOpenAIInput,
   contentPartsToText,
+  createProviderFileContentPart,
+  isProviderFileReferenceExpired,
   makeContentPartsPersistenceSafe,
   type ContentPart,
 } from '../../content_parts';
@@ -152,5 +154,65 @@ describe('ContentPart provider serializers', () => {
         },
       },
     ]);
+  });
+
+  it('tracks provider file expiry metadata for Gemini uploads', () => {
+    const part = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      provider: 'google',
+      fileId: 'files/gemini-123',
+      filename: 'report.pdf',
+      uploadedAt: '2026-06-06T00:00:00.000Z',
+    });
+
+    expect(part).toEqual({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      filename: 'report.pdf',
+      detail: undefined,
+      source: {
+        type: 'providerFile',
+        provider: 'google',
+        fileId: 'files/gemini-123',
+        uploadedAt: '2026-06-06T00:00:00.000Z',
+        expiresAt: '2026-06-08T00:00:00.000Z',
+      },
+    });
+    expect(
+      isProviderFileReferenceExpired(
+        part,
+        new Date('2026-06-07T23:59:59.999Z'),
+      ),
+    ).toBe(false);
+    expect(
+      isProviderFileReferenceExpired(part, new Date('2026-06-08T00:00:00Z')),
+    ).toBe(true);
+    expect(contentPartsToGeminiParts([part])).toEqual([
+      {
+        fileData: {
+          mimeType: 'application/pdf',
+          fileUri: 'files/gemini-123',
+        },
+      },
+    ]);
+  });
+
+  it('treats non-expiring provider file refs as valid until expiry is known', () => {
+    const part = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'text/plain',
+      provider: 'openai',
+      fileId: 'file-openai-123',
+    });
+
+    expect(part.source).toEqual({
+      type: 'providerFile',
+      provider: 'openai',
+      fileId: 'file-openai-123',
+      uploadedAt: undefined,
+      expiresAt: undefined,
+    });
+    expect(isProviderFileReferenceExpired(part)).toBe(false);
   });
 });

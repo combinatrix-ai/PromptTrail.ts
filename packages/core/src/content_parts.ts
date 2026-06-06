@@ -6,10 +6,64 @@ export type ContentPart =
       source:
         | { type: 'bytes'; data: Uint8Array | string }
         | { type: 'uri'; uri: string }
-        | { type: 'providerFile'; provider: string; fileId: string };
+        | {
+            type: 'providerFile';
+            provider: string;
+            fileId: string;
+            uploadedAt?: string;
+            expiresAt?: string;
+          };
       detail?: 'low' | 'high' | 'auto';
       filename?: string;
     };
+
+export function createProviderFileContentPart(options: {
+  kind: 'image' | 'file' | 'audio';
+  mimeType: string;
+  provider: string;
+  fileId: string;
+  filename?: string;
+  uploadedAt?: string | Date;
+  expiresAt?: string | Date;
+  detail?: 'low' | 'high' | 'auto';
+}): Exclude<ContentPart, { kind: 'text' }> {
+  const uploadedAt =
+    options.uploadedAt instanceof Date
+      ? options.uploadedAt.toISOString()
+      : options.uploadedAt;
+  const expiresAt =
+    options.expiresAt instanceof Date
+      ? options.expiresAt.toISOString()
+      : (options.expiresAt ??
+        defaultProviderFileExpiresAt(options.provider, uploadedAt));
+
+  return {
+    kind: options.kind,
+    mimeType: options.mimeType,
+    filename: options.filename,
+    detail: options.detail,
+    source: {
+      type: 'providerFile',
+      provider: options.provider,
+      fileId: options.fileId,
+      uploadedAt,
+      expiresAt,
+    },
+  };
+}
+
+export function isProviderFileReferenceExpired(
+  part: ContentPart,
+  now: Date = new Date(),
+): boolean {
+  if (part.kind === 'text' || part.source.type !== 'providerFile') {
+    return false;
+  }
+  if (!part.source.expiresAt) {
+    return false;
+  }
+  return Date.parse(part.source.expiresAt) <= now.getTime();
+}
 
 export type AiSdkContentPart =
   | { type: 'text'; text: string }
@@ -232,4 +286,18 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary);
+}
+
+function defaultProviderFileExpiresAt(
+  provider: string,
+  uploadedAt: string | undefined,
+): string | undefined {
+  if (provider !== 'google') {
+    return undefined;
+  }
+  const uploadedTime = uploadedAt ? Date.parse(uploadedAt) : Date.now();
+  if (Number.isNaN(uploadedTime)) {
+    return undefined;
+  }
+  return new Date(uploadedTime + 48 * 60 * 60 * 1000).toISOString();
 }
