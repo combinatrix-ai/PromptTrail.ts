@@ -14,6 +14,7 @@ import type {
   SchemaGenerationOptions,
 } from './llm_types';
 import type { Message } from './message';
+import { geminiStreamEventToPromptTrailEvents } from './provider_stream';
 import { extractGeminiReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
 import type { Attrs, Session, Vars } from './session';
@@ -35,6 +36,48 @@ export async function generateGoogleGeminiText<
   options: LLMOptions & { provider: GoogleProviderConfig },
 ): Promise<Message<TAttrs>> {
   return generateGoogleGeminiMessage(session, options);
+}
+
+export async function* streamGoogleGeminiEvents<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  session: Session<TVars, TAttrs>,
+  options: LLMOptions & { provider: GoogleProviderConfig },
+) {
+  const ai = new GoogleGenAI({ apiKey: options.provider.apiKey });
+  const tools = getGeminiPromptTrailTools(options);
+  const toolDefinitions = getGeminiToolDefinitions(options);
+  const binding =
+    options.conversationBinding === 'auto'
+      ? deriveConversationBinding(session, 'google')
+      : undefined;
+  const contents = convertMessagesToGeminiContents(
+    getMessagesAfterBinding(session, binding),
+  );
+  const stream = await ai.models.generateContentStream({
+    model: options.provider.modelName,
+    contents: contents as any,
+    config: buildGeminiGenerationConfig(
+      session,
+      options,
+      tools,
+      toolDefinitions,
+      binding,
+    ) as any,
+  });
+
+  yield* normalizeGeminiContentStream(stream as AsyncIterable<unknown>);
+}
+
+export async function* normalizeGeminiContentStream(
+  stream: AsyncIterable<unknown>,
+) {
+  for await (const event of stream) {
+    for (const normalized of geminiStreamEventToPromptTrailEvents(event)) {
+      yield normalized;
+    }
+  }
 }
 
 export async function generateGoogleGeminiWithSchema<

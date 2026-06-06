@@ -9,6 +9,7 @@ import {
   createGeminiFunctionResponsePart,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
+  normalizeGeminiContentStream,
   promptTrailBuiltinToGeminiTool,
   promptTrailToolToGeminiTool,
   retainGeminiResponseMetadata,
@@ -183,6 +184,35 @@ describe('Google Gemini native adapter helpers', () => {
     });
   });
 
+  it('normalizes native Gemini async streams without an API call', async () => {
+    await expect(
+      collectAsync(
+        normalizeGeminiContentStream(
+          stream([
+            {
+              candidates: [
+                {
+                  finishReason: 'STOP',
+                  content: {
+                    parts: [{ text: 'Hi' }],
+                  },
+                },
+              ],
+              usageMetadata: { promptTokenCount: 1 },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'text.delta', index: 0, delta: 'Hi' },
+      {
+        type: 'message.done',
+        finishReason: 'STOP',
+        usage: { promptTokenCount: 1 },
+      },
+    ]);
+  });
+
   it('applies metadata retention levels', () => {
     const response = {
       usageMetadata: { promptTokenCount: 1 },
@@ -289,3 +319,17 @@ describe('Google Gemini native adapter helpers', () => {
     });
   });
 });
+
+async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function* stream(events: unknown[]) {
+  for (const event of events) {
+    yield event;
+  }
+}
