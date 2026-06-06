@@ -144,6 +144,44 @@ describe('Session', () => {
     expect(sessionFromJson.getVar('nonexistent')).toBeUndefined();
   });
 
+  it('should omit inline content part bytes from JSON persistence', () => {
+    const session = createSession({
+      messages: [
+        {
+          type: 'user',
+          content: 'Inspect this.',
+          contentParts: [
+            { kind: 'text', text: 'Inspect this.' },
+            {
+              kind: 'image',
+              mimeType: 'image/png',
+              filename: 'chart.png',
+              source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(session.messages[0].contentParts?.[1]).toMatchObject({
+      source: { type: 'bytes' },
+    });
+    expect(
+      JSON.parse(JSON.stringify(session)).messages[0].contentParts,
+    ).toEqual([
+      { kind: 'text', text: 'Inspect this.' },
+      {
+        kind: 'image',
+        mimeType: 'image/png',
+        filename: 'chart.png',
+        source: {
+          type: 'uri',
+          uri: 'prompttrail://omitted-bytes/chart.png',
+        },
+      },
+    ]);
+  });
+
   it('should create session with type inference', () => {
     type TesTAttrs = Record<string, unknown> & {
       userId: number;

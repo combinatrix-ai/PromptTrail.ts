@@ -1,4 +1,5 @@
 import { ValidationError } from './errors';
+import { makeContentPartsPersistenceSafe } from './content_parts';
 import type { Message } from './message';
 export type { Attrs, Vars } from './session_types';
 import type { Attrs, Vars } from './session_types';
@@ -159,7 +160,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
    */
   toJSON(): Record<string, unknown> {
     return {
-      messages: this.messages,
+      messages: this.messages.map(makeMessagePersistenceSafe),
       context: this.vars,
       print: this.print,
     };
@@ -171,6 +172,18 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   toString(): string {
     return JSON.stringify(this.toJSON(), null, 2);
   }
+}
+
+function makeMessagePersistenceSafe<TAttrs extends Attrs>(
+  message: Message<TAttrs>,
+): Message<TAttrs> {
+  if (!message.contentParts) {
+    return message;
+  }
+  return {
+    ...message,
+    contentParts: makeContentPartsPersistenceSafe(message.contentParts),
+  };
 }
 
 /**
