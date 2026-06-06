@@ -693,7 +693,7 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'google',
         apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
-        modelName: config?.modelName || 'gemini-3.1-flash-lite',
+        modelName: config?.modelName || 'gemini-2.5-flash-lite',
         adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
       },
