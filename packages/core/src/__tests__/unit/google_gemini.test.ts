@@ -15,6 +15,7 @@ import {
   getGeminiCacheablePrefixSession,
   getGeminiToolDefinitions,
   getGeminiSystemInstruction,
+  getGeminiTurnExtraConfig,
   getGeminiToolLoopContinuationOptions,
   getGoogleGenAIClientOptions,
   normalizeGeminiContentStream,
@@ -596,6 +597,82 @@ describe('Google Gemini native adapter helpers', () => {
     expect(
       getGeminiToolLoopContinuationOptions({ ...options, toolChoice: 'auto' }),
     ).toEqual({ ...options, toolChoice: 'auto' });
+  });
+
+  it('delays Gemini responseJsonSchema until after a required tool call', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Call lookup, then return JSON.',
+    });
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ key: z.string() }),
+      execute: ({ key }) => ({ value: key }),
+    });
+    const options = {
+      provider: {
+        type: 'google' as const,
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      capabilities: [tool],
+      toolChoice: 'required' as const,
+    };
+    const toolDefinitions = getGeminiToolDefinitions(options);
+    const schemaConfig = createGeminiStructuredOutputConfig({
+      schema: z.object({
+        value: z.string(),
+      }),
+    });
+
+    const initialConfig = buildGeminiGenerationConfig(
+      session,
+      options,
+      [tool],
+      toolDefinitions,
+      undefined,
+      getGeminiTurnExtraConfig(options, [tool], schemaConfig),
+    );
+    expect(initialConfig).toMatchObject({
+      tools: toolDefinitions,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'ANY',
+          allowedFunctionNames: ['lookup'],
+        },
+      },
+    });
+    expect(initialConfig).not.toHaveProperty('responseMimeType');
+    expect(initialConfig).not.toHaveProperty('responseJsonSchema');
+
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        getGeminiToolLoopContinuationOptions(options),
+        [tool],
+        toolDefinitions,
+        undefined,
+        getGeminiTurnExtraConfig(
+          getGeminiToolLoopContinuationOptions(options),
+          [tool],
+          schemaConfig,
+        ),
+      ),
+    ).toMatchObject({
+      responseMimeType: 'application/json',
+      responseJsonSchema: expect.objectContaining({
+        properties: {
+          value: { type: 'string' },
+        },
+      }),
+      tools: toolDefinitions,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'AUTO',
+          allowedFunctionNames: undefined,
+        },
+      },
+    });
   });
 
   it('normalizes native Gemini async streams without an API call', async () => {

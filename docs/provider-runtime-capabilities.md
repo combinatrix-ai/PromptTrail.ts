@@ -461,8 +461,12 @@ Key interaction: structured final output with an active tool loop is
 provider-specific. Anthropic supports the forced-tool path naturally. OpenAI
 Responses should support a function-tool loop followed by a final structured
 message because `tools` and `text.format` are both request fields, but the exact
-sequencing must be verified in native adapter tests. Gemini's behavior with
-function calling plus `responseJsonSchema` also needs provider-specific tests.
+sequencing must be verified in native adapter tests. Gemini rejects forced
+function calling (`ANY`) when `responseMimeType: 'application/json'` is on the
+same request, so the Gemini native adapter must omit `responseJsonSchema` on the
+initial required-tool request and restore it on the post-tool continuation
+request. Gemini's full end-to-end behavior still needs provider-specific real
+API confirmation.
 Until those tests exist, `Source.schema()` plus tools should either use the
 ai-sdk path or require an explicit provider-native mode.
 

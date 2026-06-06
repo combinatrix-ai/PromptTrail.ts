@@ -142,6 +142,59 @@ describe('OpenAI Responses native adapter helpers', () => {
     ).toBeUndefined();
   });
 
+  it('keeps Responses tools and native text format together for schema tool loops', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup a fixed test value',
+      inputSchema: z.object({ key: z.string() }),
+      execute: ({ key }) => ({ value: key }),
+    });
+    const textFormat = {
+      type: 'json_schema',
+      name: 'ToolSchemaResult',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties: {
+          value: { type: 'string' },
+        },
+        required: ['value'],
+        additionalProperties: false,
+      },
+    };
+
+    expect(
+      buildOpenAIResponsesRequestBody(
+        [{ role: 'user', content: 'Call lookup, then return JSON.' }],
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          capabilities: [lookup],
+          toolChoice: 'required',
+        },
+        getOpenAIResponsesToolDefinitions({ capabilities: [lookup] }),
+        undefined,
+        textFormat,
+      ),
+    ).toMatchObject({
+      model: 'gpt-5.4-nano',
+      input: [{ role: 'user', content: 'Call lookup, then return JSON.' }],
+      text: { format: textFormat },
+      tools: [
+        {
+          type: 'function',
+          name: 'lookup',
+          strict: true,
+        },
+      ],
+      tool_choice: 'required',
+    });
+  });
+
   it('converts content parts into Responses input message blocks', () => {
     const session = Session.create().addMessage({
       type: 'user',

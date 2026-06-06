@@ -176,7 +176,7 @@ async function generateGoogleGeminiMessage<
     tools,
     toolDefinitions,
     binding,
-    extraConfig,
+    getGeminiTurnExtraConfig(options, tools, extraConfig),
   );
 
   for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
@@ -206,7 +206,11 @@ async function generateGoogleGeminiMessage<
       tools,
       toolDefinitions,
       binding,
-      extraConfig,
+      getGeminiTurnExtraConfig(
+        getGeminiToolLoopContinuationOptions(options),
+        tools,
+        extraConfig,
+      ),
     );
   }
 
@@ -228,6 +232,30 @@ export function getGeminiToolLoopContinuationOptions(
   return options.toolChoice === 'required'
     ? { ...options, toolChoice: 'auto' }
     : options;
+}
+
+export function getGeminiTurnExtraConfig(
+  options: Pick<LLMOptions, 'toolChoice'>,
+  tools: readonly PromptTrailTool[],
+  extraConfig: Record<string, unknown>,
+): Record<string, unknown> {
+  if (
+    options.toolChoice === 'required' &&
+    tools.length > 0 &&
+    isGeminiStructuredOutputConfig(extraConfig)
+  ) {
+    return {};
+  }
+  return extraConfig;
+}
+
+function isGeminiStructuredOutputConfig(
+  config: Record<string, unknown>,
+): boolean {
+  return (
+    config.responseMimeType === 'application/json' ||
+    config.responseJsonSchema !== undefined
+  );
 }
 
 async function resolveGeminiCachedContentBinding(

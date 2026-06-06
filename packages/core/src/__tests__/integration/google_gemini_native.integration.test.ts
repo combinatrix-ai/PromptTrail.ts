@@ -94,6 +94,46 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
     expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
   }, 60_000);
 
+  it('runs a tool loop before native responseJsonSchema output', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup a fixed test value',
+      inputSchema: z.object({ key: z.string() }),
+      execute: async ({ key }) => ({ value: `tool:${key}` }),
+    });
+
+    const output = await Source.llm({ thinking: { budgetTokens: 0 } })
+      .google({ adapter: 'native' })
+      .model('gemini-3.1-flash-lite')
+      .temperature(0)
+      .maxTokens(256)
+      .withCapabilities([lookup])
+      .toolChoice('required')
+      .withSchema(
+        z.object({
+          status: z.literal('ok'),
+          value: z.literal('tool:schema'),
+        }),
+        { mode: 'native' },
+      )
+      .getContent(
+        Session.create({
+          messages: [
+            {
+              type: 'user',
+              content:
+                'Call the lookup tool with key "schema". Then return status ok and the exact returned value.',
+            },
+          ],
+        }),
+      );
+
+    expect(output.structuredOutput).toEqual({
+      status: 'ok',
+      value: 'tool:schema',
+    });
+  }, 60_000);
+
   it('ignores sub-threshold cache hints before calling Gemini', async () => {
     const output = await Source.llm({
       cacheKey: 'prompttrail-short-gemini-prefix',

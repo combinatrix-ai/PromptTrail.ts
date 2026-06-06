@@ -93,4 +93,46 @@ describe.skipIf(!openAIAvailable)('OpenAI Responses native integration', () => {
 
     expect(output.structuredOutput).toEqual({ status: 'ok', count: 3 });
   }, 60_000);
+
+  it('runs a tool loop before native Responses json_schema output', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup a fixed test value',
+      inputSchema: z.object({
+        key: z.string(),
+      }),
+      execute: async ({ key }) => ({ value: `tool:${key}` }),
+    });
+
+    const output = await Source.llm()
+      .openai({ adapter: 'native' })
+      .model('gpt-5.4-nano')
+      .temperature(0)
+      .maxTokens(128)
+      .withCapabilities([lookup])
+      .toolChoice('required')
+      .withSchema(
+        z.object({
+          status: z.literal('ok'),
+          value: z.literal('tool:schema'),
+        }),
+        { mode: 'native', functionName: 'ToolSchemaResult' },
+      )
+      .getContent(
+        Session.create({
+          messages: [
+            {
+              type: 'user',
+              content:
+                'Call the lookup tool with key "schema". Then return status ok and the exact returned value.',
+            },
+          ],
+        }),
+      );
+
+    expect(output.structuredOutput).toEqual({
+      status: 'ok',
+      value: 'tool:schema',
+    });
+  }, 60_000);
 });
