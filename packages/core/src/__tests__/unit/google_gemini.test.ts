@@ -123,6 +123,44 @@ describe('Google Gemini native adapter helpers', () => {
     ]);
   });
 
+  it('replays pinned Gemini thought signatures in model parts', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Use thinking.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Done.',
+        attrs: {
+          google: {
+            replayRequired: [
+              {
+                provider: 'google',
+                type: 'thoughtSignature',
+                id: '0:0',
+                artifact: {
+                  text: 'hidden',
+                  thought: true,
+                  thoughtSignature: 'sig',
+                },
+              },
+            ],
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      { role: 'user', parts: [{ text: 'Use thinking.' }] },
+      {
+        role: 'model',
+        parts: [
+          { text: 'hidden', thought: true, thoughtSignature: 'sig' },
+          { text: 'Done.' },
+        ],
+      },
+      { role: 'user', parts: [{ text: 'Continue' }] },
+    ]);
+  });
+
   it('converts only messages after a cachedContent binding', () => {
     const session = Session.create()
       .addMessage({ type: 'system', content: 'Cached system.' })

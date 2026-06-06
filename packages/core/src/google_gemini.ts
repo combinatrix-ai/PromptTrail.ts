@@ -459,12 +459,37 @@ export function convertMessagesToGeminiContents(
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )
-    .map((message) => ({
-      role: message.type === 'assistant' ? 'model' : 'user',
-      parts: message.contentParts
+    .map((message) => {
+      const parts = message.contentParts
         ? contentPartsToGeminiParts(message.contentParts)
-        : [{ text: message.content }],
-    }));
+        : [{ text: message.content }];
+      return {
+        role: message.type === 'assistant' ? 'model' : 'user',
+        parts:
+          message.type === 'assistant'
+            ? [...getGeminiReplayRequiredParts(message), ...parts]
+            : parts,
+      };
+    });
+}
+
+function getGeminiReplayRequiredParts(message: Message<any>): unknown[] {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  const google = attrs?.google as Record<string, unknown> | undefined;
+  const replayRequired = google?.replayRequired;
+  if (!Array.isArray(replayRequired)) {
+    return [];
+  }
+
+  return replayRequired.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    return record.provider === 'google' && record.artifact
+      ? [record.artifact]
+      : [];
+  });
 }
 
 export function getGeminiSystemInstruction(
