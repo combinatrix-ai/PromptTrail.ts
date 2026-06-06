@@ -154,7 +154,9 @@ describe('CodexTurn template', () => {
       type: 'agentMessage',
       id: 'item-1',
       status: 'completed',
-      content: 'x'.repeat(500),
+      preview: 'x'.repeat(500),
+      truncated: true,
+      fullLength: 600,
     });
     expect(codex.events[0]).toMatchObject({
       type: 'text.delta',
@@ -171,6 +173,8 @@ describe('CodexTurn template', () => {
     expect(codex.commands[0]).toMatchObject({
       command: 'npm test',
       preview: 'z'.repeat(500),
+      truncated: true,
+      fullLength: 600,
     });
   });
 

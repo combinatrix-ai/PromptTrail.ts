@@ -218,10 +218,9 @@ function summarizeCodexItem(item: unknown): unknown {
     type: record.type ?? record.kind,
     id: record.id,
     status: record.status,
-    content:
-      typeof record.content === 'string'
-        ? record.content.slice(0, 500)
-        : undefined,
+    ...summarizeTextPreview(
+      typeof record.content === 'string' ? record.content : undefined,
+    ),
   };
 }
 
@@ -241,6 +240,12 @@ function summarizeCodexArtifact(artifact: unknown): unknown {
   }
 
   const record = artifact as Record<string, unknown>;
+  const text =
+    typeof record.output === 'string'
+      ? record.output
+      : typeof record.content === 'string'
+        ? record.content
+        : undefined;
   return {
     type: record.type ?? record.kind,
     id: record.id,
@@ -250,11 +255,24 @@ function summarizeCodexArtifact(artifact: unknown): unknown {
     removed: record.removed,
     command: record.command,
     exitCode: record.exitCode,
-    preview:
-      typeof record.output === 'string'
-        ? record.output.slice(0, 500)
-        : typeof record.content === 'string'
-          ? record.content.slice(0, 500)
-          : undefined,
+    ...summarizeTextPreview(text),
+  };
+}
+
+function summarizeTextPreview(text: string | undefined): {
+  preview?: string;
+  truncated?: true;
+  fullLength?: number;
+} {
+  if (text === undefined) {
+    return {};
+  }
+  if (text.length <= 500) {
+    return { preview: text };
+  }
+  return {
+    preview: text.slice(0, 500),
+    truncated: true,
+    fullLength: text.length,
   };
 }
