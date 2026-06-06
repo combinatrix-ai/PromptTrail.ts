@@ -5,7 +5,9 @@ import {
   codexInboundRequestToApprovalRequest,
   createCodexRuntimeRequestHandler,
   createCodexToolRequestHandler,
+  getCodexRuntimeSkills,
   normalizeCodexRuntimeEvent,
+  promptTrailSkillToCodexInputItem,
   promptTrailToolToCodexDynamicTool,
   type CodexTurnEvent,
 } from '../../codex_app_server';
@@ -200,6 +202,28 @@ describe('Codex App Server helpers', () => {
         required: ['query'],
         additionalProperties: false,
       },
+    });
+  });
+
+  it('maps RuntimeSkill capabilities to Codex skill input items', () => {
+    const skill = {
+      kind: 'skill' as const,
+      name: 'review',
+      description: 'Review code',
+      instructions: 'Prefer focused diffs.',
+      path: '.codex/skills/review',
+      materialize: 'workspace' as const,
+    };
+
+    expect(getCodexRuntimeSkills([skill])).toEqual([skill]);
+    expect(promptTrailSkillToCodexInputItem(skill)).toEqual({
+      type: 'skill',
+      name: 'review',
+      description: 'Review code',
+      instructions: 'Prefer focused diffs.',
+      skillId: undefined,
+      path: '.codex/skills/review',
+      materialize: 'workspace',
     });
   });
 

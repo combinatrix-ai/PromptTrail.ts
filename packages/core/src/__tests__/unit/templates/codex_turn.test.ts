@@ -230,4 +230,36 @@ describe('CodexTurn template', () => {
       },
     ]);
   });
+
+  it('should prepend RuntimeSkill input items on Codex turns', async () => {
+    const client = new FakeCodexClient();
+
+    await Agent.create()
+      .user('Review this')
+      .codexTurn({
+        client,
+        capabilities: [
+          {
+            kind: 'skill',
+            name: 'review',
+            description: 'Review code',
+            instructions: 'Prefer focused diffs.',
+          },
+        ],
+      })
+      .execute(Session.create());
+
+    expect(client.turnStarts[0].input).toEqual([
+      {
+        type: 'skill',
+        name: 'review',
+        description: 'Review code',
+        instructions: 'Prefer focused diffs.',
+        skillId: undefined,
+        path: undefined,
+        materialize: undefined,
+      },
+      { type: 'text', text: 'Review this' },
+    ]);
+  });
 });

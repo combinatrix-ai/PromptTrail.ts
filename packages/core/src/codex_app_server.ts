@@ -11,6 +11,7 @@ import type {
   ApprovalRequest,
   CapabilitySet,
   PromptTrailTool,
+  RuntimeSkill,
 } from './capabilities';
 import { zodToJsonSchema, type JsonSchema } from './json_schema';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
@@ -606,6 +607,28 @@ export function getPromptTrailTools(
   capabilities: CapabilitySet | undefined,
 ): PromptTrailTool[] {
   return (capabilities ?? []).filter(isPromptTrailTool);
+}
+
+export function getCodexRuntimeSkills(
+  capabilities: CapabilitySet | undefined,
+): RuntimeSkill[] {
+  return (capabilities ?? []).filter(
+    (capability): capability is RuntimeSkill => capability.kind === 'skill',
+  );
+}
+
+export function promptTrailSkillToCodexInputItem(
+  skill: RuntimeSkill,
+): Record<string, unknown> {
+  return {
+    type: 'skill',
+    name: skill.name,
+    description: skill.description,
+    instructions: skill.instructions,
+    skillId: skill.skillId,
+    path: skill.path,
+    materialize: skill.materialize,
+  };
 }
 
 export function createCodexToolRequestHandler(

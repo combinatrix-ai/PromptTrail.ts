@@ -4,7 +4,9 @@ import {
   createCodexRuntimeRequestHandler,
   createCodexAppServerHttpClient,
   createCodexAppServerWebSocketClient,
+  getCodexRuntimeSkills,
   getPromptTrailTools,
+  promptTrailSkillToCodexInputItem,
   promptTrailToolToCodexDynamicTool,
   type CodexTurnOptions,
 } from '../../codex_app_server';
@@ -27,6 +29,7 @@ export class CodexTurn<
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
+    const runtimeSkills = getCodexRuntimeSkills(this.options.capabilities);
     const onRequest =
       promptTrailTools.length > 0 || this.options.approvalHandler
         ? createCodexRuntimeRequestHandler({
@@ -77,7 +80,7 @@ export class CodexTurn<
 
       const rawTurnResult = await client.startTurn({
         threadId,
-        input: normalizeCodexInput(input),
+        input: normalizeCodexInput(input, runtimeSkills),
         cwd: this.options.cwd,
         model: this.options.model,
         sandboxPolicy: this.options.sandboxPolicy,
@@ -174,8 +177,17 @@ export class CodexTurn<
 
 function normalizeCodexInput(
   input: string | unknown[] | undefined,
+  skills = [] as ReturnType<typeof getCodexRuntimeSkills>,
 ): string | unknown[] | undefined {
-  return typeof input === 'string' ? [{ type: 'text', text: input }] : input;
+  const inputItems =
+    typeof input === 'string' ? [{ type: 'text', text: input }] : input;
+  if (skills.length === 0) {
+    return inputItems;
+  }
+  return [
+    ...skills.map(promptTrailSkillToCodexInputItem),
+    ...(Array.isArray(inputItems) ? inputItems : []),
+  ];
 }
 
 function summarizeCodexItem(item: unknown): unknown {
