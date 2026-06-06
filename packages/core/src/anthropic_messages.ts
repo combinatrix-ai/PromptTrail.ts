@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { applyAnthropicCacheControl } from './cache';
 import type {
+  ApprovalHandler,
   BuiltinTool,
+  CapabilitySet,
   PromptTrailTool,
   RuntimeSkill,
 } from './capabilities';
@@ -32,6 +34,89 @@ export interface AnthropicToolUse {
   raw: unknown;
 }
 
+export interface AnthropicSkillUploadResult {
+  skillId: string;
+  version?: string;
+  raw?: unknown;
+}
+
+export interface AnthropicSkillUploadClient {
+  uploadSkill(skill: RuntimeSkill): Promise<AnthropicSkillUploadResult>;
+}
+
+export interface AnthropicSkillsHttpClientOptions {
+  apiKey: string;
+  baseURL?: string;
+  fetch?: typeof fetch;
+}
+
+const ANTHROPIC_SKILLS_BETA = 'skills-2025-10-02';
+const ANTHROPIC_SKILLS_INVOCATION_BETA =
+  'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14';
+
+export class AnthropicSkillsHttpClient implements AnthropicSkillUploadClient {
+  private readonly apiKey: string;
+  private readonly baseURL: string;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: AnthropicSkillsHttpClientOptions) {
+    this.apiKey = options.apiKey;
+    this.baseURL = (options.baseURL ?? 'https://api.anthropic.com').replace(
+      /\/+$/,
+      '',
+    );
+    this.fetchImpl = options.fetch ?? fetch;
+  }
+
+  async uploadSkill(skill: RuntimeSkill): Promise<AnthropicSkillUploadResult> {
+    const body = new FormData();
+    body.append('display_title', skill.name);
+    body.append(
+      'files',
+      new Blob([renderAnthropicSkillMarkdown(skill)], {
+        type: 'text/markdown',
+      }),
+      `${sanitizeAnthropicSkillDirectoryName(skill.name)}/SKILL.md`,
+    );
+
+    const response = await this.fetchImpl(`${this.baseURL}/v1/skills`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': ANTHROPIC_SKILLS_BETA,
+      },
+      body,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Anthropic skill upload failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const raw = (await response.json()) as Record<string, unknown>;
+    const skillId =
+      typeof raw.id === 'string'
+        ? raw.id
+        : typeof raw.skill_id === 'string'
+          ? raw.skill_id
+          : undefined;
+    if (!skillId) {
+      throw new Error('Anthropic skill upload response did not include an id.');
+    }
+    return {
+      skillId,
+      version:
+        typeof raw.latest_version === 'string'
+          ? raw.latest_version
+          : typeof raw.version === 'string'
+            ? raw.version
+            : undefined,
+      raw,
+    };
+  }
+}
+
 export async function generateAnthropicMessagesText<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -39,24 +124,28 @@ export async function generateAnthropicMessagesText<
   session: Session<TVars, TAttrs>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
 ): Promise<Message<TAttrs>> {
+  const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
+    session,
+    options,
+  );
   const client = new Anthropic({
-    apiKey: options.provider.apiKey,
-    baseURL: options.provider.baseURL,
-    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+    apiKey: resolvedOptions.provider.apiKey,
+    baseURL: resolvedOptions.provider.baseURL,
+    dangerouslyAllowBrowser: resolvedOptions.dangerouslyAllowBrowser,
   });
-  const tools = getAnthropicPromptTrailTools(options);
-  const toolDefinitions = getAnthropicToolDefinitions(options);
+  const tools = getAnthropicPromptTrailTools(resolvedOptions);
+  const toolDefinitions = getAnthropicToolDefinitions(resolvedOptions);
   let messages: unknown[] = convertSessionToAnthropicMessages(session);
   let response = await createAnthropicMessage(
     client,
     messages,
     session,
-    options,
+    resolvedOptions,
     tools,
     toolDefinitions,
   );
 
-  for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
+  for (let i = 0; i < (resolvedOptions.maxCallLimit ?? 10); i++) {
     const toolUses = collectAnthropicToolUses(response.content);
     if (toolUses.length === 0) {
       break;
@@ -76,7 +165,7 @@ export async function generateAnthropicMessagesText<
       client,
       messages,
       session,
-      options,
+      resolvedOptions,
       tools,
       toolDefinitions,
     );
@@ -88,7 +177,7 @@ export async function generateAnthropicMessagesText<
     attrs: {
       anthropic: retainAnthropicMessageMetadata(
         response,
-        options.retain ?? 'summary',
+        resolvedOptions.retain ?? 'summary',
       ),
     } as unknown as TAttrs,
   };
@@ -101,31 +190,37 @@ export async function* streamAnthropicMessagesEvents<
   session: Session<TVars, TAttrs>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
 ) {
+  const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
+    session,
+    options,
+  );
   const client = new Anthropic({
-    apiKey: options.provider.apiKey,
-    baseURL: options.provider.baseURL,
-    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+    apiKey: resolvedOptions.provider.apiKey,
+    baseURL: resolvedOptions.provider.baseURL,
+    dangerouslyAllowBrowser: resolvedOptions.dangerouslyAllowBrowser,
   });
-  const toolDefinitions = getAnthropicToolDefinitions(options);
+  const toolDefinitions = getAnthropicToolDefinitions(resolvedOptions);
   const stream = await client.messages.create(
     {
-      model: options.provider.modelName,
-      max_tokens: options.maxTokens ?? 1024,
+      model: resolvedOptions.provider.modelName,
+      max_tokens: resolvedOptions.maxTokens ?? 1024,
       messages: convertSessionToAnthropicMessages(session) as any,
-      system: getAnthropicSystemPrompt(session, options),
-      temperature: options.temperature,
-      top_p: options.topP,
+      system: getAnthropicSystemPrompt(session, resolvedOptions),
+      temperature: resolvedOptions.temperature,
+      top_p: resolvedOptions.topP,
       thinking: mapAnthropicThinking(
-        options.thinking,
-        options.toolChoice,
+        resolvedOptions.thinking,
+        resolvedOptions.toolChoice,
       ) as any,
-      context_management: mapAnthropicCompaction(options.compaction) as any,
-      container: getAnthropicSkillsContainer(options),
+      context_management: mapAnthropicCompaction(
+        resolvedOptions.compaction,
+      ) as any,
+      container: getAnthropicSkillsContainer(resolvedOptions),
       tools: toolDefinitions.length > 0 ? (toolDefinitions as any) : undefined,
-      tool_choice: mapAnthropicToolChoice(options.toolChoice) as any,
+      tool_choice: mapAnthropicToolChoice(resolvedOptions.toolChoice) as any,
       stream: true,
     } as any,
-    getAnthropicRequestOptions(options) as any,
+    getAnthropicRequestOptions(resolvedOptions) as any,
   );
 
   yield* normalizeAnthropicMessagesStream(
@@ -152,15 +247,23 @@ export async function generateAnthropicMessagesWithSchema<
   options: LLMOptions & { provider: AnthropicProviderConfig },
   schemaOptions: SchemaGenerationOptions,
 ): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+  const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
+    session,
+    options,
+  );
   const client = new Anthropic({
-    apiKey: options.provider.apiKey,
-    baseURL: options.provider.baseURL,
-    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+    apiKey: resolvedOptions.provider.apiKey,
+    baseURL: resolvedOptions.provider.baseURL,
+    dangerouslyAllowBrowser: resolvedOptions.dangerouslyAllowBrowser,
   });
   const toolName = schemaOptions.functionName ?? 'generateStructuredOutput';
   const response = await client.messages.create(
-    buildAnthropicSchemaRequestBody(session, options, schemaOptions) as any,
-    getAnthropicRequestOptions(options) as any,
+    buildAnthropicSchemaRequestBody(
+      session,
+      resolvedOptions,
+      schemaOptions,
+    ) as any,
+    getAnthropicRequestOptions(resolvedOptions) as any,
   );
 
   if (normalizeSchemaGenerationMode(schemaOptions.mode) === 'native') {
@@ -188,7 +291,7 @@ export async function generateAnthropicMessagesWithSchema<
       attrs: {
         anthropic: retainAnthropicMessageMetadata(
           response,
-          options.retain ?? 'summary',
+          resolvedOptions.retain ?? 'summary',
         ),
       } as unknown as TAttrs,
     };
@@ -215,7 +318,7 @@ export async function generateAnthropicMessagesWithSchema<
     attrs: {
       anthropic: retainAnthropicMessageMetadata(
         response,
-        options.retain ?? 'summary',
+        resolvedOptions.retain ?? 'summary',
       ),
     } as unknown as TAttrs,
   };
@@ -426,10 +529,115 @@ export function getAnthropicRequestOptions(
 
   return {
     headers: {
-      'anthropic-beta':
-        'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14',
+      'anthropic-beta': ANTHROPIC_SKILLS_INVOCATION_BETA,
     },
   };
+}
+
+export async function resolveAnthropicRuntimeCapabilities(
+  session: Session<any, any>,
+  options: LLMOptions & { provider: AnthropicProviderConfig },
+  uploadClient: AnthropicSkillUploadClient = new AnthropicSkillsHttpClient({
+    apiKey: options.provider.apiKey,
+    baseURL: options.provider.baseURL,
+  }),
+): Promise<LLMOptions & { provider: AnthropicProviderConfig }> {
+  const capabilities = await uploadAnthropicTemporarySkills({
+    capabilities: options.capabilities,
+    approvalHandler: options.approvalHandler,
+    session,
+    uploadClient,
+  });
+  return capabilities === options.capabilities
+    ? options
+    : { ...options, capabilities };
+}
+
+export async function uploadAnthropicTemporarySkills(options: {
+  capabilities: CapabilitySet | undefined;
+  approvalHandler: ApprovalHandler | undefined;
+  session: Session<any, any>;
+  uploadClient: AnthropicSkillUploadClient;
+}): Promise<CapabilitySet | undefined> {
+  const skills = (options.capabilities ?? []).filter(
+    (capability): capability is RuntimeSkill =>
+      capability.kind === 'skill' &&
+      capability.materialize === 'temporary' &&
+      typeof capability.skillId !== 'string',
+  );
+  if (skills.length === 0) {
+    return options.capabilities;
+  }
+  if (!options.approvalHandler) {
+    throw new Error('Anthropic skill upload requires an approvalHandler.');
+  }
+
+  const uploaded = new Map<RuntimeSkill, RuntimeSkill>();
+  for (const skill of skills) {
+    const decision = await options.approvalHandler(
+      {
+        provider: 'anthropic',
+        action: 'uploadSkill',
+        capability: skill.name,
+        risk: 'external',
+        input: {
+          endpoint: '/v1/skills',
+          skill,
+        },
+      },
+      options.session,
+    );
+    if (decision.type === 'deny') {
+      throw new Error(
+        `Anthropic skill upload denied${decision.reason ? `: ${decision.reason}` : ''}`,
+      );
+    }
+    if (decision.type === 'ask-user') {
+      throw new Error(decision.question);
+    }
+
+    const result = await options.uploadClient.uploadSkill(skill);
+    uploaded.set(skill, {
+      ...skill,
+      skillId: result.skillId,
+      metadata: {
+        ...skill.metadata,
+        source: 'custom',
+        ...(result.version ? { version: result.version } : {}),
+        upload: result.raw,
+      },
+    });
+  }
+
+  return (options.capabilities ?? []).map(
+    (capability) => uploaded.get(capability as RuntimeSkill) ?? capability,
+  );
+}
+
+export function renderAnthropicSkillMarkdown(skill: RuntimeSkill): string {
+  const lines = [
+    `# ${skill.name}`,
+    '',
+    skill.description,
+    '',
+    '## Instructions',
+    '',
+    skill.instructions || '',
+    '',
+  ];
+  return lines.filter((line) => line !== undefined).join('\n');
+}
+
+export function sanitizeAnthropicSkillDirectoryName(name: string): string {
+  const sanitized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!sanitized) {
+    throw new Error('Anthropic skill name cannot be empty.');
+  }
+  return sanitized;
 }
 
 export function promptTrailToolToAnthropicTool(tool: PromptTrailTool) {

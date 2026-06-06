@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  AnthropicSkillsHttpClient,
   buildAnthropicSchemaRequestBody,
   collectAnthropicToolUses,
   convertSessionToAnthropicMessages,
@@ -14,8 +15,12 @@ import {
   promptTrailBuiltinToAnthropicTool,
   promptTrailSkillToAnthropicContainerSkill,
   promptTrailToolToAnthropicTool,
+  renderAnthropicSkillMarkdown,
+  sanitizeAnthropicSkillDirectoryName,
+  uploadAnthropicTemporarySkills,
   retainAnthropicMessageMetadata,
 } from '../../anthropic_messages';
+import type { RuntimeSkill } from '../../capabilities';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 
@@ -203,6 +208,140 @@ describe('Anthropic Messages native adapter helpers', () => {
           'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14',
       },
     });
+  });
+
+  it('uploads temporary RuntimeSkills behind explicit approval', async () => {
+    const approvals: unknown[] = [];
+    const skill: RuntimeSkill = {
+      kind: 'skill',
+      name: 'Finance Review',
+      description: 'Review financial statements',
+      instructions: 'Check assumptions and flag missing inputs.',
+      materialize: 'temporary',
+    };
+    const capabilities = await uploadAnthropicTemporarySkills({
+      capabilities: [skill],
+      session: Session.create(),
+      approvalHandler: async (request) => {
+        approvals.push(request);
+        return { type: 'approve' };
+      },
+      uploadClient: {
+        async uploadSkill(uploadedSkill) {
+          expect(uploadedSkill).toBe(skill);
+          return {
+            skillId: 'skill_01FinanceReview',
+            version: '1759178010641129',
+            raw: { id: 'skill_01FinanceReview' },
+          };
+        },
+      },
+    });
+
+    expect(sanitizeAnthropicSkillDirectoryName('Finance Review')).toBe(
+      'finance-review',
+    );
+    expect(approvals[0]).toMatchObject({
+      provider: 'anthropic',
+      action: 'uploadSkill',
+      capability: 'Finance Review',
+      risk: 'external',
+      input: { endpoint: '/v1/skills' },
+    });
+    expect(capabilities).toEqual([
+      {
+        ...skill,
+        skillId: 'skill_01FinanceReview',
+        metadata: {
+          source: 'custom',
+          version: '1759178010641129',
+          upload: { id: 'skill_01FinanceReview' },
+        },
+      },
+    ]);
+    expect(getAnthropicSkillsContainer({ capabilities })).toEqual({
+      skills: [
+        {
+          type: 'custom',
+          skill_id: 'skill_01FinanceReview',
+          version: '1759178010641129',
+        },
+      ],
+    });
+  });
+
+  it('requires approval before uploading temporary Anthropic skills', async () => {
+    await expect(
+      uploadAnthropicTemporarySkills({
+        capabilities: [
+          {
+            kind: 'skill',
+            name: 'docs',
+            materialize: 'temporary',
+          },
+        ],
+        session: Session.create(),
+        approvalHandler: undefined,
+        uploadClient: {
+          async uploadSkill() {
+            throw new Error('should not upload');
+          },
+        },
+      }),
+    ).rejects.toThrow('Anthropic skill upload requires an approvalHandler.');
+  });
+
+  it('posts inline RuntimeSkills to the Anthropic Skills API as form data', async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    const client = new AnthropicSkillsHttpClient({
+      apiKey: 'test-key',
+      baseURL: 'https://api.test',
+      fetch: (async (url, init) => {
+        requests.push({ url: String(url), init: init ?? {} });
+        return new Response(
+          JSON.stringify({
+            id: 'skill_01Uploaded',
+            latest_version: '1759178010641129',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }) as typeof fetch,
+    });
+    const skill: RuntimeSkill = {
+      kind: 'skill',
+      name: 'Inline Skill',
+      description: 'Use a generated SKILL.md file',
+      instructions: 'Follow the workflow.',
+      materialize: 'temporary',
+    };
+
+    await expect(client.uploadSkill(skill)).resolves.toEqual({
+      skillId: 'skill_01Uploaded',
+      version: '1759178010641129',
+      raw: {
+        id: 'skill_01Uploaded',
+        latest_version: '1759178010641129',
+      },
+    });
+
+    expect(requests[0].url).toBe('https://api.test/v1/skills');
+    expect(requests[0].init.method).toBe('POST');
+    expect(requests[0].init.headers).toMatchObject({
+      'x-api-key': 'test-key',
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'skills-2025-10-02',
+    });
+    expect(requests[0].init.body).toBeInstanceOf(FormData);
+    const body = requests[0].init.body as FormData;
+    expect(body.get('display_title')).toBe('Inline Skill');
+    const file = body.get('files') as File;
+    expect(file.name).toBe('inline-skill/SKILL.md');
+    await expect(file.text()).resolves.toBe(
+      renderAnthropicSkillMarkdown(skill),
+    );
   });
 
   it('collects tool uses and creates tool result blocks', async () => {

@@ -1,5 +1,9 @@
 import type { z } from 'zod';
-import type { CapabilitySet, PromptTrailTool } from './capabilities';
+import type {
+  ApprovalHandler,
+  CapabilitySet,
+  PromptTrailTool,
+} from './capabilities';
 
 export interface OpenAIProviderConfig {
   type: 'openai';
@@ -53,6 +57,7 @@ export interface LLMOptions {
   retain?: 'none' | 'summary' | 'full';
   conversationBinding?: 'off' | 'auto';
   skillInjection?: 'warn' | 'error' | 'silent';
+  approvalHandler?: ApprovalHandler;
   thinking?: ThinkingOptions;
   cacheKey?: string;
   cacheRetention?: 'in_memory' | '24h';
