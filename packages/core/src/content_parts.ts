@@ -85,6 +85,23 @@ export function assertProviderFileReferenceUsable(
   );
 }
 
+export function assertProviderFileReferenceUsableForProvider(
+  part: ContentPart,
+  provider: string,
+  now: Date = new Date(),
+): void {
+  assertProviderFileReferenceUsable(part, now);
+  if (part.kind === 'text' || part.source.type !== 'providerFile') {
+    return;
+  }
+  if (part.source.provider === provider) {
+    return;
+  }
+  throw new Error(
+    `Provider file reference ${part.source.fileId} belongs to ${part.source.provider}, not ${provider}; re-upload before sending.`,
+  );
+}
+
 export type AiSdkContentPart =
   | { type: 'text'; text: string }
   | {
@@ -216,7 +233,7 @@ export function contentPartsToGeminiParts(
       };
     }
     if (part.source.type === 'providerFile') {
-      assertProviderFileReferenceUsable(part);
+      assertProviderFileReferenceUsableForProvider(part, 'google');
       return {
         fileData: {
           mimeType: part.mimeType,
@@ -261,7 +278,7 @@ function contentPartSourceToAiSdkData(
 
 function openAIFileSource(part: Exclude<ContentPart, { kind: 'text' }>) {
   if (part.source.type === 'providerFile') {
-    assertProviderFileReferenceUsable(part);
+    assertProviderFileReferenceUsableForProvider(part, 'openai');
     return { file_id: part.source.fileId };
   }
   if (part.source.type === 'uri') {
@@ -285,7 +302,7 @@ function anthropicSource(part: Exclude<ContentPart, { kind: 'text' }>) {
     };
   }
   if (part.source.type === 'providerFile') {
-    assertProviderFileReferenceUsable(part);
+    assertProviderFileReferenceUsableForProvider(part, 'anthropic');
     return {
       type: 'file',
       file_id: part.source.fileId,

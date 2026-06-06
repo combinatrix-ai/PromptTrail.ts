@@ -586,10 +586,11 @@ default to storing a `uri` or `providerFile` reference and cache the uploaded
 id in `attrs.<provider>` so re-sends reference instead of re-encoding. Files API
 lifecycle is asymmetric and must be an explicit policy: **Gemini files expire
 after 48h** (breaking long-lived sessions), Anthropic/OpenAI persist until
-deleted. Treat provider file refs as ephemeral, track expiry, re-upload on miss,
-and persist cleanup ownership (`caller`, `prompttrail`, or `none`) explicitly. A
-`providerFile` id is non-portable, so a session reused on another provider
-re-uploads.
+deleted. Treat provider file refs as ephemeral, track expiry, reject expired or
+provider-mismatched refs before sending, and surface a re-upload-required error.
+Persist cleanup ownership (`caller`, `prompttrail`, or `none`) explicitly. A
+`providerFile` id is non-portable, so a session reused on another provider must
+create a fresh provider-local upload before sending.
 
 ### Compaction
 
