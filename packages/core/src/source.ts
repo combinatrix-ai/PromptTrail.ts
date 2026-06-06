@@ -593,6 +593,7 @@ export class LlmSource extends ModelSource {
         apiKey: process.env.OPENAI_API_KEY || '',
         modelName: 'gpt-5.4-nano',
         api: 'responses',
+        adapter: 'native',
       },
       temperature: 0.7,
       ...options,
@@ -665,7 +666,7 @@ export class LlmSource extends ModelSource {
         apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
         modelName: config?.modelName || 'gpt-5.4-nano',
         api: config?.api ?? 'responses',
-        adapter: config?.adapter,
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
         organization: config?.organization,
         dangerouslyAllowBrowser: config?.dangerouslyAllowBrowser,
@@ -681,7 +682,7 @@ export class LlmSource extends ModelSource {
         type: 'anthropic',
         apiKey: config?.apiKey || process.env.ANTHROPIC_API_KEY || '',
         modelName: config?.modelName || 'claude-haiku-4-5',
-        adapter: config?.adapter,
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
       },
     });
@@ -692,8 +693,8 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'google',
         apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
-        modelName: config?.modelName || 'gemini-pro',
-        adapter: config?.adapter,
+        modelName: config?.modelName || 'gemini-2.5-flash',
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
       },
     });

@@ -212,7 +212,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     return generateOpenAIResponsesText(session, {
       ...options,
@@ -222,7 +222,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 
   if (
     options.provider.type === 'anthropic' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     return generateAnthropicMessagesText(session, {
       ...options,
@@ -232,7 +232,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 
   if (
     options.provider.type === 'google' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     return generateGoogleGeminiText(session, {
       ...options,
@@ -310,7 +310,7 @@ export async function generateWithSchema<
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
-    options.provider.adapter === 'native' &&
+    options.provider.adapter !== 'ai-sdk' &&
     schemaMode === 'native'
   ) {
     return generateOpenAIResponsesWithSchema(
@@ -325,7 +325,7 @@ export async function generateWithSchema<
 
   if (
     options.provider.type === 'anthropic' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     return generateAnthropicMessagesWithSchema(
       session,
@@ -339,7 +339,7 @@ export async function generateWithSchema<
 
   if (
     options.provider.type === 'google' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     return generateGoogleGeminiWithSchema(
       session,
@@ -442,7 +442,7 @@ export async function* generateTextStream<
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     yield* promptTrailStreamEventsToMessages(
       streamOpenAIResponsesEvents(session, {
@@ -455,7 +455,7 @@ export async function* generateTextStream<
 
   if (
     options.provider.type === 'anthropic' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     yield* promptTrailStreamEventsToMessages(
       streamAnthropicMessagesEvents(session, {
@@ -468,7 +468,7 @@ export async function* generateTextStream<
 
   if (
     options.provider.type === 'google' &&
-    options.provider.adapter === 'native'
+    options.provider.adapter !== 'ai-sdk'
   ) {
     yield* promptTrailStreamEventsToMessages(
       streamGoogleGeminiEvents(session, {

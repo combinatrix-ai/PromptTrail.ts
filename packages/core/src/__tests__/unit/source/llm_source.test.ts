@@ -36,6 +36,8 @@ describe('LlmSource', () => {
           provider: expect.objectContaining({
             type: 'openai',
             modelName: 'gpt-5.4-nano',
+            api: 'responses',
+            adapter: 'native',
           }),
         }),
       );
@@ -139,6 +141,8 @@ describe('LlmSource', () => {
             modelName: 'gpt-3.5-turbo',
             apiKey: 'openai-key',
             organization: 'org-123',
+            api: 'responses',
+            adapter: 'native',
           }),
         }),
       );
@@ -157,6 +161,7 @@ describe('LlmSource', () => {
             type: 'anthropic',
             modelName: 'claude-haiku-4-5',
             apiKey: 'anthropic-key',
+            adapter: 'native',
           }),
         }),
       );
@@ -179,6 +184,7 @@ describe('LlmSource', () => {
             modelName: 'claude-haiku-4-5',
             apiKey: 'custom-anthropic-key',
             baseURL: 'https://custom.anthropic.com',
+            adapter: 'native',
           }),
         }),
       );
@@ -195,8 +201,25 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'google',
-            modelName: 'gemini-pro',
+            modelName: 'gemini-2.5-flash',
             apiKey: 'google-key',
+            adapter: 'native',
+          }),
+        }),
+      );
+    });
+
+    it('should keep explicit ai-sdk adapter selection available', async () => {
+      const source = Source.llm().openai({ adapter: 'ai-sdk' });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          provider: expect.objectContaining({
+            type: 'openai',
+            api: 'responses',
+            adapter: 'ai-sdk',
           }),
         }),
       );
