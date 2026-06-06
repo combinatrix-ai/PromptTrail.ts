@@ -555,6 +555,7 @@ export function retainOpenAIResponseMetadata(
     status: response.status,
     error: response.error ?? undefined,
     incompleteDetails: response.incomplete_details ?? undefined,
+    refusal: extractOpenAIResponseRefusal(response.output),
     replayRequired: extractOpenAIReplayRequiredArtifacts(response.output),
   };
 
@@ -602,6 +603,45 @@ function summarizeOpenAIOutputItem(item: unknown): Record<string, unknown> {
     truncated: preview && preview.length > 500 ? true : undefined,
     fullLength: preview && preview.length > 500 ? preview.length : undefined,
   };
+}
+
+export function extractOpenAIResponseRefusal(
+  output: unknown[] | undefined,
+): string | undefined {
+  for (const item of output ?? []) {
+    const refusal = extractOpenAIRefusalFromItem(item);
+    if (refusal) {
+      return refusal;
+    }
+  }
+  return undefined;
+}
+
+function extractOpenAIRefusalFromItem(item: unknown): string | undefined {
+  if (!item || typeof item !== 'object') {
+    return undefined;
+  }
+  const record = item as Record<string, unknown>;
+  if (typeof record.refusal === 'string') {
+    return record.refusal;
+  }
+  const content = record.content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  for (const block of content) {
+    if (!block || typeof block !== 'object') {
+      continue;
+    }
+    const contentRecord = block as Record<string, unknown>;
+    if (
+      contentRecord.type === 'refusal' &&
+      typeof contentRecord.refusal === 'string'
+    ) {
+      return contentRecord.refusal;
+    }
+  }
+  return undefined;
 }
 
 function extractOutputContentPreview(content: unknown): string {

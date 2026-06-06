@@ -5,6 +5,7 @@ import {
   collectOpenAIResponseFunctionCalls,
   convertSessionToResponsesInput,
   createOpenAIToolOutputItem,
+  extractOpenAIResponseRefusal,
   getOpenAIInstructionCapabilities,
   getOpenAIResponsesToolDefinitions,
   getOpenAIPromptTrailTools,
@@ -286,6 +287,37 @@ describe('OpenAI Responses native adapter helpers', () => {
     ).toMatchObject({
       responseId: 'resp-1',
       historyFingerprint: 'fnv1a:test',
+    });
+  });
+
+  it('surfaces OpenAI structured output refusals in response metadata', () => {
+    const output = [
+      {
+        type: 'message',
+        id: 'msg-1',
+        content: [
+          {
+            type: 'refusal',
+            refusal: 'I cannot comply with that request.',
+          },
+        ],
+      },
+    ];
+
+    expect(extractOpenAIResponseRefusal(output)).toBe(
+      'I cannot comply with that request.',
+    );
+    expect(
+      retainOpenAIResponseMetadata(
+        {
+          id: 'resp-1',
+          status: 'completed',
+          output,
+        },
+        'summary',
+      ),
+    ).toMatchObject({
+      refusal: 'I cannot comply with that request.',
     });
   });
 
