@@ -7,6 +7,7 @@ import type {
   PromptTrailTool,
   RuntimeSkill,
 } from './capabilities';
+import { requireConfiguredCapabilityApprovals } from './capabilities';
 import { contentPartsToAnthropicContent } from './content_parts';
 import {
   mapAnthropicCompaction,
@@ -133,6 +134,14 @@ export async function generateAnthropicMessagesText<
     session,
     options,
   );
+  await requireConfiguredCapabilityApprovals(
+    getAnthropicConfiguredCapabilities(resolvedOptions.capabilities),
+    {
+      provider: 'anthropic',
+      session,
+      approvalHandler: resolvedOptions.approvalHandler,
+    },
+  );
   const client = new Anthropic({
     apiKey: resolvedOptions.provider.apiKey,
     baseURL: resolvedOptions.provider.baseURL,
@@ -207,6 +216,14 @@ export async function* streamAnthropicMessagesEvents<
     session,
     options,
   );
+  await requireConfiguredCapabilityApprovals(
+    getAnthropicConfiguredCapabilities(resolvedOptions.capabilities),
+    {
+      provider: 'anthropic',
+      session,
+      approvalHandler: resolvedOptions.approvalHandler,
+    },
+  );
   const client = new Anthropic({
     apiKey: resolvedOptions.provider.apiKey,
     baseURL: resolvedOptions.provider.baseURL,
@@ -264,6 +281,14 @@ export async function generateAnthropicMessagesWithSchema<
   const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
     session,
     options,
+  );
+  await requireConfiguredCapabilityApprovals(
+    getAnthropicConfiguredCapabilities(resolvedOptions.capabilities),
+    {
+      provider: 'anthropic',
+      session,
+      approvalHandler: resolvedOptions.approvalHandler,
+    },
   );
   const client = new Anthropic({
     apiKey: resolvedOptions.provider.apiKey,
@@ -692,6 +717,14 @@ export function getAnthropicToolDefinitions(
         : [],
     ),
   ];
+}
+
+export function getAnthropicConfiguredCapabilities(
+  capabilities: CapabilitySet | undefined,
+): CapabilitySet {
+  return (capabilities ?? []).filter(
+    (capability) => capability.kind === 'builtin',
+  );
 }
 
 export function getAnthropicToolLoopContinuationOptions<T extends LLMOptions>(

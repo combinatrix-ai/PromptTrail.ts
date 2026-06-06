@@ -10,6 +10,7 @@ import {
   createConversationHistoryFingerprint,
   deriveConversationBinding,
 } from '../../conversation';
+import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
@@ -36,6 +37,14 @@ export class ClaudeTurn<
       approvalHandler: this.options.approvalHandler,
       session: currentSession,
     });
+    await requireConfiguredCapabilityApprovals(
+      getClaudeMcpApprovalCapabilities(this.options.capabilities),
+      {
+        provider: 'claude-agent',
+        session: currentSession,
+        approvalHandler: this.options.approvalHandler,
+      },
+    );
     const params = buildClaudeAgentQueryParams(prompt, currentSession, {
       cwd: this.options.cwd,
       model: this.options.model,
@@ -139,6 +148,12 @@ export class ClaudeTurn<
       events: summarizeClaudeAgentEvents(events),
     };
   }
+}
+
+function getClaudeMcpApprovalCapabilities(
+  capabilities: ClaudeTurnOptions['capabilities'],
+): ClaudeTurnOptions['capabilities'] {
+  return (capabilities ?? []).filter((capability) => capability.kind === 'mcp');
 }
 
 function summarizeClaudeAgentEvents(events: readonly unknown[]) {

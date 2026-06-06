@@ -122,6 +122,51 @@ describe('ClaudeTurn template', () => {
     });
   });
 
+  it('requires approval before configuring Claude Agent MCP servers', async () => {
+    const client = new FakeClaudeAgentClient();
+    const approvals: unknown[] = [];
+
+    await expect(
+      Agent.create()
+        .user('Use docs')
+        .claudeTurn({
+          client,
+          capabilities: [
+            {
+              kind: 'mcp',
+              name: 'docs',
+              transport: {
+                kind: 'http',
+                url: 'https://mcp.example.com',
+              },
+              tools: ['search'],
+              approval: 'always',
+            },
+          ],
+          approvalHandler: async (request) => {
+            approvals.push(request);
+            return { type: 'deny', reason: 'no external servers' };
+          },
+        })
+        .execute(Session.create()),
+    ).rejects.toThrow('Capability "docs" approval denied: no external servers');
+
+    expect(client.queries).toHaveLength(0);
+    expect(approvals[0]).toMatchObject({
+      provider: 'claude-agent',
+      action: 'mcp.configure',
+      capability: 'docs',
+      risk: 'external',
+      input: {
+        transport: {
+          kind: 'http',
+          url: 'https://mcp.example.com',
+        },
+        tools: ['search'],
+      },
+    });
+  });
+
   it('materializes workspace skills before querying the SDK', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-turn-'));
     const client = new FakeClaudeAgentClient();

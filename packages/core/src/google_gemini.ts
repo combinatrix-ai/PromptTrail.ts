@@ -3,8 +3,10 @@ import type {
   ApprovalHandler,
   BuiltinTool,
   CallToolResult,
+  CapabilitySet,
   PromptTrailTool,
 } from './capabilities';
+import { requireConfiguredCapabilityApprovals } from './capabilities';
 import { contentPartsToGeminiParts } from './content_parts';
 import {
   deriveConversationBinding,
@@ -81,6 +83,14 @@ export async function* streamGoogleGeminiEvents<
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
   assertGeminiProviderCompactionUnsupported(options.compaction);
   const tools = getGeminiPromptTrailTools(options);
+  await requireConfiguredCapabilityApprovals(
+    getGeminiConfiguredCapabilities(options.capabilities),
+    {
+      provider: 'google',
+      session,
+      approvalHandler: options.approvalHandler,
+    },
+  );
   const toolDefinitions = getGeminiToolDefinitions(options);
   const binding = await resolveGeminiCachedContentBinding(
     ai as unknown as GeminiCacheClient,
@@ -160,6 +170,14 @@ async function generateGoogleGeminiMessage<
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
   assertGeminiProviderCompactionUnsupported(options.compaction);
   const tools = getGeminiPromptTrailTools(options);
+  await requireConfiguredCapabilityApprovals(
+    getGeminiConfiguredCapabilities(options.capabilities),
+    {
+      provider: 'google',
+      session,
+      approvalHandler: options.approvalHandler,
+    },
+  );
   const toolDefinitions = getGeminiToolDefinitions(options);
   const cacheResolution = await resolveGeminiCachedContent(
     ai as unknown as GeminiCacheClient,
@@ -653,6 +671,14 @@ export function getGeminiToolDefinitions(
         : [],
     ),
   ];
+}
+
+export function getGeminiConfiguredCapabilities(
+  capabilities: CapabilitySet | undefined,
+): CapabilitySet {
+  return (capabilities ?? []).filter(
+    (capability) => capability.kind === 'builtin',
+  );
 }
 
 export function promptTrailToolToGeminiTool(tool: PromptTrailTool) {

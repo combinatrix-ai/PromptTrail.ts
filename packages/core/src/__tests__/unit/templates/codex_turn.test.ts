@@ -147,6 +147,50 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('requires approval before configuring Codex MCP servers', async () => {
+    const client = new FakeCodexClient();
+    const approvals: unknown[] = [];
+    const agent = Agent.create().user('Use docs').codexTurn({
+      client,
+      capabilities: [
+        {
+          kind: 'mcp',
+          name: 'docs',
+          transport: {
+            kind: 'http',
+            url: 'https://mcp.example.com',
+          },
+          tools: 'all',
+          approval: 'always',
+        },
+      ],
+      approvalHandler: async (request) => {
+        approvals.push(request);
+        return { type: 'deny', reason: 'no external servers' };
+      },
+    });
+
+    await expect(agent.execute(Session.create())).rejects.toThrow(
+      'Capability "docs" approval denied: no external servers',
+    );
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts).toHaveLength(0);
+    expect(approvals[0]).toMatchObject({
+      provider: 'codex',
+      action: 'mcp.configure',
+      capability: 'docs',
+      risk: 'external',
+      input: {
+        transport: {
+          kind: 'http',
+          url: 'https://mcp.example.com',
+        },
+        tools: 'all',
+      },
+    });
+  });
+
   it('should start a new Codex thread when auto binding history diverged', async () => {
     const originalClient = new FakeCodexClient();
     const originalSession = await Agent.create()

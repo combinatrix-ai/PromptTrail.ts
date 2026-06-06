@@ -107,6 +107,81 @@ export type Capability =
 
 export type CapabilitySet = readonly Capability[];
 
+export interface ConfiguredCapabilityApprovalContext {
+  provider: ApprovalRequest['provider'];
+  session: Session<any, any>;
+  approvalHandler?: ApprovalHandler;
+  action?: string;
+  input?: unknown;
+  risk?: ApprovalRequest['risk'];
+  raw?: unknown;
+}
+
+export async function resolveConfiguredCapabilityApproval(
+  capability: BuiltinTool | McpServer,
+  context: ConfiguredCapabilityApprovalContext,
+): Promise<ApprovalDecision> {
+  if (!capability.approval || capability.approval === 'never') {
+    return { type: 'approve' };
+  }
+
+  const handler =
+    typeof capability.approval === 'function'
+      ? capability.approval
+      : context.approvalHandler;
+
+  if (!handler) {
+    return {
+      type: 'deny',
+      reason: `Capability "${capability.name}" requires approval but no approval handler was provided.`,
+    };
+  }
+
+  return handler(
+    {
+      provider: context.provider,
+      action: context.action ?? getConfiguredCapabilityAction(capability),
+      capability: capability.name,
+      input: context.input ?? getConfiguredCapabilityApprovalInput(capability),
+      risk: context.risk ?? getConfiguredCapabilityRisk(capability),
+      raw: context.raw,
+    },
+    context.session,
+  );
+}
+
+export async function requireConfiguredCapabilityApproval(
+  capability: BuiltinTool | McpServer,
+  context: ConfiguredCapabilityApprovalContext,
+): Promise<void> {
+  const decision = await resolveConfiguredCapabilityApproval(
+    capability,
+    context,
+  );
+  if (decision.type === 'approve') {
+    return;
+  }
+  if (decision.type === 'ask-user') {
+    throw new Error(decision.question);
+  }
+  throw new Error(
+    `Capability "${capability.name}" approval denied${
+      decision.reason ? `: ${decision.reason}` : ''
+    }`,
+  );
+}
+
+export async function requireConfiguredCapabilityApprovals(
+  capabilities: CapabilitySet | undefined,
+  context: ConfiguredCapabilityApprovalContext,
+): Promise<void> {
+  for (const capability of capabilities ?? []) {
+    if (capability.kind === 'builtin' || capability.kind === 'mcp') {
+      await requireConfiguredCapabilityApproval(capability, context);
+    }
+  }
+}
+
 export function getCapabilityExecutionMode(
   capability: Capability,
 ): ExecutionMode {
@@ -122,4 +197,48 @@ export function getCapabilityExecutionMode(
 
   const _exhaustive: never = capability;
   return _exhaustive;
+}
+
+function getConfiguredCapabilityAction(
+  capability: BuiltinTool | McpServer,
+): string {
+  return capability.kind === 'mcp' ? 'mcp.configure' : 'builtin.enable';
+}
+
+function getConfiguredCapabilityApprovalInput(
+  capability: BuiltinTool | McpServer,
+): unknown {
+  if (capability.kind === 'mcp') {
+    return {
+      transport: capability.transport,
+      tools: capability.tools,
+    };
+  }
+  return {
+    executionMode: capability.executionMode,
+    config: capability.config,
+  };
+}
+
+function getConfiguredCapabilityRisk(
+  capability: BuiltinTool | McpServer,
+): ApprovalRequest['risk'] {
+  if (capability.kind === 'mcp') {
+    return 'external';
+  }
+  if (
+    capability.name.includes('shell') ||
+    capability.name.includes('code') ||
+    capability.name.includes('computer')
+  ) {
+    return 'execute';
+  }
+  if (
+    capability.name.includes('search') ||
+    capability.name.includes('url') ||
+    capability.name.includes('web')
+  ) {
+    return 'network';
+  }
+  return 'external';
 }

@@ -15,6 +15,7 @@ import type {
   PromptTrailTool,
   RuntimeSkill,
 } from './capabilities';
+import { requireConfiguredCapabilityApprovals } from './capabilities';
 import {
   createConversationHistoryFingerprint,
   deriveConversationBinding,
@@ -71,6 +72,11 @@ export async function* streamOpenAIResponsesEvents<
       options.provider.dangerouslyAllowBrowser,
   });
   const tools = getOpenAIPromptTrailTools(options);
+  await requireConfiguredCapabilityApprovals(options.capabilities, {
+    provider: 'openai',
+    session,
+    approvalHandler: options.approvalHandler,
+  });
   const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
   const binding =
     options.conversationBinding === 'auto'
@@ -175,6 +181,11 @@ async function generateOpenAIResponsesMessage<
       options.provider.dangerouslyAllowBrowser,
   });
   const tools = getOpenAIPromptTrailTools(options);
+  await requireConfiguredCapabilityApprovals(options.capabilities, {
+    provider: 'openai',
+    session,
+    approvalHandler: options.approvalHandler,
+  });
   const toolDefinitions = getOpenAIResponsesToolDefinitions(options);
   const binding =
     options.conversationBinding === 'auto'

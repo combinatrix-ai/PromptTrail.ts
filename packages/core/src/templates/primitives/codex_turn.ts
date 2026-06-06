@@ -18,6 +18,7 @@ import {
   createConversationHistoryFingerprint,
   deriveConversationBinding,
 } from '../../conversation';
+import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import { Attrs, Vars } from '../../session';
@@ -37,6 +38,14 @@ export class CodexTurn<
     const currentSession = this.ensureSession(session);
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
     const rawRuntimeSkills = getCodexRuntimeSkills(this.options.capabilities);
+    await requireConfiguredCapabilityApprovals(
+      getCodexMcpApprovalCapabilities(this.options.capabilities),
+      {
+        provider: 'codex',
+        session: currentSession,
+        approvalHandler: this.options.approvalHandler,
+      },
+    );
     const mcpServers = getCodexMcpServerConfig(this.options.capabilities);
     const onRequest =
       promptTrailTools.length > 0 || this.options.approvalHandler
@@ -214,6 +223,12 @@ export class CodexTurn<
         : undefined,
     };
   }
+}
+
+function getCodexMcpApprovalCapabilities(
+  capabilities: CodexTurnOptions['capabilities'],
+): CodexTurnOptions['capabilities'] {
+  return (capabilities ?? []).filter((capability) => capability.kind === 'mcp');
 }
 
 function normalizeCodexInput(
