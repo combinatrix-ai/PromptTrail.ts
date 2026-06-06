@@ -8,6 +8,11 @@ import type {
 } from './llm_types';
 import type { RetainLevel } from './runtime';
 import type { PromptTrailTool } from './capabilities';
+import {
+  deriveConversationBinding,
+  getMessagesAfterBinding,
+  type ConversationBinding,
+} from './conversation';
 import { zodToJsonSchema } from './json_schema';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -81,7 +86,11 @@ async function generateOpenAIResponsesMessage<
       options.provider.dangerouslyAllowBrowser,
   });
   const tools = getOpenAIPromptTrailTools(options);
-  let input: unknown[] = convertSessionToResponsesInput(session);
+  const binding =
+    options.conversationBinding === 'auto'
+      ? deriveConversationBinding(session, 'openai')
+      : undefined;
+  let input: unknown[] = convertSessionToResponsesInput(session, binding);
   const instructions = getResponsesInstructions(session);
   let response = await createOpenAIResponse(
     client,
@@ -90,6 +99,7 @@ async function generateOpenAIResponsesMessage<
     tools,
     instructions,
     textFormat,
+    binding,
   );
 
   for (let i = 0; i < (options.maxCallLimit ?? 10); i++) {
@@ -111,6 +121,7 @@ async function generateOpenAIResponsesMessage<
       tools,
       instructions,
       textFormat,
+      binding,
     );
   }
 
@@ -133,11 +144,13 @@ async function createOpenAIResponse(
   tools: readonly PromptTrailTool[],
   instructions: string | undefined,
   textFormat?: Record<string, unknown>,
+  binding?: ConversationBinding,
 ) {
   return client.responses.create({
     model: options.provider.modelName,
     input: input as any,
     instructions,
+    previous_response_id: binding?.id,
     temperature: options.temperature,
     top_p: options.topP,
     max_output_tokens: options.maxTokens,
@@ -152,8 +165,9 @@ async function createOpenAIResponse(
 
 export function convertSessionToResponsesInput(
   session: Session<any, any>,
+  binding?: ConversationBinding,
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
-  return session.messages
+  return getMessagesAfterBinding(session, binding)
     .filter(
       (message) => message.type === 'user' || message.type === 'assistant',
     )

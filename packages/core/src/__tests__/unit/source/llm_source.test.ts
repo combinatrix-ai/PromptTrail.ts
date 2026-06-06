@@ -259,6 +259,18 @@ describe('LlmSource', () => {
         }),
       );
     });
+
+    it('should set provider-neutral conversation binding mode', async () => {
+      const source = Source.llm().conversationBinding('auto');
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          conversationBinding: 'auto',
+        }),
+      );
+    });
   });
 
   describe('Fluent API - Tool configuration', () => {

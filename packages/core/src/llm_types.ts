@@ -47,6 +47,7 @@ export interface LLMOptions {
   sdkOptions?: Record<string, unknown>;
   maxCallLimit?: number;
   retain?: 'none' | 'summary' | 'full';
+  conversationBinding?: 'off' | 'auto';
 }
 
 export interface SchemaGenerationOptions {

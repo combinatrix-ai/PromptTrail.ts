@@ -28,6 +28,25 @@ describe('OpenAI Responses native adapter helpers', () => {
     ]);
   });
 
+  it('converts only messages after a conversation binding when provided', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Hello' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Hi',
+        attrs: { openai: { responseId: 'resp-1' } },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    expect(
+      convertSessionToResponsesInput(session, {
+        provider: 'openai',
+        id: 'resp-1',
+        messageIndex: 1,
+      }),
+    ).toEqual([{ role: 'user', content: 'Continue' }]);
+  });
+
   it('retains only binding-safe metadata at retain none', () => {
     expect(
       retainOpenAIResponseMetadata(

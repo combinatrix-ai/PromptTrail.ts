@@ -793,6 +793,10 @@ export class LlmSource extends ModelSource {
     return this.clone({ toolChoice: choice });
   }
 
+  conversationBinding(mode: 'off' | 'auto' = 'auto'): LlmSource {
+    return this.clone({ conversationBinding: mode });
+  }
+
   // Browser compatibility - returns new instance
   dangerouslyAllowBrowser(allow: boolean = true): LlmSource {
     const newOptions: Partial<LLMOptions> = {
