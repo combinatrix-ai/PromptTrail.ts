@@ -2,6 +2,7 @@ export { tool } from 'ai';
 export * from './capabilities';
 export * from './codex_app_server';
 export * from './generate';
+export * from './json_schema';
 export * from './message';
 export * from './runtime';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
