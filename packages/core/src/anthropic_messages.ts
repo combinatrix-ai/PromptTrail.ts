@@ -433,10 +433,86 @@ export function getAnthropicRequestContent(
   session: Session<any, any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): AnthropicRequestContent {
-  return {
+  return limitAnthropicCacheControlBreakpoints({
     messages: convertSessionToAnthropicMessages(session),
     system: getAnthropicSystemPrompt(session, options),
-  };
+  });
+}
+
+export function limitAnthropicCacheControlBreakpoints<T>(
+  content: T,
+  maxBreakpoints = 4,
+): T {
+  const breakpoints: Array<{
+    block: Record<string, unknown>;
+    priority: number;
+    order: number;
+  }> = [];
+  collectAnthropicCacheControlBreakpoints(content, breakpoints);
+  if (breakpoints.length <= maxBreakpoints) {
+    return content;
+  }
+
+  const keep = new Set(
+    breakpoints
+      .slice()
+      .sort(
+        (left, right) =>
+          right.priority - left.priority || left.order - right.order,
+      )
+      .slice(0, maxBreakpoints)
+      .map((breakpoint) => breakpoint.block),
+  );
+
+  for (const breakpoint of breakpoints) {
+    if (!keep.has(breakpoint.block)) {
+      delete breakpoint.block.cache_control;
+    }
+  }
+
+  return content;
+}
+
+function collectAnthropicCacheControlBreakpoints(
+  value: unknown,
+  breakpoints: Array<{
+    block: Record<string, unknown>;
+    priority: number;
+    order: number;
+  }>,
+): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectAnthropicCacheControlBreakpoints(item, breakpoints);
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.cache_control && typeof record.cache_control === 'object') {
+    breakpoints.push({
+      block: record,
+      priority: anthropicCacheControlPriority(record.cache_control),
+      order: breakpoints.length,
+    });
+  }
+  for (const child of Object.values(record)) {
+    collectAnthropicCacheControlBreakpoints(child, breakpoints);
+  }
+}
+
+function anthropicCacheControlPriority(cacheControl: unknown): number {
+  const ttl = (cacheControl as Record<string, unknown>).ttl;
+  if (ttl === '1h') {
+    return 2;
+  }
+  if (ttl === '5m') {
+    return 1;
+  }
+  return 0;
 }
 
 export function getAnthropicSystemPrompt(

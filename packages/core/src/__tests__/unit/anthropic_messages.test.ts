@@ -12,6 +12,7 @@ import {
   getAnthropicRequestContent,
   getAnthropicSkillsContainer,
   getAnthropicSystemPrompt,
+  limitAnthropicCacheControlBreakpoints,
   normalizeAnthropicMessagesStream,
   promptTrailBuiltinToAnthropicTool,
   promptTrailSkillToAnthropicContainerSkill,
@@ -122,6 +123,52 @@ describe('Anthropic Messages native adapter helpers', () => {
           },
         ],
       },
+    ]);
+  });
+
+  it('caps Anthropic cache breakpoints at four with longer TTL first', () => {
+    const request = getAnthropicRequestContent(
+      Session.create()
+        .addMessage({ type: 'system', content: 'System 5m.', cache: true })
+        .addMessage({ type: 'system', content: 'System 1h.', cache: '1h' })
+        .addMessage({ type: 'user', content: 'User 5m 1.', cache: true })
+        .addMessage({
+          type: 'assistant',
+          content: 'Assistant 1h.',
+          cache: '1h',
+        })
+        .addMessage({ type: 'user', content: 'User 5m 2.', cache: true })
+        .addMessage({
+          type: 'assistant',
+          content: 'Assistant 5m.',
+          cache: true,
+        }),
+    );
+
+    expect(collectCacheControlledText(request)).toEqual([
+      'User 5m 1.',
+      'Assistant 1h.',
+      'User 5m 2.',
+      'System 1h.',
+    ]);
+  });
+
+  it('limits arbitrary Anthropic content blocks without reordering them', () => {
+    const content = [
+      { type: 'text', text: '5m first', cache_control: { ttl: '5m' } },
+      { type: 'text', text: '5m removed', cache_control: { ttl: '5m' } },
+      { type: 'text', text: '1h first', cache_control: { ttl: '1h' } },
+    ];
+
+    expect(limitAnthropicCacheControlBreakpoints(content, 2)).toBe(content);
+    expect(collectCacheControlledText(content)).toEqual([
+      '5m first',
+      '1h first',
+    ]);
+    expect(content.map((block) => block.text)).toEqual([
+      '5m first',
+      '5m removed',
+      '1h first',
     ]);
   });
 
@@ -651,4 +698,23 @@ async function* stream(events: unknown[]) {
   for (const event of events) {
     yield event;
   }
+}
+
+function collectCacheControlledText(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectCacheControlledText);
+  }
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const self =
+    record.cache_control && typeof record.text === 'string'
+      ? [record.text]
+      : [];
+  return [
+    ...self,
+    ...Object.values(record).flatMap(collectCacheControlledText),
+  ];
 }
