@@ -37,7 +37,8 @@ import { contentPartsToAiSdkContent } from './content_parts';
 import type { Session, Attrs, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './ai_sdk_tools';
-import { Tool, isPromptTrailTool } from './tool';
+import { Tool, executePromptTrailTool, isPromptTrailTool } from './tool';
+import type { PromptTrailTool } from './capabilities';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -455,17 +456,7 @@ export function assertExplicitNativeSchemaModeWhenToolsArePresent(
 export function assertNativeStreamingToolLoopSupported(
   options: LLMOptions,
 ): void {
-  if (
-    options.provider.adapter === 'ai-sdk' ||
-    !isFirstPartyNativeProvider(options) ||
-    !hasPromptTrailTools(options)
-  ) {
-    return;
-  }
-
-  throw new Error(
-    'Native streaming with PromptTrail tools is not supported yet. Use non-streaming generation for the native provider tool loop, or use adapter: "ai-sdk" for streaming tool calls.',
-  );
+  void options;
 }
 
 function isFirstPartyNativeProvider(options: LLMOptions): boolean {
@@ -501,13 +492,16 @@ export async function* generateTextStream<
     options.provider.api === 'responses' &&
     options.provider.adapter !== 'ai-sdk'
   ) {
-    yield* promptTrailStreamEventsToMessages(
-      streamOpenAIResponsesEvents(session, {
-        ...options,
-        provider: options.provider,
-      }),
-      { attrsKey: 'openai', retain: options.retain },
-    );
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'openai',
+      attrsKey: 'openai',
+      events: (turnSession) =>
+        streamOpenAIResponsesEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
     return;
   }
 
@@ -515,13 +509,16 @@ export async function* generateTextStream<
     options.provider.type === 'anthropic' &&
     options.provider.adapter !== 'ai-sdk'
   ) {
-    yield* promptTrailStreamEventsToMessages(
-      streamAnthropicMessagesEvents(session, {
-        ...options,
-        provider: options.provider,
-      }),
-      { attrsKey: 'anthropic', retain: options.retain },
-    );
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'anthropic',
+      attrsKey: 'anthropic',
+      events: (turnSession) =>
+        streamAnthropicMessagesEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
     return;
   }
 
@@ -529,13 +526,16 @@ export async function* generateTextStream<
     options.provider.type === 'google' &&
     options.provider.adapter !== 'ai-sdk'
   ) {
-    yield* promptTrailStreamEventsToMessages(
-      streamGoogleGeminiEvents(session, {
-        ...options,
-        provider: options.provider,
-      }),
-      { attrsKey: 'google', retain: options.retain },
-    );
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'google',
+      attrsKey: 'google',
+      events: (turnSession) =>
+        streamGoogleGeminiEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
     return;
   }
 
@@ -584,6 +584,112 @@ export async function* generateTextStream<
       };
     }
   }
+}
+
+export async function* streamPromptTrailToolLoop<
+  TAttrs extends Attrs = Attrs,
+>(
+  session: Session<any, TAttrs>,
+  options: LLMOptions,
+  config: {
+    provider: 'openai' | 'anthropic' | 'google';
+    attrsKey: string;
+    events: (session: Session<any, TAttrs>) => AsyncIterable<PromptTrailStreamEvent>;
+  },
+): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  const maxToolRounds = options.maxCallLimit ?? 10;
+  let currentSession = session;
+
+  for (let round = 0; ; round++) {
+    let state = createPromptTrailStreamState();
+    for await (const event of config.events(currentSession)) {
+      state = reducePromptTrailStreamEvent(state, event);
+      if (event.type === 'text.delta') {
+        yield {
+          type: 'assistant',
+          content: event.delta || ' ',
+        } as Message<TAttrs>;
+      }
+    }
+
+    const assistant = streamStateToAssistantMessage<TAttrs>(
+      state,
+      createStreamMessageAttrs<TAttrs>(state, {
+        attrsKey: config.attrsKey,
+        retain: options.retain,
+      }),
+    );
+    yield assistant;
+
+    const toolCalls = assistant.toolCalls ?? [];
+    if (toolCalls.length === 0 || round >= maxToolRounds) {
+      return;
+    }
+
+    let nextSession = currentSession.addMessage(assistant);
+    const toolResults = await Promise.all(
+      toolCalls.map((call) =>
+        executeStreamingToolCall(call, {
+          provider: config.provider,
+          tools: getPromptTrailToolList(options),
+          session: currentSession,
+          approvalHandler: options.approvalHandler,
+        }),
+      ),
+    );
+    for (const result of toolResults) {
+      yield result as Message<TAttrs>;
+      nextSession = nextSession.addMessage(result as Message<TAttrs>);
+    }
+    currentSession = nextSession;
+  }
+}
+
+async function executeStreamingToolCall(
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+  options: {
+    provider: 'openai' | 'anthropic' | 'google';
+    tools: readonly PromptTrailTool[];
+    session: Session<any, any>;
+    approvalHandler?: LLMOptions['approvalHandler'];
+  },
+): Promise<Message> {
+  const tool = options.tools.find((candidate) => candidate.name === call.name);
+  const result = tool
+    ? await executePromptTrailTool(tool, call.arguments, {
+        session: options.session,
+        provider: options.provider,
+        capability: call.name,
+        approvalHandler: options.approvalHandler,
+        raw: call,
+      })
+    : {
+        content: [{ type: 'text' as const, text: `Unknown tool: ${call.name}` }],
+        isError: true,
+      };
+  return {
+    type: 'tool_result',
+    content: JSON.stringify(result),
+    attrs: {
+      toolCallId: call.id,
+      toolCallName: call.name,
+    },
+  };
+}
+
+function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {
+  const tools = new Map<string, PromptTrailTool>();
+  for (const capability of options.capabilities ?? []) {
+    if (isPromptTrailTool(capability)) {
+      tools.set(capability.name, capability);
+    }
+  }
+  for (const [name, tool] of Object.entries(options.tools ?? {})) {
+    if (isPromptTrailTool(tool)) {
+      tools.set(tool.name || name, tool);
+    }
+  }
+  return [...tools.values()];
 }
 
 export async function* promptTrailStreamEventsToMessages<

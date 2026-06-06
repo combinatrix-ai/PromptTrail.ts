@@ -5,6 +5,7 @@ import {
   convertSessionToAiSdkMessages,
   createProvider,
   promptTrailStreamEventsToMessages,
+  streamPromptTrailToolLoop,
 } from '../../generate';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
@@ -140,7 +141,7 @@ describe('native schema/tool guard', () => {
 });
 
 describe('assertNativeStreamingToolLoopSupported', () => {
-  it('rejects native first-party streaming when PromptTrail tools are present', () => {
+  it('allows native first-party streaming with PromptTrail tools', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
@@ -159,9 +160,7 @@ describe('assertNativeStreamingToolLoopSupported', () => {
         },
         capabilities: [lookup],
       }),
-    ).toThrow(
-      'Native streaming with PromptTrail tools is not supported yet.',
-    );
+    ).not.toThrow();
   });
 
   it('allows ai-sdk streaming tool calls', () => {
@@ -184,6 +183,94 @@ describe('assertNativeStreamingToolLoopSupported', () => {
         capabilities: [lookup],
       }),
     ).not.toThrow();
+  });
+});
+
+describe('streamPromptTrailToolLoop', () => {
+  it('executes streamed tool calls and continues with tool results in session', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ value: `result:${query}` }),
+    });
+    const seenTurns: string[][] = [];
+
+    const messages = await collectAsync(
+      streamPromptTrailToolLoop(
+        Session.create().addMessage({ type: 'user', content: 'Lookup docs.' }),
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          capabilities: [lookup],
+        },
+        {
+          provider: 'openai',
+          attrsKey: 'openai',
+          events: (turnSession) => {
+            seenTurns.push(turnSession.messages.map((message) => message.type));
+            return seenTurns.length === 1
+              ? stream([
+                  {
+                    type: 'tool.start',
+                    index: 0,
+                    callId: 'call-1',
+                    name: 'lookup',
+                  },
+                  {
+                    type: 'tool.args.done',
+                    index: 0,
+                    callId: 'call-1',
+                    args: { query: 'streaming' },
+                  },
+                  { type: 'message.done', finishReason: 'tool_calls' },
+                ])
+              : stream([
+                  { type: 'text.delta', index: 0, delta: 'Done' },
+                  { type: 'message.done', finishReason: 'stop' },
+                ]);
+          },
+        },
+      ),
+    );
+
+    expect(messages).toEqual([
+      {
+        type: 'assistant',
+        content: ' ',
+        attrs: expect.objectContaining({ openai: expect.any(Object) }),
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'streaming' },
+          },
+        ],
+      },
+      {
+        type: 'tool_result',
+        content: JSON.stringify({
+          content: [{ type: 'json', json: { value: 'result:streaming' } }],
+          structuredContent: { value: 'result:streaming' },
+        }),
+        attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+      },
+      { type: 'assistant', content: 'Done' },
+      {
+        type: 'assistant',
+        content: 'Done',
+        attrs: expect.objectContaining({ openai: expect.any(Object) }),
+        toolCalls: undefined,
+      },
+    ]);
+    expect(seenTurns).toEqual([
+      ['user'],
+      ['user', 'assistant', 'tool_result'],
+    ]);
   });
 });
 
