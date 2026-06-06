@@ -1,5 +1,6 @@
 import { tool as aiTool, type Tool as AiTool, type ToolSet } from 'ai';
 import { z } from 'zod';
+import type { CacheHint } from './cache';
 import type { Session } from './session';
 import type {
   ApprovalDecision,
@@ -31,6 +32,7 @@ export namespace Tool {
       context: ToolExecutionContext,
     ) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
+    cache?: CacheHint;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -39,6 +41,7 @@ export namespace Tool {
     parameters: z.ZodType<TParams>;
     execute: (input: TParams) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
+    cache?: CacheHint;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -53,6 +56,7 @@ export namespace Tool {
         ) => Promise<TResult> | TResult)
       | ((input: TParams) => Promise<TResult> | TResult);
     approval?: ApprovalPolicy;
+    cache?: CacheHint;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
     const inputSchema = config.inputSchema ?? config.parameters;
@@ -67,6 +71,7 @@ export namespace Tool {
       inputSchema,
       execute: async (input, context) => config.execute(input, context),
       approval: config.approval,
+      cache: config.cache,
       metadata: config.metadata,
     };
   }
