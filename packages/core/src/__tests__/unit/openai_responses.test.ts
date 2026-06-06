@@ -43,6 +43,45 @@ describe('OpenAI Responses native adapter helpers', () => {
     ]);
   });
 
+  it('replays PromptTrail tool calls and results as Responses function items', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Lookup docs.' })
+      .addMessage({
+        type: 'assistant',
+        content: ' ',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'streaming' },
+          },
+        ],
+      })
+      .addMessage({
+        type: 'tool_result',
+        content: JSON.stringify({ value: 'ok' }),
+        attrs: { toolCallId: 'call-1' },
+      })
+      .addMessage({ type: 'user', content: 'Use the result.' });
+
+    expect(convertSessionToResponsesInput(session)).toEqual([
+      { role: 'user', content: 'Lookup docs.' },
+      { role: 'assistant', content: ' ' },
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'lookup',
+        arguments: JSON.stringify({ query: 'streaming' }),
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call-1',
+        output: JSON.stringify({ value: 'ok' }),
+      },
+      { role: 'user', content: 'Use the result.' },
+    ]);
+  });
+
   it('converts only messages after a conversation binding when provided', () => {
     const session = Session.create()
       .addMessage({ type: 'user', content: 'Hello' })

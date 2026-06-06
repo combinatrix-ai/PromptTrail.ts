@@ -369,8 +369,25 @@ export function convertSessionToResponsesInput(
   binding?: ConversationBinding,
 ): unknown[] {
   return getMessagesAfterBinding(session, binding).flatMap((message) => {
-    if (message.type !== 'user' && message.type !== 'assistant') {
+    if (
+      message.type !== 'user' &&
+      message.type !== 'assistant' &&
+      message.type !== 'tool_result'
+    ) {
       return [];
+    }
+
+    if (message.type === 'tool_result') {
+      const callId = getToolResultCallId(message);
+      return callId
+        ? [
+            {
+              type: 'function_call_output',
+              call_id: callId,
+              output: message.content,
+            },
+          ]
+        : [];
     }
 
     const inputMessage = {
@@ -384,8 +401,24 @@ export function convertSessionToResponsesInput(
       return [inputMessage];
     }
 
-    return [...getOpenAIReplayRequiredInputItems(message), inputMessage];
+    const functionCalls = (message.toolCalls ?? []).map((call) => ({
+      type: 'function_call',
+      call_id: call.id,
+      name: call.name,
+      arguments: JSON.stringify(call.arguments),
+    }));
+
+    return [
+      ...getOpenAIReplayRequiredInputItems(message),
+      inputMessage,
+      ...functionCalls,
+    ];
   });
+}
+
+function getToolResultCallId(message: Message<any>): string | undefined {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  return typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
 }
 
 function getOpenAIReplayRequiredInputItems(message: Message<any>): unknown[] {

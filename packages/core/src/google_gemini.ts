@@ -582,22 +582,93 @@ export function convertSessionToGeminiContents(
 export function convertMessagesToGeminiContents(
   messages: readonly Message<any>[],
 ): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
-  return messages
-    .filter(
-      (message) => message.type === 'user' || message.type === 'assistant',
-    )
-    .map((message) => {
+  const contents: Array<{ role: 'user' | 'model'; parts: unknown[] }> = [];
+  const toolNamesByCallId = new Map<string, string>();
+  for (const message of messages) {
+    if (message.type === 'user' || message.type === 'assistant') {
       const parts = message.contentParts
         ? contentPartsToGeminiParts(message.contentParts)
         : [{ text: message.content }];
-      return {
+      const functionCalls =
+        message.type === 'assistant'
+          ? (message.toolCalls ?? []).map((call) => {
+              toolNamesByCallId.set(call.id, call.name);
+              return {
+                functionCall: {
+                  id: call.id,
+                  name: call.name,
+                  args: call.arguments,
+                },
+              };
+            })
+          : [];
+      const replayRequired =
+        message.type === 'assistant' ? getGeminiReplayRequiredParts(message) : [];
+      contents.push({
         role: message.type === 'assistant' ? 'model' : 'user',
         parts:
           message.type === 'assistant'
-            ? [...getGeminiReplayRequiredParts(message), ...parts]
+            ? [
+                ...replayRequired,
+                ...(replayRequired.length > 0 || functionCalls.length > 0
+                  ? filterEmptyGeminiTextParts(parts)
+                  : parts),
+                ...functionCalls,
+              ]
             : parts,
-      };
-    });
+      });
+      continue;
+    }
+
+    if (message.type === 'tool_result') {
+      const part = convertToolResultToGeminiPart(message, toolNamesByCallId);
+      if (!part) {
+        continue;
+      }
+      const previous = contents[contents.length - 1];
+      if (previous?.role === 'user') {
+        previous.parts.push(part);
+      } else {
+        contents.push({ role: 'user', parts: [part] });
+      }
+    }
+  }
+  return contents;
+}
+
+function filterEmptyGeminiTextParts(parts: unknown[]): unknown[] {
+  return parts.filter((part) => {
+    const record = part as Record<string, unknown> | undefined;
+    return typeof record?.text === 'string' ? record.text.trim() !== '' : true;
+  });
+}
+
+function convertToolResultToGeminiPart(
+  message: Message<any>,
+  toolNamesByCallId: ReadonlyMap<string, string>,
+): Record<string, unknown> | undefined {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  const callId =
+    typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
+  if (!callId) {
+    return undefined;
+  }
+  const name = toolNamesByCallId.get(callId) ?? callId;
+  return {
+    functionResponse: {
+      id: callId,
+      name,
+      response: parseGeminiToolResultContent(message.content),
+    },
+  };
+}
+
+function parseGeminiToolResultContent(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return { content };
+  }
 }
 
 function getGeminiReplayRequiredParts(message: Message<any>): unknown[] {

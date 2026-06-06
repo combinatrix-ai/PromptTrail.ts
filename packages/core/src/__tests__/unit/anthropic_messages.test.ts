@@ -50,6 +50,54 @@ describe('Anthropic Messages native adapter helpers', () => {
     ]);
   });
 
+  it('replays PromptTrail tool calls and results as Anthropic tool blocks', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Lookup docs.' })
+      .addMessage({
+        type: 'assistant',
+        content: ' ',
+        toolCalls: [
+          {
+            id: 'toolu-1',
+            name: 'lookup',
+            arguments: { query: 'streaming' },
+          },
+        ],
+      })
+      .addMessage({
+        type: 'tool_result',
+        content: JSON.stringify({ value: 'ok' }),
+        attrs: { toolCallId: 'toolu-1' },
+      })
+      .addMessage({ type: 'user', content: 'Use the result.' });
+
+    expect(convertSessionToAnthropicMessages(session)).toEqual([
+      { role: 'user', content: 'Lookup docs.' },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu-1',
+            name: 'lookup',
+            input: { query: 'streaming' },
+          },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu-1',
+            content: JSON.stringify({ value: 'ok' }),
+          },
+        ],
+      },
+      { role: 'user', content: 'Use the result.' },
+    ]);
+  });
+
   it('converts content parts into Anthropic content blocks', () => {
     const session = Session.create().addMessage({
       type: 'user',

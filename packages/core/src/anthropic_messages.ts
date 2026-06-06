@@ -506,14 +506,30 @@ async function createAnthropicMessage(
 export function convertSessionToAnthropicMessages(
   session: Session<any, any>,
 ): Array<{ role: 'user' | 'assistant'; content: unknown }> {
-  return session.messages
-    .filter(
-      (message) => message.type === 'user' || message.type === 'assistant',
-    )
-    .map((message) => ({
-      role: message.type,
-      content: convertMessageToAnthropicContent(message),
-    }));
+  const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
+  for (const message of session.messages) {
+    if (message.type === 'user' || message.type === 'assistant') {
+      messages.push({
+        role: message.type,
+        content: convertMessageToAnthropicContent(message),
+      });
+      continue;
+    }
+
+    if (message.type === 'tool_result') {
+      const block = convertToolResultToAnthropicBlock(message);
+      if (!block) {
+        continue;
+      }
+      const previous = messages[messages.length - 1];
+      if (previous?.role === 'user' && Array.isArray(previous.content)) {
+        previous.content.push(block);
+      } else {
+        messages.push({ role: 'user', content: [block] });
+      }
+    }
+  }
+  return messages;
 }
 
 function convertMessageToAnthropicContent(message: Message<any>): unknown {
@@ -525,7 +541,13 @@ function convertMessageToAnthropicContent(message: Message<any>): unknown {
   }
 
   const replayRequired = getAnthropicReplayRequiredContentBlocks(message);
-  if (replayRequired.length === 0) {
+  const toolUseBlocks = (message.toolCalls ?? []).map((call) => ({
+    type: 'tool_use',
+    id: call.id,
+    name: call.name,
+    input: call.arguments,
+  }));
+  if (replayRequired.length === 0 && toolUseBlocks.length === 0) {
     return applyAnthropicCacheControl(baseContent, message.cache);
   }
 
@@ -533,9 +555,31 @@ function convertMessageToAnthropicContent(message: Message<any>): unknown {
     ...replayRequired,
     ...(Array.isArray(baseContent)
       ? baseContent
-      : [{ type: 'text', text: baseContent }]),
+      : typeof baseContent === 'string' && baseContent.trim() === ''
+        ? []
+        : [{ type: 'text', text: baseContent }]),
+    ...toolUseBlocks,
   ];
   return applyAnthropicCacheControl(contentBlocks, message.cache);
+}
+
+function convertToolResultToAnthropicBlock(
+  message: Message<any>,
+): Record<string, unknown> | undefined {
+  const callId = getToolResultCallId(message);
+  if (!callId) {
+    return undefined;
+  }
+  return {
+    type: 'tool_result',
+    tool_use_id: callId,
+    content: message.content,
+  };
+}
+
+function getToolResultCallId(message: Message<any>): string | undefined {
+  const attrs = message.attrs as Record<string, unknown> | undefined;
+  return typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
 }
 
 function getAnthropicReplayRequiredContentBlocks(

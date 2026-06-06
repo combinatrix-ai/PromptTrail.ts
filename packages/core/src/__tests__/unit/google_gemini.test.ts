@@ -44,6 +44,57 @@ describe('Google Gemini native adapter helpers', () => {
     ]);
   });
 
+  it('replays PromptTrail tool calls and results as Gemini function parts', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Lookup docs.' })
+      .addMessage({
+        type: 'assistant',
+        content: ' ',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'streaming' },
+          },
+        ],
+      })
+      .addMessage({
+        type: 'tool_result',
+        content: JSON.stringify({ value: 'ok' }),
+        attrs: { toolCallId: 'call-1' },
+      })
+      .addMessage({ type: 'user', content: 'Use the result.' });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      { role: 'user', parts: [{ text: 'Lookup docs.' }] },
+      {
+        role: 'model',
+        parts: [
+          {
+            functionCall: {
+              id: 'call-1',
+              name: 'lookup',
+              args: { query: 'streaming' },
+            },
+          },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'call-1',
+              name: 'lookup',
+              response: { value: 'ok' },
+            },
+          },
+        ],
+      },
+      { role: 'user', parts: [{ text: 'Use the result.' }] },
+    ]);
+  });
+
   it('maps Google provider baseURL into GenAI httpOptions', () => {
     expect(
       getGoogleGenAIClientOptions({
