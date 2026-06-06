@@ -412,13 +412,17 @@ dropped even at `retain: 'summary'` or `'none'`:
   `compaction` block).
 
 Rule: any artifact marked **replay-required** is pinned and overrides `retain`
-until the turn it belongs to is *closed* — meaning there is no pending tool call
-to continue, and either the conversation ends or a `ConversationBinding` makes
-the provider hold that state server-side. Only then may `retain` drop it. These
-pinned artifacts are always treated as binding-scoped, opaque, and
-non-portable: PromptTrail's local messages remain canonical, and on a stateless
-fallback PromptTrail replays from its own history rather than the opaque
-artifact (see Reasoning and Thinking, Compaction).
+for as long as the adapter may replay that provider turn to the same provider.
+Closing the turn is not enough by itself: if a later stateless request will
+include an earlier assistant message that contained signed/encrypted thinking,
+the unchanged provider artifact must still be available. `retain` may drop the
+artifact only when replay is no longer needed — for example, a
+`ConversationBinding` makes the provider hold the state server-side, the
+conversation is ending, or the adapter is intentionally falling back to
+PromptTrail-only canonical history and will not replay provider-specific
+reasoning/compaction artifacts. These pinned artifacts are always treated as
+binding-scoped, opaque, and non-portable (see Reasoning and Thinking,
+Compaction).
 
 ## Generation Capabilities
 
@@ -453,9 +457,14 @@ dialects: inject `additionalProperties: false`, rewrite optionals to nullable
 unions for OpenAI strict, and strip (or error on) the recursion/numeric
 constraints Anthropic rejects.
 
-Key interaction: structured output coexists with a tool-calling loop **only on
-Anthropic**. On OpenAI and Gemini the schema makes the turn terminal, so
-`Source.schema()` must not be combined with an open tool loop there.
+Key interaction: structured final output with an active tool loop is
+provider-specific. Anthropic supports the forced-tool path naturally. OpenAI
+Responses should support a function-tool loop followed by a final structured
+message because `tools` and `text.format` are both request fields, but the exact
+sequencing must be verified in native adapter tests. Gemini's behavior with
+function calling plus `responseJsonSchema` also needs provider-specific tests.
+Until those tests exist, `Source.schema()` plus tools should either use the
+ai-sdk path or require an explicit provider-native mode.
 
 ### Streaming
 
@@ -492,10 +501,12 @@ at completion.
 Common option `thinking: { effort?: 'low'|'medium'|'high'; budgetTokens?: number;
 summary?: boolean }`:
 
-- OpenAI: `reasoning.effort` + `reasoning.summary`; output is an encrypted
-  `reasoning` item. Replay via `previous_response_id`, or in stateless mode add
-  `reasoning.encrypted_content` to `include` and resend each item between the
-  function call and its output.
+- OpenAI: `reasoning.effort` + `reasoning.summary`; output is a `reasoning`
+  item. In stateless / zero-data-retention replay mode, add
+  `reasoning.encrypted_content` to `include` and pin the returned
+  `encrypted_content`; resend each required reasoning item between the function
+  call and its output. With `previous_response_id`, the server-side binding can
+  hold this state instead.
 - Anthropic: `thinking: { type: 'enabled', budget_tokens }`; `thinking` blocks
   carry a `signature` and **must be replayed unchanged, in order, before the
   `tool_use` block**; non-decryptable ones are `redacted_thinking`. Only
@@ -504,12 +515,12 @@ summary?: boolean }`:
   `thought: true` and `thoughtSignature`; return all parts/signatures intact.
 
 Store artifacts in `attrs.<provider>`. The critical rule is the
-**replay-required pin** above: while a turn is open (pending tool loop) or in
-stateless mode, signed/encrypted reasoning cannot be dropped by `retain`.
-PromptTrail may drop local reasoning only once the turn is closed, or when a
-`ConversationBinding` (OpenAI `previous_response_id`) lets the server hold it.
-Per provider: Anthropic and Gemini pin until the turn closes; OpenAI pins unless
-a binding is active.
+**replay-required pin** above: signed/encrypted reasoning cannot be dropped by
+`retain` while the adapter may need to replay that same provider turn. Per
+provider: Anthropic and Gemini pin signed thinking whenever previous thinking
+blocks are included in later stateless history; OpenAI pins encrypted reasoning
+only when `encrypted_content` is requested and no server-side binding can hold
+the state.
 
 ### Prompt Caching
 
@@ -523,8 +534,9 @@ the most expressive, so it is the common shape): `cache: true | '5m' | '1h' |
   only derives a stable `prompt_cache_key`.
 - Gemini: when a contiguous cacheable prefix exceeds the threshold, lazily call
   `caches.create` once, store the returned `cachedContent` name in session vars,
-  and pass `cachedContent` on later turns (it cannot be combined with
-  per-request `systemInstruction` / `tools`).
+  and pass `cachedContent` on later turns. Any `systemInstruction` and `tools`
+  that should be cached must be included when creating the cache; they cannot be
+  added beside `cachedContent` on the later generation request.
 
 Sub-threshold hints are silent no-ops (do not error). Immutability is an asset
 here: PromptTrail's append-only sessions form a stable growing prefix, which is
@@ -1124,8 +1136,8 @@ Basic streaming and structured output land with each native adapter (Phases
 
 ## Open Questions
 
-None outstanding. The earlier open questions have been resolved and folded into
-the sections above:
+Most architectural questions have been resolved and folded into the sections
+above:
 
 - Model API / runtime split, capability taxonomy, and execution modes — Core
   Principle, Capability, Execution Modes.
@@ -1148,5 +1160,19 @@ the sections above:
   WebSocket MCP specifically.
 - `SubagentDefinition` as a core capability — deferred; keep subagents out of
   `withCapabilities()` until a runtime-specific subagent API is verified.
+
+Remaining verification questions:
+
+- Provider-native structured output with an active tool loop: verify OpenAI
+  Responses `tools` + `text.format` sequencing and Gemini `functionCall` +
+  `responseJsonSchema` behavior in adapter tests before making this a default
+  native path.
+- Replay-required artifacts: verify the exact stateless replay requirements for
+  Anthropic signed thinking, Gemini `thoughtSignature`, OpenAI
+  `encrypted_content`, and provider compaction artifacts before allowing
+  `retain` to drop them.
+- Provider caching: verify Gemini `CachedContent` creation constraints with
+  `systemInstruction` and `tools`, and confirm the intended OpenAI
+  `prompt_cache_key` mapping against current Responses behavior.
 
 Add new questions here as they arise.
