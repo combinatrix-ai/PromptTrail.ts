@@ -326,4 +326,59 @@ describe('observer bus', () => {
     releaseFirst?.();
     await emitLive;
   });
+
+  it('emits observer.failed without failing best-effort observer delivery', async () => {
+    const seen: string[] = [];
+    const bus = new ObserverBus([
+      {
+        name: 'failing',
+        handle(event) {
+          seen.push(`failing:${event.type}`);
+          throw new Error('observer broke');
+        },
+      },
+      {
+        name: 'reporter',
+        handle(event) {
+          seen.push(`reporter:${event.type}`);
+        },
+      },
+    ]);
+
+    await bus.emit({
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+    });
+
+    expect(seen).toEqual([
+      'failing:tool.started',
+      'reporter:tool.started',
+      'reporter:observer.failed',
+    ]);
+  });
+
+  it('throws observer failures when strictObservers is enabled', async () => {
+    const bus = new ObserverBus(
+      [
+        {
+          name: 'failing',
+          handle() {
+            throw new Error('observer broke');
+          },
+        },
+      ],
+      { strictObservers: true },
+    );
+
+    await expect(
+      bus.emit({
+        id: 'event-1',
+        type: 'tool.started',
+        at: '2026-01-01T00:00:00.000Z',
+        seq: 3,
+      }),
+    ).rejects.toThrow('observer broke');
+  });
 });

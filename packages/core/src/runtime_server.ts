@@ -3,6 +3,7 @@ import type {
   PromptTrailApp,
 } from './durable';
 import {
+  ObserverFailureError,
   ObserverBus,
   type ExecutionEvent,
   type ObserverLike,
@@ -105,6 +106,7 @@ export interface RuntimeServerOptions {
   adapters: readonly RuntimeAdapter[];
   activity?: RuntimeActivity | false;
   observers?: readonly ObserverLike[];
+  strictObservers?: boolean;
   errorMessage?:
     | string
     | ((ctx: RuntimeServerErrorContext) => string | undefined);
@@ -124,7 +126,9 @@ export class RuntimeServer {
   private eventSeq = 0;
 
   constructor(private readonly options: RuntimeServerOptions) {
-    this.observerBus = new ObserverBus(options.observers ?? []);
+    this.observerBus = new ObserverBus(options.observers ?? [], {
+      strictObservers: options.strictObservers,
+    });
     for (const adapter of options.adapters) {
       this.sources.push(...(adapter.sources ?? []));
       for (const delivery of adapter.deliveries ?? []) {
@@ -190,6 +194,12 @@ export class RuntimeServer {
         await this.deliverAssistantMessages(event, dispatched);
       } catch (error) {
         await this.deliverError(sourceType, event, delivery, error);
+        if (
+          this.options.strictObservers &&
+          error instanceof ObserverFailureError
+        ) {
+          throw error;
+        }
       } finally {
         await activityHandle?.stop();
       }
@@ -277,18 +287,6 @@ export class RuntimeServer {
           dispatched.delivery,
           deliveryAttempt.message,
         );
-        this.options.runtime.markAssistantDelivery(
-          dispatched.conversationId,
-          deliveryAttempt.idempotencyKey,
-          'completed',
-        );
-        this.deliveryTracker.markDelivered(deliveryAttempt);
-        await this.emitDeliveryEvent('delivery.completed', {
-          event,
-          conversationId: dispatched.conversationId,
-          delivery: dispatched.delivery,
-          deliveryAttempt,
-        });
       } catch (error) {
         this.options.runtime.markAssistantDelivery(
           dispatched.conversationId,
@@ -305,6 +303,18 @@ export class RuntimeServer {
         });
         throw error;
       }
+      this.options.runtime.markAssistantDelivery(
+        dispatched.conversationId,
+        deliveryAttempt.idempotencyKey,
+        'completed',
+      );
+      this.deliveryTracker.markDelivered(deliveryAttempt);
+      await this.emitDeliveryEvent('delivery.completed', {
+        event,
+        conversationId: dispatched.conversationId,
+        delivery: dispatched.delivery,
+        deliveryAttempt,
+      });
     }
   }
 
@@ -355,19 +365,6 @@ export class RuntimeServer {
         entry.target,
         entry.message,
       );
-      this.options.runtime.markAssistantDelivery(
-        runId,
-        entry.idempotencyKey,
-        'completed',
-      );
-      this.deliveryTracker.markDelivered(entry);
-      await this.emitDeliveryEvent('delivery.completed', {
-        event,
-        conversationId: runId,
-        delivery: entry.target,
-        deliveryAttempt: entry,
-      });
-      return true;
     } catch (error) {
       this.options.runtime.markAssistantDelivery(
         runId,
@@ -384,6 +381,19 @@ export class RuntimeServer {
       });
       return false;
     }
+    this.options.runtime.markAssistantDelivery(
+      runId,
+      entry.idempotencyKey,
+      'completed',
+    );
+    this.deliveryTracker.markDelivered(entry);
+    await this.emitDeliveryEvent('delivery.completed', {
+      event,
+      conversationId: runId,
+      delivery: entry.target,
+      deliveryAttempt: entry,
+    });
+    return true;
   }
 
   private async emitDeliveryEvent(
@@ -424,7 +434,10 @@ export class RuntimeServer {
         delivery: options.delivery,
         runtimeEvent: options.event,
       });
-    } catch {
+    } catch (error) {
+      if (this.options.strictObservers) {
+        throw error;
+      }
       // Delivery observers are presentation side effects; final delivery state
       // is owned by the outbox and must not be rolled back by observer failure.
     }

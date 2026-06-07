@@ -211,11 +211,31 @@ export type ObserverLike =
   | Observer
   | ((event: ExecutionEvent, context: ObserverContext) => Promise<void> | void);
 
+export interface ObserverBusOptions {
+  strictObservers?: boolean;
+}
+
+export class ObserverFailureError extends Error {
+  constructor(
+    readonly observerName: string,
+    readonly event: ExecutionEvent,
+    readonly failure: unknown,
+  ) {
+    super(
+      `Observer ${observerName} failed handling ${event.type}: ${errorMessage(failure)}`,
+    );
+    this.name = 'ObserverFailureError';
+  }
+}
+
 export class ObserverBus {
   private readonly observers: Observer[];
   private readonly queues = new Map<string, Promise<void>>();
 
-  constructor(observers: readonly ObserverLike[] = []) {
+  constructor(
+    observers: readonly ObserverLike[] = [],
+    private readonly options: ObserverBusOptions = {},
+  ) {
     this.observers = observers.map(normalizeObserver);
   }
 
@@ -223,16 +243,88 @@ export class ObserverBus {
     event: ExecutionEvent,
     context: ObserverContext = {},
   ): Promise<void> {
+    const failures = (
+      await Promise.all(
+        this.observers
+          .map((observer, index) => ({
+            key: observer.name ?? `observer:${index}`,
+            observer,
+          }))
+          .filter(({ observer }) => observerReceives(observer, event))
+          .map(async ({ key, observer }) => {
+            try {
+              await this.enqueue(key, observer, event, context);
+              return undefined;
+            } catch (error) {
+              const failure = new ObserverFailureError(
+                observer.name ?? key,
+                event,
+                error,
+              );
+              await this.emitObserverFailed(
+                key,
+                observer,
+                event,
+                error,
+                context,
+              );
+              return failure;
+            }
+          }),
+      )
+    ).filter((error): error is ObserverFailureError => error !== undefined);
+    if (this.options.strictObservers && failures.length > 0) {
+      throw failures[0];
+    }
+  }
+
+  private async emitObserverFailed(
+    failedKey: string,
+    failedObserver: Observer,
+    originalEvent: ExecutionEvent,
+    error: unknown,
+    context: ObserverContext,
+  ): Promise<void> {
+    const failureEvent: ExecutionEvent = {
+      id: `${originalEvent.id}:observer:${failedKey}:failed`,
+      type: 'observer.failed',
+      at: new Date().toISOString(),
+      seq: originalEvent.seq,
+      conversationId: originalEvent.conversationId,
+      runId: originalEvent.runId,
+      turnId: originalEvent.turnId,
+      templatePath: originalEvent.templatePath,
+      stepId: originalEvent.stepId,
+      replay: originalEvent.replay ?? 'live',
+      raw: {
+        observer: failedObserver.name,
+        observerKey: failedKey,
+        event: {
+          id: originalEvent.id,
+          type: originalEvent.type,
+          seq: originalEvent.seq,
+        },
+        error,
+      },
+    };
     await Promise.all(
       this.observers
         .map((observer, index) => ({
           key: observer.name ?? `observer:${index}`,
           observer,
         }))
-        .filter(({ observer }) => observerReceives(observer, event))
-        .map(({ key, observer }) =>
-          this.enqueue(key, observer, event, context),
-        ),
+        .filter(
+          ({ key, observer }) =>
+            key !== failedKey && observerReceives(observer, failureEvent),
+        )
+        .map(async ({ key, observer }) => {
+          try {
+            await this.enqueue(key, observer, failureEvent, context);
+          } catch {
+            // observer.failed is diagnostic only; failures while reporting it
+            // must not recurse indefinitely.
+          }
+        }),
     );
   }
 
@@ -277,6 +369,10 @@ export function observerReceives(
     case 'adopt-replayed':
       return true;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function diffSession<TVars extends Vars, TAttrs extends Attrs>(

@@ -433,6 +433,169 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('surfaces observer failures when strictObservers is enabled', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const main = agent('main').chat('chat', () => 'reply');
+    const bundle = PromptTrail.bundle({
+      name: 'server-strict-observer-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      strictObservers: true,
+      observers: [
+        {
+          name: 'failing',
+          handle(event) {
+            if (event.type === 'delivery.pending') {
+              throw new Error('observer broke');
+            }
+          },
+        },
+      ],
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver() {
+                // delivery.pending observer fails before the delivery driver.
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+    await expect(
+      emit?.({
+        source: 'discord',
+        guild: 'workroom',
+        channel: 'general',
+        channelId: 'C_general',
+        author: 'alice',
+        authorId: 'U_alice',
+        authorBot: false,
+        content: 'hello',
+      }),
+    ).rejects.toThrow('observer broke');
+  });
+
+  it('does not roll back completed delivery when strict observer fails on completion', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let deliveries = 0;
+    const main = agent('main').chat('chat', () => 'reply');
+    const bundle = PromptTrail.bundle({
+      name: 'server-strict-completed-observer-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: app,
+      strictObservers: true,
+      observers: [
+        {
+          name: 'failing',
+          handle(event) {
+            if (event.type === 'delivery.completed') {
+              throw new Error('observer broke');
+            }
+          },
+        },
+      ],
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver() {
+                deliveries++;
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+    await expect(
+      emit?.({
+        source: 'discord',
+        guild: 'workroom',
+        channel: 'general',
+        channelId: 'C_general',
+        author: 'alice',
+        authorId: 'U_alice',
+        authorBot: false,
+        content: 'hello',
+      }),
+    ).rejects.toThrow('observer broke');
+
+    expect(deliveries).toBe(1);
+    expect(
+      app
+        .assistantDeliveryOutbox(
+          'discord:guild:workroom:channel:C_general:user:U_alice',
+        )
+        .map((entry) => entry.status),
+    ).toEqual(['completed']);
+  });
+
   it('retries pending final deliveries before starting sources', async () => {
     const order: string[] = [];
     const deliveries: string[] = [];
