@@ -683,39 +683,88 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     (before.request as
       | { id: string; name: string; arguments: Record<string, unknown> }
       | undefined) ?? call;
-  const wrappedTool = await runRuntimeMiddlewareWrapper(options.runtime, {
-    phase: 'wrapToolCall',
-    session: before.session,
-    request: nextCall,
-    call: async ({ session, request }) => {
-      await emitStreamingToolEvent(options.runtime, 'tool.started', request);
-      return executeStreamingToolCall(request, {
-        provider: options.provider,
-        tools: options.tools,
-        session,
-        approvalHandler: options.approvalHandler,
-        context: options.context,
-      }) as Promise<Message<TAttrs>>;
-    },
-  });
-  assertStreamingToolCommandSupported(wrappedTool.command);
-  const message = wrappedTool.result;
-  const after = await runRuntimeExecutionPhase(options.runtime, {
-    phase: 'afterTool',
-    session: wrappedTool.session,
-    request: wrappedTool.request,
-    result: message,
-  });
-  assertStreamingToolCommandSupported(after.command);
-  await emitStreamingToolEvent(
-    options.runtime,
-    'tool.completed',
-    wrappedTool.request,
-  );
-  return {
-    message: (after.result as Message<TAttrs> | undefined) ?? message,
-    session: after.session,
+  const openToolEvents: Array<{
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  }> = [];
+  const closeToolEvents = async (
+    type: 'tool.completed' | 'tool.failed',
+    request: { id: string; name: string; arguments: Record<string, unknown> },
+    error?: unknown,
+    result?: Message<TAttrs>,
+  ) => {
+    if (openToolEvents.length === 0) {
+      await emitStreamingToolEvent(
+        options.runtime,
+        type,
+        request,
+        error,
+        result,
+      );
+      return;
+    }
+    while (openToolEvents.length > 0) {
+      const startedRequest = openToolEvents.shift()!;
+      await emitStreamingToolEvent(
+        options.runtime,
+        type,
+        startedRequest,
+        error,
+        result,
+      );
+    }
   };
+
+  let wrappedRequest = nextCall;
+  try {
+    const wrappedTool = await runRuntimeMiddlewareWrapper(options.runtime, {
+      phase: 'wrapToolCall',
+      session: before.session,
+      request: nextCall,
+      call: async ({ session, request }) => {
+        if (
+          await emitStreamingToolEvent(options.runtime, 'tool.started', request)
+        ) {
+          openToolEvents.push(request);
+        }
+        return executeStreamingToolCall(request, {
+          provider: options.provider,
+          tools: options.tools,
+          session,
+          approvalHandler: options.approvalHandler,
+          context: options.context,
+        }) as Promise<Message<TAttrs>>;
+      },
+    });
+    assertStreamingToolCommandSupported(wrappedTool.command);
+    wrappedRequest = wrappedTool.request;
+    const message = wrappedTool.result;
+    const after = await runRuntimeExecutionPhase(options.runtime, {
+      phase: 'afterTool',
+      session: wrappedTool.session,
+      request: wrappedRequest,
+      result: message,
+    });
+    assertStreamingToolCommandSupported(after.command);
+    const resultMessage =
+      (after.result as Message<TAttrs> | undefined) ?? message;
+    await closeToolEvents(
+      isToolResultErrorMessage(resultMessage)
+        ? 'tool.failed'
+        : 'tool.completed',
+      wrappedRequest,
+      undefined,
+      resultMessage,
+    );
+    return {
+      message: resultMessage,
+      session: after.session,
+    };
+  } catch (error) {
+    await closeToolEvents('tool.failed', wrappedRequest, error);
+    throw error;
+  }
 }
 
 async function executeStreamingToolCall(
@@ -767,11 +816,13 @@ function assertStreamingToolCommandSupported(
 
 async function emitStreamingToolEvent<TAttrs extends Attrs>(
   runtime: ExecutionRuntimeState<any, TAttrs>,
-  type: 'tool.started' | 'tool.completed',
+  type: 'tool.started' | 'tool.completed' | 'tool.failed',
   call: { id: string; name: string; arguments: Record<string, unknown> },
-): Promise<void> {
+  error?: unknown,
+  result?: Message<TAttrs>,
+): Promise<boolean> {
   if (!runtime.emitEvent || !runtime.nextEventSeq) {
-    return;
+    return false;
   }
   const seq = runtime.nextEventSeq();
   const event: ExecutionEvent = {
@@ -783,11 +834,31 @@ async function emitStreamingToolEvent<TAttrs extends Attrs>(
     source: 'tool',
     stepId: call.id,
     idempotencyKey: `${call.id}:${type}`,
-    raw: { call },
+    raw: { call, result },
     toolCallId: call.id,
     name: call.name,
   };
+  if (error !== undefined) {
+    event.error = error;
+  }
   await runtime.emitEvent(event);
+  return true;
+}
+
+function isToolResultErrorMessage(message: Message): boolean {
+  if (message.type !== 'tool_result' || typeof message.content !== 'string') {
+    return false;
+  }
+  try {
+    const result = JSON.parse(message.content) as unknown;
+    return (
+      typeof result === 'object' &&
+      result !== null &&
+      (result as Record<string, unknown>).isError === true
+    );
+  } catch {
+    return false;
+  }
 }
 
 function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {

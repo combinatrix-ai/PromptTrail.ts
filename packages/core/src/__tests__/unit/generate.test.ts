@@ -494,6 +494,151 @@ describe('streamPromptTrailToolLoop', () => {
       '1:tool.completed:call-1',
     ]);
   });
+
+  it('emits tool.failed when streamed tool middleware fails after next', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: () => ({ value: 'result' }),
+    });
+    const events: string[] = [];
+    let seq = 0;
+    const runtime = createExecutionRuntimeState({
+      middleware: [
+        Middleware.create({
+          name: 'toolFailure',
+          wrapToolCall: async (_context, next) => {
+            await next();
+            throw new Error('tool middleware failed');
+          },
+          afterTool: () => {
+            events.push('afterTool');
+          },
+        }),
+      ],
+      emitEvent: (event) => {
+        events.push(`${event.seq}:${event.type}:${event.toolCallId ?? '-'}`);
+      },
+      nextEventSeq: () => seq++,
+    });
+
+    await expect(
+      collectAsync(
+        streamPromptTrailToolLoop(
+          Session.create().addMessage({
+            type: 'user',
+            content: 'Lookup docs.',
+          }),
+          {
+            provider: {
+              type: 'openai',
+              apiKey: 'test-key',
+              modelName: 'gpt-5.4-nano',
+              api: 'responses',
+            },
+            capabilities: [lookup],
+          },
+          {
+            provider: 'openai',
+            attrsKey: 'openai',
+            runtime,
+            events: () =>
+              stream([
+                {
+                  type: 'tool.start',
+                  index: 0,
+                  callId: 'call-1',
+                  name: 'lookup',
+                },
+                {
+                  type: 'tool.args.done',
+                  index: 0,
+                  callId: 'call-1',
+                  args: { query: 'original' },
+                },
+                { type: 'message.done', finishReason: 'tool_calls' },
+              ]),
+          },
+        ),
+      ),
+    ).rejects.toThrow('tool middleware failed');
+
+    expect(events).toEqual(['0:tool.started:call-1', '1:tool.failed:call-1']);
+  });
+
+  it('emits tool.failed when streamed tool execution returns an error result', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: () => {
+        throw new Error('lookup unavailable');
+      },
+    });
+    const events: string[] = [];
+    let seq = 0;
+    const runtime = createExecutionRuntimeState({
+      emitEvent: (event) => {
+        events.push(`${event.seq}:${event.type}:${event.toolCallId ?? '-'}`);
+      },
+      nextEventSeq: () => seq++,
+    });
+
+    const messages = await collectAsync(
+      streamPromptTrailToolLoop(
+        Session.create().addMessage({
+          type: 'user',
+          content: 'Lookup docs.',
+        }),
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          capabilities: [lookup],
+        },
+        {
+          provider: 'openai',
+          attrsKey: 'openai',
+          runtime,
+          events: (turnSession) =>
+            turnSession.messages.length === 1
+              ? stream([
+                  {
+                    type: 'tool.start',
+                    index: 0,
+                    callId: 'call-1',
+                    name: 'lookup',
+                  },
+                  {
+                    type: 'tool.args.done',
+                    index: 0,
+                    callId: 'call-1',
+                    args: { query: 'original' },
+                  },
+                  { type: 'message.done', finishReason: 'tool_calls' },
+                ])
+              : stream([
+                  { type: 'text.delta', index: 0, delta: 'Done' },
+                  { type: 'message.done', finishReason: 'stop' },
+                ]),
+        },
+      ),
+    );
+
+    expect(messages[1]).toMatchObject({
+      type: 'tool_result',
+      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+    });
+    expect(JSON.parse(messages[1].content as string)).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'lookup unavailable' }],
+    });
+    expect(events).toEqual(['0:tool.started:call-1', '1:tool.failed:call-1']);
+  });
 });
 
 describe('promptTrailStreamEventsToMessages', () => {
