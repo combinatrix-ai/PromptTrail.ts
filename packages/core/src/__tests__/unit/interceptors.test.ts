@@ -335,6 +335,18 @@ describe('execution interceptors', () => {
           );
           return fn();
         },
+        async now(name) {
+          provided.push(
+            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
+          );
+          return 123;
+        },
+        async randomId(name) {
+          provided.push(
+            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
+          );
+          return 'id';
+        },
         async activity(_name, _options, fn) {
           return fn();
         },
@@ -364,6 +376,12 @@ describe('execution interceptors', () => {
         durableBoundary: () => ({
           async memo(_name, fn) {
             return fn();
+          },
+          async now() {
+            return 456;
+          },
+          async randomId() {
+            return 'id';
           },
           async activity(_name, _options, fn) {
             return fn();

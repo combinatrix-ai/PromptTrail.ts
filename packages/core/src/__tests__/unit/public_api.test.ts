@@ -5,6 +5,7 @@ import type {
   AgentExecutionOptions,
   DurableTool,
   ExecutionDurableActivityOptions,
+  ExecutionDurableBoundary,
   ObserverDeliveryBindingStore,
 } from '../../index';
 
@@ -143,5 +144,25 @@ describe('public API surface', () => {
     expect(options.observerDeliveryBindings?.deliveryBindingStore).toBe(
       deliveryBindingStore,
     );
+  });
+
+  it('types durable boundary memo sugar helpers', async () => {
+    const boundary: ExecutionDurableBoundary = {
+      async memo(_name, fn) {
+        return fn();
+      },
+      async now() {
+        return 1_000;
+      },
+      async randomId() {
+        return 'id-1';
+      },
+      async activity(_name, _options, fn) {
+        return fn();
+      },
+    };
+
+    await expect(boundary.now('createdAt')).resolves.toBe(1_000);
+    await expect(boundary.randomId('traceId')).resolves.toBe('id-1');
   });
 });

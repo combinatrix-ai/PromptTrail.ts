@@ -52,6 +52,8 @@ export type ExecutionDurableActivityOptions =
 
 export interface ExecutionDurableBoundary {
   memo<T>(name: string, fn: () => T | Promise<T>): Promise<T>;
+  now(name: string): Promise<number>;
+  randomId(name: string): Promise<string>;
   activity<T>(
     name: string,
     options: ExecutionDurableActivityOptions,
@@ -919,6 +921,12 @@ function rejectingDurableBoundary(
     async memo() {
       throw new Error(durableEffectError(label, 'memo', reason));
     },
+    async now() {
+      throw new Error(durableEffectError(label, 'now', reason));
+    },
+    async randomId() {
+      throw new Error(durableEffectError(label, 'randomId', reason));
+    },
     async activity() {
       throw new Error(durableEffectError(label, 'activity', reason));
     },
@@ -927,7 +935,7 @@ function rejectingDurableBoundary(
 
 function durableEffectError(
   label: string,
-  method: 'memo' | 'activity',
+  method: 'memo' | 'now' | 'randomId' | 'activity',
   reason: 'materialized-phase' | 'unavailable',
 ): string {
   if (reason === 'materialized-phase') {

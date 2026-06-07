@@ -970,6 +970,64 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals durable now and randomId sugar inside replayable phase handlers', async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    let handlerCalls = 0;
+    Date.now = () => now++;
+    try {
+      const assistant = agent('sugar-effects').assistant(
+        'reply',
+        (session) =>
+          `sugar:${session.getVarsObject().createdAt}:${session.getVarsObject().traceId}`,
+      );
+      const app = PromptTrail.app({
+        agents: { sugar: assistant },
+        store: memoryStore(),
+        middleware: [
+          Middleware.create({
+            name: 'sugar',
+            durability: 'replayable-handler',
+            beforeModel: async ({ durable }) => {
+              handlerCalls++;
+              const createdAt = await durable.now('createdAt');
+              const traceId = await durable.randomId('traceId');
+              if (handlerCalls === 1) {
+                throw new Error('phase crash');
+              }
+              return { session: { vars: { createdAt, traceId } } };
+            },
+          }),
+        ],
+      });
+
+      await expect(
+        app.run({
+          agent: 'sugar',
+          runId: 'run-replayable-sugar',
+          durable: true,
+        }),
+      ).rejects.toThrow('phase crash');
+      now = 5_000;
+      const replay = await app.resume('run-replayable-sugar');
+      const vars = replay.session.getVarsObject();
+
+      expect(replay.status).toBe('done');
+      expect(vars.createdAt).toBe(1_000);
+      expect(vars.traceId).toEqual(expect.any(String));
+      expect(handlerCalls).toBe(2);
+      expect(now).toBe(5_000);
+      expect(app.journal('run-replayable-sugar')).toEqual([
+        'reply/beforeModel/middleware[0]/beforeModel/sugar/memo/createdAt',
+        'reply/beforeModel/middleware[0]/beforeModel/sugar/memo/traceId',
+        'reply/beforeModel',
+        'reply/model',
+      ]);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   it('retries durable activities inside replayable phase handlers', async () => {
     let activityCalls = 0;
     const assistant = agent('retryable-effect').assistant(
@@ -1679,90 +1737,106 @@ describe('durable agent runtime', () => {
   });
 
   it('replays durable effects inside tool bodies after a mid-tool crash', async () => {
+    const originalNow = Date.now;
+    let now = 7_000;
     let toolCalls = 0;
     let memoCalls = 0;
     let activityCalls = 0;
-    const assistant = agent('tool-effects')
-      .tool('lookup', {
-        activity: {
-          kind: 'external-read',
-          retry: { maxAttempts: 2 },
-        },
-        execute: async (_args, { durable }) => {
-          toolCalls++;
-          const token = await durable.memo('token', () => {
-            memoCalls++;
-            return `token:${memoCalls}`;
-          });
-          const profile = await durable.activity(
-            'read-profile',
-            { kind: 'external-read' },
-            () => {
-              activityCalls++;
-              return `profile:${activityCalls}`;
-            },
-          );
-          if (toolCalls === 1) {
-            throw new Error('tool crash');
-          }
-          return `${token}:${profile}:tool:${toolCalls}`;
-        },
-      })
-      .turn('main', (turn) =>
-        turn
-          .steer()
-          .assistant('reply', () => ({
-            content: 'need tool',
-            toolCalls: [
-              {
-                id: 'call-1',
-                name: 'lookup',
-                arguments: {},
+    Date.now = () => now++;
+    try {
+      const assistant = agent('tool-effects')
+        .tool('lookup', {
+          activity: {
+            kind: 'external-read',
+            retry: { maxAttempts: 2 },
+          },
+          execute: async (_args, { durable }) => {
+            toolCalls++;
+            const token = await durable.memo('token', () => {
+              memoCalls++;
+              return `token:${memoCalls}`;
+            });
+            const startedAt = await durable.now('startedAt');
+            const traceId = await durable.randomId('traceId');
+            const profile = await durable.activity(
+              'read-profile',
+              { kind: 'external-read' },
+              () => {
+                activityCalls++;
+                return `profile:${activityCalls}`;
               },
-            ],
-          }))
-          .runTools('tools')
-          .awaitUser(),
+            );
+            if (toolCalls === 1) {
+              throw new Error('tool crash');
+            }
+            return `${token}:${startedAt}:${traceId}:${profile}:tool:${toolCalls}`;
+          },
+        })
+        .turn('main', (turn) =>
+          turn
+            .steer()
+            .assistant('reply', () => ({
+              content: 'need tool',
+              toolCalls: [
+                {
+                  id: 'call-1',
+                  name: 'lookup',
+                  arguments: {},
+                },
+              ],
+            }))
+            .runTools('tools')
+            .awaitUser(),
+        );
+      const app = PromptTrail.app({
+        agents: { tools: assistant },
+        store: memoryStore(),
+      });
+
+      await expect(
+        app.run({
+          agent: 'tools',
+          runId: 'run-tool-effects',
+          input: 'hello',
+          durable: true,
+        }),
+      ).rejects.toThrow('tool crash');
+
+      expect(app.journal('run-tool-effects')).toEqual([
+        'main/steer/peek',
+        'main/reply/model',
+        'main/tools/call-1/tool/lookup/memo/token',
+        'main/tools/call-1/tool/lookup/memo/startedAt',
+        'main/tools/call-1/tool/lookup/memo/traceId',
+        'main/tools/call-1/tool/lookup/activity/read-profile',
+      ]);
+
+      const replay = await app.resume('run-tool-effects');
+
+      expect(replay.status).toBe('suspended');
+      expect(replay.session.getLastMessage()).toMatchObject({
+        type: 'tool_result',
+        attrs: { toolCallId: 'call-1' },
+      });
+      expect(replay.session.getLastMessage()?.content).toMatch(
+        /^token:1:7000:.+:profile:1:tool:2$/,
       );
-    const app = PromptTrail.app({
-      agents: { tools: assistant },
-      store: memoryStore(),
-    });
-
-    await expect(
-      app.run({
-        agent: 'tools',
-        runId: 'run-tool-effects',
-        input: 'hello',
-        durable: true,
-      }),
-    ).rejects.toThrow('tool crash');
-
-    expect(app.journal('run-tool-effects')).toEqual([
-      'main/steer/peek',
-      'main/reply/model',
-      'main/tools/call-1/tool/lookup/memo/token',
-      'main/tools/call-1/tool/lookup/activity/read-profile',
-    ]);
-
-    const replay = await app.resume('run-tool-effects');
-
-    expect(replay.status).toBe('suspended');
-    expect(replay.session.getLastMessage()).toMatchObject({
-      type: 'tool_result',
-      content: 'token:1:profile:1:tool:2',
-      attrs: { toolCallId: 'call-1' },
-    });
-    expect(toolCalls).toBe(2);
-    expect(memoCalls).toBe(1);
-    expect(activityCalls).toBe(1);
-    expect(app.journal('run-tool-effects')).toEqual([
-      'main/steer/peek',
-      'main/reply/model',
-      'main/tools/call-1/tool/lookup/memo/token',
-      'main/tools/call-1/tool/lookup/activity/read-profile',
-      'main/tools/call-1',
-    ]);
+      expect(toolCalls).toBe(2);
+      expect(memoCalls).toBe(1);
+      expect(activityCalls).toBe(1);
+      expect(now).toBe(7_001);
+      expect(app.journal('run-tool-effects')).toEqual([
+        'main/steer/peek',
+        'main/reply/model',
+        'main/tools/call-1/tool/lookup/memo/token',
+        'main/tools/call-1/tool/lookup/memo/startedAt',
+        'main/tools/call-1/tool/lookup/memo/traceId',
+        'main/tools/call-1/tool/lookup/activity/read-profile',
+        'main/tools/call-1',
+      ]);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   it('retries durable tool activities before journaling the tool result', async () => {

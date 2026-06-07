@@ -396,8 +396,11 @@ function createDurableBoundaryProvider<
   parentStepId: string,
   nestedStepIds: string[],
 ): ExecutionDurableBoundaryProvider {
-  return (handler) => ({
-    memo: async (name, fn) => {
+  return (handler) => {
+    const memo = async <T>(
+      name: string,
+      fn: () => T | Promise<T>,
+    ): Promise<T> => {
       const nestedStepId = durableEffectStepId(
         parentStepId,
         handler,
@@ -406,21 +409,26 @@ function createDurableBoundaryProvider<
       );
       nestedStepIds.push(nestedStepId);
       return journaled(state, nestedStepId, fn);
-    },
-    activity: async (name, options, fn) => {
-      assertDurableHandlerActivityOptions(handler, name, options);
-      const nestedStepId = durableEffectStepId(
-        parentStepId,
-        handler,
-        'activity',
-        name,
-      );
-      nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, () =>
-        runDurableActivityWithRetry(options, fn),
-      );
-    },
-  });
+    };
+    return {
+      memo,
+      now: (name) => memo(name, () => Date.now()),
+      randomId: (name) => memo(name, () => durableRandomId()),
+      activity: async (name, options, fn) => {
+        assertDurableHandlerActivityOptions(handler, name, options);
+        const nestedStepId = durableEffectStepId(
+          parentStepId,
+          handler,
+          'activity',
+          name,
+        );
+        nestedStepIds.push(nestedStepId);
+        return journaled(state, nestedStepId, () =>
+          runDurableActivityWithRetry(options, fn),
+        );
+      },
+    };
+  };
 }
 
 function durableEffectStepId(
@@ -450,17 +458,23 @@ function createDurableToolBoundary<TVars extends Vars, TAttrs extends Attrs>(
   call: ToolCall,
   nestedStepIds: string[],
 ): ExecutionDurableBoundary {
+  const memo = async <T>(
+    name: string,
+    fn: () => T | Promise<T>,
+  ): Promise<T> => {
+    const nestedStepId = durableToolEffectStepId(
+      parentStepId,
+      call,
+      'memo',
+      name,
+    );
+    nestedStepIds.push(nestedStepId);
+    return journaled(state, nestedStepId, fn);
+  };
   return {
-    memo: async (name, fn) => {
-      const nestedStepId = durableToolEffectStepId(
-        parentStepId,
-        call,
-        'memo',
-        name,
-      );
-      nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, fn);
-    },
+    memo,
+    now: (name) => memo(name, () => Date.now()),
+    randomId: (name) => memo(name, () => durableRandomId()),
     activity: async (name, options, fn) => {
       assertDurableToolActivityOptions(call, name, options);
       const nestedStepId = durableToolEffectStepId(
@@ -475,6 +489,16 @@ function createDurableToolBoundary<TVars extends Vars, TAttrs extends Attrs>(
       );
     },
   };
+}
+
+function durableRandomId(): string {
+  const cryptoLike = globalThis.crypto as
+    | { randomUUID?: () => string }
+    | undefined;
+  return (
+    cryptoLike?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 function durableToolEffectStepId(
