@@ -245,11 +245,14 @@ export type ObserverLike =
   | Observer
   | ((event: ExecutionEvent, context: ObserverContext) => Promise<void> | void);
 
-export interface ObserverBusOptions {
-  strictObservers?: boolean;
+export interface ObserverDeliveryBindingOptions {
   deliveryBindingStore?: ObserverDeliveryBindingStore | false;
   deliveryBindingTtlMs?: number;
   maxDeliveryBindingEntries?: number;
+}
+
+export interface ObserverBusOptions extends ObserverDeliveryBindingOptions {
+  strictObservers?: boolean;
 }
 
 export class ObserverFailureError extends Error {

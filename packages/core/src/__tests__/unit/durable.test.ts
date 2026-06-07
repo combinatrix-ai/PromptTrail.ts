@@ -7,6 +7,7 @@ import {
   manualSource,
   memoryStore,
 } from '../../durable';
+import type { ObserverDeliveryBindingStore } from '../../execution';
 import { Hook, Middleware } from '../../interceptors';
 
 describe('durable agent runtime', () => {
@@ -539,6 +540,74 @@ describe('durable agent runtime', () => {
       '2:model.completed:reply/model',
       '3:run.completed:-',
     ]);
+  });
+
+  it('threads observer delivery binding stores to app and agent observers', async () => {
+    const claimed: string[] = [];
+    const completed: string[] = [];
+    const deliveryBindingStore: ObserverDeliveryBindingStore = {
+      claim(idempotencyKey, binding) {
+        claimed.push(`${idempotencyKey}:${binding.value}`);
+        return true;
+      },
+      complete(idempotencyKey, binding) {
+        completed.push(`${idempotencyKey}:${binding.value}`);
+      },
+      delete() {},
+    };
+    const assistant = agent('observed-agent')
+      .observe({
+        name: 'agentWriter',
+        async handle(event, context) {
+          if (event.type !== 'run.started') {
+            return;
+          }
+          await context.deliveryBindings?.checkWrite(
+            event.idempotencyKey ?? event.id,
+            () => 'agent',
+          );
+        },
+      })
+      .assistant('reply', () => 'hello');
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      store: memoryStore(),
+      observerDeliveryBindings: { deliveryBindingStore },
+      observers: [
+        {
+          name: 'appWriter',
+          async handle(event, context) {
+            if (event.type !== 'run.started') {
+              return;
+            }
+            await context.deliveryBindings?.checkWrite(
+              event.idempotencyKey ?? event.id,
+              () => 'app',
+            );
+          },
+        },
+      ],
+    });
+
+    const result = await app.run({
+      agent: 'observed',
+      runId: 'run-observer-store',
+      durable: true,
+    });
+
+    expect(result.status).toBe('done');
+    expect(claimed).toEqual(
+      expect.arrayContaining([
+        '["appWriter","run-observer-store:run:0:run.started"]:undefined',
+        '["agentWriter","run-observer-store:run:0:run.started"]:undefined',
+      ]),
+    );
+    expect(completed).toEqual(
+      expect.arrayContaining([
+        '["appWriter","run-observer-store:run:0:run.started"]:app',
+        '["agentWriter","run-observer-store:run:0:run.started"]:agent',
+      ]),
+    );
   });
 
   it('journals durable beforeAgent and afterAgent phases without re-running them on replay', async () => {

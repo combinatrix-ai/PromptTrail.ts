@@ -14,6 +14,7 @@ import {
   type RuntimeAdapter,
   type RuntimeSourceContext,
 } from '../../runtime_server';
+import type { ObserverDeliveryBindingStore } from '../../execution';
 
 describe('RuntimeServer', () => {
   it('routes adapter source events through bindings and delivery drivers', async () => {
@@ -21,6 +22,17 @@ describe('RuntimeServer', () => {
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const observerEvents: string[] = [];
+    const observerWrites: string[] = [];
+    const observerDeliveryBindingStore: ObserverDeliveryBindingStore = {
+      claim(idempotencyKey, binding) {
+        observerWrites.push(`claim:${idempotencyKey}:${binding.value}`);
+        return true;
+      },
+      complete(idempotencyKey, binding) {
+        observerWrites.push(`complete:${idempotencyKey}:${binding.value}`);
+      },
+      delete() {},
+    };
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
@@ -81,8 +93,11 @@ describe('RuntimeServer', () => {
         agents: bundle.agents,
       }),
       activity: { kind: 'typing' },
+      observerDeliveryBindings: {
+        deliveryBindingStore: observerDeliveryBindingStore,
+      },
       observers: [
-        (event) => {
+        async (event, context) => {
           if (
             event.type !== 'delivery.pending' &&
             event.type !== 'delivery.completed'
@@ -92,6 +107,12 @@ describe('RuntimeServer', () => {
           observerEvents.push(
             `${event.seq}:${event.type}:${event.idempotencyKey}`,
           );
+          if (event.type === 'delivery.pending') {
+            await context.deliveryBindings?.checkWrite(
+              event.idempotencyKey,
+              () => 'server',
+            );
+          }
         },
       ],
       adapters: [adapter],
@@ -114,6 +135,10 @@ describe('RuntimeServer', () => {
     expect(observerEvents).toEqual([
       '0:delivery.pending:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
       '1:delivery.completed:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+    ]);
+    expect(observerWrites).toEqual([
+      'claim:["observer:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:undefined',
+      'complete:["observer:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:server',
     ]);
   });
 

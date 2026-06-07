@@ -6,6 +6,7 @@ import {
   ObserverFailureError,
   ObserverBus,
   type ExecutionEvent,
+  type ObserverDeliveryBindingOptions,
   type ObserverLike,
 } from './execution';
 import type { Message } from './message';
@@ -108,6 +109,7 @@ export interface RuntimeServerOptions {
   activity?: RuntimeActivity | false;
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
+  observerDeliveryBindings?: ObserverDeliveryBindingOptions;
   errorMessage?:
     | string
     | ((ctx: RuntimeServerErrorContext) => string | undefined);
@@ -135,6 +137,7 @@ export class RuntimeServer {
     ];
     this.observerBus = new ObserverBus(this.runtimeObservers, {
       strictObservers: options.strictObservers,
+      ...options.observerDeliveryBindings,
     });
     for (const adapter of options.adapters) {
       this.sources.push(...(adapter.sources ?? []));

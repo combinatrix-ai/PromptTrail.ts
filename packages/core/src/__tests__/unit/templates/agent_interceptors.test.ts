@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DELETE_VALUE } from '../../../execution';
+import { DELETE_VALUE, type ObserverDeliveryBinding } from '../../../execution';
 import { Hook, Middleware } from '../../../interceptors';
 import { Message } from '../../../message';
 import type { Session } from '../../../session';
@@ -259,6 +259,42 @@ describe('Agent interceptors', () => {
 
     expect(keys).toHaveLength(4);
     expect(new Set(keys).size).toBe(4);
+  });
+
+  it('threads observer delivery binding options into direct execution observers', async () => {
+    const claimed: string[] = [];
+    const completed: string[] = [];
+    const session = await Agent.create()
+      .observe({
+        name: 'writer',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            event.idempotencyKey ?? event.id,
+            () => `sent:${event.type}`,
+          );
+        },
+      })
+      .user('hello')
+      .execute(undefined, {
+        observerDeliveryBindings: {
+          deliveryBindingStore: {
+            claim(idempotencyKey) {
+              claimed.push(idempotencyKey);
+              return true;
+            },
+            complete(idempotencyKey, binding: ObserverDeliveryBinding) {
+              completed.push(`${idempotencyKey}:${binding.value}`);
+            },
+            delete() {},
+          },
+        },
+      });
+
+    expect(session.getLastMessage()?.content).toBe('hello');
+    expect(claimed).toHaveLength(2);
+    expect(completed).toHaveLength(2);
+    expect(claimed[0]).toContain('writer');
+    expect(completed[0]).toContain('sent:run.started');
   });
 
   it('threads direct execution context into middleware', async () => {

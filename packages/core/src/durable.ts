@@ -5,6 +5,7 @@ import {
   resolveExecutionTransition,
   type ExecutionEvent,
   type ExecutionPatch,
+  type ObserverDeliveryBindingOptions,
   type ObserverLike,
   type ResolvedExecutionCommand,
   type ResolvedExecutionTransition,
@@ -2156,6 +2157,7 @@ export interface PromptTrailAppOptions {
   hooks?: readonly HookDefinition<any, any>[];
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
+  observerDeliveryBindings?: ObserverDeliveryBindingOptions;
 }
 
 export class PromptTrailApp {
@@ -2166,6 +2168,7 @@ export class PromptTrailApp {
   private readonly hooks: readonly HookDefinition<any, any>[];
   private readonly observerBus: ObserverBus;
   private readonly strictObservers?: boolean;
+  private readonly observerDeliveryBindingOptions?: ObserverDeliveryBindingOptions;
   private readonly defaultDurable: boolean;
   private readonly agentObserverBuses = new WeakMap<
     DurableAgent<any, any>,
@@ -2179,8 +2182,10 @@ export class PromptTrailApp {
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
     this.strictObservers = options.strictObservers;
+    this.observerDeliveryBindingOptions = options.observerDeliveryBindings;
     this.observerBus = new ObserverBus(options.observers ?? [], {
       strictObservers: options.strictObservers,
+      ...options.observerDeliveryBindings,
     });
     for (const [name, durableAgent] of Object.entries(options.agents ?? {})) {
       this.agent(name, durableAgent);
@@ -2613,6 +2618,7 @@ export class PromptTrailApp {
     }
     const bus = new ObserverBus(observers, {
       strictObservers: this.strictObservers,
+      ...this.observerDeliveryBindingOptions,
     });
     this.agentObserverBuses.set(agent, bus);
     return bus;

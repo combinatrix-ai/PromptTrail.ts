@@ -10,6 +10,7 @@ import {
 import {
   ObserverBus,
   type ExecutionEvent,
+  type ObserverDeliveryBindingOptions,
   type ObserverLike,
   type ResolvedExecutionCommand,
 } from '../execution';
@@ -317,7 +318,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         : this.root.execute(undefined, runtime);
     }
 
-    const observerBus = new ObserverBus(this.observers);
+    const observerBus = new ObserverBus(this.observers, {
+      ...executionOptions?.observerDeliveryBindings,
+    });
     let seq = 0;
     let current = session ?? Session.create<TC, TM>();
     const runtime =
@@ -490,6 +493,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         session: await this.execute(current, {
           context: executionOptions?.context,
           eventScopeId: durableOptions.runId,
+          observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
           signal: executionOptions?.signal,
           durable: false,
         }),
@@ -526,6 +530,7 @@ export interface AgentExecutionOptions {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   durable?: boolean | AgentDirectDurableOptions;
+  observerDeliveryBindings?: ObserverDeliveryBindingOptions;
 }
 
 interface AgentExecutionInternalOptions extends AgentExecutionOptions {

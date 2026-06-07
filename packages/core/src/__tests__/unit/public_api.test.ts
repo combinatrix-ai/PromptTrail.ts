@@ -5,6 +5,7 @@ import type {
   AgentExecutionOptions,
   DurableTool,
   ExecutionDurableActivityOptions,
+  ObserverDeliveryBindingStore,
 } from '../../index';
 
 describe('public API surface', () => {
@@ -118,6 +119,16 @@ describe('public API surface', () => {
   });
 
   it('types observer delivery binding helpers', async () => {
+    const deliveryBindingStore: ObserverDeliveryBindingStore = {
+      claim() {
+        return true;
+      },
+      complete() {},
+      delete() {},
+    };
+    const options: AgentExecutionOptions = {
+      observerDeliveryBindings: { deliveryBindingStore },
+    };
     const observer = prompttrail.Observer.create({
       name: 'progress',
       async handle(event, context) {
@@ -129,5 +140,8 @@ describe('public API surface', () => {
     });
 
     expect(observer.name).toBe('progress');
+    expect(options.observerDeliveryBindings?.deliveryBindingStore).toBe(
+      deliveryBindingStore,
+    );
   });
 });
