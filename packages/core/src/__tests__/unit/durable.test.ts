@@ -1265,6 +1265,81 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals onSuspend and onResume hooks around awaitUser', async () => {
+    let suspendCalls = 0;
+    let resumeCalls = 0;
+    const assistant = agent('await-hooks').turn('main', (turn) =>
+      turn
+        .awaitUser()
+        .assistant(
+          'reply',
+          (session) =>
+            `seen:${session.getVarsObject().suspended}:${session.getVarsObject().resumed}:${session.getLastMessage()?.content}`,
+        ),
+    );
+    const app = PromptTrail.app({
+      agents: { hooks: assistant },
+      hooks: [
+        Hook.create({
+          name: 'awaitLifecycle',
+          onSuspend: ({ request }) => {
+            suspendCalls++;
+            return {
+              session: {
+                vars: {
+                  suspended: `${(request as { stepId: string }).stepId}:${suspendCalls}`,
+                },
+              },
+            };
+          },
+          onResume: ({ request }) => {
+            resumeCalls++;
+            return {
+              session: {
+                vars: {
+                  resumed: `${(request as { stepId: string }).stepId}:${resumeCalls}`,
+                },
+              },
+            };
+          },
+        }),
+      ],
+      store: memoryStore(),
+    });
+
+    const suspended = await app.run({
+      agent: 'hooks',
+      runId: 'run-await-hooks',
+      durable: true,
+    });
+    const stillSuspended = await app.resume('run-await-hooks');
+    const completed = await app.send({
+      runId: 'run-await-hooks',
+      input: 'hello',
+    });
+
+    expect(suspended.status).toBe('suspended');
+    expect(stillSuspended.status).toBe('suspended');
+    expect(completed.status).toBe('done');
+    expect(suspended.session.getVarsObject()).toEqual({
+      suspended: 'main/input/input:1',
+    });
+    expect(stillSuspended.session.getVarsObject()).toEqual({
+      suspended: 'main/input/input:1',
+    });
+    expect(completed.session.getLastMessage()?.content).toBe(
+      'seen:main/input/input:1:main/input/input:1:hello',
+    );
+    expect(suspendCalls).toBe(1);
+    expect(resumeCalls).toBe(1);
+    expect(app.journal('run-await-hooks')).toEqual([
+      'main/input/input/onSuspend',
+      'main/input/input/onResume',
+      'main/input/input',
+      'main/reply/model',
+    ]);
+  });
+
   it('emits durable model observer events only for live model execution', async () => {
     const events: string[] = [];
     let modelCalls = 0;

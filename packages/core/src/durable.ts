@@ -16,6 +16,7 @@ import {
   type ExecutionDurableBoundary,
   type ExecutionDurableBoundaryProvider,
   type ExecutionHandlerDescriptor,
+  type ExecutionPhase,
   type ExecutionLifecyclePhase,
   type ExecutionPhaseStep,
   type ExecutionWrapperPhase,
@@ -656,10 +657,43 @@ function hasDurablePhaseHandler<TVars extends Vars, TAttrs extends Attrs>(
   state: DurableExecutionState<TVars, TAttrs>,
   phase: ExecutionLifecyclePhase,
 ): boolean {
+  if (phase === 'suspend') {
+    return state.hooks.some((hook) => Boolean(hook.onSuspend ?? hook.onResume));
+  }
   return (
-    state.middleware.some((middleware) => Boolean(middleware[phase])) ||
+    state.middleware.some((middleware) =>
+      Boolean(durableMiddlewareHandlerForPhase(middleware, phase)),
+    ) ||
     state.hooks.some((hook) => Boolean(hookHandlerForDurablePhase(hook, phase)))
   );
+}
+
+function durableMiddlewareHandlerForPhase<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  middleware: MiddlewareDefinition<TVars, TAttrs>,
+  phase: ExecutionLifecyclePhase,
+): unknown {
+  switch (phase) {
+    case 'beforeAgent':
+      return middleware.beforeAgent;
+    case 'afterAgent':
+      return middleware.afterAgent;
+    case 'beforeModel':
+      return middleware.beforeModel;
+    case 'prepareModelInput':
+      return middleware.prepareModelInput;
+    case 'afterModel':
+      return middleware.afterModel;
+    case 'beforeTool':
+      return middleware.beforeTool;
+    case 'afterTool':
+      return middleware.afterTool;
+    case 'suspend':
+    case 'resume':
+      return undefined;
+  }
 }
 
 function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
@@ -679,6 +713,10 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
       return hook.onBeforeTool;
     case 'afterTool':
       return hook.onAfterTool;
+    case 'suspend':
+      return hook.onSuspend;
+    case 'resume':
+      return hook.onResume;
     case 'prepareModelInput':
       return undefined;
   }
@@ -713,7 +751,9 @@ function durablePhaseStepCoordinate<TVars extends Vars, TAttrs extends Attrs>(
 ): string {
   if (step.kind === 'middleware') {
     const middleware = state.middleware[step.registrationIndex];
-    const handler = middleware?.[step.phase];
+    const handler = middleware
+      ? durableMiddlewareStepHandlerForPhase(middleware, step.phase)
+      : undefined;
     if (!handler) {
       return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
     }
@@ -730,6 +770,22 @@ function durablePhaseStepCoordinate<TVars extends Vars, TAttrs extends Attrs>(
     return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
   }
   return `${step.kind}:${step.phase}:${step.registrationIndex}:${hook.name ?? '<anonymous>'}`;
+}
+
+function durableMiddlewareStepHandlerForPhase<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  middleware: MiddlewareDefinition<TVars, TAttrs>,
+  phase: ExecutionPhase,
+): unknown {
+  if (phase === 'wrapModelCall') {
+    return middleware.wrapModelCall;
+  }
+  if (phase === 'wrapToolCall') {
+    return middleware.wrapToolCall;
+  }
+  return durableMiddlewareHandlerForPhase(middleware, phase);
 }
 
 async function runDurableMiddlewareWrapper<
@@ -1029,21 +1085,73 @@ async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
   state: DurableExecutionState<TVars, TAttrs>,
   stepId: string,
 ): Promise<Inbound> {
-  const offset = await journaled(state, stepId, async () => {
-    const inbound = state.inbox.find(
-      (message) => message.offset >= state.cursor,
-    );
-    if (!inbound) {
-      throw new Suspend(stepId);
+  const hadSuspended = await applyAwaitLifecyclePhaseIfNext(
+    state,
+    stepId,
+    'suspend',
+  );
+  const inbound = state.inbox.find((message) => message.offset >= state.cursor);
+  if (!inbound) {
+    if (!hadSuspended) {
+      await runAwaitLifecyclePhase(state, stepId, 'suspend');
     }
+    throw new Suspend(stepId);
+  }
+  if (hadSuspended) {
+    await runAwaitLifecyclePhase(state, stepId, 'resume');
+  }
+  const offset = await journaled(state, stepId, async () => {
     return inbound.offset;
   });
   state.cursor = offset + 1;
-  const inbound = state.inbox.find((message) => message.offset === offset);
-  if (!inbound) {
+  const resolvedInbound = state.inbox.find(
+    (message) => message.offset === offset,
+  );
+  if (!resolvedInbound) {
     throw new Error(`Missing inbox message at offset ${offset}`);
   }
-  return inbound;
+  return resolvedInbound;
+}
+
+async function applyAwaitLifecyclePhaseIfNext<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  phase: 'suspend' | 'resume',
+): Promise<boolean> {
+  const lifecycleStepId = awaitLifecycleStepId(stepId, phase);
+  if (state.journal.sequence[state.sequencePosition] !== lifecycleStepId) {
+    return false;
+  }
+  await runAwaitLifecyclePhase(state, stepId, phase);
+  return true;
+}
+
+async function runAwaitLifecyclePhase<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  phase: 'suspend' | 'resume',
+): Promise<void> {
+  const result = await runDurableExecutionPhase(
+    state,
+    awaitLifecycleStepId(stepId, phase),
+    {
+      phase,
+      session: state.session,
+      request: { stepId },
+    },
+  );
+  assertDurablePhaseCommandSupported(result.command, stepId);
+  state.session = result.session;
+}
+
+function awaitLifecycleStepId(
+  stepId: string,
+  phase: 'suspend' | 'resume',
+): string {
+  return `${stepId}/on${phase === 'suspend' ? 'Suspend' : 'Resume'}`;
 }
 
 async function peekInbox<TVars extends Vars, TAttrs extends Attrs>(
@@ -1487,7 +1595,7 @@ export class DurableAgent<
       }
       case 'awaitUser': {
         const inbound = await awaitInbound(state, `${nodePath}/input`);
-        return session.addMessage(
+        return state.session.addMessage(
           Message.user(inbound.content, inbound.attrs as TAttrs | undefined),
         );
       }

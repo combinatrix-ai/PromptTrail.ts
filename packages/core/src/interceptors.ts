@@ -15,7 +15,9 @@ export type ExecutionLifecyclePhase =
   | 'prepareModelInput'
   | 'afterModel'
   | 'beforeTool'
-  | 'afterTool';
+  | 'afterTool'
+  | 'suspend'
+  | 'resume';
 
 export type ExecutionWrapperPhase = 'wrapModelCall' | 'wrapToolCall';
 
@@ -163,6 +165,8 @@ export interface HookDefinition<
   onAfterModel?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeTool?: HookPhaseHandler<TVars, TAttrs>;
   onAfterTool?: HookPhaseHandler<TVars, TAttrs>;
+  onSuspend?: HookPhaseHandler<TVars, TAttrs>;
+  onResume?: HookPhaseHandler<TVars, TAttrs>;
 }
 
 export const Middleware = {
@@ -447,7 +451,7 @@ export async function runExecutionPhase<
     options.middleware ?? []
   ).entries()) {
     throwIfAborted(options.signal);
-    const handler = middleware[options.phase];
+    const handler = middlewareHandlerForPhase(middleware, options.phase);
     if (!handler) {
       continue;
     }
@@ -790,7 +794,36 @@ function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
       return hook.onBeforeTool;
     case 'afterTool':
       return hook.onAfterTool;
+    case 'suspend':
+      return hook.onSuspend;
+    case 'resume':
+      return hook.onResume;
     case 'prepareModelInput':
+      return undefined;
+  }
+}
+
+function middlewareHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
+  middleware: MiddlewareDefinition<TVars, TAttrs>,
+  phase: ExecutionLifecyclePhase,
+): MiddlewarePhaseHandler<TVars, TAttrs> | undefined {
+  switch (phase) {
+    case 'beforeAgent':
+      return middleware.beforeAgent;
+    case 'afterAgent':
+      return middleware.afterAgent;
+    case 'beforeModel':
+      return middleware.beforeModel;
+    case 'prepareModelInput':
+      return middleware.prepareModelInput;
+    case 'afterModel':
+      return middleware.afterModel;
+    case 'beforeTool':
+      return middleware.beforeTool;
+    case 'afterTool':
+      return middleware.afterTool;
+    case 'suspend':
+    case 'resume':
       return undefined;
   }
 }
