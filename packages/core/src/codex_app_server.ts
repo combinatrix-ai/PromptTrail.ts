@@ -8,7 +8,6 @@ import type { Readable, Writable } from 'node:stream';
 import type { Message } from './message';
 import type { Session, Attrs, Vars } from './session';
 import {
-  retainRuntimeEvents,
   type RetainLevel,
   type RuntimeEvent,
   type RuntimeEventSummary,

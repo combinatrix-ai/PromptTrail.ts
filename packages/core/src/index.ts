@@ -5,6 +5,7 @@ export * from './claude_agent';
 export * from './codex_app_server';
 export * from './content_parts';
 export * from './conversation';
+export * from './execution';
 export * from './generate';
 export * from './generation_options';
 export * from './google_gemini';
