@@ -116,7 +116,12 @@ export function discordGateway(options: DiscordGatewayOptions): RuntimeAdapter {
             console.warn('Discord delivery target is not sendable', target);
             return;
           }
-          await channel.send(message.content);
+          const sent = await channel.send(message.content);
+          return {
+            platform: 'discord',
+            channelId: sent.channelId,
+            messageId: sent.id,
+          };
         },
       },
     ],
@@ -354,10 +359,7 @@ function inMemoryDiscordProgressBindings(options: {
 }
 
 function pruneDiscordProgressBindings(
-  bindings: Map<
-    string,
-    { binding: DiscordProgressBinding; expiresAt: number }
-  >,
+  bindings: Map<string, { binding: DiscordProgressBinding; expiresAt: number }>,
   ttlMs: number,
   maxEntries: number,
 ): void {

@@ -2442,6 +2442,7 @@ export class PromptTrailApp {
     idempotencyKey: string,
     status: AssistantDeliveryOutboxEntry['status'],
     error?: unknown,
+    platformBinding?: unknown,
   ): void {
     const run = this.store.get(runId);
     if (!run) {
@@ -2472,6 +2473,9 @@ export class PromptTrailApp {
     } else {
       entry.error = error;
       entry.lastError = error === undefined ? undefined : errorMessage(error);
+    }
+    if (platformBinding !== undefined) {
+      entry.platformBinding = platformBinding;
     }
     this.store.set(runId, run);
   }

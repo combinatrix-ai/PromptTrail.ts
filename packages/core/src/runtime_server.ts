@@ -56,6 +56,7 @@ export interface RuntimeDeliveryContext {
   idempotencyKey: string;
   event: RuntimeBindingEvent;
   delivery: DeliveryTarget;
+  platformBinding?: unknown;
 }
 
 export interface RuntimeDeliveryDriver<
@@ -66,7 +67,7 @@ export interface RuntimeDeliveryDriver<
     ctx: RuntimeDeliveryContext,
     target: TTarget,
     message: Message,
-  ): Promise<void> | void;
+  ): Promise<unknown> | unknown;
 }
 
 export interface RuntimeActivityContext {
@@ -323,6 +324,7 @@ export class RuntimeServer {
       pending,
     );
     for (const deliveryAttempt of deliveryAttempts) {
+      let platformBinding: unknown;
       try {
         await this.emitDeliveryEvent('delivery.pending', {
           event,
@@ -335,12 +337,13 @@ export class RuntimeServer {
           deliveryAttempt.idempotencyKey,
           'delivering',
         );
-        await driver.deliver(
+        platformBinding = await driver.deliver(
           {
             conversationId: dispatched.conversationId,
             idempotencyKey: deliveryAttempt.idempotencyKey,
             event,
             delivery: dispatched.delivery,
+            platformBinding: deliveryAttempt.platformBinding,
           },
           dispatched.delivery,
           deliveryAttempt.message,
@@ -365,6 +368,8 @@ export class RuntimeServer {
         dispatched.conversationId,
         deliveryAttempt.idempotencyKey,
         'delivered',
+        undefined,
+        platformBinding,
       );
       this.deliveryTracker.markDelivered(deliveryAttempt);
       await this.emitDeliveryEvent('delivery.completed', {
@@ -396,6 +401,7 @@ export class RuntimeServer {
       assistantIndex: number;
       message: Message;
       target?: unknown;
+      platformBinding?: unknown;
     },
   ): Promise<boolean> {
     if (!isRuntimeDeliveryTarget(entry.target)) {
@@ -406,6 +412,7 @@ export class RuntimeServer {
       return false;
     }
     const event = retryDeliveryEvent(runId);
+    let platformBinding: unknown;
     try {
       await this.emitDeliveryEvent('delivery.pending', {
         event,
@@ -418,12 +425,13 @@ export class RuntimeServer {
         entry.idempotencyKey,
         'delivering',
       );
-      await driver.deliver(
+      platformBinding = await driver.deliver(
         {
           conversationId: runId,
           idempotencyKey: entry.idempotencyKey,
           event,
           delivery: entry.target,
+          platformBinding: entry.platformBinding,
         },
         entry.target,
         entry.message,
@@ -448,6 +456,8 @@ export class RuntimeServer {
       runId,
       entry.idempotencyKey,
       'delivered',
+      undefined,
+      platformBinding,
     );
     this.deliveryTracker.markDelivered(entry);
     await this.emitDeliveryEvent('delivery.completed', {

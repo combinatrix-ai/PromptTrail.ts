@@ -1044,6 +1044,7 @@ describe('RuntimeServer', () => {
               platform: 'discord',
               deliver(ctx, _target, message) {
                 deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+                return { messageId: `sent:${ctx.idempotencyKey}` };
               },
             },
           ],
@@ -1065,6 +1066,7 @@ describe('RuntimeServer', () => {
         idempotencyKey: entry.idempotencyKey,
         conversationId: entry.conversationId,
         messageRef: entry.messageRef,
+        platformBinding: entry.platformBinding,
         status: entry.status,
         attempts: entry.attempts,
       })),
@@ -1077,6 +1079,7 @@ describe('RuntimeServer', () => {
           conversationId: runId,
           assistantIndex: 0,
         },
+        platformBinding: { messageId: `sent:${deliveryKey}` },
         status: 'delivered',
         attempts: 1,
       },
@@ -1185,6 +1188,7 @@ describe('RuntimeServer', () => {
       deliveryKey,
       'failed',
       new Error('previous delivery failed'),
+      { messageId: 'previous' },
     );
 
     const server = PromptTrail.server({
@@ -1206,7 +1210,10 @@ describe('RuntimeServer', () => {
               platform: 'discord',
               deliver(ctx, _target, message) {
                 order.push('deliver');
-                deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+                deliveries.push(
+                  `${ctx.idempotencyKey}:${JSON.stringify(ctx.platformBinding)}:${message.content}`,
+                );
+                return { messageId: 'retried' };
               },
             },
           ],
@@ -1217,14 +1224,24 @@ describe('RuntimeServer', () => {
     await server.start();
 
     expect(order).toEqual(['deliver', 'source-start']);
-    expect(deliveries).toEqual([`${deliveryKey}:retry me`]);
+    expect(deliveries).toEqual([
+      `${deliveryKey}:${JSON.stringify({ messageId: 'previous' })}:retry me`,
+    ]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
+        platformBinding: entry.platformBinding,
         status: entry.status,
         attempts: entry.attempts,
         lastError: entry.lastError,
       })),
-    ).toEqual([{ status: 'delivered', attempts: 1, lastError: undefined }]);
+    ).toEqual([
+      {
+        platformBinding: { messageId: 'retried' },
+        status: 'delivered',
+        attempts: 1,
+        lastError: undefined,
+      },
+    ]);
   });
 
   it('retries delivering final deliveries on startup', async () => {
