@@ -2475,7 +2475,7 @@ export class PromptTrailApp {
       entry.lastError = error === undefined ? undefined : errorMessage(error);
     }
     if (platformBinding !== undefined) {
-      entry.platformBinding = platformBinding;
+      entry.platformBinding = cloneDurableRuntimeValue(platformBinding);
     }
     this.store.set(runId, run);
   }

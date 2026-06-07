@@ -63,6 +63,7 @@ describe('RuntimeServer', () => {
     const activityEvents: string[] = [];
     const observerEvents: string[] = [];
     const deliveryEventRaw: unknown[] = [];
+    const returnedBinding = { messageId: 'M_reply' };
     const observerWrites: string[] = [];
     const observerDeliveryBindingStore: ObserverDeliveryBindingStore = {
       claim(idempotencyKey, binding) {
@@ -131,7 +132,7 @@ describe('RuntimeServer', () => {
             const discordTarget = target as { channel: string };
             deliveries.push(`${discordTarget.channel}:${message.content}`);
             discordTarget.channel = 'driver-mutated';
-            return { messageId: 'M_reply' };
+            return returnedBinding;
           },
         },
       ],
@@ -293,6 +294,7 @@ describe('RuntimeServer', () => {
         }),
       }),
     ]);
+    returnedBinding.messageId = 'driver-retained-mutated';
     expect(
       app.assistantDeliveryOutbox(conversationId).map((entry) => ({
         platformBinding: entry.platformBinding,
