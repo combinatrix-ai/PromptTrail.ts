@@ -342,6 +342,17 @@ function childPath(parent: string, id: string): string {
   return parent ? `${parent}/${id}` : id;
 }
 
+function durableTemplateLifecycleRequest<TVars extends Vars, TAttrs extends Attrs>(
+  node: DurableNode<TVars, TAttrs>,
+  nodePath: string,
+): Record<string, unknown> {
+  return {
+    templateId: node.id,
+    templateName: node.type,
+    templatePath: nodePath,
+  };
+}
+
 async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
   state: DurableExecutionState<TVars, TAttrs>,
   stepId: string,
@@ -721,8 +732,9 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
     case 'afterAgent':
       return hook.onRunEnd ?? hook.onAfterAgent;
     case 'beforeTemplate':
+      return hook.onBeforeTemplate;
     case 'afterTemplate':
-      return undefined;
+      return hook.onAfterTemplate;
     case 'beforeModel':
       return hook.onBeforeModel;
     case 'afterModel':
@@ -1361,6 +1373,39 @@ export class DurableAgent<
     session: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const nodePath = childPath(path, node.id);
+    const request = durableTemplateLifecycleRequest(node, nodePath);
+    const before = await runDurableExecutionPhase(state, `${nodePath}/beforeTemplate`, {
+      phase: 'beforeTemplate',
+      session,
+      request,
+    });
+    handleDurablePhaseCommand(before.command, nodePath, before.session);
+    state.session = before.session;
+
+    const executed = await this.executeNodeBody(
+      state,
+      node,
+      nodePath,
+      before.session,
+    );
+    state.session = executed;
+
+    const after = await runDurableExecutionPhase(state, `${nodePath}/afterTemplate`, {
+      phase: 'afterTemplate',
+      session: executed,
+      request,
+    });
+    handleDurablePhaseCommand(after.command, nodePath, after.session);
+    state.session = after.session;
+    return after.session;
+  }
+
+  private async executeNodeBody(
+    state: DurableExecutionState<TVars, TAttrs>,
+    node: DurableNode<TVars, TAttrs>,
+    nodePath: string,
+    session: Session<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     switch (node.type) {
       case 'system':
         return session.addMessage(Message.system(node.content));

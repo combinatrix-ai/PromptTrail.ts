@@ -669,6 +669,89 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals durable beforeTemplate and afterTemplate hooks around nodes', async () => {
+    let beforeCalls = 0;
+    let afterCalls = 0;
+    const assistant = agent('template-hooks')
+      .system('setup')
+      .assistant('reply', (session) => {
+        const beforeTemplates = session.getVar('beforeTemplates') as string[];
+        return `before:${beforeTemplates.join(',')}`;
+      });
+    const app = PromptTrail.app({
+      agents: { hooks: assistant },
+      store: memoryStore(),
+      hooks: [
+        Hook.create({
+          name: 'templateLifecycle',
+          onBeforeTemplate: ({ session, request }) => {
+            beforeCalls++;
+            const vars = session.getVarsObject();
+            const template = request as {
+              templateName?: string;
+              templatePath?: string;
+            };
+            return {
+              session: {
+                vars: {
+                  beforeTemplates: [
+                    ...((vars.beforeTemplates as string[] | undefined) ?? []),
+                    `${template.templateName}:${template.templatePath}`,
+                  ],
+                },
+              },
+            };
+          },
+          onAfterTemplate: ({ session, request }) => {
+            afterCalls++;
+            const vars = session.getVarsObject();
+            const template = request as {
+              templateName?: string;
+              templatePath?: string;
+            };
+            return {
+              session: {
+                vars: {
+                  afterTemplates: [
+                    ...((vars.afterTemplates as string[] | undefined) ?? []),
+                    `${template.templateName}:${template.templatePath}`,
+                  ],
+                },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'hooks',
+      runId: 'run-template-hooks',
+      durable: true,
+    });
+    const replay = await app.resume('run-template-hooks');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.messages.map((message) => message.content)).toEqual([
+      'setup',
+      'before:system:system,assistant:reply',
+    ]);
+    expect(replay.session.getVarsObject()).toEqual({
+      beforeTemplates: ['system:system', 'assistant:reply'],
+      afterTemplates: ['system:system', 'assistant:reply'],
+    });
+    expect(beforeCalls).toBe(2);
+    expect(afterCalls).toBe(2);
+    expect(app.journal('run-template-hooks')).toEqual([
+      'system/beforeTemplate',
+      'system/afterTemplate',
+      'reply/beforeTemplate',
+      'reply/model',
+      'reply/afterTemplate',
+    ]);
+  });
+
   it('replays durable effects inside replayable phase handlers after a mid-phase crash', async () => {
     let handlerCalls = 0;
     let memoCalls = 0;
