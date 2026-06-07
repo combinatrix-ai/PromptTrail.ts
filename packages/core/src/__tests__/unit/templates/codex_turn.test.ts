@@ -176,6 +176,31 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('applies afterModel result and session patches to Codex turns', async () => {
+    const client = new FakeCodexClient();
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'codexResult',
+          afterModel: ({ result }) => ({
+            result: {
+              ...(result as Record<string, unknown>),
+              finalAnswer: 'rewritten by afterModel',
+            },
+            session: { vars: { afterModel: 'codex' } },
+          }),
+        }),
+      )
+      .codexTurn({ client })
+      .execute(Session.create());
+
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'rewritten by afterModel',
+    });
+    expect(session.getVarsObject()).toEqual({ afterModel: 'codex' });
+  });
+
   it('emits model boundary events for direct execution observers', async () => {
     const client = new FakeCodexClient();
     const events: string[] = [];

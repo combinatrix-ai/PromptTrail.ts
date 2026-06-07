@@ -148,11 +148,21 @@ export class CodexTurn<
         approvalPolicy: this.options.approvalPolicy,
         ...(this.options.turnStart ?? {}),
       });
-      const result = await collectCodexTurnResult(
+      let result = await collectCodexTurnResult(
         rawTurnResult,
         { threadId },
         this.options.onEvent,
       );
+      if (runtime) {
+        const afterModel = await runRuntimeExecutionPhase(runtime, {
+          phase: 'afterModel',
+          session: currentSession,
+          result,
+        });
+        assertTurnCommandSupported(afterModel.command, 'CodexTurn');
+        currentSession = afterModel.session;
+        result = (afterModel.result ?? result) as typeof result;
+      }
       const sessionResult = this.prepareSessionResult(result);
 
       let nextSession: Session<TVars, TAttrs>;

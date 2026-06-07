@@ -88,12 +88,21 @@ export class ClaudeTurn<
         'model.started',
         'claudeTurn',
       );
-      const result = this.prepareSessionResult(
-        await collectClaudeAgentTurnResult(
-          client.query(params),
-          this.options.onEvent,
-        ),
+      let result = await collectClaudeAgentTurnResult(
+        client.query(params),
+        this.options.onEvent,
       );
+      if (runtime) {
+        const afterModel = await runRuntimeExecutionPhase(runtime, {
+          phase: 'afterModel',
+          session: currentSession,
+          result,
+        });
+        assertTurnCommandSupported(afterModel.command, 'ClaudeTurn');
+        currentSession = afterModel.session;
+        result = (afterModel.result ?? result) as typeof result;
+      }
+      const sessionResult = this.prepareSessionResult(result);
 
       let nextSession: Session<TVars, TAttrs>;
       if (this.options.squashWith) {
@@ -101,11 +110,14 @@ export class ClaudeTurn<
       } else if (this.options.retainMessages === false) {
         nextSession = currentSession.withVar(
           this.options.attrsKey ?? 'claudeAgent',
-          result,
+          sessionResult,
         );
       } else {
         const attrsKey = this.options.attrsKey ?? 'claudeAgent';
-        const message = claudeAgentResultToMessage<TAttrs>(result, attrsKey);
+        const message = claudeAgentResultToMessage<TAttrs>(
+          sessionResult,
+          attrsKey,
+        );
         const historyFingerprint = createConversationHistoryFingerprint([
           ...currentSession.messages,
           message,

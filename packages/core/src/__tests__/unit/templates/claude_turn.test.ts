@@ -146,6 +146,31 @@ describe('ClaudeTurn template', () => {
     expect(client.queries[0].prompt).toBe('from-before-model');
   });
 
+  it('applies afterModel result and session patches to Claude turns', async () => {
+    const client = new FakeClaudeAgentClient();
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'claudeResult',
+          afterModel: ({ result }) => ({
+            result: {
+              ...(result as Record<string, unknown>),
+              finalAnswer: 'rewritten by afterModel',
+            },
+            session: { vars: { afterModel: 'claude' } },
+          }),
+        }),
+      )
+      .claudeTurn({ client })
+      .execute(Session.create());
+
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'rewritten by afterModel',
+    });
+    expect(session.getVarsObject()).toEqual({ afterModel: 'claude' });
+  });
+
   it('emits model boundary events for direct execution observers', async () => {
     const client = new FakeClaudeAgentClient();
     const events: string[] = [];
