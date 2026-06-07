@@ -1067,6 +1067,12 @@ async function emitDurablePhaseStepEvent<
     stepId,
     phase: step.phase,
     replay,
+      idempotencyKey: durableEventIdempotencyKey(state, {
+        stepId,
+        phase: step.phase,
+        type: 'session.patched',
+        scope: durablePhaseStepEventScope(step),
+      }),
     source: step.kind,
     sessionVersion: step.transition.afterVersion,
     raw: {
@@ -1101,6 +1107,13 @@ async function emitDurableExecutionEvent<
       conversationId: state.runId,
       runId: state.runId,
       replay: 'live',
+      idempotencyKey:
+        options.idempotencyKey ??
+        durableEventIdempotencyKey(state, {
+          stepId: options.stepId,
+          phase: options.phase,
+          type,
+        }),
       source: 'durable',
       sessionVersion: state.transitionVersion,
       ...options,
@@ -1109,6 +1122,34 @@ async function emitDurableExecutionEvent<
     // Tool/model progress events are observer side effects. They must not
     // prevent the surrounding durable activity result from being journaled.
   }
+}
+
+function durableEventIdempotencyKey<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  options: {
+    stepId?: string;
+    phase?: string;
+    type: string;
+    scope?: string;
+  },
+): string {
+  return [
+    state.runId,
+    options.stepId ?? '-',
+    options.phase ?? '-',
+    options.type,
+    options.scope ?? '-',
+  ].join(':');
+}
+
+function durablePhaseStepEventScope<TAttrs extends Attrs>(
+  step: ExecutionPhaseStep<TAttrs>,
+): string {
+  return [
+    step.kind,
+    step.registrationIndex,
+    step.name ?? '<anonymous>',
+  ].join(':');
 }
 
 async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
@@ -1488,10 +1529,10 @@ export class DurableAgent<
             phase: 'wrapModelCall',
             session,
             request: { session: modelSession },
-            call: async ({ request }) =>
+            call: async ({ request, journalStepId }) =>
               this.executeDurableModel(
                 state,
-                `${nodePath}/wrapModelCall`,
+                journalStepId,
                 request.session,
                 node.handler,
               ),
@@ -1587,10 +1628,10 @@ export class DurableAgent<
               phase: 'wrapModelCall',
               session: current,
               request: { session: modelSession },
-              call: async ({ request }) =>
+              call: async ({ request, journalStepId }) =>
                 this.executeDurableModel(
                   state,
-                  `${nodePath}#${iteration}/wrapModelCall`,
+                  journalStepId,
                   request.session,
                   node.handler,
                 ),
@@ -1678,6 +1719,7 @@ export class DurableAgent<
                 this.executeDurableTool(state, stepId, request, session, {
                   journalStepId,
                   nestedStepIds,
+                  eventStepId: journalStepId,
                 }),
             });
             nextCall = (wrapped.request as ToolCall | undefined) ?? nextCall;
@@ -1815,6 +1857,7 @@ export class DurableAgent<
     journal: {
       journalStepId: string;
       nestedStepIds: string[];
+      eventStepId?: string;
     },
   ): Promise<unknown> {
     const tool = this.tools.get(call.name);
@@ -1828,7 +1871,7 @@ export class DurableAgent<
       context: state.context,
     });
     await emitDurableExecutionEvent(state, 'tool.started', {
-      stepId,
+      stepId: journal.eventStepId ?? stepId,
       phase: 'tool',
       raw: { toolCall: call, activity },
       toolCallId: call.id,
@@ -1849,7 +1892,7 @@ export class DurableAgent<
       ),
     });
     await emitDurableExecutionEvent(state, 'tool.completed', {
-      stepId,
+      stepId: journal.eventStepId ?? stepId,
       phase: 'tool',
       raw: { toolCall: call, activity },
       toolCallId: call.id,

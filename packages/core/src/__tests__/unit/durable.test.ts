@@ -514,7 +514,9 @@ describe('durable agent runtime', () => {
           name: 'appObserver',
           handle(event) {
             if (event.type === 'model.started') {
-              appEvents.push(`${event.seq}:${event.type}:${event.stepId}`);
+              appEvents.push(
+                `${event.seq}:${event.type}:${event.stepId}:${event.idempotencyKey}`,
+              );
             }
           },
         },
@@ -528,7 +530,9 @@ describe('durable agent runtime', () => {
     });
 
     expect(result.status).toBe('done');
-    expect(appEvents).toEqual(['1:model.started:reply/model']);
+    expect(appEvents).toEqual([
+      '1:model.started:reply/model:run-agent-observed:reply/model:model:model.started:-',
+    ]);
     expect(events).toEqual([
       '0:run.started:-',
       '1:model.started:reply/model',
@@ -924,6 +928,9 @@ describe('durable agent runtime', () => {
           name: 'failingPatchObserver',
           handle(event) {
             if (event.type === 'session.patched') {
+              expect(event.idempotencyKey).toBe(
+                'run-strict-patch-observed:reply/beforeModel:beforeModel:session.patched:middleware:0:before',
+              );
               throw new Error(`patch observer failed:${event.replay}`);
             }
           },
@@ -1127,6 +1134,59 @@ describe('durable agent runtime', () => {
     expect(modelCalls).toBe(1);
     expect(app.journal('run-wrap-model-crash')).toEqual([
       'reply/wrapModelCall/next/0',
+      'reply/wrapModelCall',
+    ]);
+  });
+
+  it('uses attempt-stable model event keys when wrapModelCall calls next more than once', async () => {
+    let modelCalls = 0;
+    const modelKeys: string[] = [];
+    const assistant = agent('wrapped-model-retry').assistant('reply', () => {
+      modelCalls++;
+      return `model:${modelCalls}`;
+    });
+    const app = PromptTrail.app({
+      agents: { retry: assistant },
+      store: memoryStore(),
+      observers: [
+        {
+          handle(event) {
+            if (event.type === 'model.started') {
+              modelKeys.push(String(event.idempotencyKey));
+            }
+          },
+        },
+      ],
+      middleware: [
+        Middleware.create({
+          name: 'modelRetry',
+          wrapModelCall: async (_context, next) => {
+            const first = await next();
+            const second = await next();
+            return `${first}|${second}`;
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'retry',
+      runId: 'run-model-retry-events',
+      durable: true,
+    });
+    const replay = await app.resume('run-model-retry-events');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.getLastMessage()?.content).toBe('model:1|model:2');
+    expect(modelCalls).toBe(2);
+    expect(modelKeys).toEqual([
+      'run-model-retry-events:reply/wrapModelCall/next/0:model:model.started:-',
+      'run-model-retry-events:reply/wrapModelCall/next/1:model:model.started:-',
+    ]);
+    expect(app.journal('run-model-retry-events')).toEqual([
+      'reply/wrapModelCall/next/0',
+      'reply/wrapModelCall/next/1',
       'reply/wrapModelCall',
     ]);
   });
@@ -1372,6 +1432,74 @@ describe('durable agent runtime', () => {
       'reply/model',
       'tools/call-1/wrapToolCall',
       'tools/call-1/afterTool',
+    ]);
+  });
+
+  it('uses attempt-stable tool event keys when wrapToolCall calls next more than once', async () => {
+    let toolCalls = 0;
+    const toolKeys: string[] = [];
+    const assistant = agent('wrapped-tool-retry')
+      .tool('lookup', {
+        execute: async () => {
+          toolCalls++;
+          return `tool:${toolCalls}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: {},
+          },
+        ],
+      }))
+      .runTools('tools');
+    const app = PromptTrail.app({
+      agents: { retry: assistant },
+      store: memoryStore(),
+      observers: [
+        {
+          handle(event) {
+            if (event.type === 'tool.started') {
+              toolKeys.push(String(event.idempotencyKey));
+            }
+          },
+        },
+      ],
+      middleware: [
+        Middleware.create({
+          name: 'toolRetry',
+          wrapToolCall: async (_context, next) => {
+            const first = await next();
+            const second = await next();
+            return `${first}|${second}`;
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'retry',
+      runId: 'run-tool-retry-events',
+      durable: true,
+    });
+    const replay = await app.resume('run-tool-retry-events');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.getLastMessage()?.content).toBe('tool:1|tool:2');
+    expect(toolCalls).toBe(2);
+    expect(toolKeys).toEqual([
+      'run-tool-retry-events:tools/call-1/wrapToolCall/next/0:tool:tool.started:-',
+      'run-tool-retry-events:tools/call-1/wrapToolCall/next/1:tool:tool.started:-',
+    ]);
+    expect(app.journal('run-tool-retry-events')).toEqual([
+      'reply/model',
+      'tools/call-1/wrapToolCall/next/0',
+      'tools/call-1/wrapToolCall/next/1',
+      'tools/call-1/wrapToolCall',
     ]);
   });
 
@@ -2248,7 +2376,7 @@ describe('durable agent runtime', () => {
         (event) => {
           if (event.type.startsWith('tool.') || event.type.startsWith('run.')) {
             events.push(
-              `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.name ?? '-'}`,
+              `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.name ?? '-'}:${event.idempotencyKey ?? '-'}`,
             );
           }
         },
@@ -2267,12 +2395,12 @@ describe('durable agent runtime', () => {
     expect(replay.status).toBe('suspended');
     expect(toolCalls).toBe(1);
     expect(events).toEqual([
-      '0:run.started:-:-',
-      '3:tool.started:tools/call-1:lookup',
-      '4:tool.completed:tools/call-1:lookup',
-      '5:run.suspended:wait/input/input:-',
-      '6:run.started:-:-',
-      '7:run.suspended:wait/input/input:-',
+      '0:run.started:-:-:-',
+      '3:tool.started:tools/call-1:lookup:run-tool-observed:tools/call-1:tool:tool.started:-',
+      '4:tool.completed:tools/call-1:lookup:run-tool-observed:tools/call-1:tool:tool.completed:-',
+      '5:run.suspended:wait/input/input:-:-',
+      '6:run.started:-:-:-',
+      '7:run.suspended:wait/input/input:-:-',
     ]);
   });
 
