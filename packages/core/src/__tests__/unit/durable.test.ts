@@ -848,6 +848,59 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('retries durable activities inside replayable phase handlers', async () => {
+    let activityCalls = 0;
+    const assistant = agent('retryable-effect').assistant(
+      'reply',
+      (session) => `profile:${session.getVarsObject().profile}`,
+    );
+    const app = PromptTrail.app({
+      agents: { retryable: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'profileLoader',
+          durability: 'replayable-handler',
+          beforeModel: async ({ durable }) => {
+            const profile = await durable.activity(
+              'load-profile',
+              {
+                kind: 'external-read',
+                retry: { maxAttempts: 2 },
+              },
+              () => {
+                activityCalls++;
+                if (activityCalls === 1) {
+                  throw new Error('profile failed');
+                }
+                return `loaded:${activityCalls}`;
+              },
+            );
+            return {
+              session: { vars: { profile } },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'retryable',
+      runId: 'run-retryable-activity',
+      durable: true,
+    });
+    const replay = await app.resume('run-retryable-activity');
+
+    expect(first.session.getLastMessage()?.content).toBe('profile:loaded:2');
+    expect(replay.session.getLastMessage()?.content).toBe('profile:loaded:2');
+    expect(activityCalls).toBe(2);
+    expect(app.journal('run-retryable-activity')).toEqual([
+      'reply/beforeModel/middleware[0]/beforeModel/profileLoader/activity/load-profile',
+      'reply/beforeModel',
+      'reply/model',
+    ]);
+  });
+
   it('emits durable session.patched events for live and journaled phase patches', async () => {
     const events: string[] = [];
     const assistant = agent('patch-observed')
@@ -1509,6 +1562,10 @@ describe('durable agent runtime', () => {
     let activityCalls = 0;
     const assistant = agent('tool-effects')
       .tool('lookup', {
+        activity: {
+          kind: 'external-read',
+          retry: { maxAttempts: 2 },
+        },
         execute: async (_args, { durable }) => {
           toolCalls++;
           const token = await durable.memo('token', () => {
@@ -1583,6 +1640,63 @@ describe('durable agent runtime', () => {
       'main/tools/call-1/tool/lookup/memo/token',
       'main/tools/call-1/tool/lookup/activity/read-profile',
       'main/tools/call-1',
+    ]);
+  });
+
+  it('retries durable tool activities before journaling the tool result', async () => {
+    let toolCalls = 0;
+    const assistant = agent('retry-tool')
+      .tool('write', {
+        activity: {
+          kind: 'external-write',
+          idempotencyKey: 'write:call-1',
+          retry: { maxAttempts: 2 },
+        },
+        execute: async () => {
+          toolCalls++;
+          if (toolCalls === 1) {
+            throw new Error('write failed');
+          }
+          return `tool:${toolCalls}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'write',
+            arguments: { value: 'danger' },
+          },
+        ],
+      }))
+      .runTools('tools');
+    const app = PromptTrail.app({
+      agents: { retry: assistant },
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'retry',
+      runId: 'run-retry-tool-activity',
+      durable: true,
+    });
+    const replay = await app.resume('run-retry-tool-activity');
+
+    expect(first.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'tool:2',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'tool:2',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(toolCalls).toBe(2);
+    expect(app.journal('run-retry-tool-activity')).toEqual([
+      'reply/model',
+      'tools/call-1',
     ]);
   });
 

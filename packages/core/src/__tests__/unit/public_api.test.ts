@@ -42,7 +42,11 @@ describe('public API surface', () => {
       execute: () => 'read',
     };
     const writeTool: DurableTool = {
-      activity: { kind: 'external-write', idempotencyKey: 'write:tool' },
+      activity: {
+        kind: 'external-write',
+        idempotencyKey: 'write:tool',
+        retry: { maxAttempts: 2 },
+      },
       execute: () => 'write',
     };
     const dynamicWriteTool: DurableTool = {
@@ -67,6 +71,7 @@ describe('public API surface', () => {
     expect(writeTool.activity).toEqual({
       kind: 'external-write',
       idempotencyKey: 'write:tool',
+      retry: { maxAttempts: 2 },
     });
     expect(typeof dynamicWriteTool.activity).toBe('function');
     expect(missingKeyTool.activity).toEqual({ kind: 'external-write' });

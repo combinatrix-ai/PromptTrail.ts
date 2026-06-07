@@ -14,6 +14,7 @@ import {
   runMiddlewareWrapper,
   assertHookDefinitionSupported,
   type ExecutionDurableActivityOptions,
+  type ExecutionDurableRetryPolicy,
   type ExecutionDurableBoundary,
   type ExecutionDurableBoundaryProvider,
   type ExecutionHandlerDescriptor,
@@ -71,10 +72,12 @@ export type DurableActivityOptions =
   | {
       kind: Exclude<DurableActivityKind, 'external-write'>;
       idempotencyKey?: string;
+      retry?: ExecutionDurableRetryPolicy;
     }
   | {
       kind: 'external-write';
       idempotencyKey: string;
+      retry?: ExecutionDurableRetryPolicy;
     };
 
 export interface DurableActivityContext {
@@ -411,7 +414,9 @@ function createDurableBoundaryProvider<
         name,
       );
       nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, fn);
+      return journaled(state, nestedStepId, () =>
+        runDurableActivityWithRetry(options, fn),
+      );
     },
   });
 }
@@ -463,7 +468,9 @@ function createDurableToolBoundary<TVars extends Vars, TAttrs extends Attrs>(
         name,
       );
       nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, fn);
+      return journaled(state, nestedStepId, () =>
+        runDurableActivityWithRetry(options, fn),
+      );
     },
   };
 }
@@ -487,6 +494,37 @@ function assertDurableToolActivityOptions(
       `Durable tool ${call.name} activity ${name} external-write requires idempotencyKey.`,
     );
   }
+}
+
+async function runDurableActivityWithRetry<T>(
+  options: ExecutionDurableActivityOptions,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const maxAttempts = durableActivityMaxAttempts(options);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+}
+
+function durableActivityMaxAttempts(
+  options: ExecutionDurableActivityOptions,
+): number {
+  const maxAttempts = options.retry?.maxAttempts ?? 1;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error(
+      'Durable activity retry.maxAttempts must be a positive integer.',
+    );
+  }
+  return maxAttempts;
 }
 
 async function runDurableCompositeJournal<
@@ -1894,20 +1932,15 @@ export class DurableAgent<
       name: call.name,
     });
     try {
-      const result = await tool.execute(call.arguments, {
-        runId: state.runId,
+      const result = await this.executeDurableToolWithRetry(
+        tool,
+        call,
+        activity,
+        state,
         stepId,
         session,
-        context: state.context,
-        toolCall: call,
-        activity,
-        durable: createDurableToolBoundary(
-          state,
-          journal.journalStepId,
-          call,
-          journal.nestedStepIds,
-        ),
-      });
+        journal,
+      );
       await emitDurableExecutionEvent(state, 'tool.completed', {
         stepId: journal.eventStepId ?? stepId,
         phase: 'tool',
@@ -1927,6 +1960,48 @@ export class DurableAgent<
       });
       throw error;
     }
+  }
+
+  private async executeDurableToolWithRetry<TAttrs extends Attrs>(
+    tool: DurableTool,
+    call: ToolCall,
+    activity: DurableActivityOptions,
+    state: DurableExecutionState<any, TAttrs>,
+    stepId: string,
+    session: Session<any, TAttrs>,
+    journal: {
+      journalStepId: string;
+      nestedStepIds: string[];
+    },
+  ): Promise<unknown> {
+    const maxAttempts = durableActivityMaxAttempts(activity);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const nestedStart = journal.nestedStepIds.length;
+      try {
+        return await tool.execute(call.arguments, {
+          runId: state.runId,
+          stepId,
+          session,
+          context: state.context,
+          toolCall: call,
+          activity,
+          durable: createDurableToolBoundary(
+            state,
+            journal.journalStepId,
+            call,
+            journal.nestedStepIds,
+          ),
+        });
+      } catch (error) {
+        if (
+          attempt === maxAttempts ||
+          journal.nestedStepIds.length !== nestedStart
+        ) {
+          throw error;
+        }
+      }
+    }
+    throw new Error('Durable tool retry exhausted without an error.');
   }
 }
 
