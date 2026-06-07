@@ -30,4 +30,18 @@ describe('public API surface', () => {
     expect(write.idempotencyKey).toBe('write:1');
     expect(missingKey.kind).toBe('external-write');
   });
+
+  it('types run lifecycle hook aliases', () => {
+    const hook = prompttrail.Hook.create({
+      name: 'lifecycle',
+      onRunStart: ({ session }) => ({
+        session: { vars: { started: session.messages.length } },
+      }),
+      onRunEnd: ({ session }) => ({
+        session: { vars: { ended: session.messages.length } },
+      }),
+    });
+
+    expect(hook.name).toBe('lifecycle');
+  });
 });

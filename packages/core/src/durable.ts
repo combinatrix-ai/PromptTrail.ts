@@ -12,6 +12,7 @@ import {
 import {
   runExecutionPhase,
   runMiddlewareWrapper,
+  assertHookDefinitionSupported,
   type ExecutionDurableActivityOptions,
   type ExecutionDurableBoundary,
   type ExecutionDurableBoundaryProvider,
@@ -710,11 +711,12 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
   hook: HookDefinition<TVars, TAttrs>,
   phase: ExecutionLifecyclePhase,
 ): unknown {
+  assertHookDefinitionSupported(hook);
   switch (phase) {
     case 'beforeAgent':
-      return hook.onBeforeAgent;
+      return hook.onRunStart ?? hook.onBeforeAgent;
     case 'afterAgent':
-      return hook.onAfterAgent;
+      return hook.onRunEnd ?? hook.onAfterAgent;
     case 'beforeModel':
       return hook.onBeforeModel;
     case 'afterModel':

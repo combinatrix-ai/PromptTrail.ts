@@ -171,6 +171,10 @@ export interface HookDefinition<
   name?: string;
   /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
+  /** Alias for the agent-level run start phase. */
+  onRunStart?: HookPhaseHandler<TVars, TAttrs>;
+  /** Alias for the agent-level run end phase. */
+  onRunEnd?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeAgent?: HookPhaseHandler<TVars, TAttrs>;
   onAfterAgent?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeModel?: HookPhaseHandler<TVars, TAttrs>;
@@ -193,9 +197,26 @@ export const Hook = {
   create<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
     definition: HookDefinition<TVars, TAttrs>,
   ): HookDefinition<TVars, TAttrs> {
+    assertHookDefinitionSupported(definition);
     return definition;
   },
 };
+
+export function assertHookDefinitionSupported<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(definition: HookDefinition<TVars, TAttrs>): void {
+  if (definition.onRunStart && definition.onBeforeAgent) {
+    throw new Error(
+      `Hook ${definition.name ?? '<anonymous>'} cannot define both onRunStart and onBeforeAgent.`,
+    );
+  }
+  if (definition.onRunEnd && definition.onAfterAgent) {
+    throw new Error(
+      `Hook ${definition.name ?? '<anonymous>'} cannot define both onRunEnd and onAfterAgent.`,
+    );
+  }
+}
 
 export interface RunExecutionPhaseOptions<
   TVars extends Vars = Vars,
@@ -793,11 +814,12 @@ function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
   hook: HookDefinition<TVars, TAttrs>,
   phase: ExecutionLifecyclePhase,
 ): HookPhaseHandler<TVars, TAttrs> | undefined {
+  assertHookDefinitionSupported(hook);
   switch (phase) {
     case 'beforeAgent':
-      return hook.onBeforeAgent;
+      return hook.onRunStart ?? hook.onBeforeAgent;
     case 'afterAgent':
-      return hook.onAfterAgent;
+      return hook.onRunEnd ?? hook.onAfterAgent;
     case 'beforeModel':
       return hook.onBeforeModel;
     case 'afterModel':

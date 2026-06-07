@@ -59,6 +59,68 @@ describe('Agent interceptors', () => {
     });
   });
 
+  it('runs onRunStart and onRunEnd hook aliases', async () => {
+    const session = await Agent.create()
+      .hook(
+        Hook.create({
+          name: 'runLifecycle',
+          onRunStart: () => ({
+            session: { vars: { started: true } },
+          }),
+          onRunEnd: ({ session }) => ({
+            session: {
+              vars: {
+                endedWithMessages: session.messages.length,
+              },
+            },
+          }),
+        }),
+      )
+      .user('hello')
+      .execute();
+
+    expect(session.getVarsObject()).toEqual({
+      started: true,
+      endedWithMessages: 1,
+    });
+  });
+
+  it('rejects ambiguous run lifecycle hook aliases', () => {
+    expect(() =>
+      Hook.create({
+        name: 'ambiguousStart',
+        onRunStart: () => undefined,
+        onBeforeAgent: () => undefined,
+      }),
+    ).toThrow(
+      'Hook ambiguousStart cannot define both onRunStart and onBeforeAgent.',
+    );
+    expect(() =>
+      Hook.create({
+        name: 'ambiguousEnd',
+        onRunEnd: () => undefined,
+        onAfterAgent: () => undefined,
+      }),
+    ).toThrow(
+      'Hook ambiguousEnd cannot define both onRunEnd and onAfterAgent.',
+    );
+  });
+
+  it('rejects ambiguous raw hook definitions during execution', async () => {
+    await expect(
+      Agent.create()
+        .hook({
+          name: 'rawAmbiguousStart',
+          onRunStart: () => undefined,
+          onBeforeAgent: () => undefined,
+        })
+        .user('hello')
+        .execute(),
+    ).rejects.toThrow(
+      'Hook rawAmbiguousStart cannot define both onRunStart and onBeforeAgent.',
+    );
+  });
+
   it('emits direct execution observer events', async () => {
     const events: string[] = [];
     const session = await Agent.create()

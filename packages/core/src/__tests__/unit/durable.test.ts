@@ -609,6 +609,66 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals durable onRunStart and onRunEnd hook aliases', async () => {
+    let startCalls = 0;
+    let endCalls = 0;
+    const assistant = agent('run-aliases').assistant(
+      'reply',
+      (session) => `started:${session.getVar('started')}`,
+    );
+    const app = PromptTrail.app({
+      agents: { aliases: assistant },
+      store: memoryStore(),
+      hooks: [
+        Hook.create({
+          name: 'runLifecycle',
+          onRunStart: () => {
+            startCalls++;
+            return {
+              session: { vars: { started: startCalls } },
+            };
+          },
+          onRunEnd: ({ session }) => {
+            endCalls++;
+            return {
+              session: {
+                vars: {
+                  endedWithMessages: session.messages.length,
+                  endCalls,
+                },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'aliases',
+      runId: 'run-hook-aliases',
+      durable: true,
+    });
+    const replay = await app.resume('run-hook-aliases');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.messages.map((message) => message.content)).toEqual([
+      'started:1',
+    ]);
+    expect(replay.session.getVarsObject()).toEqual({
+      started: 1,
+      endedWithMessages: 1,
+      endCalls: 1,
+    });
+    expect(startCalls).toBe(1);
+    expect(endCalls).toBe(1);
+    expect(app.journal('run-hook-aliases')).toEqual([
+      'beforeAgent',
+      'reply/model',
+      'afterAgent',
+    ]);
+  });
+
   it('replays durable effects inside replayable phase handlers after a mid-phase crash', async () => {
     let handlerCalls = 0;
     let memoCalls = 0;
