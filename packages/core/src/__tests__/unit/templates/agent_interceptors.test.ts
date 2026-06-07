@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { DELETE_VALUE } from '../../../execution';
 import { Hook, Middleware } from '../../../interceptors';
 import { Message } from '../../../message';
+import type { Session } from '../../../session';
+import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 
 describe('Agent interceptors', () => {
@@ -208,6 +211,159 @@ describe('Agent interceptors', () => {
 
     expect(session.getLastMessage()?.content).toBe(
       'conditional else rewritten',
+    );
+  });
+
+  it('applies prepareModelInput as a transient model request', async () => {
+    const source = Source.callback(async ({ context }) => {
+      return `saw:${context?.temporary}`;
+    });
+
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'prepare',
+          prepareModelInput: ({ request }) => ({
+            request: {
+              session: (request as { session: Session }).session.withVar(
+                'temporary',
+                'yes',
+              ),
+            },
+          }),
+        }),
+      )
+      .assistant(source)
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('saw:yes');
+    expect(session.getVarsObject()).toEqual({});
+  });
+
+  it('applies transient prepareModelInput messages only to the model request', async () => {
+    class MessageReadingSource extends Source<string> {
+      async getContent(session: Session): Promise<string> {
+        return `saw:${session.messages.map((message) => message.content).join('|')}`;
+      }
+    }
+
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'prepareMessage',
+          prepareModelInput: ({ request }) => ({
+            request: {
+              session: (request as { session: Session }).session.addMessage(
+                Message.system('transient system'),
+              ),
+            },
+          }),
+        }),
+      )
+      .assistant(new MessageReadingSource())
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'saw:transient system',
+    ]);
+  });
+
+  it('persists prepareModelInput middlewareState into later model phases', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'prepareState',
+          prepareModelInput: () => ({
+            session: {
+              middlewareState: {
+                prepared: 'yes',
+              },
+            },
+          }),
+          afterModel: ({ middlewareState }) => ({
+            result: { content: `state:${middlewareState.prepared}` },
+          }),
+        }),
+      )
+      .assistant('original')
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('state:yes');
+  });
+
+  it('rejects unsupported commands from prepareModelInput', async () => {
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'prepareCommand',
+            prepareModelInput: () => ({
+              command: { type: 'suspend', reason: 'manual' },
+            }),
+          }),
+        )
+        .assistant('original')
+        .execute(),
+    ).rejects.toThrow(
+      'Assistant.execute does not support execution command suspend yet.',
+    );
+  });
+
+  it('rejects persistent session patches from prepareModelInput', async () => {
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'badPrepare',
+            prepareModelInput: () => ({
+              session: {
+                vars: { persistent: true },
+              },
+            }),
+          }),
+        )
+        .assistant('original')
+        .execute(),
+    ).rejects.toThrow(
+      'prepareModelInput cannot return persistent session patches.',
+    );
+  });
+
+  it('rejects persistent message patches from prepareModelInput', async () => {
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'badPrepareMessage',
+            prepareModelInput: ({ session }) => ({
+              session: session.addMessage(Message.system('persistent')),
+            }),
+          }),
+        )
+        .assistant('original')
+        .execute(),
+    ).rejects.toThrow(
+      'prepareModelInput cannot return persistent session patches.',
+    );
+  });
+
+  it('rejects persistent var deletes from prepareModelInput', async () => {
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'badPrepareDelete',
+            prepareModelInput: () => ({
+              session: {
+                vars: { persistent: DELETE_VALUE },
+              },
+            }),
+          }),
+        )
+        .assistant('original')
+        .execute(),
+    ).rejects.toThrow(
+      'prepareModelInput cannot return persistent session patches.',
     );
   });
 });
