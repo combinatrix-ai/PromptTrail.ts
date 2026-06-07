@@ -377,6 +377,7 @@ export class RuntimeServer {
         conversationId: dispatched.conversationId,
         delivery: dispatched.delivery,
         deliveryAttempt,
+        platformBinding,
       });
     }
   }
@@ -465,6 +466,7 @@ export class RuntimeServer {
       conversationId: runId,
       delivery: entry.target,
       deliveryAttempt: entry,
+      platformBinding,
     });
     return true;
   }
@@ -478,12 +480,25 @@ export class RuntimeServer {
       deliveryAttempt: {
         idempotencyKey: string;
         assistantIndex: number;
+        messageRef?: {
+          conversationId: string;
+          assistantIndex: number;
+        };
+        platformBinding?: unknown;
         status?: string;
       };
+      platformBinding?: unknown;
       error?: unknown;
     },
   ): Promise<void> {
     const seq = this.eventSeq++;
+    const sourcePlatformBinding =
+      options.platformBinding ?? options.deliveryAttempt.platformBinding;
+    const messageRef = options.deliveryAttempt.messageRef
+      ? { ...options.deliveryAttempt.messageRef }
+      : undefined;
+    const delivery = cloneEventRawValue(options.delivery);
+    const platformBinding = cloneEventRawValue(sourcePlatformBinding);
     const event: ExecutionEvent = {
       id: `${type}:${options.deliveryAttempt.idempotencyKey}`,
       type,
@@ -496,7 +511,16 @@ export class RuntimeServer {
       source: 'runtime',
       raw: {
         sourceEvent: options.event,
-        delivery: options.delivery,
+        delivery: cloneEventRawValue(options.delivery),
+        deliveryAttempt: {
+          idempotencyKey: options.deliveryAttempt.idempotencyKey,
+          assistantIndex: options.deliveryAttempt.assistantIndex,
+          messageRef: messageRef ? { ...messageRef } : undefined,
+          platformBinding: cloneEventRawValue(sourcePlatformBinding),
+          status: options.deliveryAttempt.status,
+        },
+        messageRef: messageRef ? { ...messageRef } : undefined,
+        platformBinding,
         assistantIndex: options.deliveryAttempt.assistantIndex,
         error: options.error,
       },
@@ -504,7 +528,7 @@ export class RuntimeServer {
     };
     try {
       await this.observerBus.emit(event, {
-        delivery: options.delivery,
+        delivery,
         runtimeEvent: options.event,
       });
     } catch (error) {
@@ -560,6 +584,20 @@ export class RuntimeServer {
       return errorMessage(ctx);
     }
     return errorMessage;
+  }
+}
+
+function cloneEventRawValue<T>(value: T): T {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  try {
+    return structuredClone(value);
+  } catch {
+    if (Array.isArray(value)) {
+      return [...value] as T;
+    }
+    return { ...(value as Record<string, unknown>) } as T;
   }
 }
 

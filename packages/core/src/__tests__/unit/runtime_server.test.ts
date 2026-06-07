@@ -62,6 +62,7 @@ describe('RuntimeServer', () => {
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const observerEvents: string[] = [];
+    const deliveryEventRaw: unknown[] = [];
     const observerWrites: string[] = [];
     const observerDeliveryBindingStore: ObserverDeliveryBindingStore = {
       claim(idempotencyKey, binding) {
@@ -76,6 +77,10 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: { main },
+    });
     const bundle = PromptTrail.bundle({
       name: 'server-test',
       agents: { main },
@@ -109,6 +114,7 @@ describe('RuntimeServer', () => {
           platform: 'discord',
           deliver(_ctx, _target, message) {
             deliveries.push(message.content);
+            return { messageId: 'M_reply' };
           },
         },
       ],
@@ -128,10 +134,7 @@ describe('RuntimeServer', () => {
     };
     const server = PromptTrail.server({
       bundle,
-      runtime: PromptTrail.app({
-        store: memoryStore(),
-        agents: bundle.agents,
-      }),
+      runtime: app,
       activity: { kind: 'typing' },
       observerDeliveryBindings: {
         deliveryBindingStore: observerDeliveryBindingStore,
@@ -148,6 +151,12 @@ describe('RuntimeServer', () => {
           observerEvents.push(
             `${event.seq}:${event.type}:${event.idempotencyKey}`,
           );
+          if (
+            event.type === 'delivery.pending' ||
+            event.type === 'delivery.completed'
+          ) {
+            deliveryEventRaw.push(structuredClone(event.raw));
+          }
           if (event.type === 'model.started') {
             await context.deliveryBindings?.checkWrite(
               event.idempotencyKey ?? event.id,
@@ -169,6 +178,36 @@ describe('RuntimeServer', () => {
             event.idempotencyKey ?? event.id,
             () => 'app-second',
           );
+        },
+        (event, context) => {
+          if (event.type !== 'delivery.completed') {
+            return;
+          }
+          const raw = event.raw as {
+            delivery?: { platform?: string; channel?: string };
+            platformBinding?: { messageId?: string };
+            deliveryAttempt?: {
+              platformBinding?: { messageId?: string };
+            };
+          };
+          if (raw.delivery) {
+            raw.delivery.platform = 'observer-mutated';
+            raw.delivery.channel = 'observer-mutated';
+          }
+          if (raw.platformBinding) {
+            raw.platformBinding.messageId = 'observer-mutated';
+          }
+          if (raw.deliveryAttempt?.platformBinding) {
+            raw.deliveryAttempt.platformBinding.messageId =
+              'observer-mutated-attempt';
+          }
+          const delivery = context.delivery as
+            | { platform?: string; channel?: string }
+            | undefined;
+          if (delivery) {
+            delivery.platform = 'context-mutated';
+            delivery.channel = 'context-mutated';
+          }
         },
       ],
       adapters: [adapter],
@@ -200,6 +239,56 @@ describe('RuntimeServer', () => {
       '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-',
       `0:delivery.pending:${finalDeliveryKey}`,
       `1:delivery.completed:${finalDeliveryKey}`,
+    ]);
+    expect(deliveryEventRaw).toEqual([
+      expect.objectContaining({
+        assistantIndex: 0,
+        messageRef: {
+          conversationId,
+          assistantIndex: 0,
+        },
+        platformBinding: undefined,
+        deliveryAttempt: expect.objectContaining({
+          idempotencyKey: finalDeliveryKey,
+          assistantIndex: 0,
+          messageRef: {
+            conversationId,
+            assistantIndex: 0,
+          },
+          platformBinding: undefined,
+        }),
+      }),
+      expect.objectContaining({
+        assistantIndex: 0,
+        messageRef: {
+          conversationId,
+          assistantIndex: 0,
+        },
+        platformBinding: { messageId: 'M_reply' },
+        deliveryAttempt: expect.objectContaining({
+          idempotencyKey: finalDeliveryKey,
+          assistantIndex: 0,
+          messageRef: {
+            conversationId,
+            assistantIndex: 0,
+          },
+          platformBinding: { messageId: 'M_reply' },
+        }),
+      }),
+    ]);
+    expect(
+      app.assistantDeliveryOutbox(conversationId).map((entry) => ({
+        platformBinding: entry.platformBinding,
+        target: entry.target,
+      })),
+    ).toEqual([
+      {
+        platformBinding: { messageId: 'M_reply' },
+        target: expect.objectContaining({
+          platform: 'discord',
+          channel: 'general',
+        }),
+      },
     ]);
     expect(observerWrites).toEqual([
       'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
