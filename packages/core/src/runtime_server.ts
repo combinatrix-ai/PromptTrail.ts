@@ -1,4 +1,9 @@
 import type { PromptTrailApp } from './durable';
+import {
+  ObserverBus,
+  type ExecutionEvent,
+  type ObserverLike,
+} from './execution';
 import type { Message } from './message';
 import type { Attrs } from './session';
 import type { DeliveryTarget, RuntimeBindingEvent } from './runtime_bindings';
@@ -96,6 +101,7 @@ export interface RuntimeServerOptions {
   runtime: PromptTrailApp;
   adapters: readonly RuntimeAdapter[];
   activity?: RuntimeActivity | false;
+  observers?: readonly ObserverLike[];
   errorMessage?:
     | string
     | ((ctx: RuntimeServerErrorContext) => string | undefined);
@@ -107,11 +113,14 @@ export function server(options: RuntimeServerOptions): RuntimeServer {
 
 export class RuntimeServer {
   private readonly deliveryTracker = new AssistantDeliveryTracker();
+  private readonly observerBus: ObserverBus;
   private readonly sources: RuntimeSourceDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
   private readonly activities = new Map<string, RuntimeActivityDriver>();
+  private eventSeq = 0;
 
   constructor(private readonly options: RuntimeServerOptions) {
+    this.observerBus = new ObserverBus(options.observers ?? []);
     for (const adapter of options.adapters) {
       this.sources.push(...(adapter.sources ?? []));
       for (const delivery of adapter.deliveries ?? []) {
@@ -219,6 +228,11 @@ export class RuntimeServer {
     );
     for (const deliveryAttempt of deliveryAttempts) {
       try {
+        await this.emitDeliveryEvent('delivery.pending', {
+          event,
+          dispatched,
+          deliveryAttempt,
+        });
         await driver.deliver(
           {
             conversationId: dispatched.conversationId,
@@ -235,6 +249,11 @@ export class RuntimeServer {
           'completed',
         );
         this.deliveryTracker.markDelivered(deliveryAttempt);
+        await this.emitDeliveryEvent('delivery.completed', {
+          event,
+          dispatched,
+          deliveryAttempt,
+        });
       } catch (error) {
         this.options.runtime.markAssistantDelivery(
           dispatched.conversationId,
@@ -242,8 +261,57 @@ export class RuntimeServer {
           'failed',
           error,
         );
+        await this.emitDeliveryEvent('delivery.failed', {
+          event,
+          dispatched,
+          deliveryAttempt,
+          error,
+        });
         throw error;
       }
+    }
+  }
+
+  private async emitDeliveryEvent(
+    type: 'delivery.pending' | 'delivery.completed' | 'delivery.failed',
+    options: {
+      event: RuntimeBindingEvent;
+      dispatched: RuntimeDispatchResult;
+      deliveryAttempt: {
+        idempotencyKey: string;
+        assistantIndex: number;
+        status?: string;
+      };
+      error?: unknown;
+    },
+  ): Promise<void> {
+    const seq = this.eventSeq++;
+    const event: ExecutionEvent = {
+      id: `${type}:${options.deliveryAttempt.idempotencyKey}`,
+      type,
+      at: new Date().toISOString(),
+      seq,
+      conversationId: options.dispatched.conversationId,
+      runId: options.dispatched.conversationId,
+      replay: 'live',
+      idempotencyKey: options.deliveryAttempt.idempotencyKey,
+      source: 'runtime',
+      raw: {
+        sourceEvent: options.event,
+        delivery: options.dispatched.delivery,
+        assistantIndex: options.deliveryAttempt.assistantIndex,
+        error: options.error,
+      },
+      error: options.error,
+    };
+    try {
+      await this.observerBus.emit(event, {
+        delivery: options.dispatched.delivery,
+        runtimeEvent: options.event,
+      });
+    } catch {
+      // Delivery observers are presentation side effects; final delivery state
+      // is owned by the outbox and must not be rolled back by observer failure.
     }
   }
 

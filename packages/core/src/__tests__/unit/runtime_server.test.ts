@@ -15,6 +15,7 @@ describe('RuntimeServer', () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
+    const observerEvents: string[] = [];
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
@@ -75,6 +76,13 @@ describe('RuntimeServer', () => {
         agents: bundle.agents,
       }),
       activity: { kind: 'typing' },
+      observers: [
+        (event) => {
+          observerEvents.push(
+            `${event.seq}:${event.type}:${event.idempotencyKey}`,
+          );
+        },
+      ],
       adapters: [adapter],
     });
 
@@ -92,6 +100,10 @@ describe('RuntimeServer', () => {
 
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['reply:hello']);
+    expect(observerEvents).toEqual([
+      '0:delivery.pending:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+      '1:delivery.completed:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+    ]);
   });
 
   it('persists completed final deliveries across server restarts', async () => {
