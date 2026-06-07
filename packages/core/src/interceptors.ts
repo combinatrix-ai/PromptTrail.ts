@@ -768,11 +768,30 @@ export async function runMiddlewareWrapper<
 function sanitizeExecutionHandlerContext(
   context: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-  if (!context || !('delivery' in context)) {
+  if (!context || !hasSideEffectingContextHandle(context)) {
     return context;
   }
-  const { delivery: _delivery, ...rest } = context;
+  const {
+    delivery: _delivery,
+    deliveryBindings: _deliveryBindings,
+    observerDeliveryBindings: _observerDeliveryBindings,
+    platformBinding: _platformBinding,
+    platformBindings: _platformBindings,
+    ...rest
+  } = context;
   return rest;
+}
+
+function hasSideEffectingContextHandle(
+  context: Record<string, unknown>,
+): boolean {
+  return (
+    'delivery' in context ||
+    'deliveryBindings' in context ||
+    'observerDeliveryBindings' in context ||
+    'platformBinding' in context ||
+    'platformBindings' in context
+  );
 }
 
 function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(

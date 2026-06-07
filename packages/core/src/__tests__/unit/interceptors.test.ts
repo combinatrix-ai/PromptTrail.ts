@@ -111,6 +111,74 @@ describe('execution interceptors', () => {
     expect(result.steps[0].kind).toBe('middleware');
   });
 
+  it('omits platform delivery handles from middleware and hook contexts', async () => {
+    const seen: Array<Record<string, unknown> | undefined> = [];
+
+    await runExecutionPhase({
+      phase: 'beforeModel',
+      session: createSession(),
+      context: {
+        channelPrompt: 'discord channel policy',
+        delivery: { platform: 'discord', channelId: 'C1' },
+        deliveryBindings: { checkWrite: async () => undefined },
+        observerDeliveryBindings: { checkWrite: async () => undefined },
+        platformBinding: { messageId: 'M1' },
+        platformBindings: { progress: 'M2' },
+      },
+      middleware: [
+        Middleware.create({
+          name: 'channelPolicy',
+          beforeModel: ({ context }) => {
+            seen.push(context);
+          },
+        }),
+      ],
+      hooks: [
+        Hook.create({
+          name: 'audit',
+          onBeforeModel: ({ context }) => {
+            seen.push(context);
+          },
+        }),
+      ],
+    });
+
+    expect(seen).toEqual([
+      { channelPrompt: 'discord channel policy' },
+      { channelPrompt: 'discord channel policy' },
+    ]);
+  });
+
+  it('omits platform delivery handles from middleware wrapper contexts', async () => {
+    const seen: Array<Record<string, unknown> | undefined> = [];
+
+    await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
+      session: createSession(),
+      request: { prompt: 'original' },
+      context: {
+        channelPrompt: 'discord channel policy',
+        delivery: { platform: 'discord', channelId: 'C1' },
+        deliveryBindings: { checkWrite: async () => undefined },
+        observerDeliveryBindings: { checkWrite: async () => undefined },
+        platformBinding: { messageId: 'M1' },
+        platformBindings: { progress: 'M2' },
+      },
+      middleware: [
+        Middleware.create({
+          name: 'modelWrapper',
+          wrapModelCall: ({ context }, next) => {
+            seen.push(context);
+            return next();
+          },
+        }),
+      ],
+      call: () => 'reply',
+    });
+
+    expect(seen).toEqual([{ channelPrompt: 'discord channel policy' }]);
+  });
+
   it('rejects hook request and result patches at runtime', async () => {
     const hook = Hook.create({
       name: 'badHook',
