@@ -663,6 +663,128 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('replays stored durable events only to adopt-replayed observers', async () => {
+    const replayed: string[] = [];
+    const assistant = agent('replay-ui-agent').assistant('reply', () => 'hello');
+    const app = PromptTrail.app({
+      agents: { replay: assistant },
+      store: memoryStore(),
+      observers: [
+        {
+          name: 'live',
+          replayPolicy: 'live-only',
+          handle(event) {
+            if (event.replay === 'replayed') {
+              replayed.push(`live:${event.type}`);
+            }
+          },
+        },
+        {
+          name: 'journaled',
+          replayPolicy: 'live-and-journaled',
+          handle(event) {
+            if (event.replay === 'replayed') {
+              replayed.push(`journaled:${event.type}`);
+            }
+          },
+        },
+        {
+          name: 'adopt',
+          replayPolicy: 'adopt-replayed',
+          handle(event) {
+            if (event.replay === 'replayed') {
+              replayed.push(`adopt:${event.seq}:${event.type}`);
+            }
+          },
+        },
+      ],
+      middleware: [
+        Middleware.create({
+          name: 'state',
+          beforeModel: () => ({ session: { vars: { observed: true } } }),
+        }),
+      ],
+    });
+
+    const result = await app.run({
+      agent: 'replay',
+      runId: 'run-replayed-events',
+      durable: true,
+    });
+    const stored = app.events('run-replayed-events');
+    const replayResult = await app.replayEvents('run-replayed-events');
+
+    expect(result.status).toBe('done');
+    expect(stored.map((event) => `${event.replay}:${event.type}`)).toEqual([
+      'live:run.started',
+      'live:session.patched',
+      'live:model.started',
+      'live:model.completed',
+      'live:run.completed',
+    ]);
+    expect(replayResult.map((event) => `${event.replay}:${event.type}`)).toEqual(
+      [
+        'replayed:run.started',
+        'replayed:session.patched',
+        'replayed:model.started',
+        'replayed:model.completed',
+        'replayed:run.completed',
+      ],
+    );
+    expect(replayed).toEqual([
+      'adopt:0:run.started',
+      'adopt:1:session.patched',
+      'adopt:2:model.started',
+      'adopt:3:model.completed',
+      'adopt:4:run.completed',
+    ]);
+    expect(app.events('run-replayed-events')).toHaveLength(stored.length);
+  });
+
+  it('does not store journaled patch re-emissions in replayable event history', async () => {
+    const assistant = agent('replay-history-agent').turn('main', (turn) =>
+      turn
+        .steer()
+        .assistant('reply', (session) =>
+          `hello:${session.getVarsObject().observed}`,
+        )
+        .awaitUser(),
+    );
+    const app = PromptTrail.app({
+      agents: { replay: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'state',
+          beforeModel: () => ({ session: { vars: { observed: true } } }),
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'replay',
+      runId: 'run-replayed-history-dedupe',
+      durable: true,
+    });
+    const firstPatchEvents = app
+      .events('run-replayed-history-dedupe')
+      .filter((event) => event.type === 'session.patched');
+    const replay = await app.resume('run-replayed-history-dedupe');
+    const patchEvents = app
+      .events('run-replayed-history-dedupe')
+      .filter((event) => event.type === 'session.patched');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(firstPatchEvents).toHaveLength(1);
+    expect(patchEvents).toHaveLength(1);
+    expect(patchEvents[0]).toMatchObject({
+      replay: 'live',
+      idempotencyKey:
+        'run-replayed-history-dedupe:main/reply/beforeModel:beforeModel:session.patched:middleware:0:state',
+    });
+  });
+
   it('journals durable beforeAgent and afterAgent phases without re-running them on replay', async () => {
     const store = memoryStore();
     let beforeCalls = 0;

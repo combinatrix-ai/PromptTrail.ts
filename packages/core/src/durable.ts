@@ -2087,6 +2087,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
   journal: JournalState;
+  events?: ExecutionEvent[];
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
   eventSeq?: number;
@@ -2463,6 +2464,37 @@ export class PromptTrailApp {
     return run ? [...(run.outbox ?? [])] : [];
   }
 
+  events(runId: string): readonly ExecutionEvent[] {
+    const run = this.store.get(runId);
+    return run ? [...(run.events ?? [])] : [];
+  }
+
+  async replayEvents(
+    runId: string,
+    observers?: readonly ObserverLike[],
+  ): Promise<readonly ExecutionEvent[]> {
+    const run = this.getRun(runId);
+    const events = (run.events ?? []).map((event) => ({
+      ...event,
+      replay: 'replayed' as const,
+    }));
+    if (observers) {
+      const bus = new ObserverBus(observers, {
+        strictObservers: this.strictObservers,
+        ...this.observerDeliveryBindingOptions,
+      });
+      const context = observerContextFromRunContext(run.context);
+      for (const event of events) {
+        await bus.emit(event, context);
+      }
+      return events;
+    }
+    for (const event of events) {
+      await this.emitReplayedObservers(run, event);
+    }
+    return events;
+  }
+
   pendingAssistantDeliveryOutbox(): PendingAssistantDeliveryOutboxEntry[] {
     this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
@@ -2528,6 +2560,7 @@ export class PromptTrailApp {
       initial,
       status: 'open',
       journal: { results: new Map(), sequence: [] },
+      events: [],
       outbox: [],
       inbox: [],
       eventSeq: 0,
@@ -2649,6 +2682,23 @@ export class PromptTrailApp {
   }
 
   private async emitObservers<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+    event: ExecutionEvent,
+  ): Promise<void> {
+    if ((event.replay ?? 'live') === 'live') {
+      (run.events ??= []).push({ ...event });
+    }
+    await this.emitObserverBuses(run, event);
+  }
+
+  private async emitReplayedObservers<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+    event: ExecutionEvent,
+  ): Promise<void> {
+    await this.emitObserverBuses(run, event);
+  }
+
+  private async emitObserverBuses<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
     event: ExecutionEvent,
   ): Promise<void> {
