@@ -7,7 +7,7 @@ import {
   type ClientOptions,
   type Message as DiscordMessage,
 } from 'discord.js';
-import type { Observer, ObserverContext } from './execution';
+import type { ExecutionEvent, Observer, ObserverContext } from './execution';
 import type {
   ConcreteDiscordDeliveryTarget,
   DeliveryTarget,
@@ -36,6 +36,29 @@ export interface DiscordProgressObserverOptions {
     toolName?: string;
     toolCallId?: string;
   }) => string | undefined;
+  bindings?: DiscordProgressBindingStore;
+  bindingTtlMs?: number;
+  maxBindingEntries?: number;
+}
+
+export interface DiscordProgressBinding {
+  idempotencyKey: string;
+  target: ConcreteDiscordDeliveryTarget;
+  content: string;
+  messageId?: string;
+  status: 'claimed' | 'sent';
+}
+
+export interface DiscordProgressBindingStore {
+  claim(
+    idempotencyKey: string,
+    binding: DiscordProgressBinding,
+  ): boolean | Promise<boolean>;
+  set(
+    idempotencyKey: string,
+    binding: DiscordProgressBinding,
+  ): void | Promise<void>;
+  delete(idempotencyKey: string): void | Promise<void>;
 }
 
 export function createDiscordClient(options?: ClientOptions): Client {
@@ -122,6 +145,12 @@ export function discordProgressObserver(
   client: Client,
   options: DiscordProgressObserverOptions = {},
 ): Observer {
+  const bindings =
+    options.bindings ??
+    inMemoryDiscordProgressBindings({
+      maxEntries: options.maxBindingEntries,
+      ttlMs: options.bindingTtlMs,
+    });
   return {
     name: 'discordProgress',
     replayPolicy: 'live-and-journaled',
@@ -146,11 +175,34 @@ export function discordProgressObserver(
       if (!content) {
         return;
       }
-      const channel = await resolveDiscordDeliveryChannel(client, delivery);
-      if (!channel?.isSendable()) {
+      const idempotencyKey = discordProgressIdempotencyKey(event, delivery);
+      const claimed = await bindings.claim(idempotencyKey, {
+        idempotencyKey,
+        target: delivery,
+        content,
+        status: 'claimed',
+      });
+      if (!claimed) {
         return;
       }
-      await channel.send(content);
+      const channel = await resolveDiscordDeliveryChannel(client, delivery);
+      if (!channel?.isSendable()) {
+        await bindings.delete(idempotencyKey);
+        return;
+      }
+      try {
+        const sent = await channel.send(content);
+        await bindings.set(idempotencyKey, {
+          idempotencyKey,
+          target: delivery,
+          content,
+          messageId: discordMessageId(sent),
+          status: 'sent',
+        });
+      } catch (error) {
+        await bindings.delete(idempotencyKey);
+        throw error;
+      }
     },
   };
 }
@@ -262,6 +314,89 @@ function progressDeliveryTarget(
   return isDeliveryTarget(delivery) && isConcreteDiscordDeliveryTarget(delivery)
     ? delivery
     : undefined;
+}
+
+function inMemoryDiscordProgressBindings(options: {
+  ttlMs?: number;
+  maxEntries?: number;
+}): DiscordProgressBindingStore {
+  const ttlMs = options.ttlMs ?? 60 * 60 * 1_000;
+  const maxEntries = options.maxEntries ?? 10_000;
+  const bindings = new Map<
+    string,
+    { binding: DiscordProgressBinding; expiresAt: number }
+  >();
+  return {
+    claim(idempotencyKey, binding) {
+      pruneDiscordProgressBindings(bindings, ttlMs, maxEntries);
+      if (bindings.has(idempotencyKey)) {
+        return false;
+      }
+      bindings.set(idempotencyKey, {
+        binding,
+        expiresAt: Date.now() + ttlMs,
+      });
+      pruneDiscordProgressBindings(bindings, ttlMs, maxEntries);
+      return true;
+    },
+    set(idempotencyKey, binding) {
+      pruneDiscordProgressBindings(bindings, ttlMs, maxEntries);
+      bindings.set(idempotencyKey, {
+        binding,
+        expiresAt: Date.now() + ttlMs,
+      });
+      pruneDiscordProgressBindings(bindings, ttlMs, maxEntries);
+    },
+    delete(idempotencyKey) {
+      bindings.delete(idempotencyKey);
+    },
+  };
+}
+
+function pruneDiscordProgressBindings(
+  bindings: Map<
+    string,
+    { binding: DiscordProgressBinding; expiresAt: number }
+  >,
+  ttlMs: number,
+  maxEntries: number,
+): void {
+  const now = Date.now();
+  for (const [key, entry] of bindings) {
+    if (entry.expiresAt <= now) {
+      bindings.delete(key);
+    }
+  }
+  while (bindings.size > maxEntries) {
+    const oldest = bindings.keys().next().value as string | undefined;
+    if (!oldest) {
+      break;
+    }
+    bindings.delete(oldest);
+  }
+  if (ttlMs <= 0) {
+    bindings.clear();
+  }
+}
+
+function discordProgressIdempotencyKey(
+  event: ExecutionEvent,
+  delivery: ConcreteDiscordDeliveryTarget,
+): string {
+  return [
+    event.idempotencyKey ?? event.id,
+    delivery.platform,
+    delivery.channel,
+    delivery.thread ?? '-',
+  ].join(':');
+}
+
+function discordMessageId(sent: unknown): string | undefined {
+  if (sent && typeof sent === 'object' && 'id' in sent) {
+    const id = (sent as { id?: unknown }).id;
+    return typeof id === 'string' ? id : undefined;
+  }
+  return undefined;
 }
 
 function isDeliveryTarget(value: unknown): value is DeliveryTarget {
