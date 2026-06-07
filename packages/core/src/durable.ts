@@ -2322,7 +2322,7 @@ export class PromptTrailApp {
     }
 
     if (options.context) {
-      existing.context = options.context;
+      existing.context = cloneDurableRuntimeValue(options.context);
     }
     this.append(options.runId, normalizeInbound(options.input));
     return this.resume<TVars, TAttrs>(options.runId);
@@ -2347,7 +2347,7 @@ export class PromptTrailApp {
       middleware: this.middlewareForRun(run),
       hooks: this.hooksForRun(run),
       middlewareState: {},
-      context: run.context,
+      context: cloneDurableRuntimeValue(run.context),
       emitEvent: (event) => this.emitObservers(run, event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
@@ -2590,6 +2590,7 @@ export class PromptTrailApp {
     const durableAgent = this.resolveAgent(options.agent);
     const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
     const initial = options.session ?? Session.create<TVars, TAttrs>();
+    const context = cloneDurableRuntimeValue(options.context);
     const run: StoredRun<TVars, TAttrs> = {
       agent: durableAgent,
       agentName: durableAgent.name,
@@ -2600,7 +2601,7 @@ export class PromptTrailApp {
       outbox: [],
       inbox: [],
       eventSeq: 0,
-      context: options.context,
+      context,
     };
 
     if (durable) {
@@ -2635,7 +2636,7 @@ export class PromptTrailApp {
       middleware: this.middlewareForRun(run),
       hooks: this.hooksForRun(run),
       middlewareState: {},
-      context: run.context,
+      context: cloneDurableRuntimeValue(run.context),
       emitEvent: (event) => this.emitObservers(run, event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
@@ -2874,8 +2875,8 @@ function observerContextFromRunContext(
   context: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
   return {
-    runContext: context,
-    delivery: deliveryTargetFromContext(context),
+    runContext: cloneDurableRuntimeValue(context),
+    delivery: cloneDurableRuntimeValue(deliveryTargetFromContext(context)),
   };
 }
 
@@ -2893,6 +2894,7 @@ function createAssistantDeliveryOutboxEntry<TAttrs extends Attrs>(
 ): AssistantDeliveryOutboxEntry<TAttrs> {
   return completeAssistantDeliveryOutboxMetadata(conversationId, {
     ...delivery,
+    target: cloneDurableRuntimeValue(delivery.target),
     status: 'pending',
     attempts: 0,
   });
@@ -2921,6 +2923,20 @@ function completeAssistantDeliveryOutboxMetadata<TAttrs extends Attrs>(
       assistantIndex: entry.assistantIndex,
     },
   };
+}
+
+function cloneDurableRuntimeValue<T>(value: T): T {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  try {
+    return structuredClone(value);
+  } catch {
+    if (Array.isArray(value)) {
+      return [...value] as T;
+    }
+    return { ...(value as Record<string, unknown>) } as T;
+  }
 }
 
 function errorMessage(error: unknown): string {

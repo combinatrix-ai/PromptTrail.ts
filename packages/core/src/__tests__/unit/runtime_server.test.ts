@@ -80,6 +80,21 @@ describe('RuntimeServer', () => {
     const app = PromptTrail.app({
       store: memoryStore(),
       agents: { main },
+      middleware: [
+        Middleware.create({
+          name: 'mutatingDeliveryContext',
+          beforeModel: ({ context }) => {
+            const delivery = (
+              context as {
+                delivery?: { channel?: string };
+              }
+            ).delivery;
+            if (delivery) {
+              delivery.channel = 'middleware-mutated';
+            }
+          },
+        }),
+      ],
     });
     const bundle = PromptTrail.bundle({
       name: 'server-test',
@@ -112,8 +127,10 @@ describe('RuntimeServer', () => {
       deliveries: [
         {
           platform: 'discord',
-          deliver(_ctx, _target, message) {
-            deliveries.push(message.content);
+          deliver(_ctx, target, message) {
+            const discordTarget = target as { channel: string };
+            deliveries.push(`${discordTarget.channel}:${message.content}`);
+            discordTarget.channel = 'driver-mutated';
             return { messageId: 'M_reply' };
           },
         },
@@ -234,7 +251,7 @@ describe('RuntimeServer', () => {
     );
 
     expect(activityEvents).toEqual(['start', 'stop']);
-    expect(deliveries).toEqual(['reply:hello']);
+    expect(deliveries).toEqual(['general:reply:hello']);
     expect(observerEvents).toEqual([
       '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-',
       `0:delivery.pending:${finalDeliveryKey}`,
@@ -290,6 +307,7 @@ describe('RuntimeServer', () => {
         }),
       },
     ]);
+    expect(app.pendingAssistantDeliveryOutbox()).toEqual([]);
     expect(observerWrites).toEqual([
       'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
       'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app',
@@ -1175,6 +1193,93 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('isolates existing run context from returned dispatch context mutations', async () => {
+    const main = agent('main').chat('chat', (session) => ({
+      content: `reply:${session.getLastMessage()?.content ?? ''}`,
+    }));
+    const bundle = PromptTrail.bundle({
+      name: 'server-existing-context-clone-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const event: DiscordMessageEvent = {
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    };
+    const binding = bundle.bindings[0];
+    const defaults = mergeBindingDefaults(bundle.defaults, binding.defaults);
+
+    await dispatchRuntimeBindingEvent({ app, binding, event, defaults });
+    const dispatched = await dispatchRuntimeBindingEvent({
+      app,
+      binding,
+      event,
+      defaults,
+    });
+    const delivery = dispatched.context.delivery as
+      | { channel?: string }
+      | undefined;
+    if (delivery) {
+      delivery.channel = 'caller-mutated';
+    }
+
+    const runId = 'discord:guild:workroom:channel:C_general:user:U_alice';
+    const deliveryKey = assistantDeliveryKey(
+      runId,
+      0,
+      discordDeliveryTarget('general'),
+    );
+    const secondDeliveryKey = assistantDeliveryKey(
+      runId,
+      1,
+      discordDeliveryTarget('general'),
+    );
+    expect(
+      app.pendingAssistantDeliveryOutbox().map(({ entry }) => ({
+        idempotencyKey: entry.idempotencyKey,
+        target: entry.target,
+      })),
+    ).toEqual([
+      {
+        idempotencyKey: deliveryKey,
+        target: expect.objectContaining({
+          platform: 'discord',
+          channel: 'general',
+        }),
+      },
+      {
+        idempotencyKey: secondDeliveryKey,
+        target: expect.objectContaining({
+          platform: 'discord',
+          channel: 'general',
+        }),
+      },
+    ]);
+  });
+
   it('fills runtime outbox metadata on existing delivery entries', async () => {
     const store = memoryStore();
     const main = agent('main').assistant('reply', () => 'stored reply');
@@ -1297,8 +1402,9 @@ describe('RuntimeServer', () => {
           deliveries: [
             {
               platform: 'discord',
-              deliver(ctx, _target, message) {
+              deliver(ctx, target, message) {
                 order.push('deliver');
+                (target as { channel?: string }).channel = 'retry-mutated';
                 deliveries.push(
                   `${ctx.idempotencyKey}:${JSON.stringify(ctx.platformBinding)}:${message.content}`,
                 );
@@ -1322,6 +1428,7 @@ describe('RuntimeServer', () => {
         status: entry.status,
         attempts: entry.attempts,
         lastError: entry.lastError,
+        target: entry.target,
       })),
     ).toEqual([
       {
@@ -1329,6 +1436,10 @@ describe('RuntimeServer', () => {
         status: 'delivered',
         attempts: 1,
         lastError: undefined,
+        target: expect.objectContaining({
+          platform: 'discord',
+          channel: 'general',
+        }),
       },
     ]);
   });

@@ -139,14 +139,16 @@ export async function dispatchRuntimeBindingEvent<
   options: RuntimeDispatchOptions<TEvent>,
 ): Promise<RuntimeDispatchResult<TVars, TAttrs>> {
   const conversationId = options.binding.conversation(options.event);
-  const delivery = resolveRuntimeDelivery(
+  const resolvedDelivery = resolveRuntimeDelivery(
     options.defaults.delivery,
     options.event,
   );
+  const contextDelivery = cloneRuntimeDispatchValue(resolvedDelivery);
+  const delivery = cloneRuntimeDispatchValue(resolvedDelivery);
   const context = runtimeContextFromDefaults(
     conversationId,
     options.defaults,
-    delivery,
+    contextDelivery,
     options.event,
   );
   const content =
@@ -176,6 +178,20 @@ export async function dispatchRuntimeBindingEvent<
     content,
     result,
   };
+}
+
+function cloneRuntimeDispatchValue<T>(value: T): T {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  try {
+    return structuredClone(value);
+  } catch {
+    if (Array.isArray(value)) {
+      return [...value] as T;
+    }
+    return { ...(value as Record<string, unknown>) } as T;
+  }
 }
 
 export function passesDiscordBehavior(

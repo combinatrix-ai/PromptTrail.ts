@@ -296,9 +296,10 @@ export class RuntimeServer {
     if (!driver) {
       return undefined;
     }
+    const activityDelivery = cloneEventRawValue(delivery);
     return driver.start(
-      { event, delivery },
-      delivery,
+      { event, delivery: cloneEventRawValue(delivery) },
+      activityDelivery,
       this.options.activity ?? { kind: 'processing' },
     );
   }
@@ -337,15 +338,16 @@ export class RuntimeServer {
           deliveryAttempt.idempotencyKey,
           'delivering',
         );
+        const driverDelivery = cloneEventRawValue(dispatched.delivery);
         platformBinding = await driver.deliver(
           {
             conversationId: dispatched.conversationId,
             idempotencyKey: deliveryAttempt.idempotencyKey,
             event,
-            delivery: dispatched.delivery,
+            delivery: cloneEventRawValue(dispatched.delivery),
             platformBinding: deliveryAttempt.platformBinding,
           },
-          dispatched.delivery,
+          driverDelivery,
           deliveryAttempt.message,
         );
       } catch (error) {
@@ -426,15 +428,16 @@ export class RuntimeServer {
         entry.idempotencyKey,
         'delivering',
       );
+      const driverDelivery = cloneEventRawValue(entry.target);
       platformBinding = await driver.deliver(
         {
           conversationId: runId,
           idempotencyKey: entry.idempotencyKey,
           event,
-          delivery: entry.target,
+          delivery: cloneEventRawValue(entry.target),
           platformBinding: entry.platformBinding,
         },
-        entry.target,
+        driverDelivery,
         entry.message,
       );
     } catch (error) {
@@ -560,6 +563,7 @@ export class RuntimeServer {
     if (!driver) {
       throw error;
     }
+    const driverDelivery = cloneEventRawValue(delivery);
     await driver.deliver(
       {
         conversationId,
@@ -569,9 +573,9 @@ export class RuntimeServer {
           event,
         ),
         event,
-        delivery,
+        delivery: cloneEventRawValue(delivery),
       },
-      delivery,
+      driverDelivery,
       { type: 'assistant', content: message },
     );
   }
