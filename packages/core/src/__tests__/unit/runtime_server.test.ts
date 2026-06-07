@@ -212,4 +212,166 @@ describe('RuntimeServer', () => {
       },
     ]);
   });
+
+  it('retries pending final deliveries before starting sources', async () => {
+    const order: string[] = [];
+    const deliveries: string[] = [];
+    const main = agent('main').assistant('reply', () => 'stored reply');
+    const bundle = PromptTrail.bundle({
+      name: 'server-outbox-retry-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const runId = 'discord:guild:workroom:channel:C_general';
+    await app.run({
+      agent: 'main',
+      runId,
+      durable: true,
+    });
+    app.prepareAssistantDeliveries(runId, [
+      {
+        assistantIndex: 0,
+        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        message: {
+          type: 'assistant',
+          content: 'retry me',
+        },
+        target: discord.channel('general'),
+      },
+    ]);
+    app.markAssistantDelivery(
+      runId,
+      `${runId}:turn:1:delivery:final`,
+      'failed',
+      new Error('previous delivery failed'),
+    );
+
+    const server = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start() {
+                order.push('source-start');
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(ctx, _target, message) {
+                order.push('deliver');
+                deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(order).toEqual(['deliver', 'source-start']);
+    expect(deliveries).toEqual([
+      'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry me',
+    ]);
+    expect(
+      app.assistantDeliveryOutbox(runId).map((entry) => entry.status),
+    ).toEqual(['completed']);
+  });
+
+  it('stops startup delivery retries for a conversation after the first failure', async () => {
+    const order: string[] = [];
+    const main = agent('main').assistant('reply', () => 'stored reply');
+    const bundle = PromptTrail.bundle({
+      name: 'server-outbox-retry-order-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const runId = 'discord:guild:workroom:channel:C_general';
+    await app.run({
+      agent: 'main',
+      runId,
+      durable: true,
+    });
+    app.prepareAssistantDeliveries(runId, [
+      {
+        assistantIndex: 0,
+        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        message: { type: 'assistant', content: 'first' },
+        target: discord.channel('general'),
+      },
+      {
+        assistantIndex: 1,
+        idempotencyKey: `${runId}:turn:2:delivery:final`,
+        message: { type: 'assistant', content: 'second' },
+        target: discord.channel('general'),
+      },
+    ]);
+
+    const server = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start() {
+                order.push('source-start');
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(ctx) {
+                order.push(`deliver:${ctx.idempotencyKey}`);
+                throw new Error('delivery failed');
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(order).toEqual([
+      'deliver:discord:guild:workroom:channel:C_general:turn:1:delivery:final',
+      'source-start',
+    ]);
+    expect(
+      app.assistantDeliveryOutbox(runId).map((entry) => ({
+        idempotencyKey: entry.idempotencyKey,
+        status: entry.status,
+      })),
+    ).toEqual([
+      {
+        idempotencyKey:
+          'discord:guild:workroom:channel:C_general:turn:1:delivery:final',
+        status: 'failed',
+      },
+      {
+        idempotencyKey:
+          'discord:guild:workroom:channel:C_general:turn:2:delivery:final',
+        status: 'pending',
+      },
+    ]);
+  });
 });

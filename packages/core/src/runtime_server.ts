@@ -1,4 +1,7 @@
-import type { PromptTrailApp } from './durable';
+import type {
+  PendingAssistantDeliveryOutboxEntry,
+  PromptTrailApp,
+} from './durable';
 import {
   ObserverBus,
   type ExecutionEvent,
@@ -133,6 +136,7 @@ export class RuntimeServer {
   }
 
   async start(): Promise<void> {
+    await this.retryPendingDeliveries();
     for (const source of this.sources) {
       await source.start({
         emit: (event, emitOptions) =>
@@ -230,7 +234,8 @@ export class RuntimeServer {
       try {
         await this.emitDeliveryEvent('delivery.pending', {
           event,
-          dispatched,
+          conversationId: dispatched.conversationId,
+          delivery: dispatched.delivery,
           deliveryAttempt,
         });
         await driver.deliver(
@@ -251,7 +256,8 @@ export class RuntimeServer {
         this.deliveryTracker.markDelivered(deliveryAttempt);
         await this.emitDeliveryEvent('delivery.completed', {
           event,
-          dispatched,
+          conversationId: dispatched.conversationId,
+          delivery: dispatched.delivery,
           deliveryAttempt,
         });
       } catch (error) {
@@ -263,7 +269,8 @@ export class RuntimeServer {
         );
         await this.emitDeliveryEvent('delivery.failed', {
           event,
-          dispatched,
+          conversationId: dispatched.conversationId,
+          delivery: dispatched.delivery,
           deliveryAttempt,
           error,
         });
@@ -272,11 +279,90 @@ export class RuntimeServer {
     }
   }
 
+  private async retryPendingDeliveries(): Promise<void> {
+    for (const [runId, entries] of pendingDeliveriesByRun(
+      this.options.runtime.pendingAssistantDeliveryOutbox(),
+    )) {
+      for (const entry of entries) {
+        const completed = await this.retryOutboxEntry(runId, entry);
+        if (!completed) {
+          break;
+        }
+      }
+    }
+  }
+
+  private async retryOutboxEntry(
+    runId: string,
+    entry: {
+      idempotencyKey: string;
+      assistantIndex: number;
+      message: Message;
+      target?: unknown;
+    },
+  ): Promise<boolean> {
+    if (!isRuntimeDeliveryTarget(entry.target)) {
+      return false;
+    }
+    const driver = this.deliveries.get(entry.target.platform);
+    if (!driver) {
+      return false;
+    }
+    const event = retryDeliveryEvent(runId);
+    try {
+      await this.emitDeliveryEvent('delivery.pending', {
+        event,
+        conversationId: runId,
+        delivery: entry.target,
+        deliveryAttempt: entry,
+      });
+      await driver.deliver(
+        {
+          conversationId: runId,
+          idempotencyKey: entry.idempotencyKey,
+          event,
+          delivery: entry.target,
+        },
+        entry.target,
+        entry.message,
+      );
+      this.options.runtime.markAssistantDelivery(
+        runId,
+        entry.idempotencyKey,
+        'completed',
+      );
+      this.deliveryTracker.markDelivered(entry);
+      await this.emitDeliveryEvent('delivery.completed', {
+        event,
+        conversationId: runId,
+        delivery: entry.target,
+        deliveryAttempt: entry,
+      });
+      return true;
+    } catch (error) {
+      this.options.runtime.markAssistantDelivery(
+        runId,
+        entry.idempotencyKey,
+        'failed',
+        error,
+      );
+      await this.emitDeliveryEvent('delivery.failed', {
+        event,
+        conversationId: runId,
+        delivery: entry.target,
+        deliveryAttempt: entry,
+        error,
+      });
+      return false;
+    }
+  }
+
   private async emitDeliveryEvent(
     type: 'delivery.pending' | 'delivery.completed' | 'delivery.failed',
     options: {
       event: RuntimeBindingEvent;
-      dispatched: RuntimeDispatchResult;
+      conversationId: string;
+      delivery: DeliveryTarget;
       deliveryAttempt: {
         idempotencyKey: string;
         assistantIndex: number;
@@ -291,14 +377,14 @@ export class RuntimeServer {
       type,
       at: new Date().toISOString(),
       seq,
-      conversationId: options.dispatched.conversationId,
-      runId: options.dispatched.conversationId,
+      conversationId: options.conversationId,
+      runId: options.conversationId,
       replay: 'live',
       idempotencyKey: options.deliveryAttempt.idempotencyKey,
       source: 'runtime',
       raw: {
         sourceEvent: options.event,
-        delivery: options.dispatched.delivery,
+        delivery: options.delivery,
         assistantIndex: options.deliveryAttempt.assistantIndex,
         error: options.error,
       },
@@ -306,7 +392,7 @@ export class RuntimeServer {
     };
     try {
       await this.observerBus.emit(event, {
-        delivery: options.dispatched.delivery,
+        delivery: options.delivery,
         runtimeEvent: options.event,
       });
     } catch {
@@ -355,4 +441,51 @@ export class RuntimeServer {
     }
     return errorMessage;
   }
+}
+
+function isRuntimeDeliveryTarget(value: unknown): value is DeliveryTarget {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'platform' in value &&
+    typeof (value as { platform?: unknown }).platform === 'string'
+  );
+}
+
+function pendingDeliveriesByRun(
+  entries: readonly PendingAssistantDeliveryOutboxEntry[],
+): Array<[string, PendingAssistantDeliveryOutboxEntry['entry'][]]> {
+  const grouped = new Map<
+    string,
+    PendingAssistantDeliveryOutboxEntry['entry'][]
+  >();
+  for (const { runId, entry } of entries) {
+    const existing = grouped.get(runId);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      grouped.set(runId, [entry]);
+    }
+  }
+  for (const runEntries of grouped.values()) {
+    runEntries.sort(
+      (left, right) =>
+        left.assistantIndex - right.assistantIndex ||
+        left.idempotencyKey.localeCompare(right.idempotencyKey),
+    );
+  }
+  return [...grouped.entries()];
+}
+
+function retryDeliveryEvent(runId: string): RuntimeBindingEvent {
+  // Startup retries do not have the original source event in memory. Delivery
+  // drivers must use the persisted delivery target for routing on this path.
+  return {
+    source: 'cron',
+    job: {
+      id: 'runtime-outbox-retry',
+      name: `Runtime outbox retry for ${runId}`,
+      schedule: '',
+    },
+  };
 }

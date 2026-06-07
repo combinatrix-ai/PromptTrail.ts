@@ -109,6 +109,13 @@ export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   error?: unknown;
 }
 
+export interface PendingAssistantDeliveryOutboxEntry<
+  TAttrs extends Attrs = Attrs,
+> {
+  runId: string;
+  entry: AssistantDeliveryOutboxEntry<TAttrs>;
+}
+
 export class Suspend extends Error {
   constructor(readonly stepId: string) {
     super(`suspend:${stepId}`);
@@ -864,6 +871,18 @@ export class PromptTrailApp {
   ): readonly AssistantDeliveryOutboxEntry[] {
     const run = this.store.get(runId);
     return run ? [...(run.outbox ?? [])] : [];
+  }
+
+  pendingAssistantDeliveryOutbox(): PendingAssistantDeliveryOutboxEntry[] {
+    const pending: PendingAssistantDeliveryOutboxEntry[] = [];
+    for (const [runId, run] of this.store.entries()) {
+      for (const entry of run.outbox ?? []) {
+        if (entry.status === 'pending' || entry.status === 'failed') {
+          pending.push({ runId, entry });
+        }
+      }
+    }
+    return pending;
   }
 
   private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
