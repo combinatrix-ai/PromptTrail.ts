@@ -128,7 +128,7 @@ export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
 
 export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   extends AssistantDeliveryOutboxInput<TAttrs> {
-  status: 'pending' | 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'delivering' | 'completed' | 'failed' | 'skipped';
   error?: unknown;
 }
 
@@ -2254,7 +2254,7 @@ export class PromptTrailApp {
         deliveries.some(
           (delivery) => delivery.idempotencyKey === entry.idempotencyKey,
         ) &&
-        (entry.status === 'pending' || entry.status === 'failed'),
+        isRetryableAssistantDeliveryStatus(entry.status),
     );
   }
 
@@ -2291,7 +2291,7 @@ export class PromptTrailApp {
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
     for (const [runId, run] of this.store.entries()) {
       for (const entry of run.outbox ?? []) {
-        if (entry.status === 'pending' || entry.status === 'failed') {
+        if (isRetryableAssistantDeliveryStatus(entry.status)) {
           pending.push({ runId, entry });
         }
       }
@@ -2608,6 +2608,14 @@ function observerContextFromRunContext(
     runContext: context,
     delivery: deliveryTargetFromContext(context),
   };
+}
+
+function isRetryableAssistantDeliveryStatus(
+  status: AssistantDeliveryOutboxEntry['status'],
+): boolean {
+  return (
+    status === 'pending' || status === 'delivering' || status === 'failed'
+  );
 }
 
 function assistantDeliveryKey(runId: string, assistantIndex: number): string {

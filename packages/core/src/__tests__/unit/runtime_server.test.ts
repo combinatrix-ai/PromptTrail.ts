@@ -1033,6 +1033,70 @@ describe('RuntimeServer', () => {
     ).toEqual(['completed']);
   });
 
+  it('retries delivering final deliveries on startup', async () => {
+    const deliveries: string[] = [];
+    const main = agent('main').assistant('reply', () => 'stored reply');
+    const bundle = PromptTrail.bundle({
+      name: 'server-outbox-delivering-retry-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const runId = 'discord:guild:workroom:channel:C_general';
+    await app.run({
+      agent: 'main',
+      runId,
+      durable: true,
+    });
+    app.prepareAssistantDeliveries(runId, [
+      {
+        assistantIndex: 0,
+        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        message: {
+          type: 'assistant',
+          content: 'retry delivering',
+        },
+        target: discord.channel('general'),
+      },
+    ]);
+    app.markAssistantDelivery(
+      runId,
+      `${runId}:turn:1:delivery:final`,
+      'delivering',
+    );
+
+    const server = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [
+        {
+          name: 'test-discord',
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(ctx, _target, message) {
+                deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(deliveries).toEqual([
+      'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry delivering',
+    ]);
+    expect(
+      app.assistantDeliveryOutbox(runId).map((entry) => entry.status),
+    ).toEqual(['completed']);
+  });
+
   it('stops startup delivery retries for a conversation after the first failure', async () => {
     const order: string[] = [];
     const main = agent('main').assistant('reply', () => 'stored reply');

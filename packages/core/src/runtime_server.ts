@@ -309,6 +309,11 @@ export class RuntimeServer {
           delivery: dispatched.delivery,
           deliveryAttempt,
         });
+        this.options.runtime.markAssistantDelivery(
+          dispatched.conversationId,
+          deliveryAttempt.idempotencyKey,
+          'delivering',
+        );
         await driver.deliver(
           {
             conversationId: dispatched.conversationId,
@@ -387,6 +392,11 @@ export class RuntimeServer {
         delivery: entry.target,
         deliveryAttempt: entry,
       });
+      this.options.runtime.markAssistantDelivery(
+        runId,
+        entry.idempotencyKey,
+        'delivering',
+      );
       await driver.deliver(
         {
           conversationId: runId,
