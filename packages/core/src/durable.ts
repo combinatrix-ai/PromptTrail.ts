@@ -1846,12 +1846,21 @@ export class DurableAgent<
       stepId,
       phase: 'model',
     });
-    const result = await handler(session);
-    await emitDurableExecutionEvent(state, 'model.completed', {
-      stepId,
-      phase: 'model',
-    });
-    return result;
+    try {
+      const result = await handler(session);
+      await emitDurableExecutionEvent(state, 'model.completed', {
+        stepId,
+        phase: 'model',
+      });
+      return result;
+    } catch (error) {
+      await emitDurableExecutionEvent(state, 'model.failed', {
+        stepId,
+        phase: 'model',
+        error,
+      });
+      throw error;
+    }
   }
 
   private async executeDurableTool<TAttrs extends Attrs>(
@@ -1882,28 +1891,40 @@ export class DurableAgent<
       toolCallId: call.id,
       name: call.name,
     });
-    const result = await tool.execute(call.arguments, {
-      runId: state.runId,
-      stepId,
-      session,
-      context: state.context,
-      toolCall: call,
-      activity,
-      durable: createDurableToolBoundary(
-        state,
-        journal.journalStepId,
-        call,
-        journal.nestedStepIds,
-      ),
-    });
-    await emitDurableExecutionEvent(state, 'tool.completed', {
-      stepId: journal.eventStepId ?? stepId,
-      phase: 'tool',
-      raw: { toolCall: call, activity },
-      toolCallId: call.id,
-      name: call.name,
-    });
-    return result;
+    try {
+      const result = await tool.execute(call.arguments, {
+        runId: state.runId,
+        stepId,
+        session,
+        context: state.context,
+        toolCall: call,
+        activity,
+        durable: createDurableToolBoundary(
+          state,
+          journal.journalStepId,
+          call,
+          journal.nestedStepIds,
+        ),
+      });
+      await emitDurableExecutionEvent(state, 'tool.completed', {
+        stepId: journal.eventStepId ?? stepId,
+        phase: 'tool',
+        raw: { toolCall: call, activity },
+        toolCallId: call.id,
+        name: call.name,
+      });
+      return result;
+    } catch (error) {
+      await emitDurableExecutionEvent(state, 'tool.failed', {
+        stepId: journal.eventStepId ?? stepId,
+        phase: 'tool',
+        raw: { toolCall: call, activity },
+        toolCallId: call.id,
+        name: call.name,
+        error,
+      });
+      throw error;
+    }
   }
 }
 

@@ -2218,6 +2218,47 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('emits durable model.failed when live model execution fails', async () => {
+    const events: string[] = [];
+    let modelCalls = 0;
+    const assistant = agent('model-failed').assistant('reply', () => {
+      modelCalls++;
+      throw new Error('model unavailable');
+    });
+    const app = PromptTrail.app({
+      agents: { failed: assistant },
+      observers: [
+        (event) => {
+          if (
+            event.type.startsWith('model.') ||
+            event.type.startsWith('run.') ||
+            event.type === 'error'
+          ) {
+            events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
+          }
+        },
+      ],
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: 'failed',
+        runId: 'run-model-failed',
+        durable: true,
+      }),
+    ).rejects.toThrow('model unavailable');
+
+    expect(modelCalls).toBe(1);
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:model.started:reply/model',
+      '2:model.failed:reply/model',
+      '3:error:-',
+    ]);
+    expect(app.journal('run-model-failed')).toEqual([]);
+  });
+
   it('does not let model observer failures re-run durable models', async () => {
     let modelCalls = 0;
     const assistant = agent('model-observer-failure')
@@ -2402,6 +2443,58 @@ describe('durable agent runtime', () => {
       '6:run.started:-:-:-',
       '7:run.suspended:wait/input/input:-:-',
     ]);
+  });
+
+  it('emits durable tool.failed when live tool execution fails', async () => {
+    const events: string[] = [];
+    let toolCalls = 0;
+    const assistant = agent('tool-failed')
+      .tool('lookup', {
+        execute: async () => {
+          toolCalls++;
+          throw new Error('tool unavailable');
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: {},
+          },
+        ],
+      }))
+      .runTools('tools');
+    const app = PromptTrail.app({
+      agents: { failed: assistant },
+      observers: [
+        (event) => {
+          if (event.type.startsWith('tool.') || event.type === 'error') {
+            events.push(
+              `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.name ?? '-'}`,
+            );
+          }
+        },
+      ],
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: 'failed',
+        runId: 'run-tool-failed',
+        durable: true,
+      }),
+    ).rejects.toThrow('tool unavailable');
+
+    expect(toolCalls).toBe(1);
+    expect(events).toEqual([
+      '3:tool.started:tools/call-1:lookup',
+      '4:tool.failed:tools/call-1:lookup',
+      '5:error:-:-',
+    ]);
+    expect(app.journal('run-tool-failed')).toEqual(['reply/model']);
   });
 
   it('does not let tool observer failures re-run durable tools', async () => {
