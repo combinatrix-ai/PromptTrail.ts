@@ -173,10 +173,9 @@ describe('Agent interceptors', () => {
           },
         }),
       )
-      .subroutine(
-        (agent) => agent.user('hidden').assistant('should not run'),
-        { retainMessages: false },
-      )
+      .subroutine((agent) => agent.user('hidden').assistant('should not run'), {
+        retainMessages: false,
+      })
       .assistant('outer')
       .execute();
 
@@ -379,9 +378,7 @@ describe('Agent interceptors', () => {
       calls++;
       return `fluent:${calls}`;
     });
-    const agent = Agent.create()
-      .durable({ store })
-      .assistant(source);
+    const agent = Agent.create().durable({ store }).assistant(source);
 
     await agent.execute();
     const replayed = await agent.execute();
@@ -409,10 +406,20 @@ describe('Agent interceptors', () => {
   });
 
   it('emits session.patched events for materialized phase patches', async () => {
-    const events: string[] = [];
+    const events: Array<{
+      seq: number;
+      type: string;
+      phase: string;
+      key: string | undefined;
+    }> = [];
     const session = await Agent.create()
       .observe((event) => {
-        events.push(`${event.seq}:${event.type}:${event.phase ?? '-'}`);
+        events.push({
+          seq: event.seq,
+          type: event.type,
+          phase: event.phase ?? '-',
+          key: event.idempotencyKey,
+        });
       })
       .use(
         Middleware.create({
@@ -436,13 +443,44 @@ describe('Agent interceptors', () => {
       before: true,
       afterModel: true,
     });
+    const runScope = events[0].key?.replace(':agent:0:run.started', '');
     expect(events).toEqual([
-      '0:run.started:-',
-      '1:session.patched:beforeAgent',
-      '2:model.started:model',
-      '3:model.completed:model',
-      '4:session.patched:afterModel',
-      '5:run.completed:-',
+      {
+        seq: 0,
+        type: 'run.started',
+        phase: '-',
+        key: `${runScope}:agent:0:run.started`,
+      },
+      {
+        seq: 1,
+        type: 'session.patched',
+        phase: 'beforeAgent',
+        key: `${runScope}:phase:1:session.patched:beforeAgent:middleware:0:patchEvents`,
+      },
+      {
+        seq: 2,
+        type: 'model.started',
+        phase: 'model',
+        key: `${runScope}:model:2:model.started`,
+      },
+      {
+        seq: 3,
+        type: 'model.completed',
+        phase: 'model',
+        key: `${runScope}:model:3:model.completed`,
+      },
+      {
+        seq: 4,
+        type: 'session.patched',
+        phase: 'afterModel',
+        key: `${runScope}:phase:4:session.patched:afterModel:middleware:0:patchEvents`,
+      },
+      {
+        seq: 5,
+        type: 'run.completed',
+        phase: '-',
+        key: `${runScope}:agent:5:run.completed`,
+      },
     ]);
   });
 

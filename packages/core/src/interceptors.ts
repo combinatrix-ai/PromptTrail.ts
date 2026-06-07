@@ -451,6 +451,11 @@ async function emitPhaseStepEvents<
       continue;
     }
     const seq = runtime.nextEventSeq();
+    const idempotencyKey = executionPhaseEventIdempotencyKey(
+      runtime,
+      step,
+      seq,
+    );
     await runtime.emitEvent({
       id: `phase:${seq}`,
       type: 'session.patched',
@@ -458,6 +463,7 @@ async function emitPhaseStepEvents<
       seq,
       phase: step.phase,
       replay: 'live',
+      idempotencyKey,
       sessionVersion: step.transition.afterVersion,
       source: step.kind,
       raw: {
@@ -470,6 +476,26 @@ async function emitPhaseStepEvents<
       },
     });
   }
+}
+
+function executionPhaseEventIdempotencyKey<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  step: ExecutionPhaseStep<TAttrs>,
+  seq: number,
+): string {
+  return [
+    runtime.eventScopeId ?? 'direct',
+    'phase',
+    seq,
+    'session.patched',
+    step.phase,
+    step.kind,
+    step.registrationIndex,
+    step.name ?? '<anonymous>',
+  ].join(':');
 }
 
 export async function runExecutionPhase<
