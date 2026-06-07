@@ -202,7 +202,13 @@ export class RuntimeServer {
         });
         await this.deliverAssistantMessages(event, dispatched);
       } catch (error) {
-        await this.deliverError(sourceType, event, delivery, error);
+        await this.deliverError(
+          sourceType,
+          conversationId,
+          event,
+          delivery,
+          error,
+        );
         if (
           this.options.strictObservers &&
           error instanceof ObserverFailureError
@@ -471,6 +477,7 @@ export class RuntimeServer {
 
   private async deliverError(
     sourceType: string,
+    conversationId: string,
     event: RuntimeBindingEvent,
     delivery: DeliveryTarget | undefined,
     error: unknown,
@@ -490,8 +497,12 @@ export class RuntimeServer {
     }
     await driver.deliver(
       {
-        conversationId: 'runtime-error',
-        idempotencyKey: `runtime-error:${Date.now()}`,
+        conversationId,
+        idempotencyKey: runtimeErrorDeliveryKey(
+          sourceType,
+          conversationId,
+          event,
+        ),
         event,
         delivery,
       },
@@ -556,4 +567,40 @@ function retryDeliveryEvent(runId: string): RuntimeBindingEvent {
       schedule: '',
     },
   };
+}
+
+function runtimeErrorDeliveryKey(
+  sourceType: string,
+  conversationId: string,
+  event: RuntimeBindingEvent,
+): string {
+  return `runtime-error:${fnv1a(
+    stableStringify({
+      sourceType,
+      conversationId,
+      event,
+    }),
+  )}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function fnv1a(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }

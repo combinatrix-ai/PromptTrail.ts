@@ -117,6 +117,83 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('uses stable idempotency keys for runtime error delivery', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const deliveries: string[] = [];
+    const main = agent('main').chat('chat', () => {
+      throw new Error('handler failed');
+    });
+    const bundle = PromptTrail.bundle({
+      name: 'server-error-delivery-test',
+      agents: { main },
+      defaults: { durable: false },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      errorMessage: 'Something failed.',
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(ctx, _target, message) {
+                deliveries.push(
+                  `${ctx.conversationId}:${ctx.idempotencyKey}:${message.content}`,
+                );
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const event: DiscordMessageEvent = {
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    };
+
+    await server.start();
+    await emit?.(event);
+    await emit?.(event);
+
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries[0]).toBe(deliveries[1]);
+    expect(deliveries[0]).toMatch(
+      /^discord:guild:workroom:channel:C_general:user:U_alice:runtime-error:[0-9a-f]{8}:Something failed\.$/,
+    );
+  });
+
   it('threads runtime binding context into durable middleware', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
