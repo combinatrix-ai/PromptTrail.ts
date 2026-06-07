@@ -11,6 +11,8 @@ import type { Session, Attrs, Vars } from './session';
 export type ExecutionLifecyclePhase =
   | 'beforeAgent'
   | 'afterAgent'
+  | 'beforeTemplate'
+  | 'afterTemplate'
   | 'beforeModel'
   | 'prepareModelInput'
   | 'afterModel'
@@ -177,6 +179,8 @@ export interface HookDefinition<
   onRunEnd?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeAgent?: HookPhaseHandler<TVars, TAttrs>;
   onAfterAgent?: HookPhaseHandler<TVars, TAttrs>;
+  onBeforeTemplate?: HookPhaseHandler<TVars, TAttrs>;
+  onAfterTemplate?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeModel?: HookPhaseHandler<TVars, TAttrs>;
   onAfterModel?: HookPhaseHandler<TVars, TAttrs>;
   onBeforeTool?: HookPhaseHandler<TVars, TAttrs>;
@@ -820,6 +824,10 @@ function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
       return hook.onRunStart ?? hook.onBeforeAgent;
     case 'afterAgent':
       return hook.onRunEnd ?? hook.onAfterAgent;
+    case 'beforeTemplate':
+      return hook.onBeforeTemplate;
+    case 'afterTemplate':
+      return hook.onAfterTemplate;
     case 'beforeModel':
       return hook.onBeforeModel;
     case 'afterModel':
@@ -846,6 +854,9 @@ function middlewareHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
       return middleware.beforeAgent;
     case 'afterAgent':
       return middleware.afterAgent;
+    case 'beforeTemplate':
+    case 'afterTemplate':
+      return undefined;
     case 'beforeModel':
       return middleware.beforeModel;
     case 'prepareModelInput':

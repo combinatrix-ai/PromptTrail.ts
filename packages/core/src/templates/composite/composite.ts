@@ -1,6 +1,10 @@
 import type { Session } from '../../session';
 import type { Source } from '../../source';
-import type { ExecutionRuntimeState } from '../../interceptors';
+import {
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from '../../interceptors';
+import type { ResolvedExecutionCommand } from '../../execution';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
@@ -94,6 +98,7 @@ export abstract class Composite<
     let currentSession = this.initFunction
       ? this.initFunction(originalSession)
       : originalSession;
+    let halted = false;
 
     // 2. Execute templates (with optional looping)
     if (this.loopCondition !== undefined) {
@@ -102,12 +107,38 @@ export abstract class Composite<
 
       // Execute the loop until the exit condition is met or max iterations reached
       while (
+        !halted &&
         iterations < this.maxIterations &&
         this.loopCondition(currentSession)
       ) {
-        for (let template of this.templates) {
+        for (let index = 0; index < this.templates.length; index++) {
+          let template = this.templates[index];
           template = this.ensureTemplateHasContentSource(template);
+          const before = await runTemplateLifecyclePhase(
+            runtime,
+            'beforeTemplate',
+            currentSession,
+            template,
+            index,
+          );
+          currentSession = before.session;
+          if (before.halted) {
+            halted = true;
+            break;
+          }
           currentSession = await template.execute(currentSession, runtime);
+          const after = await runTemplateLifecyclePhase(
+            runtime,
+            'afterTemplate',
+            currentSession,
+            template,
+            index,
+          );
+          currentSession = after.session;
+          if (after.halted) {
+            halted = true;
+            break;
+          }
         }
         iterations++;
       }
@@ -123,9 +154,34 @@ export abstract class Composite<
         console.warn('LoopTemplate executed without an loopIf condition.');
       }
       // Simple sequence execution
-      for (let template of this.templates) {
+      for (let index = 0; index < this.templates.length; index++) {
+        let template = this.templates[index];
         template = this.ensureTemplateHasContentSource(template);
+        const before = await runTemplateLifecyclePhase(
+          runtime,
+          'beforeTemplate',
+          currentSession,
+          template,
+          index,
+        );
+        currentSession = before.session;
+        if (before.halted) {
+          halted = true;
+          break;
+        }
         currentSession = await template.execute(currentSession, runtime);
+        const after = await runTemplateLifecyclePhase(
+          runtime,
+          'afterTemplate',
+          currentSession,
+          template,
+          index,
+        );
+        currentSession = after.session;
+        if (after.halted) {
+          halted = true;
+          break;
+        }
       }
     }
 
@@ -134,4 +190,43 @@ export abstract class Composite<
       ? this.squashFunction(originalSession, currentSession)
       : currentSession;
   }
+}
+
+async function runTemplateLifecyclePhase<
+  TAttrs extends Attrs,
+  TVars extends Vars,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+  phase: 'beforeTemplate' | 'afterTemplate',
+  session: Session<TVars, TAttrs>,
+  template: Template<TAttrs, TVars>,
+  templateIndex: number,
+): Promise<{ session: Session<TVars, TAttrs>; halted: boolean }> {
+  if (!runtime) {
+    return { session, halted: false };
+  }
+  const result = await runRuntimeExecutionPhase(runtime, {
+    phase,
+    session,
+    request: {
+      templateIndex,
+      templateName: template.constructor.name,
+    },
+  });
+  return {
+    session: result.session,
+    halted: handleTemplateLifecycleCommand(result.command),
+  };
+}
+
+function handleTemplateLifecycleCommand(command: ResolvedExecutionCommand) {
+  if (command.type === 'none') {
+    return false;
+  }
+  if (command.type === 'halt') {
+    return true;
+  }
+  throw new Error(
+    `Template lifecycle does not support execution command ${command.type} yet.`,
+  );
 }

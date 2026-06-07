@@ -691,6 +691,9 @@ function durableMiddlewareHandlerForPhase<
       return middleware.beforeAgent;
     case 'afterAgent':
       return middleware.afterAgent;
+    case 'beforeTemplate':
+    case 'afterTemplate':
+      return undefined;
     case 'beforeModel':
       return middleware.beforeModel;
     case 'prepareModelInput':
@@ -717,6 +720,9 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
       return hook.onRunStart ?? hook.onBeforeAgent;
     case 'afterAgent':
       return hook.onRunEnd ?? hook.onAfterAgent;
+    case 'beforeTemplate':
+    case 'afterTemplate':
+      return undefined;
     case 'beforeModel':
       return hook.onBeforeModel;
     case 'afterModel':

@@ -85,6 +85,106 @@ describe('Agent interceptors', () => {
     });
   });
 
+  it('runs beforeTemplate and afterTemplate hooks around child templates', async () => {
+    const session = await Agent.create()
+      .hook(
+        Hook.create({
+          name: 'templateLifecycle',
+          onBeforeTemplate: ({ session, request }) => {
+            const vars = session.getVarsObject();
+            const template = request as { templateName?: string };
+            return {
+              session: {
+                vars: {
+                  beforeTemplates: [
+                    ...((vars.beforeTemplates as string[] | undefined) ?? []),
+                    template.templateName,
+                  ],
+                },
+              },
+            };
+          },
+          onAfterTemplate: ({ session, request }) => {
+            const vars = session.getVarsObject();
+            const template = request as { templateName?: string };
+            return {
+              session: {
+                vars: {
+                  afterTemplates: [
+                    ...((vars.afterTemplates as string[] | undefined) ?? []),
+                    template.templateName,
+                  ],
+                },
+              },
+            };
+          },
+        }),
+      )
+      .user('hello')
+      .assistant('reply')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'reply',
+    ]);
+    expect(session.getVarsObject()).toEqual({
+      beforeTemplates: ['User', 'Assistant'],
+      afterTemplates: ['User', 'Assistant'],
+    });
+  });
+
+  it('halts remaining child templates from template lifecycle hooks', async () => {
+    const session = await Agent.create()
+      .hook(
+        Hook.create({
+          name: 'templateControl',
+          onAfterTemplate: () => ({
+            session: { vars: { haltedAfterTemplate: true } },
+            command: { type: 'halt' },
+          }),
+        }),
+      )
+      .user('hello')
+      .assistant('should not run')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+    ]);
+    expect(session.getVarsObject()).toEqual({ haltedAfterTemplate: true });
+  });
+
+  it('applies subroutine squash after template lifecycle halt', async () => {
+    const session = await Agent.create()
+      .hook(
+        Hook.create({
+          name: 'subroutineLifecycle',
+          onAfterTemplate: ({ request }) => {
+            const template = request as { templateName?: string };
+            if (template.templateName !== 'User') {
+              return undefined;
+            }
+            return {
+              session: { vars: { innerHalted: true } },
+              command: { type: 'halt' },
+            };
+          },
+        }),
+      )
+      .subroutine(
+        (agent) => agent.user('hidden').assistant('should not run'),
+        { retainMessages: false },
+      )
+      .assistant('outer')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'outer',
+    ]);
+    expect(session.getVarsObject()).toEqual({ innerHalted: true });
+  });
+
   it('rejects ambiguous run lifecycle hook aliases', () => {
     expect(() =>
       Hook.create({

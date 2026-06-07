@@ -43,6 +43,12 @@ describe('public API surface', () => {
       onRunEnd: ({ session }) => ({
         session: { vars: { ended: session.messages.length } },
       }),
+      onBeforeTemplate: ({ session }) => ({
+        session: { vars: { beforeTemplate: session.messages.length } },
+      }),
+      onAfterTemplate: ({ session }) => ({
+        session: { vars: { afterTemplate: session.messages.length } },
+      }),
     });
 
     expect(hook.name).toBe('lifecycle');
