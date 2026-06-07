@@ -29,6 +29,15 @@ class FakeClaudeAgentClient implements ClaudeAgentClient {
   }
 }
 
+class FailingClaudeAgentClient implements ClaudeAgentClient {
+  queries: ClaudeAgentQueryParams[] = [];
+
+  async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
+    this.queries.push(params);
+    throw new Error('claude unavailable');
+  }
+}
+
 describe('ClaudeTurn template', () => {
   it('runs a Claude Agent SDK turn and appends the final answer', async () => {
     const client = new FakeClaudeAgentClient();
@@ -137,6 +146,33 @@ describe('ClaudeTurn template', () => {
     );
     expect(events[1]).toMatch(
       /^2:model\.completed:claudeTurn:direct-agent:.+:model:2:model\.completed$/,
+    );
+  });
+
+  it('emits model.failed when a direct Claude turn fails', async () => {
+    const client = new FailingClaudeAgentClient();
+    const events: string[] = [];
+
+    await expect(
+      Agent.create()
+        .observe((event) => {
+          if (event.type.startsWith('model.')) {
+            events.push(
+              `${event.seq}:${event.type}:${event.stepId}:${event.idempotencyKey}`,
+            );
+          }
+        })
+        .user('Review this')
+        .claudeTurn({ client })
+        .execute(Session.create()),
+    ).rejects.toThrow('claude unavailable');
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^1:model\.started:claudeTurn:direct-agent:.+:model:1:model\.started$/,
+    );
+    expect(events[1]).toMatch(
+      /^2:model\.failed:claudeTurn:direct-agent:.+:model:2:model\.failed$/,
     );
   });
 

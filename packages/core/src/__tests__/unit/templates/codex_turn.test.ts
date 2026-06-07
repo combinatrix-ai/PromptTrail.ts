@@ -58,6 +58,13 @@ class FakeCodexClient implements CodexAppServerClient {
   }
 }
 
+class FailingCodexClient extends FakeCodexClient {
+  async startTurn(params: CodexTurnStartParams) {
+    this.turnStarts.push(params);
+    throw new Error('codex unavailable');
+  }
+}
+
 describe('CodexTurn template', () => {
   it('should start a thread, run a turn, and append the final answer', async () => {
     const client = new FakeCodexClient();
@@ -167,6 +174,33 @@ describe('CodexTurn template', () => {
     );
     expect(events[1]).toMatch(
       /^2:model\.completed:codexTurn:direct-agent:.+:model:2:model\.completed$/,
+    );
+  });
+
+  it('emits model.failed when a direct Codex turn fails', async () => {
+    const client = new FailingCodexClient();
+    const events: string[] = [];
+
+    await expect(
+      Agent.create()
+        .observe((event) => {
+          if (event.type.startsWith('model.')) {
+            events.push(
+              `${event.seq}:${event.type}:${event.stepId}:${event.idempotencyKey}`,
+            );
+          }
+        })
+        .user('Implement this')
+        .codexTurn({ client })
+        .execute(Session.create()),
+    ).rejects.toThrow('codex unavailable');
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^1:model\.started:codexTurn:direct-agent:.+:model:1:model\.started$/,
+    );
+    expect(events[1]).toMatch(
+      /^2:model\.failed:codexTurn:direct-agent:.+:model:2:model\.failed$/,
     );
   });
 
