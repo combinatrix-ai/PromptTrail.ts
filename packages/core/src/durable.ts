@@ -1233,8 +1233,38 @@ export class DurableAgent<
 > {
   private nodes: DurableNode<TVars, TAttrs>[] = [];
   private tools = new Map<string, DurableTool>();
+  private middlewareDefinitions: MiddlewareDefinition<TVars, TAttrs>[] = [];
+  private hookDefinitions: HookDefinition<TVars, TAttrs>[] = [];
+  private observerDefinitions: ObserverLike[] = [];
 
   constructor(readonly name: string) {}
+
+  use(middleware: MiddlewareDefinition<TVars, TAttrs>): this {
+    this.middlewareDefinitions.push(middleware);
+    return this;
+  }
+
+  hook(hook: HookDefinition<TVars, TAttrs>): this {
+    this.hookDefinitions.push(hook);
+    return this;
+  }
+
+  observe(observer: ObserverLike): this {
+    this.observerDefinitions.push(observer);
+    return this;
+  }
+
+  runtimeMiddleware(): readonly MiddlewareDefinition<TVars, TAttrs>[] {
+    return this.middlewareDefinitions;
+  }
+
+  runtimeHooks(): readonly HookDefinition<TVars, TAttrs>[] {
+    return this.hookDefinitions;
+  }
+
+  runtimeObservers(): readonly ObserverLike[] {
+    return this.observerDefinitions;
+  }
 
   system(content: string, id = 'system'): this {
     this.nodes.push({ type: 'system', id, content });
@@ -1888,12 +1918,18 @@ export class PromptTrailApp {
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
   private readonly observerBus: ObserverBus;
+  private readonly strictObservers?: boolean;
+  private readonly agentObserverBuses = new WeakMap<
+    DurableAgent<any, any>,
+    ObserverBus
+  >();
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.store = options.store ?? new MemoryRunStore();
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
+    this.strictObservers = options.strictObservers;
     this.observerBus = new ObserverBus(options.observers ?? [], {
       strictObservers: options.strictObservers,
     });
@@ -1983,15 +2019,11 @@ export class PromptTrailApp {
       cursor: 0,
       sequencePosition: 0,
       transitionVersion: 0,
-      middleware: this.middleware,
-      hooks: this.hooks,
+      middleware: this.middlewareForRun(run),
+      hooks: this.hooksForRun(run),
       middlewareState: {},
       context: run.context,
-      emitEvent: (event) =>
-        this.observerBus.emit(
-          event,
-          observerContextFromRunContext(run.context),
-        ),
+      emitEvent: (event) => this.emitObservers(run, event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
 
@@ -2194,15 +2226,11 @@ export class PromptTrailApp {
       cursor: 0,
       sequencePosition: 0,
       transitionVersion: 0,
-      middleware: this.middleware,
-      hooks: this.hooks,
+      middleware: this.middlewareForRun(run),
+      hooks: this.hooksForRun(run),
       middlewareState: {},
       context: run.context,
-      emitEvent: (event) =>
-        this.observerBus.emit(
-          event,
-          observerContextFromRunContext(run.context),
-        ),
+      emitEvent: (event) => this.emitObservers(run, event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
     await this.emitRunEvent(run, runId, 'run.started', {
@@ -2243,20 +2271,63 @@ export class PromptTrailApp {
     options: Partial<ExecutionEvent> = {},
   ): Promise<void> {
     const seq = this.nextRunEventSeq(run);
-    await this.observerBus.emit(
-      {
-        id: `${runId}:${seq}:${type}`,
-        type,
-        at: new Date().toISOString(),
-        seq,
-        conversationId: runId,
-        runId,
-        replay: 'live',
-        source: 'app',
-        ...options,
-      },
-      observerContextFromRunContext(run.context),
-    );
+    await this.emitObservers(run, {
+      id: `${runId}:${seq}:${type}`,
+      type,
+      at: new Date().toISOString(),
+      seq,
+      conversationId: runId,
+      runId,
+      replay: 'live',
+      source: 'app',
+      ...options,
+    });
+  }
+
+  private middlewareForRun<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+  ): readonly MiddlewareDefinition<TVars, TAttrs>[] {
+    return [
+      ...run.agent.runtimeMiddleware(),
+      ...(this.middleware as readonly MiddlewareDefinition<TVars, TAttrs>[]),
+    ];
+  }
+
+  private hooksForRun<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+  ): readonly HookDefinition<TVars, TAttrs>[] {
+    return [
+      ...run.agent.runtimeHooks(),
+      ...(this.hooks as readonly HookDefinition<TVars, TAttrs>[]),
+    ];
+  }
+
+  private async emitObservers<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+    event: ExecutionEvent,
+  ): Promise<void> {
+    const context = observerContextFromRunContext(run.context);
+    await this.observerBus.emit(event, context);
+    const observers = run.agent.runtimeObservers();
+    if (observers.length === 0) {
+      return;
+    }
+    await this.observerBusForAgent(run.agent, observers).emit(event, context);
+  }
+
+  private observerBusForAgent(
+    agent: DurableAgent<any, any>,
+    observers: readonly ObserverLike[],
+  ): ObserverBus {
+    const existing = this.agentObserverBuses.get(agent);
+    if (existing) {
+      return existing;
+    }
+    const bus = new ObserverBus(observers, {
+      strictObservers: this.strictObservers,
+    });
+    this.agentObserverBuses.set(agent, bus);
+    return bus;
   }
 
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(

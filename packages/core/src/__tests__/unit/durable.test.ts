@@ -391,6 +391,152 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('composes durable agent-level middleware and hooks before app-level handlers', async () => {
+    const appendOrder = (
+      session: { getVar(name: string): unknown },
+      label: string,
+    ) =>
+      `${(session.getVar('order') as string | undefined) ?? ''}${label}>`;
+    let agentMiddlewareCalls = 0;
+    let appMiddlewareCalls = 0;
+    let agentHookCalls = 0;
+    let appHookCalls = 0;
+    const assistant = agent('configured')
+      .use(
+        Middleware.create({
+          name: 'agentMiddleware',
+          beforeModel: ({ session }) => {
+            agentMiddlewareCalls++;
+            return {
+              session: {
+                vars: { order: appendOrder(session, 'agentMw') },
+              },
+            };
+          },
+        }),
+      )
+      .hook(
+        Hook.create({
+          name: 'agentHook',
+          onBeforeModel: ({ session }) => {
+            agentHookCalls++;
+            return {
+              session: {
+                vars: { order: appendOrder(session, 'agentHook') },
+              },
+            };
+          },
+        }),
+      )
+      .turn('main', (turn) =>
+        turn
+          .steer()
+          .assistant('reply', (session) => `order:${session.getVar('order')}`)
+          .awaitUser(),
+      );
+    const app = PromptTrail.app({
+      agents: { configured: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'appMiddleware',
+          beforeModel: ({ session }) => {
+            appMiddlewareCalls++;
+            return {
+              session: {
+                vars: { order: appendOrder(session, 'appMw') },
+              },
+            };
+          },
+        }),
+      ],
+      hooks: [
+        Hook.create({
+          name: 'appHook',
+          onBeforeModel: ({ session }) => {
+            appHookCalls++;
+            return {
+              session: {
+                vars: { order: appendOrder(session, 'appHook') },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'configured',
+      runId: 'run-agent-configured',
+      durable: true,
+    });
+    const replay = await app.resume('run-agent-configured');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe(
+      'order:agentMw>appMw>agentHook>appHook>',
+    );
+    expect(agentMiddlewareCalls).toBe(1);
+    expect(appMiddlewareCalls).toBe(1);
+    expect(agentHookCalls).toBe(1);
+    expect(appHookCalls).toBe(1);
+    expect(app.journal('run-agent-configured')).toEqual([
+      'main/steer/peek',
+      'main/reply/beforeModel',
+      'main/reply/model',
+    ]);
+  });
+
+  it('emits durable runtime events to agent-level observers', async () => {
+    const appEvents: string[] = [];
+    const events: string[] = [];
+    const assistant = agent('observed-agent')
+      .observe({
+        name: 'agentObserver',
+        handle(event) {
+          if (
+            event.type === 'run.started' ||
+            event.type === 'model.started' ||
+            event.type === 'model.completed' ||
+            event.type === 'run.completed'
+          ) {
+            events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
+          }
+        },
+      })
+      .assistant('reply', () => 'hello');
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      store: memoryStore(),
+      observers: [
+        {
+          name: 'appObserver',
+          handle(event) {
+            if (event.type === 'model.started') {
+              appEvents.push(`${event.seq}:${event.type}:${event.stepId}`);
+            }
+          },
+        },
+      ],
+    });
+
+    const result = await app.run({
+      agent: 'observed',
+      runId: 'run-agent-observed',
+      durable: true,
+    });
+
+    expect(result.status).toBe('done');
+    expect(appEvents).toEqual(['1:model.started:reply/model']);
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:model.started:reply/model',
+      '2:model.completed:reply/model',
+      '3:run.completed:-',
+    ]);
+  });
+
   it('journals durable beforeAgent and afterAgent phases without re-running them on replay', async () => {
     const store = memoryStore();
     let beforeCalls = 0;
