@@ -315,6 +315,7 @@ export interface ExecutionRuntimeState<
   signal?: AbortSignal;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
+  eventScopeId?: string;
 }
 
 export function createExecutionRuntimeState<
@@ -328,6 +329,7 @@ export function createExecutionRuntimeState<
   signal?: AbortSignal;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
+  eventScopeId?: string;
 }): ExecutionRuntimeState<TVars, TAttrs> {
   return {
     middleware: options?.middleware ?? [],
@@ -339,6 +341,7 @@ export function createExecutionRuntimeState<
     signal: options?.signal,
     emitEvent: options?.emitEvent,
     nextEventSeq: options?.nextEventSeq,
+    eventScopeId: options?.eventScopeId,
   };
 }
 

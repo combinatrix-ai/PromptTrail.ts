@@ -2072,7 +2072,7 @@ describe('durable agent runtime', () => {
             return;
           }
           events.push(
-            `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.sessionVersion ?? '-'}`,
+            `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.sessionVersion ?? '-'}:${event.idempotencyKey}`,
           );
         },
       ],
@@ -2092,10 +2092,10 @@ describe('durable agent runtime', () => {
     expect(first.status).toBe('suspended');
     expect(second.status).toBe('done');
     expect(events).toEqual([
-      '0:run.started:-:0',
-      '3:run.suspended:wait/input/input:0',
-      '4:run.started:-:0',
-      '5:run.completed:-:0',
+      '0:run.started:-:0:run-observed:run:0:run.started',
+      '3:run.suspended:wait/input/input:0:run-observed:run:3:run.suspended',
+      '4:run.started:-:0:run-observed:run:4:run.started',
+      '5:run.completed:-:0:run-observed:run:5:run.completed',
     ]);
   });
 
@@ -2436,12 +2436,12 @@ describe('durable agent runtime', () => {
     expect(replay.status).toBe('suspended');
     expect(toolCalls).toBe(1);
     expect(events).toEqual([
-      '0:run.started:-:-:-',
+      '0:run.started:-:-:run-tool-observed:run:0:run.started',
       '3:tool.started:tools/call-1:lookup:run-tool-observed:tools/call-1:tool:tool.started:-',
       '4:tool.completed:tools/call-1:lookup:run-tool-observed:tools/call-1:tool:tool.completed:-',
-      '5:run.suspended:wait/input/input:-:-',
-      '6:run.started:-:-:-',
-      '7:run.suspended:wait/input/input:-:-',
+      '5:run.suspended:wait/input/input:-:run-tool-observed:run:5:run.suspended',
+      '6:run.started:-:-:run-tool-observed:run:6:run.started',
+      '7:run.suspended:wait/input/input:-:run-tool-observed:run:7:run.suspended',
     ]);
   });
 

@@ -285,7 +285,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const parentRuntime = isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
       ? runtimeOrOptions
       : undefined;
-    const executionOptions = parentRuntime ? undefined : runtimeOrOptions;
+    const executionOptions = parentRuntime
+      ? undefined
+      : (runtimeOrOptions as AgentExecutionInternalOptions | undefined);
     if (!parentRuntime) {
       const durableOptions = this.resolveDirectDurableOptions(executionOptions);
       if (durableOptions) {
@@ -296,12 +298,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         );
       }
     }
+    const eventScopeId =
+      parentRuntime?.eventScopeId ??
+      executionOptions?.eventScopeId ??
+      createDirectAgentEventScopeId();
     if (!this.hasInterceptors()) {
       const runtime =
         parentRuntime ??
         (executionOptions
           ? createExecutionRuntimeState<TC, TM>({
               context: executionOptions.context,
+              eventScopeId,
               signal: executionOptions.signal,
             })
           : undefined);
@@ -318,6 +325,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       createExecutionRuntimeState<TC, TM>({
         context: executionOptions?.context,
         emitEvent: (event) => observerBus.emit(event),
+        eventScopeId,
         nextEventSeq: () => seq++,
         signal: executionOptions?.signal,
       });
@@ -341,6 +349,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       at: new Date().toISOString(),
       seq: eventSeq,
       replay: 'live',
+      idempotencyKey: directAgentEventIdempotencyKey(
+        eventScopeId,
+        eventSeq,
+        'run.started',
+      ),
     });
 
     try {
@@ -361,6 +374,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
               at: new Date().toISOString(),
               seq: eventSeq,
               replay: 'live',
+              idempotencyKey: directAgentEventIdempotencyKey(
+                eventScopeId,
+                eventSeq,
+                'run.completed',
+              ),
             });
           },
         });
@@ -391,6 +409,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
               at: new Date().toISOString(),
               seq: eventSeq,
               replay: 'live',
+              idempotencyKey: directAgentEventIdempotencyKey(
+                eventScopeId,
+                eventSeq,
+                'run.completed',
+              ),
             });
           },
         });
@@ -403,6 +426,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         at: new Date().toISOString(),
         seq: eventSeq,
         replay: 'live',
+        idempotencyKey: directAgentEventIdempotencyKey(
+          eventScopeId,
+          eventSeq,
+          'run.completed',
+        ),
       });
       return current;
     } catch (error) {
@@ -413,6 +441,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         at: new Date().toISOString(),
         seq: eventSeq,
         replay: 'live',
+        idempotencyKey: directAgentEventIdempotencyKey(
+          eventScopeId,
+          eventSeq,
+          'run.failed',
+        ),
         error,
       });
       throw error;
@@ -456,6 +489,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       async (current) => ({
         session: await this.execute(current, {
           context: executionOptions?.context,
+          eventScopeId: durableOptions.runId,
           signal: executionOptions?.signal,
           durable: false,
         }),
@@ -480,10 +514,22 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 }
 
+function directAgentEventIdempotencyKey(
+  eventScopeId: string,
+  seq: number,
+  type: string,
+): string {
+  return `${eventScopeId}:agent:${seq}:${type}`;
+}
+
 export interface AgentExecutionOptions {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   durable?: boolean | AgentDirectDurableOptions;
+}
+
+interface AgentExecutionInternalOptions extends AgentExecutionOptions {
+  eventScopeId?: string;
 }
 
 export interface AgentDirectDurableOptions {
@@ -497,6 +543,14 @@ interface ResolvedAgentDirectDurableOptions {
 }
 
 function createDirectDurableRunId(): string {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `direct-agent:${random}`;
+}
+
+function createDirectAgentEventScopeId(): string {
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()

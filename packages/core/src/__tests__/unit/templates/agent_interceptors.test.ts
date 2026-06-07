@@ -224,15 +224,41 @@ describe('Agent interceptors', () => {
 
   it('emits direct execution observer events', async () => {
     const events: string[] = [];
+    const eventKeys: string[] = [];
     const session = await Agent.create()
       .observe((event) => {
-        events.push(`${event.seq}:${event.type}`);
+        eventKeys.push(String(event.idempotencyKey));
+        events.push(`${event.seq}:${event.type}:${event.idempotencyKey}`);
       })
       .user('hello')
       .execute();
 
     expect(session.getLastMessage()?.content).toBe('hello');
-    expect(events).toEqual(['0:run.started', '1:run.completed']);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^0:run\.started:direct-agent:.+:agent:0:run\.started$/,
+    );
+    expect(events[1]).toMatch(
+      /^1:run\.completed:direct-agent:.+:agent:1:run\.completed$/,
+    );
+    expect(eventKeys[0]?.split(':').slice(0, 2).join(':')).toBe(
+      eventKeys[1]?.split(':').slice(0, 2).join(':'),
+    );
+  });
+
+  it('scopes direct execution observer event keys per execute call', async () => {
+    const keys: string[] = [];
+    const agent = Agent.create()
+      .observe((event) => {
+        keys.push(String(event.idempotencyKey));
+      })
+      .user('hello');
+
+    await agent.execute();
+    await agent.execute();
+
+    expect(keys).toHaveLength(4);
+    expect(new Set(keys).size).toBe(4);
   });
 
   it('threads direct execution context into middleware', async () => {
@@ -280,12 +306,17 @@ describe('Agent interceptors', () => {
 
   it('journals direct durable Agent.execute results by runId', async () => {
     const store = memoryStore();
+    const eventKeys: string[] = [];
     let calls = 0;
     const source = Source.callback(async () => {
       calls++;
       return `reply:${calls}`;
     });
-    const agent = Agent.create().assistant(source);
+    const agent = Agent.create()
+      .observe((event) => {
+        eventKeys.push(String(event.idempotencyKey));
+      })
+      .assistant(source);
 
     const first = await agent.execute(undefined, {
       durable: { runId: 'direct-agent-run', store },
@@ -297,6 +328,12 @@ describe('Agent interceptors', () => {
     expect(first.getLastMessage()?.content).toBe('reply:1');
     expect(second.getLastMessage()?.content).toBe('reply:1');
     expect(calls).toBe(1);
+    expect(eventKeys).toEqual([
+      'direct-agent-run:agent:0:run.started',
+      'direct-agent-run:model:1:model.started',
+      'direct-agent-run:model:2:model.completed',
+      'direct-agent-run:agent:3:run.completed',
+    ]);
   });
 
   it('uses fluent durable defaults for direct Agent.execute', async () => {

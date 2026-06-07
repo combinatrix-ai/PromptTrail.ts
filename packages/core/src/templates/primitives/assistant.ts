@@ -353,7 +353,7 @@ async function emitDirectModelEvent<
     source: 'model',
     phase: 'model',
     stepId: 'model',
-    idempotencyKey: `model:${seq}:${type}`,
+    idempotencyKey: `${runtime.eventScopeId ?? 'direct'}:model:${seq}:${type}`,
   };
   if (error !== undefined) {
     event.error = error;

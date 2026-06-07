@@ -1114,6 +1114,9 @@ async function emitDurableExecutionEvent<
       conversationId: state.runId,
       runId: state.runId,
       replay: 'live',
+      source: 'durable',
+      sessionVersion: state.transitionVersion,
+      ...options,
       idempotencyKey:
         options.idempotencyKey ??
         durableEventIdempotencyKey(state, {
@@ -1121,9 +1124,6 @@ async function emitDurableExecutionEvent<
           phase: options.phase,
           type,
         }),
-      source: 'durable',
-      sessionVersion: state.transitionVersion,
-      ...options,
     });
   } catch {
     // Tool/model progress events are observer side effects. They must not
@@ -2492,6 +2492,8 @@ export class PromptTrailApp {
       replay: 'live',
       source: 'app',
       ...options,
+      idempotencyKey:
+        options.idempotencyKey ?? runEventIdempotencyKey(runId, seq, type),
     });
   }
 
@@ -2668,6 +2670,14 @@ function errorMessage(error: unknown): string {
 
 function assistantDeliveryKey(runId: string, assistantIndex: number): string {
   return `${runId}:turn:${assistantIndex + 1}:delivery:final`;
+}
+
+function runEventIdempotencyKey(
+  runId: string,
+  seq: number,
+  type: string,
+): string {
+  return `${runId}:run:${seq}:${type}`;
 }
 
 export function agent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
