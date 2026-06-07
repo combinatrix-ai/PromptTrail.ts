@@ -1481,6 +1481,81 @@ describe('durable agent runtime', () => {
     expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
   });
 
+  it('uses app durable defaults for direct runs unless explicitly disabled', async () => {
+    const topLevelStore = memoryStore();
+    const durableStore = memoryStore();
+    const assistant = agent('default-durable')
+      .assistant('reply', () => 'hello')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: topLevelStore,
+      durable: {
+        store: durableStore,
+        defaultDurable: true,
+      },
+    });
+
+    const first = await app.run({
+      agent: 'assistant',
+      runId: 'run-default-durable',
+    });
+    const replay = await app.resume('run-default-durable');
+    const ephemeral = await app.run({
+      agent: 'assistant',
+      runId: 'run-explicit-ephemeral',
+      durable: false,
+    });
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(app.journal('run-default-durable')).toEqual(['reply/model']);
+    expect(durableStore.get('run-default-durable')).toBeDefined();
+    expect(topLevelStore.get('run-default-durable')).toBeUndefined();
+    expect(durableStore.get('run-explicit-ephemeral')).toBeUndefined();
+    expect(ephemeral.status).toBe('suspended');
+  });
+
+  it('uses app durable defaults for send and source-created runs', async () => {
+    const defaultStore = memoryStore();
+    const disabledStore = memoryStore();
+    const source = manualSource();
+    const assistant = agent('send-default')
+      .assistant('reply', () => 'hello')
+      .turn('wait', (turn) => turn.awaitUser());
+    const durableApp = PromptTrail.app({
+      agents: { assistant },
+      durable: {
+        store: defaultStore,
+        defaultDurable: true,
+      },
+    });
+    const ephemeralApp = PromptTrail.app({
+      agents: { assistant },
+      sources: { manual: source },
+      durable: {
+        store: disabledStore,
+        defaultDurable: false,
+      },
+    });
+
+    await durableApp.send({
+      agent: 'assistant',
+      runId: 'run-send-default-durable',
+      input: 'hello',
+    });
+    await ephemeralApp.start();
+    await source.emit({
+      source: 'manual',
+      agent: 'assistant',
+      runId: 'run-source-default-ephemeral',
+      input: 'hello',
+    });
+
+    expect(defaultStore.get('run-send-default-durable')).toBeDefined();
+    expect(disabledStore.get('run-source-default-ephemeral')).toBeUndefined();
+  });
+
   it('emits durable app lifecycle observer events across resume', async () => {
     const events: string[] = [];
     const assistant = agent('observed')

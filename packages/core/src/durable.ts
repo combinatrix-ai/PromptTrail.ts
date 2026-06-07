@@ -1903,6 +1903,15 @@ export class MemoryRunStore implements DurableRunStore {
 
 export interface PromptTrailAppOptions {
   store?: DurableRunStore;
+  /**
+   * App-level durable defaults. This configures the runtime's store and the
+   * default durability for new app runs. Per-run `durable` options are booleans
+   * that override this default.
+   */
+  durable?: {
+    store?: DurableRunStore;
+    defaultDurable?: boolean;
+  };
   agents?: Record<string, DurableAgent<any, any>>;
   sources?: Record<string, EventSource>;
   middleware?: readonly MiddlewareDefinition<any, any>[];
@@ -1919,6 +1928,7 @@ export class PromptTrailApp {
   private readonly hooks: readonly HookDefinition<any, any>[];
   private readonly observerBus: ObserverBus;
   private readonly strictObservers?: boolean;
+  private readonly defaultDurable: boolean;
   private readonly agentObserverBuses = new WeakMap<
     DurableAgent<any, any>,
     ObserverBus
@@ -1926,7 +1936,8 @@ export class PromptTrailApp {
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
-    this.store = options.store ?? new MemoryRunStore();
+    this.store = options.durable?.store ?? options.store ?? new MemoryRunStore();
+    this.defaultDurable = options.durable?.defaultDurable ?? false;
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
     this.strictObservers = options.strictObservers;
@@ -1981,7 +1992,8 @@ export class PromptTrailApp {
   async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
     options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable = options.durable ?? options.resumable ?? true;
+    const durable =
+      options.durable ?? options.resumable ?? this.defaultDurable;
     const existing = this.store.get(options.runId);
     if (!existing) {
       if (!options.agent) {
@@ -2181,7 +2193,8 @@ export class PromptTrailApp {
   >(
     options: PromptTrailRunOptions<TVars, TAttrs>,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable = options.durable ?? options.resumable ?? false;
+    const durable =
+      options.durable ?? options.resumable ?? this.defaultDurable;
     const durableAgent = this.resolveAgent(options.agent);
     const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
     const initial = options.session ?? Session.create<TVars, TAttrs>();
