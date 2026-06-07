@@ -739,30 +739,56 @@ export class DurableAgent<
         assertUniqueDurableToolSteps(stepIds, nodePath);
         for (let index = 0; index < calls.length; index++) {
           const call = calls[index];
-          const tool = this.tools.get(call.name);
-          if (!tool) {
-            throw new Error(`Unknown durable tool: ${call.name}`);
-          }
           const stepId = stepIds[index];
+          const before = await runDurableExecutionPhase<
+            TVars,
+            TAttrs,
+            ToolCall
+          >(state, `${stepId}/beforeTool`, {
+            phase: 'beforeTool',
+            session: next,
+            request: call,
+          });
+          assertDurablePhaseCommandSupported(before.command, stepId);
+          const nextCall = (before.request as ToolCall | undefined) ?? call;
+          const tool = this.tools.get(nextCall.name);
+          if (!tool) {
+            throw new Error(`Unknown durable tool: ${nextCall.name}`);
+          }
           const result = await journaled(state, stepId, () => {
-            const activity = resolveDurableToolActivity(tool, call, {
+            const activity = resolveDurableToolActivity(tool, nextCall, {
               runId: state.runId,
               stepId,
-              session,
+              session: before.session,
             });
-            return tool.execute(call.arguments, {
+            return tool.execute(nextCall.arguments, {
               runId: state.runId,
               stepId,
-              session,
-              toolCall: call,
+              session: before.session,
+              toolCall: nextCall,
               activity,
             });
           });
-          next = next.addMessage({
+          const message: PromptTrailMessage<TAttrs> = {
             type: 'tool_result',
             content: stringifyToolResult(result),
-            attrs: { toolCallId: call.id } as unknown as TAttrs,
+            attrs: { toolCallId: nextCall.id } as unknown as TAttrs,
+          };
+          const after = await runDurableExecutionPhase<
+            TVars,
+            TAttrs,
+            ToolCall,
+            PromptTrailMessage<TAttrs>
+          >(state, `${stepId}/afterTool`, {
+            phase: 'afterTool',
+            session: before.session,
+            request: nextCall,
+            result: message,
           });
+          assertDurablePhaseCommandSupported(after.command, stepId);
+          next = after.session.addMessage(
+            (after.result as PromptTrailMessage<TAttrs> | undefined) ?? message,
+          );
         }
         return next;
       }

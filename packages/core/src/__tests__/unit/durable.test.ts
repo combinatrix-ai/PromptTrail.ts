@@ -492,6 +492,98 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals app-level tool middleware without re-running on replay', async () => {
+    let beforeCalls = 0;
+    let afterCalls = 0;
+    let toolCalls = 0;
+    const assistant = agent('tool-intercepted')
+      .tool('lookup', {
+        execute: async ({ query }) => {
+          toolCalls++;
+          return `result:${query}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'original' },
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { intercepted: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'toolPolicy',
+          beforeTool: ({ request }) => {
+            beforeCalls++;
+            const call = request as {
+              id: string;
+              name: string;
+              arguments: Record<string, unknown>;
+            };
+            return {
+              request: {
+                ...call,
+                arguments: { ...call.arguments, query: 'rewritten' },
+              },
+              session: {
+                vars: { beforeTool: beforeCalls },
+              },
+            };
+          },
+          afterTool: ({ result }) => {
+            afterCalls++;
+            const message = result as { content: string };
+            return {
+              result: {
+                ...message,
+                content: `${message.content}:after:${afterCalls}`,
+              },
+              session: {
+                vars: { afterTool: afterCalls },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'intercepted',
+      runId: 'run-tool-intercepted',
+      durable: true,
+    });
+    const replay = await app.resume('run-tool-intercepted');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'result:rewritten:after:1',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(replay.session.getVarsObject()).toEqual({
+      beforeTool: 1,
+      afterTool: 1,
+    });
+    expect(beforeCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(toolCalls).toBe(1);
+    expect(app.journal('run-tool-intercepted')).toEqual([
+      'reply/model',
+      'tools/call-1/beforeTool',
+      'tools/call-1',
+      'tools/call-1/afterTool',
+    ]);
+  });
+
   it('rejects unsupported commands from durable patch transitions', async () => {
     const assistant = agent('patch-command').patch('pause', () => ({
       command: { type: 'suspend', reason: 'manual' },
