@@ -201,6 +201,55 @@ describe('CodexTurn template', () => {
     expect(session.getVarsObject()).toEqual({ afterModel: 'codex' });
   });
 
+  it('applies prepareModelInput as transient Codex input', async () => {
+    const client = new FakeCodexClient();
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'codexPrepare',
+          prepareModelInput: ({ request }) => ({
+            request: {
+              session: (request as { session: Session }).session.withVar(
+                'transient',
+                'codex',
+              ),
+            },
+          }),
+        }),
+      )
+      .codexTurn({
+        client,
+        input: (session) => String(session.getVar('transient' as never)),
+      })
+      .execute(Session.create());
+
+    expect(client.turnStarts[0]).toMatchObject({
+      input: [{ type: 'text', text: 'codex' }],
+    });
+    expect(session.getVarsObject()).toEqual({});
+  });
+
+  it('rejects persistent session patches from Codex prepareModelInput', async () => {
+    const client = new FakeCodexClient();
+
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'badPrepare',
+            prepareModelInput: () => ({
+              session: { vars: { persistent: true } },
+            }),
+          }),
+        )
+        .codexTurn({ client })
+        .execute(Session.create()),
+    ).rejects.toThrow(
+      'CodexTurn prepareModelInput cannot return persistent session patches.',
+    );
+    expect(client.turnStarts).toHaveLength(0);
+  });
+
   it('emits model boundary events for direct execution observers', async () => {
     const client = new FakeCodexClient();
     const events: string[] = [];

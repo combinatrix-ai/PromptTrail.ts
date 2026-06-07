@@ -22,7 +22,9 @@ import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import {
+  runExecutionPhase,
   runRuntimeExecutionPhase,
+  type ExecutionPhaseStep,
   type ExecutionRuntimeState,
 } from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
@@ -72,6 +74,28 @@ export class CodexTurn<
             context: runtime?.context,
           })
         : this.options.onRequest;
+    let modelSession = currentSession;
+    if (runtime) {
+      const prepared = await runExecutionPhase({
+        phase: 'prepareModelInput',
+        session: currentSession,
+        request: { session: modelSession },
+        context: runtime.context,
+        middlewareState: runtime.middlewareState,
+        middleware: runtime.middleware,
+        hooks: runtime.hooks,
+        beforeVersion: runtime.version,
+        signal: runtime.signal,
+      });
+      assertTurnCommandSupported(prepared.command, 'CodexTurn');
+      assertPrepareModelInputDidNotPersistSession(prepared.steps, 'CodexTurn');
+      runtime.middlewareState = prepared.middlewareState;
+      runtime.version = prepared.afterVersion;
+      modelSession =
+        (prepared.request as TurnModelRequest<TVars, TAttrs> | undefined)
+          ?.session ?? modelSession;
+    }
+
     const ownsClient = this.options.client === undefined;
     const client =
       this.options.client ??
@@ -118,10 +142,10 @@ export class CodexTurn<
         rawRuntimeSkills,
       );
       const resolvedThreadId = await this.resolveThreadId(
-        currentSession,
+        modelSession,
         runtime?.context,
       );
-      const input = await this.resolveInput(currentSession, runtime?.context);
+      const input = await this.resolveInput(modelSession, runtime?.context);
       const threadId =
         resolvedThreadId ??
         (
@@ -270,6 +294,13 @@ export class CodexTurn<
   }
 }
 
+interface TurnModelRequest<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  session: Session<TVars, TAttrs>;
+}
+
 async function emitTurnModelEvent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -311,6 +342,25 @@ function assertTurnCommandSupported(
   throw new Error(
     `${label}.execute does not support execution command ${command.type} yet.`,
   );
+}
+
+function assertPrepareModelInputDidNotPersistSession(
+  steps: readonly ExecutionPhaseStep[],
+  label: string,
+): void {
+  const hasSessionDelta = steps.some(({ transition }) => {
+    const delta = transition.session;
+    return (
+      delta.messageOp.type !== 'none' ||
+      Object.keys(delta.varsSet).length > 0 ||
+      delta.varsDelete.length > 0
+    );
+  });
+  if (hasSessionDelta) {
+    throw new Error(
+      `${label} prepareModelInput cannot return persistent session patches. Return request.session instead.`,
+    );
+  }
 }
 
 function getCodexConfiguredApprovalCapabilities(

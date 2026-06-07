@@ -171,6 +171,53 @@ describe('ClaudeTurn template', () => {
     expect(session.getVarsObject()).toEqual({ afterModel: 'claude' });
   });
 
+  it('applies prepareModelInput as transient Claude input', async () => {
+    const client = new FakeClaudeAgentClient();
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'claudePrepare',
+          prepareModelInput: ({ request }) => ({
+            request: {
+              session: (request as { session: Session }).session.withVar(
+                'transient',
+                'claude',
+              ),
+            },
+          }),
+        }),
+      )
+      .claudeTurn({
+        client,
+        input: (session) => String(session.getVar('transient' as never)),
+      })
+      .execute(Session.create());
+
+    expect(client.queries[0].prompt).toBe('claude');
+    expect(session.getVarsObject()).toEqual({});
+  });
+
+  it('rejects persistent session patches from Claude prepareModelInput', async () => {
+    const client = new FakeClaudeAgentClient();
+
+    await expect(
+      Agent.create()
+        .use(
+          Middleware.create({
+            name: 'badPrepare',
+            prepareModelInput: () => ({
+              session: { vars: { persistent: true } },
+            }),
+          }),
+        )
+        .claudeTurn({ client })
+        .execute(Session.create()),
+    ).rejects.toThrow(
+      'ClaudeTurn prepareModelInput cannot return persistent session patches.',
+    );
+    expect(client.queries).toHaveLength(0);
+  });
+
   it('emits model boundary events for direct execution observers', async () => {
     const client = new FakeClaudeAgentClient();
     const events: string[] = [];

@@ -13,7 +13,9 @@ import {
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
 import {
+  runExecutionPhase,
   runRuntimeExecutionPhase,
+  type ExecutionPhaseStep,
   type ExecutionRuntimeState,
 } from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
@@ -44,9 +46,30 @@ export class ClaudeTurn<
     }
     const client =
       this.options.client ?? (await createDefaultClaudeAgentClient());
-    const prompt = await this.resolveInput(currentSession, runtime?.context);
+    let modelSession = currentSession;
+    if (runtime) {
+      const prepared = await runExecutionPhase({
+        phase: 'prepareModelInput',
+        session: currentSession,
+        request: { session: modelSession },
+        context: runtime.context,
+        middlewareState: runtime.middlewareState,
+        middleware: runtime.middleware,
+        hooks: runtime.hooks,
+        beforeVersion: runtime.version,
+        signal: runtime.signal,
+      });
+      assertTurnCommandSupported(prepared.command, 'ClaudeTurn');
+      assertPrepareModelInputDidNotPersistSession(prepared.steps, 'ClaudeTurn');
+      runtime.middlewareState = prepared.middlewareState;
+      runtime.version = prepared.afterVersion;
+      modelSession =
+        (prepared.request as TurnModelRequest<TVars, TAttrs> | undefined)
+          ?.session ?? modelSession;
+    }
+    const prompt = await this.resolveInput(modelSession, runtime?.context);
     const sessionId = await this.resolveSessionId(
-      currentSession,
+      modelSession,
       runtime?.context,
     );
     await materializeClaudeAgentSkills({
@@ -63,7 +86,7 @@ export class ClaudeTurn<
         approvalHandler: this.options.approvalHandler,
       },
     );
-    const params = buildClaudeAgentQueryParams(prompt, currentSession, {
+    const params = buildClaudeAgentQueryParams(prompt, modelSession, {
       cwd: this.options.cwd,
       model: this.options.model,
       allowedTools: this.options.allowedTools,
@@ -202,6 +225,13 @@ export class ClaudeTurn<
   }
 }
 
+interface TurnModelRequest<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  session: Session<TVars, TAttrs>;
+}
+
 async function emitTurnModelEvent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -243,6 +273,25 @@ function assertTurnCommandSupported(
   throw new Error(
     `${label}.execute does not support execution command ${command.type} yet.`,
   );
+}
+
+function assertPrepareModelInputDidNotPersistSession(
+  steps: readonly ExecutionPhaseStep[],
+  label: string,
+): void {
+  const hasSessionDelta = steps.some(({ transition }) => {
+    const delta = transition.session;
+    return (
+      delta.messageOp.type !== 'none' ||
+      Object.keys(delta.varsSet).length > 0 ||
+      delta.varsDelete.length > 0
+    );
+  });
+  if (hasSessionDelta) {
+    throw new Error(
+      `${label} prepareModelInput cannot return persistent session patches. Return request.session instead.`,
+    );
+  }
 }
 
 function getClaudeConfiguredApprovalCapabilities(
