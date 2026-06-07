@@ -23,6 +23,20 @@ export type ExecutionPhase = ExecutionLifecyclePhase | ExecutionWrapperPhase;
 
 export type HandlerDurabilityMode = 'materialized-phase' | 'replayable-handler';
 
+export interface ExecutionDurableActivityOptions {
+  idempotencyKey?: string;
+  kind?: string;
+}
+
+export interface ExecutionDurableBoundary {
+  memo<T>(name: string, fn: () => T | Promise<T>): Promise<T>;
+  activity<T>(
+    name: string,
+    options: ExecutionDurableActivityOptions,
+    fn: () => T | Promise<T>,
+  ): Promise<T>;
+}
+
 export interface ExecutionPhaseContext<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -35,6 +49,7 @@ export interface ExecutionPhaseContext<
   result?: TResult;
   context?: Record<string, unknown>;
   middlewareState: Record<string, unknown>;
+  durable: ExecutionDurableBoundary;
   signal?: AbortSignal;
 }
 
@@ -424,6 +439,12 @@ export async function runExecutionPhase<
       result,
       context: options.context,
       middlewareState,
+      durable: durableBoundaryForHandler(
+        'middleware',
+        middleware.name,
+        options.phase,
+        middleware.durability,
+      ),
       signal: options.signal,
     });
     throwIfAborted(options.signal);
@@ -475,6 +496,12 @@ export async function runExecutionPhase<
       result,
       context: options.context,
       middlewareState,
+      durable: durableBoundaryForHandler(
+        'hook',
+        hook.name,
+        options.phase,
+        hook.durability,
+      ),
       signal: options.signal,
     });
     throwIfAborted(options.signal);
@@ -586,6 +613,12 @@ export async function runMiddlewareWrapper<
         request,
         context: options.context,
         middlewareState,
+        durable: durableBoundaryForHandler(
+          'middleware',
+          definition.name,
+          options.phase,
+          definition.durability,
+        ),
         signal: options.signal,
       },
       next,
@@ -745,6 +778,52 @@ function assertHookPatchAuthority<TVars extends Vars, TAttrs extends Attrs>(
       `Hook ${hookName ?? '<anonymous>'} cannot return request/result patches in ${phase}. Use middleware for request/result transformations.`,
     );
   }
+}
+
+function durableBoundaryForHandler(
+  kind: 'middleware' | 'hook',
+  name: string | undefined,
+  phase: ExecutionPhase,
+  durability: HandlerDurabilityMode | undefined,
+): ExecutionDurableBoundary {
+  const label = `${kind} ${name ?? '<anonymous>'} ${phase}`;
+  if (durability === 'replayable-handler') {
+    return unavailableDurableBoundary(label);
+  }
+  return materializedDurableBoundary(label);
+}
+
+function materializedDurableBoundary(label: string): ExecutionDurableBoundary {
+  return rejectingDurableBoundary(label, 'materialized-phase');
+}
+
+function unavailableDurableBoundary(label: string): ExecutionDurableBoundary {
+  return rejectingDurableBoundary(label, 'unavailable');
+}
+
+function rejectingDurableBoundary(
+  label: string,
+  reason: 'materialized-phase' | 'unavailable',
+): ExecutionDurableBoundary {
+  return {
+    async memo() {
+      throw new Error(durableEffectError(label, 'memo', reason));
+    },
+    async activity() {
+      throw new Error(durableEffectError(label, 'activity', reason));
+    },
+  };
+}
+
+function durableEffectError(
+  label: string,
+  method: 'memo' | 'activity',
+  reason: 'materialized-phase' | 'unavailable',
+): string {
+  if (reason === 'materialized-phase') {
+    return `ctx.durable.${method}() is not allowed in ${label}; declare durability: 'replayable-handler' to use nested durable effects.`;
+  }
+  return `ctx.durable.${method}() is only available when ${label} runs in durable replayable-handler mode.`;
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

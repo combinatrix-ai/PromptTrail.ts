@@ -272,6 +272,57 @@ describe('execution interceptors', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('rejects nested durable effects in materialized phases', async () => {
+    await expect(
+      runExecutionPhase({
+        phase: 'beforeModel',
+        session: createSession(),
+        middleware: [
+          Middleware.create({
+            name: 'clock',
+            beforeModel: async ({ durable }) => ({
+              session: {
+                vars: {
+                  now: await durable.memo('now', () => Date.now()),
+                },
+              },
+            }),
+          }),
+        ],
+      }),
+    ).rejects.toThrow(
+      "ctx.durable.memo() is not allowed in middleware clock beforeModel; declare durability: 'replayable-handler'",
+    );
+  });
+
+  it('requires durable execution for replayable handler effects', async () => {
+    await expect(
+      runExecutionPhase({
+        phase: 'beforeModel',
+        session: createSession(),
+        middleware: [
+          Middleware.create({
+            name: 'profile',
+            durability: 'replayable-handler',
+            beforeModel: async ({ durable }) => ({
+              session: {
+                vars: {
+                  profile: await durable.activity(
+                    'load-profile',
+                    { kind: 'external-read' },
+                    () => 'loaded',
+                  ),
+                },
+              },
+            }),
+          }),
+        ],
+      }),
+    ).rejects.toThrow(
+      'ctx.durable.activity() is only available when middleware profile beforeModel runs in durable replayable-handler mode.',
+    );
+  });
+
   it('runs middleware wrappers around an execution call', async () => {
     const session = createSession({
       messages: [Message.user('start')],
