@@ -141,7 +141,7 @@ export class RuntimeServer {
   private readonly sources: RuntimeSourceDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
   private readonly activities = new Map<string, RuntimeActivityDriver>();
-  private eventSeq = 0;
+  private readonly eventSeqByConversation = new Map<string, number>();
 
   constructor(private readonly options: RuntimeServerOptions) {
     this.runtimeObservers = [
@@ -494,7 +494,7 @@ export class RuntimeServer {
       error?: unknown;
     },
   ): Promise<void> {
-    const seq = this.eventSeq++;
+    const seq = this.nextDeliveryEventSeq(options.conversationId);
     const sourcePlatformBinding =
       options.platformBinding ?? options.deliveryAttempt.platformBinding;
     const messageRef = options.deliveryAttempt.messageRef
@@ -541,6 +541,12 @@ export class RuntimeServer {
       // Delivery observers are presentation side effects; final delivery state
       // is owned by the outbox and must not be rolled back by observer failure.
     }
+  }
+
+  private nextDeliveryEventSeq(conversationId: string): number {
+    const seq = this.eventSeqByConversation.get(conversationId) ?? 0;
+    this.eventSeqByConversation.set(conversationId, seq + 1);
+    return seq;
   }
 
   private async deliverError(

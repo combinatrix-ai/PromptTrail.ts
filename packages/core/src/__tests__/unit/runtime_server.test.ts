@@ -318,6 +318,101 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('allocates delivery event sequence numbers per conversation', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const deliveryEvents: string[] = [];
+    const main = agent('main').chat('chat', (session) => ({
+      content: `reply:${session.getLastMessage()?.content ?? ''}`,
+    }));
+    const bundle = PromptTrail.bundle({
+      name: 'server-delivery-seq-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      observers: [
+        (event) => {
+          if (
+            event.type === 'delivery.pending' ||
+            event.type === 'delivery.completed'
+          ) {
+            deliveryEvents.push(
+              `${event.conversationId}:${event.seq}:${event.type}`,
+            );
+          }
+        },
+      ],
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver() {
+                return { messageId: 'sent' };
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello alice',
+    });
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'bob',
+      authorId: 'U_bob',
+      authorBot: false,
+      content: 'hello bob',
+    });
+
+    expect(deliveryEvents).toEqual([
+      'discord:guild:workroom:channel:C_general:user:U_alice:0:delivery.pending',
+      'discord:guild:workroom:channel:C_general:user:U_alice:1:delivery.completed',
+      'discord:guild:workroom:channel:C_general:user:U_bob:0:delivery.pending',
+      'discord:guild:workroom:channel:C_general:user:U_bob:1:delivery.completed',
+    ]);
+  });
+
   it('uses stable idempotency keys for runtime error delivery', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
