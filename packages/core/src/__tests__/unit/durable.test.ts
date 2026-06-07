@@ -434,6 +434,120 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals durable wrapModelCall middleware without re-running on replay', async () => {
+    let wrapperCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('wrapped-model')
+      .assistant('reply', (session) => {
+        modelCalls++;
+        return `model:${session.getVarsObject().temporary}`;
+      })
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { wrapped: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'modelWrapper',
+          wrapModelCall: async ({ request }, next) => {
+            wrapperCalls++;
+            const upstreamSession = (
+              request as {
+                session: { withVar(key: string, value: string): unknown };
+              }
+            ).session;
+            const result = await next({
+              session: upstreamSession.withVar('downstream', 'kept'),
+              request: {
+                session: upstreamSession.withVar('temporary', 'wrapped'),
+              },
+            });
+            return {
+              result: `${result}:wrapper:${wrapperCalls}`,
+              session: {
+                vars: { wrappedModel: wrapperCalls },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'wrapped',
+      runId: 'run-wrap-model',
+      durable: true,
+    });
+    const replay = await app.resume('run-wrap-model');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe(
+      'model:wrapped:wrapper:1',
+    );
+    expect(replay.session.getVarsObject()).toEqual({
+      downstream: 'kept',
+      wrappedModel: 1,
+    });
+    expect(wrapperCalls).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-wrap-model')).toEqual([
+      'reply/wrapModelCall/next/0',
+      'reply/wrapModelCall',
+    ]);
+  });
+
+  it('does not re-run wrapped model calls after a post-next crash', async () => {
+    let wrapperCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('crashy-wrapped-model')
+      .assistant('reply', () => {
+        modelCalls++;
+        return `model:${modelCalls}`;
+      })
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { wrapped: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'crashyModelWrapper',
+          wrapModelCall: async (_context, next) => {
+            wrapperCalls++;
+            const result = await next();
+            if (wrapperCalls === 1) {
+              throw new Error('post-next model crash');
+            }
+            return `${result}:wrapper:${wrapperCalls}`;
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      app.run({
+        agent: 'wrapped',
+        runId: 'run-wrap-model-crash',
+        durable: true,
+      }),
+    ).rejects.toThrow('post-next model crash');
+
+    expect(app.journal('run-wrap-model-crash')).toEqual([
+      'reply/wrapModelCall/next/0',
+    ]);
+
+    const replay = await app.resume('run-wrap-model-crash');
+
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe('model:1:wrapper:2');
+    expect(wrapperCalls).toBe(2);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-wrap-model-crash')).toEqual([
+      'reply/wrapModelCall/next/0',
+      'reply/wrapModelCall',
+    ]);
+  });
+
   it('journals app-level model middleware around durable chat nodes', async () => {
     let beforeCalls = 0;
     let afterCalls = 0;
@@ -581,6 +695,174 @@ describe('durable agent runtime', () => {
       'tools/call-1/beforeTool',
       'tools/call-1',
       'tools/call-1/afterTool',
+    ]);
+  });
+
+  it('journals durable wrapToolCall middleware that replaces tool execution', async () => {
+    let wrapperCalls = 0;
+    let toolCalls = 0;
+    const assistant = agent('wrapped-tool')
+      .tool('write', {
+        activity: {
+          kind: 'external-write',
+          idempotencyKey: 'write:call-1',
+        },
+        execute: async () => {
+          toolCalls++;
+          return 'should not run';
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'write',
+            arguments: { value: 'danger' },
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { wrapped: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'toolWrapper',
+          wrapToolCall: ({ request }) => {
+            wrapperCalls++;
+            const call = request as { id: string; name: string };
+            return {
+              request: {
+                ...call,
+                name: `denied-${call.name}`,
+              },
+              result: {
+                type: 'tool_result',
+                content: `denied:${call.name}:${wrapperCalls}`,
+                attrs: { toolCallId: call.id },
+              },
+              session: {
+                vars: { deniedTool: call.name },
+              },
+            };
+          },
+          afterTool: ({ request, result }) => {
+            const call = request as { name: string };
+            const message = result as { content: string };
+            return {
+              result: {
+                ...message,
+                content: `${message.content}:after:${call.name}`,
+              },
+              session: {
+                vars: { afterToolRequest: call.name },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'wrapped',
+      runId: 'run-wrap-tool',
+      durable: true,
+    });
+    const replay = await app.resume('run-wrap-tool');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'denied:write:1:after:denied-write',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(replay.session.getVarsObject()).toEqual({
+      deniedTool: 'write',
+      afterToolRequest: 'denied-write',
+    });
+    expect(wrapperCalls).toBe(1);
+    expect(toolCalls).toBe(0);
+    expect(app.journal('run-wrap-tool')).toEqual([
+      'reply/model',
+      'tools/call-1/wrapToolCall',
+      'tools/call-1/afterTool',
+    ]);
+  });
+
+  it('does not re-run wrapped tools after a post-next crash', async () => {
+    let wrapperCalls = 0;
+    let toolCalls = 0;
+    const assistant = agent('crashy-wrapped-tool')
+      .tool('write', {
+        activity: {
+          kind: 'external-write',
+          idempotencyKey: 'write:call-1',
+        },
+        execute: async () => {
+          toolCalls++;
+          return `tool:${toolCalls}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'write',
+            arguments: { value: 'danger' },
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { wrapped: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'crashyToolWrapper',
+          wrapToolCall: async (_context, next) => {
+            wrapperCalls++;
+            const result = await next();
+            if (wrapperCalls === 1) {
+              throw new Error('post-next tool crash');
+            }
+            return `${result}:wrapper:${wrapperCalls}`;
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      app.run({
+        agent: 'wrapped',
+        runId: 'run-wrap-tool-crash',
+        durable: true,
+      }),
+    ).rejects.toThrow('post-next tool crash');
+
+    expect(app.journal('run-wrap-tool-crash')).toEqual([
+      'reply/model',
+      'tools/call-1/wrapToolCall/next/0',
+    ]);
+
+    const replay = await app.resume('run-wrap-tool-crash');
+
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'tool:1:wrapper:2',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(wrapperCalls).toBe(2);
+    expect(toolCalls).toBe(1);
+    expect(app.journal('run-wrap-tool-crash')).toEqual([
+      'reply/model',
+      'tools/call-1/wrapToolCall/next/0',
+      'tools/call-1/wrapToolCall',
     ]);
   });
 

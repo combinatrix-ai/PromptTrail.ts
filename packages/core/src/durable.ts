@@ -8,10 +8,13 @@ import {
 } from './execution';
 import {
   runExecutionPhase,
+  runMiddlewareWrapper,
   type ExecutionLifecyclePhase,
   type ExecutionPhaseStep,
+  type ExecutionWrapperPhase,
   type HookDefinition,
   type MiddlewareDefinition,
+  type RunMiddlewareWrapperResult,
   type RunExecutionPhaseResult,
 } from './interceptors';
 import { bundle } from './runtime_bindings';
@@ -180,6 +183,21 @@ interface DurablePhaseJournal<TAttrs extends Attrs = Attrs> {
   steps: ExecutionPhaseStep<TAttrs>[];
 }
 
+interface DurableWrapperJournal<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  session: Session<TVars, TAttrs>;
+  request: unknown;
+  result: unknown;
+  command: ResolvedExecutionCommand;
+  beforeVersion: number;
+  afterVersion: number;
+  middlewareState: Record<string, unknown>;
+  steps: ExecutionPhaseStep<TAttrs>[];
+  nestedStepIds: string[];
+}
+
 type DurableNode<TVars extends Vars, TAttrs extends Attrs> =
   | { type: 'system'; id: string; content: string }
   | {
@@ -230,6 +248,25 @@ function stringifyToolResult(result: unknown): string {
     return result;
   }
   return JSON.stringify(result);
+}
+
+function normalizeToolResultMessage<TAttrs extends Attrs>(
+  result: unknown,
+  call: ToolCall,
+): PromptTrailMessage<TAttrs> {
+  if (
+    result &&
+    typeof result === 'object' &&
+    'type' in result &&
+    (result as { type?: unknown }).type === 'tool_result'
+  ) {
+    return result as PromptTrailMessage<TAttrs>;
+  }
+  return {
+    type: 'tool_result',
+    content: stringifyToolResult(result),
+    attrs: { toolCallId: call.id } as unknown as TAttrs,
+  };
 }
 
 function toolCallsOf<TAttrs extends Attrs>(
@@ -416,6 +453,167 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
     case 'prepareModelInput':
       return undefined;
   }
+}
+
+async function runDurableMiddlewareWrapper<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TRequest,
+  TResult,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  options: {
+    phase: ExecutionWrapperPhase;
+    session: Session<TVars, TAttrs>;
+    request: TRequest;
+    call: (input: {
+      session: Session<TVars, TAttrs>;
+      request: TRequest;
+    }) => Promise<TResult>;
+  },
+): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
+  if (state.journal.results.has(stepId)) {
+    const record = state.journal.results.get(stepId) as DurableWrapperJournal<
+      TVars,
+      TAttrs
+    >;
+    return replayDurableWrapperJournal(state, stepId, options.session, record);
+  }
+
+  const nestedStepIds: string[] = [];
+  let nestedCallIndex = 0;
+  const wrapped = await runMiddlewareWrapper({
+    phase: options.phase,
+    session: options.session,
+    request: options.request,
+    call: async (input) => {
+      const nestedStepId = `${stepId}/next/${nestedCallIndex++}`;
+      nestedStepIds.push(nestedStepId);
+      return journaled(state, nestedStepId, () => options.call(input));
+    },
+    middlewareState: state.middlewareState,
+    middleware: state.middleware,
+    beforeVersion: state.transitionVersion,
+  });
+  const record = {
+    session: wrapped.session,
+    request: wrapped.request,
+    result: wrapped.result,
+    command: wrapped.command,
+    beforeVersion: wrapped.beforeVersion,
+    afterVersion: wrapped.afterVersion,
+    middlewareState: wrapped.middlewareState,
+    steps: wrapped.steps,
+    nestedStepIds,
+  } satisfies DurableWrapperJournal<TVars, TAttrs>;
+  commitDurableWrapperJournal(state, stepId, record);
+
+  return applyDurableWrapperJournal(state, options.session, record);
+}
+
+function commitDurableWrapperJournal<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  record: DurableWrapperJournal<TVars, TAttrs>,
+): void {
+  const expected = state.journal.sequence[state.sequencePosition];
+  if (expected !== undefined) {
+    throw new NondeterminismError(expected, stepId, state.sequencePosition);
+  }
+  state.journal.results.set(stepId, record);
+  state.journal.sequence.push(stepId);
+  state.sequencePosition++;
+}
+
+function replayDurableWrapperJournal<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TRequest,
+  TResult,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  session: Session<TVars, TAttrs>,
+  record: DurableWrapperJournal<TVars, TAttrs>,
+): RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult> {
+  for (const nestedStepId of record.nestedStepIds) {
+    const expected = state.journal.sequence[state.sequencePosition];
+    if (expected !== nestedStepId) {
+      throw new NondeterminismError(
+        expected,
+        nestedStepId,
+        state.sequencePosition,
+      );
+    }
+    if (!state.journal.results.has(nestedStepId)) {
+      throw new Error(`Missing durable wrapper nested step ${nestedStepId}.`);
+    }
+    state.sequencePosition++;
+  }
+
+  const expected = state.journal.sequence[state.sequencePosition];
+  if (expected !== stepId) {
+    throw new NondeterminismError(expected, stepId, state.sequencePosition);
+  }
+  state.sequencePosition++;
+  return applyDurableWrapperJournal(state, session, record);
+}
+
+function applyDurableWrapperJournal<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TRequest,
+  TResult,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  baseSession: Session<TVars, TAttrs>,
+  record: DurableWrapperJournal<TVars, TAttrs>,
+): RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult> {
+  if (record.beforeVersion !== state.transitionVersion) {
+    throw new NondeterminismError(
+      `version:${state.transitionVersion}`,
+      `version:${record.beforeVersion}`,
+      state.sequencePosition - 1,
+    );
+  }
+
+  let session = baseSession;
+  let middlewareState = state.middlewareState;
+  for (const step of record.steps) {
+    if (step.transition.beforeVersion !== state.transitionVersion) {
+      throw new NondeterminismError(
+        `version:${state.transitionVersion}`,
+        `version:${step.transition.beforeVersion}`,
+        state.sequencePosition - 1,
+      );
+    }
+    const applied = applyResolvedExecutionTransition(session, step.transition, {
+      middlewareState,
+    });
+    session = applied.session;
+    middlewareState = applied.middlewareState;
+    state.transitionVersion = step.transition.afterVersion;
+  }
+  state.middlewareState = middlewareState;
+
+  return {
+    session: record.session,
+    request: record.request as TRequest,
+    result: record.result as TResult,
+    middlewareState,
+    command: record.command,
+    beforeVersion: record.beforeVersion,
+    afterVersion: record.afterVersion,
+    steps: record.steps,
+  };
+}
+
+function hasDurableWrapperHandler<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  phase: ExecutionWrapperPhase,
+): boolean {
+  return state.middleware.some((middleware) => Boolean(middleware[phase]));
 }
 
 async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
@@ -648,9 +846,28 @@ export class DurableAgent<
           (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
             ?.session ?? session;
 
-        const message = await journaled(state, `${nodePath}/model`, async () =>
-          normalizeAssistantMessage(await node.handler(modelSession)),
-        );
+        let message: PromptTrailMessage<TAttrs>;
+        if (hasDurableWrapperHandler(state, 'wrapModelCall')) {
+          const wrapped = await runDurableMiddlewareWrapper<
+            TVars,
+            TAttrs,
+            DurableModelRequest<TVars, TAttrs>,
+            AssistantResult<TAttrs>
+          >(state, `${nodePath}/wrapModelCall`, {
+            phase: 'wrapModelCall',
+            session,
+            request: { session: modelSession },
+            call: async ({ request }) => node.handler(request.session),
+          });
+          assertDurablePhaseCommandSupported(wrapped.command, nodePath);
+          session = wrapped.session;
+          state.session = session;
+          message = normalizeAssistantMessage(wrapped.result);
+        } else {
+          message = await journaled(state, `${nodePath}/model`, async () =>
+            normalizeAssistantMessage(await node.handler(modelSession)),
+          );
+        }
         const after = await runDurableExecutionPhase(
           state,
           `${nodePath}/afterModel`,
@@ -706,12 +923,31 @@ export class DurableAgent<
           const modelSession =
             (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
               ?.session ?? current;
-          const message = await journaled(
-            state,
-            `${nodePath}#${iteration}/model`,
-            async () =>
-              normalizeAssistantMessage(await node.handler(modelSession)),
-          );
+          let message: PromptTrailMessage<TAttrs>;
+          if (hasDurableWrapperHandler(state, 'wrapModelCall')) {
+            const wrapped = await runDurableMiddlewareWrapper<
+              TVars,
+              TAttrs,
+              DurableModelRequest<TVars, TAttrs>,
+              AssistantResult<TAttrs>
+            >(state, `${nodePath}#${iteration}/wrapModelCall`, {
+              phase: 'wrapModelCall',
+              session: current,
+              request: { session: modelSession },
+              call: async ({ request }) => node.handler(request.session),
+            });
+            assertDurablePhaseCommandSupported(wrapped.command, nodePath);
+            current = wrapped.session;
+            state.session = current;
+            message = normalizeAssistantMessage(wrapped.result);
+          } else {
+            message = await journaled(
+              state,
+              `${nodePath}#${iteration}/model`,
+              async () =>
+                normalizeAssistantMessage(await node.handler(modelSession)),
+            );
+          }
           const after = await runDurableExecutionPhase(
             state,
             `${nodePath}#${iteration}/afterModel`,
@@ -750,30 +986,32 @@ export class DurableAgent<
             request: call,
           });
           assertDurablePhaseCommandSupported(before.command, stepId);
-          const nextCall = (before.request as ToolCall | undefined) ?? call;
-          const tool = this.tools.get(nextCall.name);
-          if (!tool) {
-            throw new Error(`Unknown durable tool: ${nextCall.name}`);
+          let nextCall = (before.request as ToolCall | undefined) ?? call;
+          let message: PromptTrailMessage<TAttrs>;
+          let toolSession = before.session;
+          if (hasDurableWrapperHandler(state, 'wrapToolCall')) {
+            const wrapped = await runDurableMiddlewareWrapper<
+              TVars,
+              TAttrs,
+              ToolCall,
+              unknown
+            >(state, `${stepId}/wrapToolCall`, {
+              phase: 'wrapToolCall',
+              session: before.session,
+              request: nextCall,
+              call: async ({ session, request }) =>
+                this.executeDurableTool(state, stepId, request, session),
+            });
+            assertDurablePhaseCommandSupported(wrapped.command, stepId);
+            nextCall = (wrapped.request as ToolCall | undefined) ?? nextCall;
+            toolSession = wrapped.session;
+            message = normalizeToolResultMessage(wrapped.result, nextCall);
+          } else {
+            const result = await journaled(state, stepId, () =>
+              this.executeDurableTool(state, stepId, nextCall, before.session),
+            );
+            message = normalizeToolResultMessage(result, nextCall);
           }
-          const result = await journaled(state, stepId, () => {
-            const activity = resolveDurableToolActivity(tool, nextCall, {
-              runId: state.runId,
-              stepId,
-              session: before.session,
-            });
-            return tool.execute(nextCall.arguments, {
-              runId: state.runId,
-              stepId,
-              session: before.session,
-              toolCall: nextCall,
-              activity,
-            });
-          });
-          const message: PromptTrailMessage<TAttrs> = {
-            type: 'tool_result',
-            content: stringifyToolResult(result),
-            attrs: { toolCallId: nextCall.id } as unknown as TAttrs,
-          };
           const after = await runDurableExecutionPhase<
             TVars,
             TAttrs,
@@ -781,7 +1019,7 @@ export class DurableAgent<
             PromptTrailMessage<TAttrs>
           >(state, `${stepId}/afterTool`, {
             phase: 'afterTool',
-            session: before.session,
+            session: toolSession,
             request: nextCall,
             result: message,
           });
@@ -855,6 +1093,30 @@ export class DurableAgent<
         return current;
       }
     }
+  }
+
+  private executeDurableTool<TAttrs extends Attrs>(
+    state: DurableExecutionState<any, TAttrs>,
+    stepId: string,
+    call: ToolCall,
+    session: Session<any, TAttrs>,
+  ): Promise<unknown> | unknown {
+    const tool = this.tools.get(call.name);
+    if (!tool) {
+      throw new Error(`Unknown durable tool: ${call.name}`);
+    }
+    const activity = resolveDurableToolActivity(tool, call, {
+      runId: state.runId,
+      stepId,
+      session,
+    });
+    return tool.execute(call.arguments, {
+      runId: state.runId,
+      stepId,
+      session,
+      toolCall: call,
+      activity,
+    });
   }
 }
 
