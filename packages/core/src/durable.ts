@@ -367,6 +367,7 @@ async function runDurableExecutionPhase<
     };
   }
 
+  const replay = state.journal.results.has(stepId) ? 'journaled' : 'live';
   const record = await journaled(state, stepId, async () => {
     const phase = await runExecutionPhase({
       phase: options.phase,
@@ -413,6 +414,7 @@ async function runDurableExecutionPhase<
     session = applied.session;
     middlewareState = applied.middlewareState;
     state.transitionVersion = step.transition.afterVersion;
+    await emitDurablePhaseStepEvent(state, stepId, step, replay);
   }
   state.middlewareState = middlewareState;
 
@@ -483,7 +485,12 @@ async function runDurableMiddlewareWrapper<
       TVars,
       TAttrs
     >;
-    return replayDurableWrapperJournal(state, stepId, options.session, record);
+    return await replayDurableWrapperJournal(
+      state,
+      stepId,
+      options.session,
+      record,
+    );
   }
 
   const nestedStepIds: string[] = [];
@@ -514,7 +521,13 @@ async function runDurableMiddlewareWrapper<
   } satisfies DurableWrapperJournal<TVars, TAttrs>;
   commitDurableWrapperJournal(state, stepId, record);
 
-  return applyDurableWrapperJournal(state, options.session, record);
+  return await applyDurableWrapperJournal(
+    state,
+    stepId,
+    options.session,
+    record,
+    'live',
+  );
 }
 
 function commitDurableWrapperJournal<TVars extends Vars, TAttrs extends Attrs>(
@@ -531,7 +544,7 @@ function commitDurableWrapperJournal<TVars extends Vars, TAttrs extends Attrs>(
   state.sequencePosition++;
 }
 
-function replayDurableWrapperJournal<
+async function replayDurableWrapperJournal<
   TVars extends Vars,
   TAttrs extends Attrs,
   TRequest,
@@ -541,7 +554,7 @@ function replayDurableWrapperJournal<
   stepId: string,
   session: Session<TVars, TAttrs>,
   record: DurableWrapperJournal<TVars, TAttrs>,
-): RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult> {
+): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
   for (const nestedStepId of record.nestedStepIds) {
     const expected = state.journal.sequence[state.sequencePosition];
     if (expected !== nestedStepId) {
@@ -562,19 +575,27 @@ function replayDurableWrapperJournal<
     throw new NondeterminismError(expected, stepId, state.sequencePosition);
   }
   state.sequencePosition++;
-  return applyDurableWrapperJournal(state, session, record);
+  return await applyDurableWrapperJournal(
+    state,
+    stepId,
+    session,
+    record,
+    'journaled',
+  );
 }
 
-function applyDurableWrapperJournal<
+async function applyDurableWrapperJournal<
   TVars extends Vars,
   TAttrs extends Attrs,
   TRequest,
   TResult,
 >(
   state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
   baseSession: Session<TVars, TAttrs>,
   record: DurableWrapperJournal<TVars, TAttrs>,
-): RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult> {
+  replay: 'live' | 'journaled',
+): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
   if (record.beforeVersion !== state.transitionVersion) {
     throw new NondeterminismError(
       `version:${state.transitionVersion}`,
@@ -599,6 +620,7 @@ function applyDurableWrapperJournal<
     session = applied.session;
     middlewareState = applied.middlewareState;
     state.transitionVersion = step.transition.afterVersion;
+    await emitDurablePhaseStepEvent(state, stepId, step, replay);
   }
   state.middlewareState = middlewareState;
 
@@ -619,6 +641,46 @@ function hasDurableWrapperHandler<TVars extends Vars, TAttrs extends Attrs>(
   phase: ExecutionWrapperPhase,
 ): boolean {
   return state.middleware.some((middleware) => Boolean(middleware[phase]));
+}
+
+async function emitDurablePhaseStepEvent<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  step: ExecutionPhaseStep<TAttrs>,
+  replay: 'live' | 'journaled',
+): Promise<void> {
+  if (
+    !state.emitEvent ||
+    !state.nextEventSeq ||
+    step.transition.beforeVersion === step.transition.afterVersion
+  ) {
+    return;
+  }
+  const seq = state.nextEventSeq();
+  await state.emitEvent({
+    id: `${state.runId}:${seq}:session.patched`,
+    type: 'session.patched',
+    at: new Date().toISOString(),
+    seq,
+    conversationId: state.runId,
+    runId: state.runId,
+    stepId,
+    phase: step.phase,
+    replay,
+    source: step.kind,
+    sessionVersion: step.transition.afterVersion,
+    raw: {
+      kind: step.kind,
+      name: step.name,
+      registrationIndex: step.registrationIndex,
+      beforeVersion: step.transition.beforeVersion,
+      afterVersion: step.transition.afterVersion,
+      command: step.transition.command,
+    },
+  });
 }
 
 async function emitDurableExecutionEvent<

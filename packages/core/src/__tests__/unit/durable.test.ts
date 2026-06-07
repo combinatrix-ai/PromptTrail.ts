@@ -391,6 +391,118 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('emits durable session.patched events for live and journaled phase patches', async () => {
+    const events: string[] = [];
+    const assistant = agent('patch-observed')
+      .assistant(
+        'reply',
+        (session) => `model:${session.getVarsObject().before}`,
+      )
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      store: memoryStore(),
+      observers: [
+        {
+          replayPolicy: 'live-and-journaled',
+          handle(event) {
+            if (event.type !== 'session.patched') {
+              return;
+            }
+            const raw = event.raw as {
+              kind: string;
+              name?: string;
+            };
+            events.push(
+              `${event.seq}:${event.replay}:${event.stepId}:${event.phase}:${raw.kind}:${raw.name ?? '-'}`,
+            );
+          },
+        },
+      ],
+      middleware: [
+        Middleware.create({
+          name: 'before',
+          beforeModel: () => ({
+            session: { vars: { before: 'yes' } },
+          }),
+        }),
+      ],
+      hooks: [
+        Hook.create({
+          name: 'audit',
+          onAfterModel: () => ({
+            session: { vars: { audited: true } },
+          }),
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-patch-observed',
+      durable: true,
+    });
+    const replay = await app.resume('run-patch-observed');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(events).toEqual([
+      '1:live:reply/beforeModel:beforeModel:middleware:before',
+      '2:live:reply/afterModel:afterModel:hook:audit',
+      '5:journaled:reply/beforeModel:beforeModel:middleware:before',
+      '6:journaled:reply/afterModel:afterModel:hook:audit',
+    ]);
+  });
+
+  it('surfaces strict durable session.patched observer failures without re-running the phase', async () => {
+    let beforeCalls = 0;
+    const assistant = agent('strict-patch-observed')
+      .assistant('reply', (session) => `model:${session.getVarsObject().before}`)
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      store: memoryStore(),
+      strictObservers: true,
+      observers: [
+        {
+          name: 'failingPatchObserver',
+          handle(event) {
+            if (event.type === 'session.patched') {
+              throw new Error(`patch observer failed:${event.replay}`);
+            }
+          },
+        },
+      ],
+      middleware: [
+        Middleware.create({
+          name: 'before',
+          beforeModel: () => {
+            beforeCalls++;
+            return {
+              session: { vars: { before: beforeCalls } },
+            };
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      app.run({
+        agent: 'observed',
+        runId: 'run-strict-patch-observed',
+        durable: true,
+      }),
+    ).rejects.toThrow('patch observer failed:live');
+    await expect(app.resume('run-strict-patch-observed')).rejects.toThrow(
+      'patch observer failed:journaled',
+    );
+
+    expect(beforeCalls).toBe(1);
+    expect(app.journal('run-strict-patch-observed')).toEqual([
+      'reply/beforeModel',
+    ]);
+  });
+
   it('applies durable prepareModelInput as transient model input', async () => {
     const assistant = agent('prepared')
       .assistant(
@@ -437,6 +549,7 @@ describe('durable agent runtime', () => {
   it('journals durable wrapModelCall middleware without re-running on replay', async () => {
     let wrapperCalls = 0;
     let modelCalls = 0;
+    const events: string[] = [];
     const assistant = agent('wrapped-model')
       .assistant('reply', (session) => {
         modelCalls++;
@@ -446,6 +559,16 @@ describe('durable agent runtime', () => {
     const app = PromptTrail.app({
       agents: { wrapped: assistant },
       store: memoryStore(),
+      observers: [
+        {
+          replayPolicy: 'live-and-journaled',
+          handle(event) {
+            if (event.type === 'session.patched') {
+              events.push(`${event.replay}:${event.stepId}:${event.phase}`);
+            }
+          },
+        },
+      ],
       middleware: [
         Middleware.create({
           name: 'modelWrapper',
@@ -494,6 +617,10 @@ describe('durable agent runtime', () => {
     expect(app.journal('run-wrap-model')).toEqual([
       'reply/wrapModelCall/next/0',
       'reply/wrapModelCall',
+    ]);
+    expect(events).toEqual([
+      'live:reply/wrapModelCall:wrapModelCall',
+      'journaled:reply/wrapModelCall:wrapModelCall',
     ]);
   });
 
