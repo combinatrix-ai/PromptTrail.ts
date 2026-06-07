@@ -319,6 +319,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     }
 
     const observerBus = new ObserverBus(this.observers, {
+      strictObservers: executionOptions?.strictObservers,
       ...executionOptions?.observerDeliveryBindings,
     });
     let seq = 0;
@@ -494,6 +495,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
           context: executionOptions?.context,
           eventScopeId: durableOptions.runId,
           observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
+          strictObservers: executionOptions?.strictObservers,
           signal: executionOptions?.signal,
           durable: false,
         }),
@@ -531,6 +533,7 @@ export interface AgentExecutionOptions {
   signal?: AbortSignal;
   durable?: boolean | AgentDirectDurableOptions;
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
+  strictObservers?: boolean;
 }
 
 interface AgentExecutionInternalOptions extends AgentExecutionOptions {
@@ -574,10 +577,7 @@ function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
   );
 }
 
-async function handleDirectAgentCommand<
-  TC extends Vars,
-  TM extends Attrs,
->(
+async function handleDirectAgentCommand<TC extends Vars, TM extends Attrs>(
   command: ResolvedExecutionCommand,
   session: Session<TC, TM>,
   options: { emitCompleted: () => Promise<void> },

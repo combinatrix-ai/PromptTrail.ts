@@ -296,6 +296,23 @@ describe('Agent interceptors', () => {
     expect(completed[0]).toContain('sent:run.started');
   });
 
+  it('can surface direct execution observer failures in strict mode', async () => {
+    const agent = Agent.create()
+      .observe({
+        name: 'failing',
+        handle(event) {
+          if (event.type === 'run.started') {
+            throw new Error('observer broke');
+          }
+        },
+      })
+      .user('hello');
+
+    await expect(
+      agent.execute(undefined, { strictObservers: true }),
+    ).rejects.toThrow('observer broke');
+  });
+
   it('threads direct execution context into middleware', async () => {
     const session = await Agent.create()
       .use(
