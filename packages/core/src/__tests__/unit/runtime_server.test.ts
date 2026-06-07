@@ -524,12 +524,12 @@ describe('RuntimeServer', () => {
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
-        status: 'completed',
+        status: 'delivered',
       },
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:user:U_alice:turn:2:delivery:final',
-        status: 'completed',
+        status: 'delivered',
       },
     ]);
   });
@@ -914,7 +914,7 @@ describe('RuntimeServer', () => {
           'discord:guild:workroom:channel:C_general:user:U_alice',
         )
         .map((entry) => entry.status),
-    ).toEqual(['completed']);
+    ).toEqual(['delivered']);
   });
 
   it('materializes missing final delivery outbox entries on startup', async () => {
@@ -999,7 +999,7 @@ describe('RuntimeServer', () => {
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
-        status: 'completed',
+        status: 'delivered',
         attempts: 1,
       },
     ]);
@@ -1082,7 +1082,7 @@ describe('RuntimeServer', () => {
         attempts: entry.attempts,
         lastError: entry.lastError,
       })),
-    ).toEqual([{ status: 'completed', attempts: 1, lastError: undefined }]);
+    ).toEqual([{ status: 'delivered', attempts: 1, lastError: undefined }]);
   });
 
   it('retries delivering final deliveries on startup', async () => {
@@ -1150,7 +1150,7 @@ describe('RuntimeServer', () => {
         attempts: entry.attempts,
         lastError: entry.lastError,
       })),
-    ).toEqual([{ status: 'completed', attempts: 2, lastError: undefined }]);
+    ).toEqual([{ status: 'delivered', attempts: 2, lastError: undefined }]);
   });
 
   it('stops startup delivery retries for a conversation after the first failure', async () => {

@@ -138,7 +138,15 @@ export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
 
 export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   extends AssistantDeliveryOutboxInput<TAttrs> {
-  status: 'pending' | 'delivering' | 'completed' | 'failed' | 'skipped';
+  status:
+    | 'pending'
+    | 'delivering'
+    | 'delivered'
+    | 'failed'
+    /** @deprecated Use delivered. */
+    | 'completed'
+    /** @deprecated Use failed or omit unresolved delivery entries. */
+    | 'skipped';
   attempts: number;
   lastError?: string;
   error?: unknown;
@@ -2447,7 +2455,11 @@ export class PromptTrailApp {
     } else if (status === 'failed') {
       entry.error = error;
       entry.lastError = errorMessage(error);
-    } else if (status === 'completed' || status === 'skipped') {
+    } else if (
+      status === 'delivered' ||
+      status === 'completed' ||
+      status === 'skipped'
+    ) {
       entry.error = undefined;
       entry.lastError = undefined;
     } else {

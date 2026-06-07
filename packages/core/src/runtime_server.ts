@@ -364,7 +364,7 @@ export class RuntimeServer {
       this.options.runtime.markAssistantDelivery(
         dispatched.conversationId,
         deliveryAttempt.idempotencyKey,
-        'completed',
+        'delivered',
       );
       this.deliveryTracker.markDelivered(deliveryAttempt);
       await this.emitDeliveryEvent('delivery.completed', {
@@ -447,7 +447,7 @@ export class RuntimeServer {
     this.options.runtime.markAssistantDelivery(
       runId,
       entry.idempotencyKey,
-      'completed',
+      'delivered',
     );
     this.deliveryTracker.markDelivered(entry);
     await this.emitDeliveryEvent('delivery.completed', {

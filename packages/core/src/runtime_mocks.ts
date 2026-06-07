@@ -435,7 +435,7 @@ class MockRuntimeFixture {
       this.app.markAssistantDelivery(
         conversationId,
         deliveryAttempt.idempotencyKey,
-        'completed',
+        'delivered',
       );
       this.deliveryTracker.markDelivered(deliveryAttempt);
       this.effectEntries.push({
