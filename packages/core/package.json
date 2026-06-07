@@ -22,7 +22,7 @@
     "lint": "cd ../.. && ./node_modules/.bin/eslint packages/core/src",
     "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/core/src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.type-tests.json",
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },

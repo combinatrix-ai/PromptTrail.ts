@@ -3,6 +3,7 @@ import * as prompttrail from '../../index';
 import type {
   AgentDirectDurableOptions,
   AgentExecutionOptions,
+  DurableTool,
   ExecutionDurableActivityOptions,
 } from '../../index';
 
@@ -33,6 +34,43 @@ describe('public API surface', () => {
     expect(read.kind).toBe('external-read');
     expect(write.idempotencyKey).toBe('write:1');
     expect(missingKey.kind).toBe('external-write');
+  });
+
+  it('types external-write durable tool activities with required idempotency keys', () => {
+    const readTool: DurableTool = {
+      activity: { kind: 'external-read' },
+      execute: () => 'read',
+    };
+    const writeTool: DurableTool = {
+      activity: { kind: 'external-write', idempotencyKey: 'write:tool' },
+      execute: () => 'write',
+    };
+    const dynamicWriteTool: DurableTool = {
+      activity: (call) => ({
+        kind: 'external-write',
+        idempotencyKey: `write:${call.id}`,
+      }),
+      execute: () => 'write',
+    };
+    const missingKeyTool: DurableTool = {
+      // @ts-expect-error external-write durable tools need idempotency keys.
+      activity: { kind: 'external-write' },
+      execute: () => 'missing',
+    };
+    const dynamicMissingKeyTool: DurableTool = {
+      // @ts-expect-error dynamic external-write durable tool activities need idempotency keys.
+      activity: () => ({ kind: 'external-write' }),
+      execute: () => 'missing',
+    };
+
+    expect(readTool.activity).toEqual({ kind: 'external-read' });
+    expect(writeTool.activity).toEqual({
+      kind: 'external-write',
+      idempotencyKey: 'write:tool',
+    });
+    expect(typeof dynamicWriteTool.activity).toBe('function');
+    expect(missingKeyTool.activity).toEqual({ kind: 'external-write' });
+    expect(typeof dynamicMissingKeyTool.activity).toBe('function');
   });
 
   it('types run lifecycle hook aliases', () => {

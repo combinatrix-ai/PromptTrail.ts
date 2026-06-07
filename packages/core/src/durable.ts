@@ -67,10 +67,15 @@ export type DurableActivityKind =
   | 'external-read'
   | 'external-write';
 
-export interface DurableActivityOptions {
-  kind: DurableActivityKind;
-  idempotencyKey?: string;
-}
+export type DurableActivityOptions =
+  | {
+      kind: Exclude<DurableActivityKind, 'external-write'>;
+      idempotencyKey?: string;
+    }
+  | {
+      kind: 'external-write';
+      idempotencyKey: string;
+    };
 
 export interface DurableActivityContext {
   runId: string;

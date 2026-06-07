@@ -193,7 +193,7 @@ describe('durable agent runtime', () => {
     let toolCalls = 0;
     const assistant = agent('write-tool-agent')
       .tool('sendDiscord', {
-        activity: { kind: 'external-write' },
+        activity: { kind: 'external-write' } as never,
         execute: async () => {
           toolCalls++;
           return 'sent';
