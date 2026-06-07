@@ -213,6 +213,226 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('serializes concurrent dispatches for the same conversation', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const order: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstHandlerStarted = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const main = agent('main').chat('chat', async (session) => {
+      const content = session.getLastMessage()?.content ?? '';
+      order.push(`handler:${content}`);
+      if (content === 'first') {
+        firstStarted?.();
+        await firstCanFinish;
+      }
+      return `reply:${content}`;
+    });
+    const bundle = PromptTrail.bundle({
+      name: 'server-lock-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(_ctx, _target, message) {
+                order.push(`deliver:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+    const first = emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'first',
+    });
+    await firstHandlerStarted;
+    const second = emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'second',
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(['handler:first']);
+
+    releaseFirst?.();
+    await Promise.all([first, second]);
+
+    expect(order).toEqual([
+      'handler:first',
+      'deliver:reply:first',
+      'handler:second',
+      'deliver:reply:second',
+    ]);
+  });
+
+  it('runs concurrent dispatches for different conversations independently', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const order: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    let secondStarted: (() => void) | undefined;
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstHandlerStarted = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const secondHandlerStarted = new Promise<void>((resolve) => {
+      secondStarted = resolve;
+    });
+    const main = agent('main').chat('chat', async (session) => {
+      const content = session.getLastMessage()?.content ?? '';
+      order.push(`handler:${content}`);
+      if (content === 'first') {
+        firstStarted?.();
+        await firstCanFinish;
+      }
+      if (content === 'second') {
+        secondStarted?.();
+      }
+      return `reply:${content}`;
+    });
+    const bundle = PromptTrail.bundle({
+      name: 'server-lock-parallel-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      adapters: [
+        {
+          name: 'test-discord',
+          sources: [
+            {
+              type: 'discord.messages',
+              start(ctx) {
+                emit = ctx.emit;
+              },
+            },
+          ],
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(_ctx, _target, message) {
+                order.push(`deliver:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+    const first = emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'first',
+    });
+    await firstHandlerStarted;
+    const second = emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'bob',
+      authorId: 'U_bob',
+      authorBot: false,
+      content: 'second',
+    });
+
+    await secondHandlerStarted;
+    await second;
+    expect(order).toEqual([
+      'handler:first',
+      'handler:second',
+      'deliver:reply:second',
+    ]);
+
+    releaseFirst?.();
+    await first;
+
+    expect(order).toEqual([
+      'handler:first',
+      'handler:second',
+      'deliver:reply:second',
+      'deliver:reply:first',
+    ]);
+  });
+
   it('retries pending final deliveries before starting sources', async () => {
     const order: string[] = [];
     const deliveries: string[] = [];

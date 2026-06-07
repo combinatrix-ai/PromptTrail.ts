@@ -117,6 +117,7 @@ export function server(options: RuntimeServerOptions): RuntimeServer {
 export class RuntimeServer {
   private readonly deliveryTracker = new AssistantDeliveryTracker();
   private readonly observerBus: ObserverBus;
+  private readonly conversationLocks = new Map<string, Promise<void>>();
   private readonly sources: RuntimeSourceDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
   private readonly activities = new Map<string, RuntimeActivityDriver>();
@@ -173,22 +174,50 @@ export class RuntimeServer {
     }
 
     const delivery = resolveRuntimeDelivery(defaults.delivery, event);
-    const activityHandle = await this.startActivity(event, delivery);
+    const conversationId = binding.conversation(event);
+    await this.withConversationLock(conversationId, async () => {
+      const activityHandle = await this.startActivity(event, delivery);
 
+      try {
+        const dispatched = await dispatchRuntimeBindingEvent({
+          app: this.options.runtime,
+          binding,
+          event,
+          defaults,
+          content: emitOptions.content,
+          attrs: emitOptions.attrs,
+        });
+        await this.deliverAssistantMessages(event, dispatched);
+      } catch (error) {
+        await this.deliverError(sourceType, event, delivery, error);
+      } finally {
+        await activityHandle?.stop();
+      }
+    });
+  }
+
+  private async withConversationLock<T>(
+    conversationId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.conversationLocks.get(conversationId);
+    let releaseCurrent: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const chain = (previous ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => current);
+    this.conversationLocks.set(conversationId, chain);
+
+    await previous?.catch(() => undefined);
     try {
-      const dispatched = await dispatchRuntimeBindingEvent({
-        app: this.options.runtime,
-        binding,
-        event,
-        defaults,
-        content: emitOptions.content,
-        attrs: emitOptions.attrs,
-      });
-      await this.deliverAssistantMessages(event, dispatched);
-    } catch (error) {
-      await this.deliverError(sourceType, event, delivery, error);
+      return await fn();
     } finally {
-      await activityHandle?.stop();
+      releaseCurrent();
+      if (this.conversationLocks.get(conversationId) === chain) {
+        this.conversationLocks.delete(conversationId);
+      }
     }
   }
 
