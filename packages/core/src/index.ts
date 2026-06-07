@@ -9,6 +9,7 @@ export * from './execution';
 export * from './generate';
 export * from './generation_options';
 export * from './google_gemini';
+export * from './interceptors';
 export * from './json_schema';
 export * from './message';
 export * from './openai_responses';
