@@ -345,10 +345,12 @@ export class RuntimeServer {
             idempotencyKey: deliveryAttempt.idempotencyKey,
             event,
             delivery: cloneEventRawValue(dispatched.delivery),
-            platformBinding: deliveryAttempt.platformBinding,
+            platformBinding: cloneEventRawValue(
+              deliveryAttempt.platformBinding,
+            ),
           },
           driverDelivery,
-          deliveryAttempt.message,
+          cloneEventRawValue(deliveryAttempt.message),
         );
       } catch (error) {
         this.options.runtime.markAssistantDelivery(
@@ -435,10 +437,10 @@ export class RuntimeServer {
           idempotencyKey: entry.idempotencyKey,
           event,
           delivery: cloneEventRawValue(entry.target),
-          platformBinding: entry.platformBinding,
+          platformBinding: cloneEventRawValue(entry.platformBinding),
         },
         driverDelivery,
-        entry.message,
+        cloneEventRawValue(entry.message),
       );
     } catch (error) {
       this.options.runtime.markAssistantDelivery(

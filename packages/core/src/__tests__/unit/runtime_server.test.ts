@@ -1500,6 +1500,13 @@ describe('RuntimeServer', () => {
               deliver(ctx, target, message) {
                 order.push('deliver');
                 (target as { channel?: string }).channel = 'retry-mutated';
+                const binding = ctx.platformBinding as
+                  | { messageId?: string }
+                  | undefined;
+                if (binding) {
+                  binding.messageId = 'retry-mutated-binding';
+                }
+                message.content = 'retry-mutated-message';
                 deliveries.push(
                   `${ctx.idempotencyKey}:${JSON.stringify(ctx.platformBinding)}:${message.content}`,
                 );
@@ -1515,7 +1522,7 @@ describe('RuntimeServer', () => {
 
     expect(order).toEqual(['deliver', 'source-start']);
     expect(deliveries).toEqual([
-      `${deliveryKey}:${JSON.stringify({ messageId: 'previous' })}:retry me`,
+      `${deliveryKey}:${JSON.stringify({ messageId: 'retry-mutated-binding' })}:retry-mutated-message`,
     ]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
@@ -1523,6 +1530,7 @@ describe('RuntimeServer', () => {
         status: entry.status,
         attempts: entry.attempts,
         lastError: entry.lastError,
+        message: entry.message,
         target: entry.target,
       })),
     ).toEqual([
@@ -1531,6 +1539,10 @@ describe('RuntimeServer', () => {
         status: 'delivered',
         attempts: 1,
         lastError: undefined,
+        message: {
+          type: 'assistant',
+          content: 'retry me',
+        },
         target: expect.objectContaining({
           platform: 'discord',
           channel: 'general',
