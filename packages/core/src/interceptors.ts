@@ -488,6 +488,7 @@ export async function runExecutionPhase<
   let version = options.beforeVersion ?? 0;
   let command: ResolvedExecutionCommand = { type: 'none' };
   const steps: ExecutionPhaseStep<TAttrs>[] = [];
+  const handlerContext = sanitizeExecutionHandlerContext(options.context);
 
   for (const [registrationIndex, middleware] of (
     options.middleware ?? []
@@ -502,7 +503,7 @@ export async function runExecutionPhase<
       session,
       request,
       result,
-      context: options.context,
+      context: handlerContext,
       middlewareState,
       durable: durableBoundaryForHandler(
         {
@@ -563,7 +564,7 @@ export async function runExecutionPhase<
       session,
       request,
       result,
-      context: options.context,
+      context: handlerContext,
       middlewareState,
       durable: durableBoundaryForHandler(
         {
@@ -634,6 +635,7 @@ export async function runMiddlewareWrapper<
   let command: ResolvedExecutionCommand = { type: 'none' };
   const steps: ExecutionPhaseStep<TAttrs>[] = [];
   const middleware = options.middleware ?? [];
+  const handlerContext = sanitizeExecutionHandlerContext(options.context);
 
   const invoke = async (
     index: number,
@@ -684,7 +686,7 @@ export async function runMiddlewareWrapper<
         phase: options.phase,
         session,
         request,
-        context: options.context,
+        context: handlerContext,
         middlewareState,
         durable: durableBoundaryForHandler(
           {
@@ -761,6 +763,16 @@ export async function runMiddlewareWrapper<
     afterVersion: version,
     steps,
   };
+}
+
+function sanitizeExecutionHandlerContext(
+  context: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!context || !('delivery' in context)) {
+    return context;
+  }
+  const { delivery: _delivery, ...rest } = context;
+  return rest;
 }
 
 function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(

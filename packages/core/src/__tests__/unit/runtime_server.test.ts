@@ -243,6 +243,8 @@ describe('RuntimeServer', () => {
   it('threads runtime binding context into durable middleware', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
+    const middlewareDelivery: unknown[] = [];
+    const observerDelivery: unknown[] = [];
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getVarsObject().channelPrompt}`,
     }));
@@ -298,16 +300,31 @@ describe('RuntimeServer', () => {
         middleware: [
           Middleware.create({
             name: 'channelPrompt',
-            beforeModel: ({ context }) => ({
-              session: {
-                vars: {
-                  channelPrompt: (
-                    context as { channelPrompt: string | undefined }
-                  ).channelPrompt,
+            beforeModel: ({ context }) => {
+              middlewareDelivery.push(
+                (context as { delivery?: unknown } | undefined)?.delivery,
+              );
+              return {
+                session: {
+                  vars: {
+                    channelPrompt: (
+                      context as { channelPrompt: string | undefined }
+                    ).channelPrompt,
+                  },
                 },
-              },
-            }),
+              };
+            },
           }),
+        ],
+        observers: [
+          {
+            replayPolicy: 'live-only',
+            handle(event, context) {
+              if (event.type === 'run.started') {
+                observerDelivery.push(context.delivery);
+              }
+            },
+          },
         ],
       }),
       adapters: [adapter],
@@ -326,6 +343,10 @@ describe('RuntimeServer', () => {
     });
 
     expect(deliveries).toEqual(['reply:General channel prompt']);
+    expect(middlewareDelivery).toEqual([undefined]);
+    expect(observerDelivery).toEqual([
+      { platform: 'discord', channel: 'general', thread: undefined },
+    ]);
   });
 
   it('routes durable tool events to adapter observers', async () => {
