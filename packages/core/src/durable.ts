@@ -167,6 +167,8 @@ interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
   hooks: readonly HookDefinition<TVars, TAttrs>[];
   middlewareState: Record<string, unknown>;
+  emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
+  nextEventSeq?: () => number;
 }
 
 interface DurableModelRequest<
@@ -617,6 +619,37 @@ function hasDurableWrapperHandler<TVars extends Vars, TAttrs extends Attrs>(
   phase: ExecutionWrapperPhase,
 ): boolean {
   return state.middleware.some((middleware) => Boolean(middleware[phase]));
+}
+
+async function emitDurableExecutionEvent<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  type: string,
+  options: Partial<ExecutionEvent> = {},
+): Promise<void> {
+  if (!state.emitEvent || !state.nextEventSeq) {
+    return;
+  }
+  const seq = state.nextEventSeq();
+  try {
+    await state.emitEvent({
+      id: `${state.runId}:${seq}:${type}`,
+      type,
+      at: new Date().toISOString(),
+      seq,
+      conversationId: state.runId,
+      runId: state.runId,
+      replay: 'live',
+      source: 'durable',
+      sessionVersion: state.transitionVersion,
+      ...options,
+    });
+  } catch {
+    // Tool/model progress events are observer side effects. They must not
+    // prevent the surrounding durable activity result from being journaled.
+  }
 }
 
 async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
@@ -1098,12 +1131,12 @@ export class DurableAgent<
     }
   }
 
-  private executeDurableTool<TAttrs extends Attrs>(
+  private async executeDurableTool<TAttrs extends Attrs>(
     state: DurableExecutionState<any, TAttrs>,
     stepId: string,
     call: ToolCall,
     session: Session<any, TAttrs>,
-  ): Promise<unknown> | unknown {
+  ): Promise<unknown> {
     const tool = this.tools.get(call.name);
     if (!tool) {
       throw new Error(`Unknown durable tool: ${call.name}`);
@@ -1113,13 +1146,28 @@ export class DurableAgent<
       stepId,
       session,
     });
-    return tool.execute(call.arguments, {
+    await emitDurableExecutionEvent(state, 'tool.started', {
+      stepId,
+      phase: 'tool',
+      raw: { toolCall: call, activity },
+      toolCallId: call.id,
+      name: call.name,
+    });
+    const result = await tool.execute(call.arguments, {
       runId: state.runId,
       stepId,
       session,
       toolCall: call,
       activity,
     });
+    await emitDurableExecutionEvent(state, 'tool.completed', {
+      stepId,
+      phase: 'tool',
+      raw: { toolCall: call, activity },
+      toolCallId: call.id,
+      name: call.name,
+    });
+    return result;
   }
 }
 
@@ -1357,6 +1405,8 @@ export class PromptTrailApp {
       middleware: this.middleware,
       hooks: this.hooks,
       middlewareState: {},
+      emitEvent: (event) => this.observerBus.emit(event),
+      nextEventSeq: () => this.nextRunEventSeq(run),
     };
 
     await this.emitRunEvent(run, runId, 'run.started', {
@@ -1538,6 +1588,8 @@ export class PromptTrailApp {
       middleware: this.middleware,
       hooks: this.hooks,
       middlewareState: {},
+      emitEvent: (event) => this.observerBus.emit(event),
+      nextEventSeq: () => this.nextRunEventSeq(run),
     };
     await this.emitRunEvent(run, runId, 'run.started', {
       sessionVersion: state.transitionVersion,
@@ -1576,8 +1628,7 @@ export class PromptTrailApp {
     type: 'run.started' | 'run.completed' | 'run.suspended' | 'error',
     options: Partial<ExecutionEvent> = {},
   ): Promise<void> {
-    const seq = run.eventSeq ?? 0;
-    run.eventSeq = seq + 1;
+    const seq = this.nextRunEventSeq(run);
     await this.observerBus.emit({
       id: `${runId}:${seq}:${type}`,
       type,
@@ -1589,6 +1640,14 @@ export class PromptTrailApp {
       source: 'app',
       ...options,
     });
+  }
+
+  private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+  ): number {
+    const seq = run.eventSeq ?? 0;
+    run.eventSeq = seq + 1;
+    return seq;
   }
 
   private append(runId: string, message: Omit<Inbound, 'offset'>): void {

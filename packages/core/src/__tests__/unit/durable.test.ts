@@ -987,6 +987,119 @@ describe('durable agent runtime', () => {
     ).rejects.toThrow('observer broke');
   });
 
+  it('emits durable tool observer events only for live tool execution', async () => {
+    const events: string[] = [];
+    let toolCalls = 0;
+    const assistant = agent('tool-observed')
+      .tool('lookup', {
+        execute: async ({ query }) => {
+          toolCalls++;
+          return `result:${query}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'hello' },
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        (event) => {
+          if (event.type.startsWith('tool.') || event.type.startsWith('run.')) {
+            events.push(
+              `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.name ?? '-'}`,
+            );
+          }
+        },
+      ],
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-tool-observed',
+      durable: true,
+    });
+    const replay = await app.resume('run-tool-observed');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(toolCalls).toBe(1);
+    expect(events).toEqual([
+      '0:run.started:-:-',
+      '1:tool.started:tools/call-1:lookup',
+      '2:tool.completed:tools/call-1:lookup',
+      '3:run.suspended:wait/input/input:-',
+      '4:run.started:-:-',
+      '5:run.suspended:wait/input/input:-',
+    ]);
+  });
+
+  it('does not let tool observer failures re-run durable tools', async () => {
+    let toolCalls = 0;
+    const assistant = agent('tool-observer-failure')
+      .tool('write', {
+        activity: {
+          kind: 'external-write',
+          idempotencyKey: 'write:call-1',
+        },
+        execute: async () => {
+          toolCalls++;
+          return `write:${toolCalls}`;
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'write',
+            arguments: {},
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        {
+          name: 'failingProgress',
+          handle(event) {
+            if (event.type === 'tool.completed') {
+              throw new Error('progress failed');
+            }
+          },
+        },
+      ],
+      strictObservers: true,
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-tool-observer-failure',
+      durable: true,
+    });
+    const replay = await app.resume('run-tool-observer-failure');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(toolCalls).toBe(1);
+    expect(app.journal('run-tool-observer-failure')).toEqual([
+      'reply/model',
+      'tools/call-1',
+    ]);
+  });
+
   it('throws NondeterminismError for mismatched journal order', async () => {
     const store = memoryStore();
     const app = PromptTrail.app({ store });
