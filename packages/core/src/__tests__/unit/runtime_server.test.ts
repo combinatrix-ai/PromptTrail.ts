@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { PromptTrail, agent, memoryStore } from '../../durable';
-import { bind, discord, type DiscordMessageEvent } from '../../runtime_bindings';
+import {
+  bind,
+  discord,
+  type DiscordMessageEvent,
+} from '../../runtime_bindings';
 import {
   type RuntimeAdapter,
   type RuntimeSourceContext,
@@ -88,5 +92,112 @@ describe('RuntimeServer', () => {
 
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['reply:hello']);
+  });
+
+  it('persists completed final deliveries across server restarts', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const deliveries: string[] = [];
+    const main = agent('main').chat('chat', (session) => ({
+      content: `reply:${session.getLastMessage()?.content ?? ''}`,
+    }));
+    const bundle = PromptTrail.bundle({
+      name: 'server-restart-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const adapter: RuntimeAdapter = {
+      name: 'test-discord',
+      sources: [
+        {
+          type: 'discord.messages',
+          start(ctx) {
+            emit = ctx.emit;
+          },
+        },
+      ],
+      deliveries: [
+        {
+          platform: 'discord',
+          deliver(_ctx, _target, message) {
+            deliveries.push(message.content);
+          },
+        },
+      ],
+    };
+    const firstServer = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [adapter],
+    });
+
+    await firstServer.start();
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'first',
+    });
+
+    const secondServer = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [adapter],
+    });
+
+    await secondServer.start();
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'second',
+    });
+
+    expect(deliveries).toEqual(['reply:first', 'reply:second']);
+    expect(
+      app
+        .assistantDeliveryOutbox(
+          'discord:guild:workroom:channel:C_general:user:U_alice',
+        )
+        .map((entry) => ({
+          idempotencyKey: entry.idempotencyKey,
+          status: entry.status,
+        })),
+    ).toEqual([
+      {
+        idempotencyKey:
+          'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+        status: 'completed',
+      },
+      {
+        idempotencyKey:
+          'discord:guild:workroom:channel:C_general:user:U_alice:turn:2:delivery:final',
+        status: 'completed',
+      },
+    ]);
   });
 });

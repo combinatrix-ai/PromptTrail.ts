@@ -96,6 +96,19 @@ export interface DurableRunResult<
   awaiting?: string;
 }
 
+export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
+  message: PromptTrailMessage<TAttrs> & { type: 'assistant' };
+  assistantIndex: number;
+  idempotencyKey: string;
+  target?: unknown;
+}
+
+export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
+  extends AssistantDeliveryOutboxInput<TAttrs> {
+  status: 'pending' | 'completed' | 'failed' | 'skipped';
+  error?: unknown;
+}
+
 export class Suspend extends Error {
   constructor(readonly stepId: string) {
     super(`suspend:${stepId}`);
@@ -605,6 +618,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
   journal: JournalState;
+  outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
 }
 
@@ -790,6 +804,68 @@ export class PromptTrailApp {
     return [...this.getRun(runId).journal.sequence];
   }
 
+  prepareAssistantDeliveries<TAttrs extends Attrs = Attrs>(
+    runId: string,
+    deliveries: readonly AssistantDeliveryOutboxInput<TAttrs>[],
+  ): AssistantDeliveryOutboxEntry<TAttrs>[] {
+    const run = this.store.get(runId);
+    if (!run) {
+      return deliveries.map((delivery) => ({
+        ...delivery,
+        status: 'pending',
+      }));
+    }
+    const outbox = (run.outbox ??=
+      []) as AssistantDeliveryOutboxEntry<TAttrs>[];
+    for (const delivery of deliveries) {
+      const existing = outbox.find(
+        (entry) => entry.idempotencyKey === delivery.idempotencyKey,
+      );
+      if (!existing) {
+        outbox.push({
+          ...delivery,
+          status: 'pending',
+        });
+      }
+    }
+    this.store.set(runId, run);
+    return outbox.filter(
+      (entry) =>
+        deliveries.some(
+          (delivery) => delivery.idempotencyKey === entry.idempotencyKey,
+        ) &&
+        (entry.status === 'pending' || entry.status === 'failed'),
+    );
+  }
+
+  markAssistantDelivery(
+    runId: string,
+    idempotencyKey: string,
+    status: AssistantDeliveryOutboxEntry['status'],
+    error?: unknown,
+  ): void {
+    const run = this.store.get(runId);
+    if (!run) {
+      return;
+    }
+    const entry = (run.outbox ?? []).find(
+      (candidate) => candidate.idempotencyKey === idempotencyKey,
+    );
+    if (!entry) {
+      return;
+    }
+    entry.status = status;
+    entry.error = error;
+    this.store.set(runId, run);
+  }
+
+  assistantDeliveryOutbox(
+    runId: string,
+  ): readonly AssistantDeliveryOutboxEntry[] {
+    const run = this.store.get(runId);
+    return run ? [...(run.outbox ?? [])] : [];
+  }
+
   private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
     await this.send({
       agent: event.agent,
@@ -820,6 +896,7 @@ export class PromptTrailApp {
       initial,
       status: 'open',
       journal: { results: new Map(), sequence: [] },
+      outbox: [],
       inbox: [],
     };
 

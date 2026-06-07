@@ -211,19 +211,39 @@ export class RuntimeServer {
     const pending = this.deliveryTracker.pending(
       dispatched.conversationId,
       dispatched.result.session.messages as readonly Message<Attrs>[],
+      dispatched.delivery,
     );
-    for (const deliveryAttempt of pending) {
-      await driver.deliver(
-        {
-          conversationId: dispatched.conversationId,
-          idempotencyKey: deliveryAttempt.idempotencyKey,
-          event,
-          delivery: dispatched.delivery,
-        },
-        dispatched.delivery,
-        deliveryAttempt.message,
-      );
-      this.deliveryTracker.markDelivered(deliveryAttempt);
+    const deliveryAttempts = this.options.runtime.prepareAssistantDeliveries(
+      dispatched.conversationId,
+      pending,
+    );
+    for (const deliveryAttempt of deliveryAttempts) {
+      try {
+        await driver.deliver(
+          {
+            conversationId: dispatched.conversationId,
+            idempotencyKey: deliveryAttempt.idempotencyKey,
+            event,
+            delivery: dispatched.delivery,
+          },
+          dispatched.delivery,
+          deliveryAttempt.message,
+        );
+        this.options.runtime.markAssistantDelivery(
+          dispatched.conversationId,
+          deliveryAttempt.idempotencyKey,
+          'completed',
+        );
+        this.deliveryTracker.markDelivered(deliveryAttempt);
+      } catch (error) {
+        this.options.runtime.markAssistantDelivery(
+          dispatched.conversationId,
+          deliveryAttempt.idempotencyKey,
+          'failed',
+          error,
+        );
+        throw error;
+      }
     }
   }
 

@@ -47,6 +47,7 @@ export interface PendingAssistantDelivery<TAttrs extends Attrs = Attrs> {
   message: Message<TAttrs> & { type: 'assistant' };
   assistantIndex: number;
   idempotencyKey: string;
+  target?: DeliveryTarget;
 }
 
 export function findRuntimeBinding<TEvent extends RuntimeBindingEvent>(
@@ -251,6 +252,7 @@ export class AssistantDeliveryTracker {
   pending<TAttrs extends Attrs = Attrs>(
     conversationId: string,
     messages: readonly Message<TAttrs>[],
+    target?: DeliveryTarget,
   ): PendingAssistantDelivery<TAttrs>[] {
     return messages
       .filter(
@@ -261,11 +263,14 @@ export class AssistantDeliveryTracker {
         message,
         assistantIndex: index,
         idempotencyKey: assistantDeliveryKey(conversationId, index),
+        target,
       }))
       .filter((delivery) => !this.deliveredKeys.has(delivery.idempotencyKey));
   }
 
-  markDelivered(delivery: PendingAssistantDelivery): void {
+  markDelivered(
+    delivery: Pick<PendingAssistantDelivery, 'idempotencyKey'>,
+  ): void {
     this.deliveredKeys.add(delivery.idempotencyKey);
   }
 

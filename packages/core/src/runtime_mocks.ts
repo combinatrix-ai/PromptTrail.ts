@@ -400,16 +400,23 @@ class MockRuntimeFixture {
     conversationId: string,
     messages: readonly Message<Attrs>[],
   ): void {
-    for (const deliveryAttempt of this.deliveryTracker.pending(
+    const pending = this.deliveryTracker.pending(conversationId, messages);
+    const deliveryAttempts = this.app.prepareAssistantDeliveries(
       conversationId,
-      messages,
-    )) {
+      pending,
+    );
+    for (const deliveryAttempt of deliveryAttempts) {
       const message = deliveryAttempt.message;
       const attrs = (message.attrs ?? {}) as Record<string, unknown>;
       const observed = (attrs.observed ?? {}) as Record<string, unknown>;
       const delivery = observed.delivery as DeliveryTarget | undefined;
-      this.deliveryTracker.markDelivered(deliveryAttempt);
       if (!isConcreteDiscordDeliveryTarget(delivery)) {
+        this.app.markAssistantDelivery(
+          conversationId,
+          deliveryAttempt.idempotencyKey,
+          'skipped',
+        );
+        this.deliveryTracker.markDelivered(deliveryAttempt);
         this.effectEntries.push({
           kind: 'unresolvedDelivery',
           idempotencyKey: deliveryAttempt.idempotencyKey,
@@ -425,6 +432,12 @@ class MockRuntimeFixture {
         content: message.content,
         idempotencyKey: deliveryAttempt.idempotencyKey,
       });
+      this.app.markAssistantDelivery(
+        conversationId,
+        deliveryAttempt.idempotencyKey,
+        'completed',
+      );
+      this.deliveryTracker.markDelivered(deliveryAttempt);
       this.effectEntries.push({
         kind: 'delivery',
         idempotencyKey: deliveryAttempt.idempotencyKey,
