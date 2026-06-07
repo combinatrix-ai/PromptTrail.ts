@@ -303,6 +303,40 @@ describe('Agent interceptors', () => {
     expect(session.getVarsObject()).toEqual({});
   });
 
+  it('wraps assistant model calls with middleware', async () => {
+    const source = Source.callback(async ({ context }) => {
+      return `model:${context?.prompt}`;
+    });
+
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'modelWrapper',
+          wrapModelCall: async ({ request }, next) => {
+            const result = await next({
+              request: {
+                session: (request as { session: Session }).session.withVar(
+                  'prompt',
+                  'wrapped',
+                ),
+              },
+            });
+            return {
+              result: `${result}:patched`,
+              session: {
+                vars: { wrapped: true },
+              },
+            };
+          },
+        }),
+      )
+      .assistant(source)
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('model:wrapped:patched');
+    expect(session.getVarsObject()).toEqual({ wrapped: true });
+  });
+
   it('applies transient prepareModelInput messages only to the model request', async () => {
     class MessageReadingSource extends Source<string> {
       async getContent(session: Session): Promise<string> {

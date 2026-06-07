@@ -377,6 +377,111 @@ describe('streamPromptTrailToolLoop', () => {
       '3:tool.completed:call-1',
     ]);
   });
+
+  it('wraps streamed tool calls with middleware', async () => {
+    let executed = false;
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: () => {
+        executed = true;
+        return { value: 'should not run' };
+      },
+    });
+    const events: string[] = [];
+    let seq = 0;
+    const runtime = createExecutionRuntimeState({
+      middleware: [
+        Middleware.create({
+          name: 'toolWrapper',
+          wrapToolCall: ({ request }) => {
+            const call = request as { id: string; name: string };
+            return {
+              result: {
+                type: 'tool_result',
+                content: `blocked:${call.name}`,
+                attrs: {
+                  toolCallId: call.id,
+                  toolCallName: call.name,
+                },
+              },
+              session: {
+                vars: { wrappedTool: true },
+              },
+            };
+          },
+          afterTool: ({ result }) => {
+            const message = result as { content: string };
+            return {
+              result: {
+                ...message,
+                content: `${message.content}:after`,
+              },
+            };
+          },
+        }),
+      ],
+      emitEvent: (event) => {
+        events.push(
+          `${event.seq}:${event.type}:${event.phase ?? event.toolCallId ?? '-'}`,
+        );
+      },
+      nextEventSeq: () => seq++,
+    });
+
+    const messages = await collectAsync(
+      streamPromptTrailToolLoop(
+        Session.create().addMessage({ type: 'user', content: 'Lookup docs.' }),
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          capabilities: [lookup],
+        },
+        {
+          provider: 'openai',
+          attrsKey: 'openai',
+          runtime,
+          events: (turnSession) =>
+            turnSession.messages.length === 1
+              ? stream([
+                  {
+                    type: 'tool.start',
+                    index: 0,
+                    callId: 'call-1',
+                    name: 'lookup',
+                  },
+                  {
+                    type: 'tool.args.done',
+                    index: 0,
+                    callId: 'call-1',
+                    args: { query: 'original' },
+                  },
+                  { type: 'message.done', finishReason: 'tool_calls' },
+                ])
+              : stream([
+                  { type: 'text.delta', index: 0, delta: 'Done' },
+                  { type: 'message.done', finishReason: 'stop' },
+                ]),
+        },
+      ),
+    );
+
+    expect(executed).toBe(false);
+    expect(messages[1]).toMatchObject({
+      type: 'tool_result',
+      content: 'blocked:lookup:after',
+      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+    });
+    expect(events).toEqual([
+      '0:session.patched:wrapToolCall',
+      '1:tool.completed:call-1',
+    ]);
+  });
 });
 
 describe('promptTrailStreamEventsToMessages', () => {

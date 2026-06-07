@@ -8,7 +8,7 @@ import {
 } from './execution';
 import type { Session, Attrs, Vars } from './session';
 
-export type ExecutionPhase =
+export type ExecutionLifecyclePhase =
   | 'beforeAgent'
   | 'afterAgent'
   | 'beforeModel'
@@ -16,6 +16,10 @@ export type ExecutionPhase =
   | 'afterModel'
   | 'beforeTool'
   | 'afterTool';
+
+export type ExecutionWrapperPhase = 'wrapModelCall' | 'wrapToolCall';
+
+export type ExecutionPhase = ExecutionLifecyclePhase | ExecutionWrapperPhase;
 
 export type HandlerDurabilityMode = 'materialized-phase' | 'replayable-handler';
 
@@ -45,6 +49,38 @@ export type MiddlewarePhaseHandler<
   | ExecutionPatch<TVars, TAttrs>
   | void
   | Promise<ExecutionPatch<TVars, TAttrs> | void>;
+
+export interface ExecutionWrapperNextInput<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+> {
+  session?: Session<TVars, TAttrs>;
+  request?: TRequest;
+}
+
+export type ExecutionWrapperNext<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+> = (
+  input?: ExecutionWrapperNextInput<TVars, TAttrs, TRequest>,
+) => Promise<TResult>;
+
+export type MiddlewareWrapperHandler<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+> = (
+  context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
+  next: ExecutionWrapperNext<TVars, TAttrs, TRequest, TResult>,
+) =>
+  | ExecutionPatch<TVars, TAttrs>
+  | TResult
+  | void
+  | Promise<ExecutionPatch<TVars, TAttrs> | TResult | void>;
 
 export type HookPhaseHandler<
   TVars extends Vars = Vars,
@@ -77,10 +113,10 @@ export interface MiddlewareDefinition<
   afterAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
   beforeModel?: MiddlewarePhaseHandler<TVars, TAttrs>;
   prepareModelInput?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  wrapModelCall?: never;
+  wrapModelCall?: MiddlewareWrapperHandler<TVars, TAttrs>;
   afterModel?: MiddlewarePhaseHandler<TVars, TAttrs>;
   beforeTool?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  wrapToolCall?: never;
+  wrapToolCall?: MiddlewareWrapperHandler<TVars, TAttrs>;
   afterTool?: MiddlewarePhaseHandler<TVars, TAttrs>;
 }
 
@@ -124,7 +160,7 @@ export interface RunExecutionPhaseOptions<
   TRequest = unknown,
   TResult = unknown,
 > {
-  phase: ExecutionPhase;
+  phase: ExecutionLifecyclePhase;
   session: Session<TVars, TAttrs>;
   request?: TRequest;
   result?: TResult;
@@ -153,6 +189,42 @@ export interface RunExecutionPhaseResult<
   session: Session<TVars, TAttrs>;
   request?: TRequest;
   result?: TResult;
+  middlewareState: Record<string, unknown>;
+  command: ResolvedExecutionCommand;
+  beforeVersion: number;
+  afterVersion: number;
+  steps: ExecutionPhaseStep<TAttrs>[];
+}
+
+export interface RunMiddlewareWrapperOptions<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+> {
+  phase: ExecutionWrapperPhase;
+  session: Session<TVars, TAttrs>;
+  request: TRequest;
+  call: (input: {
+    session: Session<TVars, TAttrs>;
+    request: TRequest;
+  }) => Promise<TResult>;
+  context?: Record<string, unknown>;
+  middlewareState?: Record<string, unknown>;
+  middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  beforeVersion?: number;
+  signal?: AbortSignal;
+}
+
+export interface RunMiddlewareWrapperResult<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+> {
+  session: Session<TVars, TAttrs>;
+  request: TRequest;
+  result: TResult;
   middlewareState: Record<string, unknown>;
   command: ResolvedExecutionCommand;
   beforeVersion: number;
@@ -223,7 +295,7 @@ export async function runRuntimeExecutionPhase<
 >(
   runtime: ExecutionRuntimeState<TVars, TAttrs>,
   options: {
-    phase: ExecutionPhase;
+    phase: ExecutionLifecyclePhase;
     session: Session<TVars, TAttrs>;
     request?: TRequest;
     result?: TResult;
@@ -247,6 +319,41 @@ export async function runRuntimeExecutionPhase<
   runtime.version = phaseResult.afterVersion;
   await emitPhaseStepEvents(runtime, phaseResult.steps);
   return phaseResult;
+}
+
+export async function runRuntimeMiddlewareWrapper<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  options: {
+    phase: ExecutionWrapperPhase;
+    session: Session<TVars, TAttrs>;
+    request: TRequest;
+    call: (input: {
+      session: Session<TVars, TAttrs>;
+      request: TRequest;
+    }) => Promise<TResult>;
+    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  },
+): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
+  const wrapperResult = await runMiddlewareWrapper({
+    phase: options.phase,
+    session: options.session,
+    request: options.request,
+    call: options.call,
+    context: runtime.context,
+    middlewareState: runtime.middlewareState,
+    middleware: options.middleware ?? runtime.middleware,
+    beforeVersion: runtime.version,
+    signal: runtime.signal,
+  });
+  runtime.middlewareState = wrapperResult.middlewareState;
+  runtime.version = wrapperResult.afterVersion;
+  await emitPhaseStepEvents(runtime, wrapperResult.steps);
+  return wrapperResult;
 }
 
 async function emitPhaseStepEvents<
@@ -413,6 +520,139 @@ export async function runExecutionPhase<
   };
 }
 
+export async function runMiddlewareWrapper<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+>(
+  options: RunMiddlewareWrapperOptions<TVars, TAttrs, TRequest, TResult>,
+): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
+  throwIfAborted(options.signal);
+  let middlewareState = { ...(options.middlewareState ?? {}) };
+  let version = options.beforeVersion ?? 0;
+  let command: ResolvedExecutionCommand = { type: 'none' };
+  const steps: ExecutionPhaseStep<TAttrs>[] = [];
+  const middleware = options.middleware ?? [];
+
+  const invoke = async (
+    index: number,
+    session: Session<TVars, TAttrs>,
+    request: TRequest,
+  ): Promise<{
+    session: Session<TVars, TAttrs>;
+    request: TRequest;
+    result: TResult;
+  }> => {
+    throwIfAborted(options.signal);
+    if (index >= middleware.length) {
+      return {
+        session,
+        request,
+        result: await options.call({ session, request }),
+      };
+    }
+
+    const definition = middleware[index];
+    const handler = definition[options.phase] as
+      | MiddlewareWrapperHandler<TVars, TAttrs, TRequest, TResult>
+      | undefined;
+    if (!handler) {
+      return invoke(index + 1, session, request);
+    }
+
+    let nextOutcome:
+      | {
+          session: Session<TVars, TAttrs>;
+          request: TRequest;
+          result: TResult;
+        }
+      | undefined;
+    const next: ExecutionWrapperNext<TVars, TAttrs, TRequest, TResult> = async (
+      input,
+    ) => {
+      nextOutcome = await invoke(
+        index + 1,
+        input?.session ?? session,
+        input?.request ?? request,
+      );
+      return nextOutcome.result;
+    };
+
+    const returned = await handler(
+      {
+        phase: options.phase,
+        session,
+        request,
+        context: options.context,
+        middlewareState,
+        signal: options.signal,
+      },
+      next,
+    );
+    throwIfAborted(options.signal);
+    const patch = normalizeWrapperReturn<TVars, TAttrs, TResult>(returned);
+    const baseSession = nextOutcome?.session ?? session;
+    const applied = applyPhasePatch(
+      baseSession,
+      middlewareState,
+      patch,
+      version,
+    );
+    middlewareState = applied.middlewareState;
+    version = applied.transition.afterVersion;
+    if (Object.keys(patch).length > 0) {
+      steps.push({
+        kind: 'middleware',
+        name: definition.name,
+        phase: options.phase,
+        registrationIndex: index,
+        transition: applied.transition,
+      });
+    }
+    if (applied.transition.command.type !== 'none') {
+      command = applied.transition.command;
+      const commandResult =
+        'result' in patch ? patch.result : nextOutcome?.result;
+      return {
+        session: applied.session,
+        request: (patch.request as TRequest | undefined) ?? request,
+        result: commandResult as TResult,
+      };
+    }
+
+    const nextRequest =
+      (patch.request as TRequest | undefined) ??
+      nextOutcome?.request ??
+      request;
+    if ('result' in patch) {
+      return {
+        session: applied.session,
+        request: nextRequest,
+        result: patch.result as TResult,
+      };
+    }
+    if (nextOutcome) {
+      return {
+        session: applied.session,
+        request: nextRequest,
+        result: nextOutcome.result,
+      };
+    }
+    return invoke(index + 1, applied.session, nextRequest);
+  };
+
+  const outcome = await invoke(0, options.session, options.request);
+  return {
+    ...outcome,
+    middlewareState,
+    command,
+    beforeVersion: options.beforeVersion ?? 0,
+    afterVersion: version,
+    steps,
+  };
+}
+
 function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(
   session: Session<TVars, TAttrs>,
   middlewareState: Record<string, unknown>,
@@ -439,9 +679,39 @@ function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(
   };
 }
 
+function normalizeWrapperReturn<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TResult,
+>(
+  returned: ExecutionPatch<TVars, TAttrs> | TResult | void,
+): ExecutionPatch<TVars, TAttrs> {
+  if (returned === undefined) {
+    return {};
+  }
+  if (isExecutionPatch(returned)) {
+    return returned as ExecutionPatch<TVars, TAttrs>;
+  }
+  return { result: returned };
+}
+
+function isExecutionPatch<TVars extends Vars, TAttrs extends Attrs>(
+  value: ExecutionPatch<TVars, TAttrs> | unknown,
+): value is ExecutionPatch<TVars, TAttrs> {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return (
+    'session' in value ||
+    'request' in value ||
+    'result' in value ||
+    'command' in value
+  );
+}
+
 function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
   hook: HookDefinition<TVars, TAttrs>,
-  phase: ExecutionPhase,
+  phase: ExecutionLifecyclePhase,
 ): HookPhaseHandler<TVars, TAttrs> | undefined {
   switch (phase) {
     case 'beforeAgent':
@@ -463,7 +733,7 @@ function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
 
 function assertHookPatchAuthority<TVars extends Vars, TAttrs extends Attrs>(
   hookName: string | undefined,
-  phase: ExecutionPhase,
+  phase: ExecutionLifecyclePhase,
   patch: HookExecutionPatch<TVars, TAttrs> | void,
 ): void {
   if (!patch) {

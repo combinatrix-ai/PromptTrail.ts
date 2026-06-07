@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DELETE_VALUE } from '../../execution';
-import { Hook, Middleware, runExecutionPhase } from '../../interceptors';
+import {
+  Hook,
+  Middleware,
+  runExecutionPhase,
+  runMiddlewareWrapper,
+} from '../../interceptors';
 import { Message } from '../../message';
 import { createSession } from '../../session';
 
@@ -265,5 +270,93 @@ describe('execution interceptors', () => {
         ],
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('runs middleware wrappers around an execution call', async () => {
+    const session = createSession({
+      messages: [Message.user('start')],
+    });
+    const events: string[] = [];
+    const result = await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
+      session,
+      request: { prompt: 'original' },
+      middleware: [
+        Middleware.create({
+          name: 'outer',
+          wrapModelCall: async ({ request }, next) => {
+            events.push(`outer:before:${JSON.stringify(request)}`);
+            const content = await next({
+              request: { prompt: 'rewritten' },
+            });
+            events.push(`outer:after:${content}`);
+            return {
+              result: `${content}:outer`,
+              session: { vars: { outer: true } },
+            };
+          },
+        }),
+        Middleware.create({
+          name: 'inner',
+          wrapModelCall: async (_ctx, next) => {
+            const content = await next();
+            return `${content}:inner`;
+          },
+        }),
+      ],
+      call: async ({ request }) => {
+        events.push(`call:${request.prompt}`);
+        return `result:${request.prompt}`;
+      },
+      beforeVersion: 10,
+    });
+
+    expect(result.result).toBe('result:rewritten:inner:outer');
+    expect(result.session.getVarsObject()).toEqual({ outer: true });
+    expect(result.afterVersion).toBe(11);
+    expect(result.steps.map((step) => step.name)).toEqual(['inner', 'outer']);
+    expect(events).toEqual([
+      'outer:before:{"prompt":"original"}',
+      'call:rewritten',
+      'outer:after:result:rewritten:inner',
+    ]);
+  });
+
+  it('falls through wrapper middleware that returns void', async () => {
+    const events: string[] = [];
+    const result = await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
+      session: createSession(),
+      request: { prompt: 'original' },
+      middleware: [
+        Middleware.create({
+          name: 'observer',
+          wrapModelCall: async (_ctx, next) => {
+            events.push('observer:before');
+            await next();
+            events.push('observer:after');
+          },
+        }),
+        Middleware.create({
+          name: 'implicitNext',
+          wrapModelCall: () => {
+            events.push('implicitNext');
+          },
+        }),
+      ],
+      call: async ({ request }) => {
+        events.push(`call:${request.prompt}`);
+        return `result:${request.prompt}`;
+      },
+    });
+
+    expect(result.result).toBe('result:original');
+    expect(result.steps).toEqual([]);
+    expect(events).toEqual([
+      'observer:before',
+      'implicitNext',
+      'call:original',
+      'observer:after',
+    ]);
   });
 });

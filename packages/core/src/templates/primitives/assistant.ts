@@ -5,6 +5,7 @@ import {
   type ExecutionPhaseStep,
   type ExecutionRuntimeState,
   runExecutionPhase,
+  runRuntimeMiddlewareWrapper,
   runRuntimeExecutionPhase,
 } from '../../interceptors';
 import type { Session } from '../../session';
@@ -127,7 +128,30 @@ export class Assistant<
         }
 
         // 1. Get Content
-        let rawOutput = await this.contentSource.getContent(modelSession);
+        let rawOutput: string | ModelOutput;
+        if (runtime) {
+          const wrappedModel = await runRuntimeMiddlewareWrapper<
+            TVars,
+            TAttrs,
+            AssistantModelRequest<TVars, TAttrs>,
+            string | ModelOutput
+          >(runtime, {
+            phase: 'wrapModelCall',
+            session: validSession,
+            request: { session: modelSession },
+            call: ({ request }) =>
+              this.contentSource!.getContent(request.session) as Promise<
+                string | ModelOutput
+              >,
+          });
+          assertAssistantCommandSupported(wrappedModel.command);
+          validSession = wrappedModel.session;
+          rawOutput = wrappedModel.result;
+        } else {
+          rawOutput = (await this.contentSource.getContent(modelSession)) as
+            | string
+            | ModelOutput;
+        }
         if (runtime) {
           const afterModel = await runRuntimeExecutionPhase(runtime, {
             phase: 'afterModel',

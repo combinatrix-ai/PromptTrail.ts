@@ -40,6 +40,7 @@ import { toAiSdkToolSet } from './ai_sdk_tools';
 import { Tool, executePromptTrailTool, isPromptTrailTool } from './tool';
 import type { PromptTrailTool } from './capabilities';
 import {
+  runRuntimeMiddlewareWrapper,
   runRuntimeExecutionPhase,
   type ExecutionRuntimeState,
 } from './interceptors';
@@ -677,21 +678,34 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     (before.request as
       | { id: string; name: string; arguments: Record<string, unknown> }
       | undefined) ?? call;
-  await emitStreamingToolEvent(options.runtime, 'tool.started', nextCall);
-  const message = (await executeStreamingToolCall(nextCall, {
-    provider: options.provider,
-    tools: options.tools,
-    session: before.session,
-    approvalHandler: options.approvalHandler,
-  })) as Message<TAttrs>;
-  const after = await runRuntimeExecutionPhase(options.runtime, {
-    phase: 'afterTool',
+  const wrappedTool = await runRuntimeMiddlewareWrapper(options.runtime, {
+    phase: 'wrapToolCall',
     session: before.session,
     request: nextCall,
+    call: async ({ session, request }) => {
+      await emitStreamingToolEvent(options.runtime, 'tool.started', request);
+      return executeStreamingToolCall(request, {
+        provider: options.provider,
+        tools: options.tools,
+        session,
+        approvalHandler: options.approvalHandler,
+      }) as Promise<Message<TAttrs>>;
+    },
+  });
+  assertStreamingToolCommandSupported(wrappedTool.command);
+  const message = wrappedTool.result;
+  const after = await runRuntimeExecutionPhase(options.runtime, {
+    phase: 'afterTool',
+    session: wrappedTool.session,
+    request: wrappedTool.request,
     result: message,
   });
   assertStreamingToolCommandSupported(after.command);
-  await emitStreamingToolEvent(options.runtime, 'tool.completed', nextCall);
+  await emitStreamingToolEvent(
+    options.runtime,
+    'tool.completed',
+    wrappedTool.request,
+  );
   return {
     message: (after.result as Message<TAttrs> | undefined) ?? message,
     session: after.session,
