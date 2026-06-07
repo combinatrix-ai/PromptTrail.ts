@@ -70,6 +70,25 @@ describe('AgentGraph', () => {
     );
   });
 
+  it('does not treat shared manifest references as circular values', () => {
+    const shared = { model: 'gpt-test' };
+    const graph = createAgentGraph({
+      name: 'shared',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: { left: shared, right: shared },
+        },
+      ],
+    });
+
+    expect(createAgentGraphManifest(graph).nodes[0].data).toEqual({
+      left: { model: 'gpt-test' },
+      right: { model: 'gpt-test' },
+    });
+  });
+
   it('rejects missing stable ids for app and durable graphs', () => {
     const graph: AgentGraph = {
       name: 'assistant',
@@ -85,6 +104,15 @@ describe('AgentGraph', () => {
     expect(() => validateAgentGraph(graph, { durable: true })).toThrow(
       AgentGraphValidationError,
     );
+  });
+
+  it('rejects ids with leading or trailing whitespace', () => {
+    expect(() =>
+      createAgentGraph({
+        name: 'assistant',
+        nodes: [{ id: ' reply', type: 'assistant' }],
+      }),
+    ).toThrow(AgentGraphValidationError);
   });
 
   it('allows anonymous node ids for ephemeral graph validation', () => {
@@ -118,6 +146,25 @@ describe('AgentGraph', () => {
         ],
       }),
     ).toThrow(/Duplicate child graph node id/);
+  });
+
+  it('validates nested edge paths relative to the graph root', () => {
+    expect(() =>
+      createAgentGraph({
+        name: 'assistant',
+        nodes: [
+          {
+            id: 'turn',
+            type: 'loop',
+            children: [
+              { id: 'reply', type: 'assistant' },
+              { id: 'tools', type: 'tools' },
+            ],
+          },
+        ],
+        edges: [{ from: 'turn/reply', to: 'turn/tools' }],
+      }),
+    ).not.toThrow();
   });
 
   it('requires stable middleware and hook names for durable graphs', () => {

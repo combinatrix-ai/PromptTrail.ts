@@ -29,7 +29,9 @@ export interface AgentGraphNode {
 }
 
 export interface AgentGraphEdge {
+  /** Graph-root-relative node path, for example `turn/reply`. */
   from: string;
+  /** Graph-root-relative node path, for example `turn/tools`. */
   to: string;
   condition?: string;
 }
@@ -133,12 +135,12 @@ export function validateAgentGraph(
   }
 
   for (const edge of graph.edges) {
-    if (!seenPaths.has(`${graph.name}/${edge.from}`)) {
+    if (!seenPaths.has(edgeNodePath(graph.name, edge.from))) {
       throw new AgentGraphValidationError(
         `Graph edge references missing from node: ${edge.from}`,
       );
     }
-    if (!seenPaths.has(`${graph.name}/${edge.to}`)) {
+    if (!seenPaths.has(edgeNodePath(graph.name, edge.to))) {
       throw new AgentGraphValidationError(
         `Graph edge references missing to node: ${edge.to}`,
       );
@@ -281,7 +283,9 @@ function stableHandlerId(
 function isStableGraphId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
-    /^[A-Za-z][A-Za-z0-9_-]*$/.test(value.trim())
+    value.length > 0 &&
+    value === value.trim() &&
+    /^[A-Za-z][A-Za-z0-9_-]*$/.test(value)
   );
 }
 
@@ -305,21 +309,25 @@ function toManifestValue(value: unknown, seen = new WeakSet<object>()): unknown 
     return { kind: 'circular' };
   }
   seen.add(value);
-  if (Array.isArray(value)) {
-    return value.map((item) => toManifestValue(item, seen));
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => toManifestValue(item, seen));
+    }
+    if (!isPlainObject(value)) {
+      return {
+        kind: 'object',
+        ctor: value.constructor?.name || undefined,
+      };
+    }
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, toManifestValue(record[key], seen)]),
+    );
+  } finally {
+    seen.delete(value);
   }
-  if (!isPlainObject(value)) {
-    return {
-      kind: 'object',
-      ctor: value.constructor?.name || undefined,
-    };
-  }
-  const record = value as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.keys(record)
-      .sort()
-      .map((key) => [key, toManifestValue(record[key], seen)]),
-  );
 }
 
 function isPlainObject(value: object): boolean {
@@ -355,4 +363,11 @@ function fnv1a(input: string): string {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
+}
+
+function edgeNodePath(graphName: string, edgePath: string): string {
+  if (edgePath.startsWith(`${graphName}/`)) {
+    return edgePath;
+  }
+  return `${graphName}/${edgePath}`;
 }
