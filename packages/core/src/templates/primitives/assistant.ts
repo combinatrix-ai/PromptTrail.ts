@@ -319,14 +319,11 @@ export class Assistant<
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
     onModelEventStarted?: () => void,
   ): Promise<string | ModelOutput> {
-    const emittedStarted = await emitDirectModelEvent(
-      runtime,
-      'model.started',
-    );
+    const emittedStarted = await emitDirectModelEvent(runtime, 'model.started');
     if (emittedStarted) {
       onModelEventStarted?.();
     }
-    return (await this.contentSource!.getContent(session)) as
+    return (await this.contentSource!.getContent(session, runtime)) as
       | string
       | ModelOutput;
   }

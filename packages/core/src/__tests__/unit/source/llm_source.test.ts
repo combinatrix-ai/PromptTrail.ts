@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { generateText } from '../../../generate';
+import { generateText, generateTextStream } from '../../../generate';
+import { createExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
 import { LlmSource, Source } from '../../../source';
 import { Tool } from '../../../tool';
@@ -9,6 +10,7 @@ import { CustomValidator } from '../../../validators/custom';
 // Mock the generate module
 vi.mock('../../../generate', () => ({
   generateText: vi.fn(),
+  generateTextStream: vi.fn(),
 }));
 
 describe('LlmSource', () => {
@@ -17,6 +19,12 @@ describe('LlmSource', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
+    });
+    vi.mocked(generateTextStream).mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        content: 'Mock streamed response',
+      };
     });
   });
 
@@ -67,6 +75,38 @@ describe('LlmSource', () => {
         expect.objectContaining({
           temperature: 0.7,
         }),
+      );
+    });
+  });
+
+  describe('runtime tool loop', () => {
+    it('uses generateTextStream when runtime is provided for native tool sources', async () => {
+      const runtime = createExecutionRuntimeState({
+        context: { channel: 'runtime' },
+        middleware: [],
+      });
+      const lookup = Tool.create({
+        name: 'lookup',
+        description: 'Lookup docs',
+        parameters: z.object({ query: z.string() }),
+        execute: () => ({ value: 'docs' }),
+      });
+      const source = Source.llm().withTool('lookup', lookup);
+      const session = Session.create().addMessage({
+        type: 'user',
+        content: 'Lookup docs.',
+      });
+
+      const result = await source.getContent(session, runtime);
+
+      expect(result.content).toBe('Mock streamed response');
+      expect(generateText).not.toHaveBeenCalled();
+      expect(generateTextStream).toHaveBeenCalledWith(
+        session,
+        expect.objectContaining({
+          tools: expect.objectContaining({ lookup }),
+        }),
+        runtime,
       );
     });
   });
@@ -386,13 +426,11 @@ describe('LlmSource', () => {
     });
 
     it('should set Anthropic-specific tool choice', async () => {
-      const source = Source.llm()
-        .anthropic()
-        .anthropicToolChoice({
-          type: 'tool',
-          name: 'lookup',
-          disable_parallel_tool_use: true,
-        });
+      const source = Source.llm().anthropic().anthropicToolChoice({
+        type: 'tool',
+        name: 'lookup',
+        disable_parallel_tool_use: true,
+      });
       await source.getContent(Session.create());
 
       expect(generateText).toHaveBeenCalledWith(

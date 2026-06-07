@@ -4,7 +4,12 @@ import { z } from 'zod';
 import type { ApprovalHandler, CapabilitySet } from './capabilities';
 import type { PromptTrailTool } from './capabilities';
 import { ValidationError } from './errors';
-import { generateText, generateWithSchema } from './generate';
+import {
+  generateText,
+  generateTextStream,
+  generateWithSchema,
+} from './generate';
+import type { ExecutionRuntimeState } from './interceptors';
 import type {
   AnthropicProviderConfig,
   AnthropicToolChoice,
@@ -81,7 +86,10 @@ export abstract class Source<T = unknown> {
    * @param session Session context for content generation
    * @returns Promise resolving to content of type T
    */
-  abstract getContent(session: Session<any, any>): Promise<T>;
+  abstract getContent(
+    session: Session<any, any>,
+    runtime?: ExecutionRuntimeState<any, any>,
+  ): Promise<T>;
 
   /**
    * Validates the given content once using the assigned validator.
@@ -1068,7 +1076,10 @@ export class LlmSource extends ModelSource {
     );
   }
 
-  async getContent(session: Session<any, any>): Promise<ModelOutput> {
+  async getContent(
+    session: Session<any, any>,
+    runtime?: ExecutionRuntimeState<any, any>,
+  ): Promise<ModelOutput> {
     // Check if this is a mocked source
     if (this._mockState) {
       return this._generateMockResponse(session);
@@ -1103,6 +1114,12 @@ export class LlmSource extends ModelSource {
             this.options,
             this.schemaConfig,
           );
+        } else if (
+          runtime &&
+          isFirstPartyNativeProvider(this.options) &&
+          hasPromptTrailTools(this.options)
+        ) {
+          response = await this.generateWithRuntimeToolLoop(session, runtime);
         } else {
           // Use regular generation
           response = await generateText(session, this.options);
@@ -1179,6 +1196,66 @@ export class LlmSource extends ModelSource {
       `LLM content generation failed unexpectedly after ${this.maxAttempts} attempts.`,
     );
   }
+
+  private async generateWithRuntimeToolLoop(
+    session: Session<any, any>,
+    runtime: ExecutionRuntimeState<any, any>,
+  ) {
+    let lastAssistant:
+      | {
+          type: 'assistant';
+          content: string;
+          toolCalls?: Array<{
+            name: string;
+            arguments: Record<string, unknown>;
+            id: string;
+          }>;
+          attrs?: Record<string, unknown>;
+          structuredContent?: unknown;
+        }
+      | undefined;
+
+    for await (const message of generateTextStream(
+      session,
+      this.options,
+      runtime,
+    )) {
+      if (message.type === 'assistant') {
+        lastAssistant = message;
+      }
+    }
+
+    if (!lastAssistant) {
+      throw new Error('LLM generation did not return assistant response.');
+    }
+
+    return {
+      type: 'assistant',
+      content: lastAssistant.content,
+      toolCalls: lastAssistant.toolCalls,
+      attrs: lastAssistant.attrs,
+      structuredOutput: lastAssistant.structuredContent,
+    };
+  }
+}
+
+function isFirstPartyNativeProvider(options: LLMOptions): boolean {
+  return (
+    (options.provider.type === 'openai' &&
+      options.provider.api === 'responses' &&
+      options.provider.adapter !== 'ai-sdk') ||
+    (options.provider.type === 'anthropic' &&
+      options.provider.adapter !== 'ai-sdk') ||
+    (options.provider.type === 'google' &&
+      options.provider.adapter !== 'ai-sdk')
+  );
+}
+
+function hasPromptTrailTools(options: LLMOptions): boolean {
+  return (
+    Object.keys(options.tools ?? {}).length > 0 ||
+    (options.capabilities ?? []).some(isPromptTrailTool)
+  );
 }
 
 /**

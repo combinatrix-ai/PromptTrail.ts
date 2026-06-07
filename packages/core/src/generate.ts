@@ -456,22 +456,6 @@ export function assertNativeStreamingToolLoopSupported(
   void options;
 }
 
-function isFirstPartyNativeProvider(options: LLMOptions): boolean {
-  return (
-    (options.provider.type === 'openai' &&
-      options.provider.api === 'responses') ||
-    options.provider.type === 'anthropic' ||
-    options.provider.type === 'google'
-  );
-}
-
-function hasPromptTrailTools(options: LLMOptions): boolean {
-  return (
-    Object.keys(options.tools ?? {}).length > 0 ||
-    (options.capabilities ?? []).some(isPromptTrailTool)
-  );
-}
-
 /**
  * Generate text stream using AI SDK
  */
@@ -481,6 +465,7 @@ export async function* generateTextStream<
 >(
   session: Session<TVars, TAttrs>,
   options: LLMOptions,
+  runtime?: ExecutionRuntimeState<TVars, TAttrs>,
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
   assertNativeStreamingToolLoopSupported(options);
 
@@ -493,6 +478,7 @@ export async function* generateTextStream<
     yield* streamPromptTrailToolLoop(session, options, {
       provider: 'openai',
       attrsKey: 'openai',
+      runtime,
       events: (turnSession) =>
         streamOpenAIResponsesEvents(turnSession, {
           ...options,
@@ -510,6 +496,7 @@ export async function* generateTextStream<
     yield* streamPromptTrailToolLoop(session, options, {
       provider: 'anthropic',
       attrsKey: 'anthropic',
+      runtime,
       events: (turnSession) =>
         streamAnthropicMessagesEvents(turnSession, {
           ...options,
@@ -527,6 +514,7 @@ export async function* generateTextStream<
     yield* streamPromptTrailToolLoop(session, options, {
       provider: 'google',
       attrsKey: 'google',
+      runtime,
       events: (turnSession) =>
         streamGoogleGeminiEvents(turnSession, {
           ...options,

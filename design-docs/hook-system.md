@@ -815,6 +815,15 @@ For durable runs:
 - hook/middleware patches around the tool are journaled
 - observer events are emitted with deterministic idempotency keys
 
+For direct `Assistant(Source.llm(...))` execution, tool phases run when a
+runtime is present and the source uses a first-party native provider path
+(`openai` Responses, Anthropic messages, or Google Gemini). In that case the
+source drives the existing PromptTrail streaming tool loop and returns the final
+assistant response to the template. AI SDK adapter tool execution remains an
+opaque provider-adapter path; middleware should not rely on `beforeTool`,
+`wrapToolCall`, or `afterTool` running there until that adapter is refactored to
+delegate tool execution back to PromptTrail.
+
 ## Event Envelope and Idempotency
 
 All events have stable coordinates:
