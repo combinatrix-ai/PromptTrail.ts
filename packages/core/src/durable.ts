@@ -216,6 +216,8 @@ interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
+  persist?: () => void;
+  commitSession?: (session: Session<TVars, TAttrs>) => void;
 }
 
 interface DurableModelRequest<
@@ -370,10 +372,10 @@ function childPath(parent: string, id: string): string {
   return parent ? `${parent}/${id}` : id;
 }
 
-function durableTemplateLifecycleRequest<TVars extends Vars, TAttrs extends Attrs>(
-  node: DurableNode<TVars, TAttrs>,
-  nodePath: string,
-): Record<string, unknown> {
+function durableTemplateLifecycleRequest<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(node: DurableNode<TVars, TAttrs>, nodePath: string): Record<string, unknown> {
   return {
     templateId: node.id,
     templateName: node.type,
@@ -401,6 +403,7 @@ async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
   state.journal.results.set(stepId, result);
   state.journal.sequence.push(stepId);
   state.sequencePosition++;
+  state.persist?.();
   return result;
 }
 
@@ -1003,6 +1006,7 @@ function commitDurableJournalRecord<TVars extends Vars, TAttrs extends Attrs>(
   state.journal.results.set(stepId, record);
   state.journal.sequence.push(stepId);
   state.sequencePosition++;
+  state.persist?.();
 }
 
 function assertCanRunDurableCompositeStep<
@@ -1154,12 +1158,12 @@ async function emitDurablePhaseStepEvent<
     stepId,
     phase: step.phase,
     replay,
-      idempotencyKey: durableEventIdempotencyKey(state, {
-        stepId,
-        phase: step.phase,
-        type: 'session.patched',
-        scope: durablePhaseStepEventScope(step),
-      }),
+    idempotencyKey: durableEventIdempotencyKey(state, {
+      stepId,
+      phase: step.phase,
+      type: 'session.patched',
+      scope: durablePhaseStepEventScope(step),
+    }),
     source: step.kind,
     sessionVersion: step.transition.afterVersion,
     raw: {
@@ -1232,11 +1236,9 @@ function durableEventIdempotencyKey<TVars extends Vars, TAttrs extends Attrs>(
 function durablePhaseStepEventScope<TAttrs extends Attrs>(
   step: ExecutionPhaseStep<TAttrs>,
 ): string {
-  return [
-    step.kind,
-    step.registrationIndex,
-    step.name ?? '<anonymous>',
-  ].join(':');
+  return [step.kind, step.registrationIndex, step.name ?? '<anonymous>'].join(
+    ':',
+  );
 }
 
 async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
@@ -1502,11 +1504,15 @@ export class DurableAgent<
   ): Promise<Session<TVars, TAttrs>> {
     const nodePath = childPath(path, node.id);
     const request = durableTemplateLifecycleRequest(node, nodePath);
-    const before = await runDurableExecutionPhase(state, `${nodePath}/beforeTemplate`, {
-      phase: 'beforeTemplate',
-      session,
-      request,
-    });
+    const before = await runDurableExecutionPhase(
+      state,
+      `${nodePath}/beforeTemplate`,
+      {
+        phase: 'beforeTemplate',
+        session,
+        request,
+      },
+    );
     handleDurablePhaseCommand(before.command, nodePath, before.session);
     state.session = before.session;
 
@@ -1518,11 +1524,15 @@ export class DurableAgent<
     );
     state.session = executed;
 
-    const after = await runDurableExecutionPhase(state, `${nodePath}/afterTemplate`, {
-      phase: 'afterTemplate',
-      session: executed,
-      request,
-    });
+    const after = await runDurableExecutionPhase(
+      state,
+      `${nodePath}/afterTemplate`,
+      {
+        phase: 'afterTemplate',
+        session: executed,
+        request,
+      },
+    );
     handleDurablePhaseCommand(after.command, nodePath, after.session);
     state.session = after.session;
     return after.session;
@@ -1569,7 +1579,11 @@ export class DurableAgent<
         state.transitionVersion = transition.afterVersion;
         state.middlewareState = applied.middlewareState;
         state.session = applied.session;
-        handleDurablePhaseCommand(transition.command, nodePath, applied.session);
+        handleDurablePhaseCommand(
+          transition.command,
+          nodePath,
+          applied.session,
+        );
         return applied.session;
       }
       case 'assistant': {
@@ -1595,11 +1609,7 @@ export class DurableAgent<
           session,
           request,
         });
-        handleDurablePhaseCommand(
-          prepared.command,
-          nodePath,
-          prepared.session,
-        );
+        handleDurablePhaseCommand(prepared.command, nodePath, prepared.session);
         assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
         const modelSession =
           (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
@@ -1657,6 +1667,7 @@ export class DurableAgent<
           (after.result as AssistantResult<TAttrs> | undefined) ?? message,
         );
         const completed = after.session.addMessage(finalMessage);
+        state.commitSession?.(completed);
         handleDurablePhaseCommand(after.command, nodePath, completed);
         return completed;
       }
@@ -1759,6 +1770,7 @@ export class DurableAgent<
             (after.result as AssistantResult<TAttrs> | undefined) ?? message,
           );
           current = after.session.addMessage(finalMessage);
+          state.commitSession?.(current);
           handleDurablePhaseCommand(after.command, nodePath, current);
           state.session = current;
           iteration++;
@@ -2221,7 +2233,8 @@ export class PromptTrailApp {
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
-    this.store = options.durable?.store ?? options.store ?? new MemoryRunStore();
+    this.store =
+      options.durable?.store ?? options.store ?? new MemoryRunStore();
     this.defaultDurable = options.durable?.defaultDurable ?? false;
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
@@ -2266,8 +2279,7 @@ export class PromptTrailApp {
         : {
             ...normalized,
             name:
-              observerNamespace ??
-              `appObserver:${this.nextObserverBusIndex++}`,
+              observerNamespace ?? `appObserver:${this.nextObserverBusIndex++}`,
           };
       const bus = new ObserverBus([namespacedObserver], {
         strictObservers: this.strictObservers,
@@ -2305,8 +2317,7 @@ export class PromptTrailApp {
   async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
     options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable =
-      options.durable ?? options.resumable ?? this.defaultDurable;
+    const durable = options.durable ?? options.resumable ?? this.defaultDurable;
     const existing = this.store.get(options.runId);
     if (!existing) {
       if (!options.agent) {
@@ -2348,8 +2359,17 @@ export class PromptTrailApp {
       hooks: this.hooksForRun(run),
       middlewareState: {},
       context: cloneDurableRuntimeValue(run.context),
-      emitEvent: (event) => this.emitObservers(run, event),
-      nextEventSeq: () => this.nextRunEventSeq(run),
+      emitEvent: async (event) => {
+        await this.emitObservers(run, event);
+        this.persistRun(runId, run);
+      },
+      nextEventSeq: () => this.nextRunEventSeq(runId, run),
+      persist: () => this.persistRun(runId, run),
+      commitSession: (session) => {
+        run.result = session;
+        this.materializeAssistantDeliveriesForRun(runId, run);
+        this.persistRun(runId, run);
+      },
     };
 
     await this.emitRunEvent(run, runId, 'run.started', {
@@ -2360,6 +2380,7 @@ export class PromptTrailApp {
       run.status = 'done';
       run.result = session;
       this.materializeAssistantDeliveriesForRun(runId, run);
+      this.persistRun(runId, run);
       await this.emitRunEvent(run, runId, 'run.completed', {
         sessionVersion: state.transitionVersion,
       });
@@ -2367,6 +2388,7 @@ export class PromptTrailApp {
     } catch (error) {
       if (error instanceof Suspend) {
         run.result = state.session;
+        this.persistRun(runId, run);
         await this.emitRunEvent(run, runId, 'run.suspended', {
           stepId: error.stepId,
           sessionVersion: state.transitionVersion,
@@ -2382,6 +2404,7 @@ export class PromptTrailApp {
         run.status = 'done';
         run.result = error.session as Session<TVars, TAttrs>;
         this.materializeAssistantDeliveriesForRun(runId, run);
+        this.persistRun(runId, run);
         await this.emitRunEvent(run, runId, 'run.completed', {
           sessionVersion: state.transitionVersion,
         });
@@ -2434,8 +2457,7 @@ export class PromptTrailApp {
       (entry) =>
         deliveries.some(
           (delivery) => delivery.idempotencyKey === entry.idempotencyKey,
-        ) &&
-        isRetryableAssistantDeliveryStatus(entry.status),
+        ) && isRetryableAssistantDeliveryStatus(entry.status),
     );
   }
 
@@ -2579,7 +2601,9 @@ export class PromptTrailApp {
     }
     const deliveries = run.result.messages
       .filter(
-        (message): message is PromptTrailMessage<TAttrs> & {
+        (
+          message,
+        ): message is PromptTrailMessage<TAttrs> & {
           type: 'assistant';
         } => message.type === 'assistant',
       )
@@ -2612,8 +2636,7 @@ export class PromptTrailApp {
   >(
     options: PromptTrailRunOptions<TVars, TAttrs>,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable =
-      options.durable ?? options.resumable ?? this.defaultDurable;
+    const durable = options.durable ?? options.resumable ?? this.defaultDurable;
     const durableAgent = this.resolveAgent(options.agent);
     const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
     const initial = options.session ?? Session.create<TVars, TAttrs>();
@@ -2665,7 +2688,7 @@ export class PromptTrailApp {
       middlewareState: {},
       context: cloneDurableRuntimeValue(run.context),
       emitEvent: (event) => this.emitObservers(run, event),
-      nextEventSeq: () => this.nextRunEventSeq(run),
+      nextEventSeq: () => this.nextRunEventSeq(runId, run),
     };
     await this.emitRunEvent(run, runId, 'run.started', {
       sessionVersion: state.transitionVersion,
@@ -2711,7 +2734,7 @@ export class PromptTrailApp {
     type: 'run.started' | 'run.completed' | 'run.suspended' | 'error',
     options: Partial<ExecutionEvent> = {},
   ): Promise<void> {
-    const seq = this.nextRunEventSeq(run);
+    const seq = this.nextRunEventSeq(runId, run);
     await this.emitObservers(run, {
       id: `${runId}:${seq}:${type}`,
       type,
@@ -2725,6 +2748,7 @@ export class PromptTrailApp {
       idempotencyKey:
         options.idempotencyKey ?? runEventIdempotencyKey(runId, seq, type),
     });
+    this.persistRun(runId, run);
   }
 
   private middlewareForRun<TVars extends Vars, TAttrs extends Attrs>(
@@ -2795,10 +2819,12 @@ export class PromptTrailApp {
   }
 
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
+    runId: string,
     run: StoredRun<TVars, TAttrs>,
   ): number {
     const seq = run.eventSeq ?? 0;
     run.eventSeq = seq + 1;
+    this.persistRun(runId, run);
     return seq;
   }
 
@@ -2809,6 +2835,17 @@ export class PromptTrailApp {
       run.status = 'open';
       run.result = undefined;
     }
+    this.persistRun(runId, run);
+  }
+
+  private persistRun<TVars extends Vars, TAttrs extends Attrs>(
+    runId: string,
+    run: StoredRun<TVars, TAttrs>,
+  ): void {
+    if (!this.store.has(runId)) {
+      return;
+    }
+    this.store.set(runId, run);
   }
 
   private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
@@ -2910,9 +2947,7 @@ function observerContextFromRunContext(
 function isRetryableAssistantDeliveryStatus(
   status: AssistantDeliveryOutboxEntry['status'],
 ): boolean {
-  return (
-    status === 'pending' || status === 'delivering' || status === 'failed'
-  );
+  return status === 'pending' || status === 'delivering' || status === 'failed';
 }
 
 function createAssistantDeliveryOutboxEntry<TAttrs extends Attrs>(

@@ -7,8 +7,47 @@ import {
   manualSource,
   memoryStore,
 } from '../../durable';
+import type { DurableRunStore, StoredRun } from '../../durable';
 import type { ObserverDeliveryBindingStore } from '../../execution';
 import { Hook, Middleware } from '../../interceptors';
+
+class TrackingRunStore implements DurableRunStore {
+  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly snapshots: Array<{
+    runId: string;
+    status: StoredRun<any, any>['status'];
+    sequence: readonly string[];
+    resultMessages?: number;
+    outbox: number;
+  }> = [];
+
+  get(runId: string): StoredRun<any, any> | undefined {
+    return this.runs.get(runId);
+  }
+
+  set(runId: string, run: StoredRun<any, any>): void {
+    this.runs.set(runId, run);
+    this.snapshots.push({
+      runId,
+      status: run.status,
+      sequence: [...run.journal.sequence],
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
+  }
+
+  has(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  delete(runId: string): void {
+    this.runs.delete(runId);
+  }
+
+  entries(): Iterable<[string, StoredRun<any, any>]> {
+    return this.runs.entries();
+  }
+}
 
 describe('durable agent runtime', () => {
   it('runs durable agents through the app runtime', async () => {
@@ -58,6 +97,38 @@ describe('durable agent runtime', () => {
       'next message',
     ]);
     expect(modelCalls).toBe(1);
+  });
+
+  it('persists journal commits and assistant delivery outbox before run completion', async () => {
+    const store = new TrackingRunStore();
+    const assistant = agent('persisted').assistant('reply', () => 'hello');
+    const app = PromptTrail.app({
+      agents: { persisted: assistant },
+      store,
+    });
+
+    await app.run({
+      agent: 'persisted',
+      runId: 'run-persist-commits',
+      durable: true,
+      context: {
+        delivery: {
+          platform: 'discord',
+          channel: 'C_general',
+        },
+      },
+    });
+
+    expect(store.snapshots).toContainEqual(
+      expect.objectContaining({
+        runId: 'run-persist-commits',
+        status: 'open',
+        sequence: ['reply/model'],
+        resultMessages: 1,
+        outbox: 1,
+      }),
+    );
+    expect(app.assistantDeliveryOutbox('run-persist-commits')).toHaveLength(1);
   });
 
   it('journals model and tool effects for durable replay', async () => {
@@ -396,8 +467,7 @@ describe('durable agent runtime', () => {
     const appendOrder = (
       session: { getVar(name: string): unknown },
       label: string,
-    ) =>
-      `${(session.getVar('order') as string | undefined) ?? ''}${label}>`;
+    ) => `${(session.getVar('order') as string | undefined) ?? ''}${label}>`;
     let agentMiddlewareCalls = 0;
     let appMiddlewareCalls = 0;
     let agentHookCalls = 0;
@@ -621,7 +691,9 @@ describe('durable agent runtime', () => {
       delete() {},
     };
     const app = PromptTrail.app({
-      agents: { observed: agent('observed-agent').assistant('reply', () => 'hello') },
+      agents: {
+        observed: agent('observed-agent').assistant('reply', () => 'hello'),
+      },
       store: memoryStore(),
     });
     const first = app.registerObserver(
@@ -665,7 +737,10 @@ describe('durable agent runtime', () => {
 
   it('replays stored durable events only to adopt-replayed observers', async () => {
     const replayed: string[] = [];
-    const assistant = agent('replay-ui-agent').assistant('reply', () => 'hello');
+    const assistant = agent('replay-ui-agent').assistant(
+      'reply',
+      () => 'hello',
+    );
     const app = PromptTrail.app({
       agents: { replay: assistant },
       store: memoryStore(),
@@ -722,15 +797,15 @@ describe('durable agent runtime', () => {
       'live:model.completed',
       'live:run.completed',
     ]);
-    expect(replayResult.map((event) => `${event.replay}:${event.type}`)).toEqual(
-      [
-        'replayed:run.started',
-        'replayed:session.patched',
-        'replayed:model.started',
-        'replayed:model.completed',
-        'replayed:run.completed',
-      ],
-    );
+    expect(
+      replayResult.map((event) => `${event.replay}:${event.type}`),
+    ).toEqual([
+      'replayed:run.started',
+      'replayed:session.patched',
+      'replayed:model.started',
+      'replayed:model.completed',
+      'replayed:run.completed',
+    ]);
     expect(replayed).toEqual([
       'adopt:0:run.started',
       'adopt:1:session.patched',
@@ -745,8 +820,9 @@ describe('durable agent runtime', () => {
     const assistant = agent('replay-history-agent').turn('main', (turn) =>
       turn
         .steer()
-        .assistant('reply', (session) =>
-          `hello:${session.getVarsObject().observed}`,
+        .assistant(
+          'reply',
+          (session) => `hello:${session.getVarsObject().observed}`,
         )
         .awaitUser(),
     );
