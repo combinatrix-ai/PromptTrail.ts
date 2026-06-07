@@ -105,6 +105,32 @@ describe('Agent interceptors', () => {
     expect(events).toEqual(['0:run.started', '1:run.failed']);
   });
 
+  it('applies beforeModel and afterModel middleware around assistant output', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'modelPolicy',
+          beforeModel: ({ session }) => ({
+            session: session.addMessage(Message.system('before model')),
+          }),
+          afterModel: () => ({
+            result: { content: 'rewritten' },
+            session: {
+              vars: { afterModel: true },
+            },
+          }),
+        }),
+      )
+      .assistant('original')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'before model',
+      'rewritten',
+    ]);
+    expect(session.getVarsObject()).toEqual({ afterModel: true });
+  });
+
   it('preserves interceptors when nested builders are built', async () => {
     const session = await Agent.create()
       .sequence((agent) =>
@@ -125,5 +151,63 @@ describe('Agent interceptors', () => {
 
     expect(session.getVarsObject()).toEqual({ nestedMiddleware: true });
     expect(session.getLastMessage()?.content).toBe('nested hello');
+  });
+
+  it('passes parent model middleware into nested assistants', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'parentModelPolicy',
+          afterModel: () => ({
+            result: { content: 'parent rewritten' },
+          }),
+        }),
+      )
+      .sequence((agent) => agent.assistant('nested original'))
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('parent rewritten');
+  });
+
+  it('passes parent model middleware into conditional branches', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'conditionalModelPolicy',
+          afterModel: () => ({
+            result: { content: 'conditional rewritten' },
+          }),
+        }),
+      )
+      .conditional(
+        () => true,
+        (agent) => agent.assistant('then original'),
+        (agent) => agent.assistant('else original'),
+      )
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('conditional rewritten');
+  });
+
+  it('passes parent model middleware into conditional else branches', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'conditionalElseModelPolicy',
+          afterModel: () => ({
+            result: { content: 'conditional else rewritten' },
+          }),
+        }),
+      )
+      .conditional(
+        () => false,
+        (agent) => agent.assistant('then original'),
+        (agent) => agent.assistant('else original'),
+      )
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe(
+      'conditional else rewritten',
+    );
   });
 });

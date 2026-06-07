@@ -1,5 +1,10 @@
 // assistant.ts
 import type { AssistantMessage } from '../../message';
+import type { ResolvedExecutionCommand } from '../../execution';
+import {
+  type ExecutionRuntimeState,
+  runRuntimeExecutionPhase,
+} from '../../interceptors';
 import type { Session } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
 import { Attrs, Vars } from '../../session';
@@ -54,8 +59,9 @@ export class Assistant<
 
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
-    const validSession = this.ensureSession(session);
+    let validSession = this.ensureSession(session);
 
     // Content source should always be available now (either provided or default)
     if (!this.contentSource) {
@@ -74,8 +80,27 @@ export class Assistant<
       let currentError: Error | undefined;
 
       try {
+        if (runtime) {
+          const beforeModel = await runRuntimeExecutionPhase(runtime, {
+            phase: 'beforeModel',
+            session: validSession,
+          });
+          assertAssistantCommandSupported(beforeModel.command);
+          validSession = beforeModel.session;
+        }
+
         // 1. Get Content
-        const rawOutput = await this.contentSource.getContent(validSession);
+        let rawOutput = await this.contentSource.getContent(validSession);
+        if (runtime) {
+          const afterModel = await runRuntimeExecutionPhase(runtime, {
+            phase: 'afterModel',
+            session: validSession,
+            result: rawOutput,
+          });
+          assertAssistantCommandSupported(afterModel.command);
+          validSession = afterModel.session;
+          rawOutput = (afterModel.result ?? rawOutput) as typeof rawOutput;
+        }
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
         let outputAttrs: ModelOutput['metadata'] | undefined;
@@ -210,4 +235,15 @@ export class Assistant<
       'Assistant template execution finished in an unexpected state. No result or definitive error.',
     );
   }
+}
+
+function assertAssistantCommandSupported(
+  command: ResolvedExecutionCommand,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `Assistant.execute does not support execution command ${command.type} yet.`,
+  );
 }

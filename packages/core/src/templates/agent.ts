@@ -7,9 +7,12 @@ import {
   type ResolvedExecutionCommand,
 } from '../execution';
 import {
+  createExecutionRuntimeState,
+  extendExecutionRuntimeState,
+  type ExecutionRuntimeState,
   type HookDefinition,
   type MiddlewareDefinition,
-  runExecutionPhase,
+  runRuntimeExecutionPhase,
 } from '../interceptors';
 import { ModelOutput, Source, ValidationOptions } from '../source';
 import { IValidator } from '../validators';
@@ -251,14 +254,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   async execute(
     session?: Session<TC, TM> | undefined,
+    parentRuntime?: ExecutionRuntimeState<TC, TM>,
   ): Promise<Session<TC, TM>> {
     if (!this.hasInterceptors()) {
-      return session ? this.root.execute(session) : this.root.execute();
+      return session
+        ? this.root.execute(session, parentRuntime)
+        : this.root.execute(undefined, parentRuntime);
     }
 
     const observerBus = new ObserverBus(this.observers);
     let seq = 0;
     let current = session ?? Session.create<TC, TM>();
+    const runtime = parentRuntime ?? createExecutionRuntimeState<TC, TM>();
     await observerBus.emit({
       id: `agent:${seq}`,
       type: 'run.started',
@@ -268,25 +275,28 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     });
 
     try {
-      const before = await runExecutionPhase({
+      const before = await runRuntimeExecutionPhase(runtime, {
         phase: 'beforeAgent',
         session: current,
         middleware: this.middleware,
         hooks: this.hooks,
-        beforeVersion: 0,
       });
       assertDirectAgentCommandSupported(before.command);
       current = before.session;
 
-      current = await this.root.execute(current);
+      const childRuntime = extendExecutionRuntimeState(runtime, {
+        middleware: this.middleware,
+        hooks: this.hooks,
+      });
+      current = await this.root.execute(current, childRuntime);
+      runtime.middlewareState = childRuntime.middlewareState;
+      runtime.version = childRuntime.version;
 
-      const after = await runExecutionPhase({
+      const after = await runRuntimeExecutionPhase(runtime, {
         phase: 'afterAgent',
         session: current,
         middleware: this.middleware,
         hooks: this.hooks,
-        middlewareState: before.middlewareState,
-        beforeVersion: before.afterVersion,
       });
       assertDirectAgentCommandSupported(after.command);
       current = after.session;

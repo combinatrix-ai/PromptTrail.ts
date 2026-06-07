@@ -1,4 +1,5 @@
 import type { Session } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { Attrs, Vars } from '../../session';
 import type { Template } from '../base';
 import { TemplateBase } from '../base';
@@ -24,13 +25,14 @@ export class Conditional<
 
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const validSession = this.ensureSession(session);
 
     if (this.condition(validSession)) {
-      return this.thenTemplate.execute(validSession);
+      return this.thenTemplate.execute(validSession, runtime);
     } else if (this.elseTemplate) {
-      return this.elseTemplate.execute(validSession);
+      return this.elseTemplate.execute(validSession, runtime);
     }
     return validSession; // Return unchanged session if condition is false and no else branch
   }

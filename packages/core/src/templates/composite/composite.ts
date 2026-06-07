@@ -1,5 +1,6 @@
 import type { Session } from '../../session';
 import type { Source } from '../../source';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
@@ -75,6 +76,7 @@ export abstract class Composite<
   // Unified execute implementation
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const originalSession = this.ensureSession(session);
 
@@ -105,7 +107,7 @@ export abstract class Composite<
       ) {
         for (let template of this.templates) {
           template = this.ensureTemplateHasContentSource(template);
-          currentSession = await template.execute(currentSession);
+          currentSession = await template.execute(currentSession, runtime);
         }
         iterations++;
       }
@@ -123,7 +125,7 @@ export abstract class Composite<
       // Simple sequence execution
       for (let template of this.templates) {
         template = this.ensureTemplateHasContentSource(template);
-        currentSession = await template.execute(currentSession);
+        currentSession = await template.execute(currentSession, runtime);
       }
     }
 

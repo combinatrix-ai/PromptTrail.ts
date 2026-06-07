@@ -1,4 +1,5 @@
 import { Session } from '../session';
+import type { ExecutionRuntimeState } from '../interceptors';
 import type { LlmSource, ModelOutput } from '../source';
 import { LiteralSource, Source } from '../source';
 import { Attrs, Vars } from '../session';
@@ -13,7 +14,10 @@ export interface Template<
   TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
 > {
-  execute(session?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
+  execute(
+    session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>>;
 }
 
 /**
@@ -28,6 +32,7 @@ export abstract class TemplateBase<
 
   abstract execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>>;
 
   protected ensureSession(

@@ -159,6 +159,88 @@ export interface RunExecutionPhaseResult<
   steps: ExecutionPhaseStep<TAttrs>[];
 }
 
+export interface ExecutionRuntimeState<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  hooks: readonly HookDefinition<TVars, TAttrs>[];
+  middlewareState: Record<string, unknown>;
+  version: number;
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+export function createExecutionRuntimeState<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(options?: {
+  middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  hooks?: readonly HookDefinition<TVars, TAttrs>[];
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+}): ExecutionRuntimeState<TVars, TAttrs> {
+  return {
+    middleware: options?.middleware ?? [],
+    hooks: options?.hooks ?? [],
+    middlewareState: {},
+    version: 0,
+    context: options?.context,
+    signal: options?.signal,
+  };
+}
+
+export function extendExecutionRuntimeState<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  parent: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+  extension: {
+    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+    hooks?: readonly HookDefinition<TVars, TAttrs>[];
+  },
+): ExecutionRuntimeState<TVars, TAttrs> {
+  const base = parent ?? createExecutionRuntimeState<TVars, TAttrs>();
+  return {
+    ...base,
+    middleware: [...base.middleware, ...(extension.middleware ?? [])],
+    hooks: [...base.hooks, ...(extension.hooks ?? [])],
+  };
+}
+
+export async function runRuntimeExecutionPhase<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  options: {
+    phase: ExecutionPhase;
+    session: Session<TVars, TAttrs>;
+    request?: TRequest;
+    result?: TResult;
+    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+    hooks?: readonly HookDefinition<TVars, TAttrs>[];
+  },
+): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
+  const phaseResult = await runExecutionPhase({
+    phase: options.phase,
+    session: options.session,
+    request: options.request,
+    result: options.result,
+    context: runtime.context,
+    middlewareState: runtime.middlewareState,
+    middleware: options.middleware ?? runtime.middleware,
+    hooks: options.hooks ?? runtime.hooks,
+    beforeVersion: runtime.version,
+    signal: runtime.signal,
+  });
+  runtime.middlewareState = phaseResult.middlewareState;
+  runtime.version = phaseResult.afterVersion;
+  return phaseResult;
+}
+
 export async function runExecutionPhase<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
