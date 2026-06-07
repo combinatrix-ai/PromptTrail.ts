@@ -301,8 +301,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         middleware: this.middleware,
         hooks: this.hooks,
       });
-      assertDirectAgentCommandSupported(before.command);
       current = before.session;
+      if (before.command.type !== 'none') {
+        return await handleDirectAgentCommand(before.command, current, {
+          emitCompleted: async () => {
+            eventSeq = nextSeq();
+            await emitEvent({
+              id: `agent:${eventSeq}`,
+              type: 'run.completed',
+              at: new Date().toISOString(),
+              seq: eventSeq,
+              replay: 'live',
+            });
+          },
+        });
+      }
 
       const childRuntime = extendExecutionRuntimeState(runtime, {
         middleware: this.middleware,
@@ -318,8 +331,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         middleware: this.middleware,
         hooks: this.hooks,
       });
-      assertDirectAgentCommandSupported(after.command);
       current = after.session;
+      if (after.command.type !== 'none') {
+        return await handleDirectAgentCommand(after.command, current, {
+          emitCompleted: async () => {
+            eventSeq = nextSeq();
+            await emitEvent({
+              id: `agent:${eventSeq}`,
+              type: 'run.completed',
+              at: new Date().toISOString(),
+              seq: eventSeq,
+              replay: 'live',
+            });
+          },
+        });
+      }
 
       eventSeq = nextSeq();
       await emitEvent({
@@ -349,11 +375,20 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 }
 
-function assertDirectAgentCommandSupported(
+async function handleDirectAgentCommand<
+  TC extends Vars,
+  TM extends Attrs,
+>(
   command: ResolvedExecutionCommand,
-): void {
+  session: Session<TC, TM>,
+  options: { emitCompleted: () => Promise<void> },
+): Promise<Session<TC, TM>> {
   if (command.type === 'none') {
-    return;
+    return session;
+  }
+  if (command.type === 'halt') {
+    await options.emitCompleted();
+    return session;
   }
   throw new Error(
     `Agent.execute does not support execution command ${command.type} yet.`,

@@ -150,7 +150,7 @@ describe('Agent interceptors', () => {
     );
   });
 
-  it('emits run.failed before rethrowing direct execution errors', async () => {
+  it('halts direct execution from beforeAgent commands', async () => {
     const events: string[] = [];
     const agent = Agent.create()
       .observe((event) => {
@@ -160,15 +160,52 @@ describe('Agent interceptors', () => {
         Hook.create({
           name: 'control',
           onBeforeAgent: () => ({
+            session: { vars: { halted: true } },
+            command: { type: 'halt', reason: 'manual' },
+          }),
+        }),
+      )
+      .assistant('should not run');
+
+    const session = await agent.execute();
+
+    expect(session.messages).toEqual([]);
+    expect(session.getVarsObject()).toEqual({ halted: true });
+    expect(events).toEqual([
+      '0:run.started',
+      '1:session.patched',
+      '2:run.completed',
+    ]);
+  });
+
+  it('halts direct execution from afterAgent commands', async () => {
+    const events: string[] = [];
+    const agent = Agent.create()
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}`);
+      })
+      .assistant('reply')
+      .hook(
+        Hook.create({
+          name: 'control',
+          onAfterAgent: () => ({
+            session: { vars: { haltedAfter: true } },
             command: { type: 'halt', reason: 'manual' },
           }),
         }),
       );
 
-    await expect(agent.execute()).rejects.toThrow(
-      'Agent.execute does not support execution command halt yet.',
-    );
-    expect(events).toEqual(['0:run.started', '1:run.failed']);
+    const session = await agent.execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'reply',
+    ]);
+    expect(session.getVarsObject()).toEqual({ haltedAfter: true });
+    expect(events).toEqual([
+      '0:run.started',
+      '1:session.patched',
+      '2:run.completed',
+    ]);
   });
 
   it('applies beforeModel and afterModel middleware around assistant output', async () => {
