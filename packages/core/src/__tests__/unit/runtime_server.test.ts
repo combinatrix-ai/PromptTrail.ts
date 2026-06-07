@@ -1061,16 +1061,89 @@ describe('RuntimeServer', () => {
     expect(deliveries).toEqual([`${deliveryKey}:reply:hello`]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
+        id: entry.id,
         idempotencyKey: entry.idempotencyKey,
+        conversationId: entry.conversationId,
+        messageRef: entry.messageRef,
         status: entry.status,
         attempts: entry.attempts,
       })),
     ).toEqual([
       {
+        id: deliveryKey,
         idempotencyKey: deliveryKey,
+        conversationId: runId,
+        messageRef: {
+          conversationId: runId,
+          assistantIndex: 0,
+        },
         status: 'delivered',
         attempts: 1,
       },
+    ]);
+  });
+
+  it('fills runtime outbox metadata on existing delivery entries', async () => {
+    const store = memoryStore();
+    const main = agent('main').assistant('reply', () => 'stored reply');
+    const app = PromptTrail.app({
+      store,
+      agents: { main },
+    });
+    const runId = 'discord:guild:workroom:channel:C_general';
+    const target = discord.channel('general');
+    const deliveryKey = assistantDeliveryKey(runId, 0, target);
+
+    await app.run({
+      agent: 'main',
+      runId,
+      durable: true,
+    });
+    const run = store.get(runId)!;
+    run.outbox = [
+      {
+        assistantIndex: 0,
+        idempotencyKey: deliveryKey,
+        message: { type: 'assistant', content: 'stored reply' },
+        target,
+        status: 'pending',
+        attempts: 0,
+      } as never,
+    ];
+    store.set(runId, run);
+
+    expect(app.pendingAssistantDeliveryOutbox()).toEqual([
+      {
+        runId,
+        entry: expect.objectContaining({
+          id: deliveryKey,
+          conversationId: runId,
+          messageRef: {
+            conversationId: runId,
+            assistantIndex: 0,
+          },
+        }),
+      },
+    ]);
+
+    app.prepareAssistantDeliveries(runId, [
+      {
+        assistantIndex: 0,
+        idempotencyKey: deliveryKey,
+        message: { type: 'assistant', content: 'stored reply' },
+        target,
+      },
+    ]);
+
+    expect(app.assistantDeliveryOutbox(runId)).toEqual([
+      expect.objectContaining({
+        id: deliveryKey,
+        conversationId: runId,
+        messageRef: {
+          conversationId: runId,
+          assistantIndex: 0,
+        },
+      }),
     ]);
   });
 

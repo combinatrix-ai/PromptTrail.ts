@@ -139,6 +139,13 @@ export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
 
 export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   extends AssistantDeliveryOutboxInput<TAttrs> {
+  id: string;
+  conversationId: string;
+  messageRef: {
+    conversationId: string;
+    assistantIndex: number;
+  };
+  platformBinding?: unknown;
   status:
     | 'pending'
     | 'delivering'
@@ -2401,11 +2408,9 @@ export class PromptTrailApp {
   ): AssistantDeliveryOutboxEntry<TAttrs>[] {
     const run = this.store.get(runId);
     if (!run) {
-      return deliveries.map((delivery) => ({
-        ...delivery,
-        status: 'pending',
-        attempts: 0,
-      }));
+      return deliveries.map((delivery) =>
+        createAssistantDeliveryOutboxEntry(runId, delivery),
+      );
     }
     const outbox = (run.outbox ??=
       []) as AssistantDeliveryOutboxEntry<TAttrs>[];
@@ -2414,11 +2419,12 @@ export class PromptTrailApp {
         (entry) => entry.idempotencyKey === delivery.idempotencyKey,
       );
       if (!existing) {
-        outbox.push({
-          ...delivery,
-          status: 'pending',
-          attempts: 0,
-        });
+        outbox.push(createAssistantDeliveryOutboxEntry(runId, delivery));
+      } else {
+        Object.assign(
+          existing,
+          completeAssistantDeliveryOutboxMetadata(runId, existing),
+        );
       }
     }
     this.store.set(runId, run);
@@ -2512,10 +2518,23 @@ export class PromptTrailApp {
     this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
     for (const [runId, run] of this.store.entries()) {
+      let changed = false;
       for (const entry of run.outbox ?? []) {
+        const completed = completeAssistantDeliveryOutboxMetadata(runId, entry);
+        if (
+          entry.id !== completed.id ||
+          entry.conversationId !== completed.conversationId ||
+          entry.messageRef !== completed.messageRef
+        ) {
+          Object.assign(entry, completed);
+          changed = true;
+        }
         if (isRetryableAssistantDeliveryStatus(entry.status)) {
           pending.push({ runId, entry });
         }
+      }
+      if (changed) {
+        this.store.set(runId, run);
       }
     }
     return pending;
@@ -2862,6 +2881,42 @@ function isRetryableAssistantDeliveryStatus(
   return (
     status === 'pending' || status === 'delivering' || status === 'failed'
   );
+}
+
+function createAssistantDeliveryOutboxEntry<TAttrs extends Attrs>(
+  conversationId: string,
+  delivery: AssistantDeliveryOutboxInput<TAttrs>,
+): AssistantDeliveryOutboxEntry<TAttrs> {
+  return completeAssistantDeliveryOutboxMetadata(conversationId, {
+    ...delivery,
+    status: 'pending',
+    attempts: 0,
+  });
+}
+
+function completeAssistantDeliveryOutboxMetadata<TAttrs extends Attrs>(
+  conversationId: string,
+  entry: AssistantDeliveryOutboxInput<TAttrs> &
+    Partial<
+      Pick<
+        AssistantDeliveryOutboxEntry<TAttrs>,
+        'id' | 'conversationId' | 'messageRef' | 'platformBinding'
+      >
+    > &
+    Pick<
+      AssistantDeliveryOutboxEntry<TAttrs>,
+      'status' | 'attempts' | 'lastError' | 'error'
+    >,
+): AssistantDeliveryOutboxEntry<TAttrs> {
+  return {
+    ...entry,
+    id: entry.id ?? entry.idempotencyKey,
+    conversationId: entry.conversationId ?? conversationId,
+    messageRef: entry.messageRef ?? {
+      conversationId,
+      assistantIndex: entry.assistantIndex,
+    },
+  };
 }
 
 function errorMessage(error: unknown): string {
