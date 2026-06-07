@@ -7,6 +7,15 @@ import {
   mockDiscord,
   mockRuntimeFixture,
 } from '../../runtime_mocks';
+import { assistantDeliveryKey } from '../../runtime_dispatch';
+
+function discordDeliveryTarget(channel: string, thread?: string) {
+  return {
+    platform: 'discord' as const,
+    channel,
+    thread,
+  };
+}
 
 function workroomFixture() {
   const main = agent('main');
@@ -573,8 +582,11 @@ describe('runtime bindings with mock Discord and cron', () => {
     expect(fixture.effects.journal()).toContainEqual(
       expect.objectContaining({
         kind: 'delivery',
-        idempotencyKey:
-          'discord:guild:workroom:thread:T_debug:turn:1:delivery:final',
+        idempotencyKey: assistantDeliveryKey(
+          'discord:guild:workroom:thread:T_debug',
+          0,
+          discordDeliveryTarget('cloud-lab', 'T_debug'),
+        ),
         status: 'completed',
       }),
     );

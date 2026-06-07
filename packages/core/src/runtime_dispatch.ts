@@ -10,6 +10,9 @@ import type {
   RuntimeBindingEvent,
   RuntimeBundle,
 } from './runtime_bindings';
+import { assistantDeliveryKey } from './runtime_delivery_keys';
+
+export { assistantDeliveryKey };
 
 export interface RuntimeDispatchContext extends Record<string, unknown> {
   conversationId: string;
@@ -263,7 +266,7 @@ export class AssistantDeliveryTracker {
       .map((message, index) => ({
         message,
         assistantIndex: index,
-        idempotencyKey: assistantDeliveryKey(conversationId, index),
+        idempotencyKey: assistantDeliveryKey(conversationId, index, target),
         target,
       }))
       .filter((delivery) => !this.deliveredKeys.has(delivery.idempotencyKey));
@@ -278,13 +281,6 @@ export class AssistantDeliveryTracker {
   has(idempotencyKey: string): boolean {
     return this.deliveredKeys.has(idempotencyKey);
   }
-}
-
-export function assistantDeliveryKey(
-  conversationId: string,
-  assistantIndex: number,
-): string {
-  return `${conversationId}:turn:${assistantIndex + 1}:delivery:final`;
 }
 
 function discordOrigin(

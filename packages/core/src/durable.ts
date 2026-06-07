@@ -29,6 +29,7 @@ import {
   type RunMiddlewareWrapperResult,
   type RunExecutionPhaseResult,
 } from './interceptors';
+import { assistantDeliveryKey } from './runtime_delivery_keys';
 import { bundle, type DeliveryTarget } from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
@@ -2534,7 +2535,7 @@ export class PromptTrailApp {
         .map((message, index) => ({
           message,
           assistantIndex: index,
-          idempotencyKey: assistantDeliveryKey(runId, index),
+          idempotencyKey: assistantDeliveryKey(runId, index, target),
           target,
         }));
       this.prepareAssistantDeliveries(runId, deliveries);
@@ -2865,10 +2866,6 @@ function isRetryableAssistantDeliveryStatus(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function assistantDeliveryKey(runId: string, assistantIndex: number): string {
-  return `${runId}:turn:${assistantIndex + 1}:delivery:final`;
 }
 
 function runEventIdempotencyKey(

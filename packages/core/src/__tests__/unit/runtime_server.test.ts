@@ -4,9 +4,11 @@ import { Middleware } from '../../interceptors';
 import {
   bind,
   discord,
+  type DeliveryTarget,
   type DiscordMessageEvent,
 } from '../../runtime_bindings';
 import {
+  assistantDeliveryKey,
   dispatchRuntimeBindingEvent,
   mergeBindingDefaults,
 } from '../../runtime_dispatch';
@@ -16,7 +18,45 @@ import {
 } from '../../runtime_server';
 import type { ObserverDeliveryBindingStore } from '../../execution';
 
+function discordDeliveryTarget(channel: string, thread?: string) {
+  return {
+    platform: 'discord' as const,
+    channel,
+    thread,
+  };
+}
+
 describe('RuntimeServer', () => {
+  it('includes stable delivery targets in assistant delivery keys', () => {
+    const conversationId = 'discord:guild:workroom:channel:C_general';
+    const target = discordDeliveryTarget('general', 'T_debug');
+    const reorderedTarget = {
+      thread: 'T_debug',
+      channel: 'general',
+      platform: 'discord',
+    } as DeliveryTarget;
+    const otherTarget = discordDeliveryTarget('cloud-lab', 'T_debug');
+
+    expect(assistantDeliveryKey(conversationId, 0, target)).toBe(
+      assistantDeliveryKey(conversationId, 0, reorderedTarget),
+    );
+    expect(assistantDeliveryKey(conversationId, 0, target)).not.toBe(
+      assistantDeliveryKey(conversationId, 0, otherTarget),
+    );
+  });
+
+  it('keeps assistant delivery keys stable across JSON target round-trips', () => {
+    const conversationId = 'discord:guild:workroom:channel:C_general';
+    const targetWithUndefinedThread = discordDeliveryTarget('general');
+    const roundTrippedTarget = JSON.parse(
+      JSON.stringify(targetWithUndefinedThread),
+    ) as DeliveryTarget;
+
+    expect(
+      assistantDeliveryKey(conversationId, 0, targetWithUndefinedThread),
+    ).toBe(assistantDeliveryKey(conversationId, 0, roundTrippedTarget));
+  });
+
   it('routes adapter source events through bindings and delivery drivers', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
@@ -146,20 +186,28 @@ describe('RuntimeServer', () => {
       content: 'hello',
     });
 
+    const conversationId =
+      'discord:guild:workroom:channel:C_general:user:U_alice';
+    const finalDeliveryKey = assistantDeliveryKey(
+      conversationId,
+      0,
+      discordDeliveryTarget('general'),
+    );
+
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['reply:hello']);
     expect(observerEvents).toEqual([
       '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-',
-      '0:delivery.pending:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
-      '1:delivery.completed:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+      `0:delivery.pending:${finalDeliveryKey}`,
+      `1:delivery.completed:${finalDeliveryKey}`,
     ]);
     expect(observerWrites).toEqual([
       'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
       'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app',
       'claim:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
       'complete:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app-second',
-      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:undefined',
-      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:server',
+      `claim:["runtimeObserver:0","${finalDeliveryKey}"]:undefined`,
+      `complete:["runtimeObserver:0","${finalDeliveryKey}"]:server`,
     ]);
   });
 
@@ -531,25 +579,23 @@ describe('RuntimeServer', () => {
       content: 'second',
     });
 
+    const conversationId =
+      'discord:guild:workroom:channel:C_general:user:U_alice';
+    const target = discordDeliveryTarget('general');
+
     expect(deliveries).toEqual(['reply:first', 'reply:second']);
     expect(
-      app
-        .assistantDeliveryOutbox(
-          'discord:guild:workroom:channel:C_general:user:U_alice',
-        )
-        .map((entry) => ({
-          idempotencyKey: entry.idempotencyKey,
-          status: entry.status,
-        })),
+      app.assistantDeliveryOutbox(conversationId).map((entry) => ({
+        idempotencyKey: entry.idempotencyKey,
+        status: entry.status,
+      })),
     ).toEqual([
       {
-        idempotencyKey:
-          'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+        idempotencyKey: assistantDeliveryKey(conversationId, 0, target),
         status: 'delivered',
       },
       {
-        idempotencyKey:
-          'discord:guild:workroom:channel:C_general:user:U_alice:turn:2:delivery:final',
+        idempotencyKey: assistantDeliveryKey(conversationId, 1, target),
         status: 'delivered',
       },
     ]);
@@ -1007,9 +1053,12 @@ describe('RuntimeServer', () => {
 
     await server.start();
 
-    expect(deliveries).toEqual([
-      'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final:reply:hello',
-    ]);
+    const deliveryKey = assistantDeliveryKey(
+      runId,
+      0,
+      discordDeliveryTarget('general'),
+    );
+    expect(deliveries).toEqual([`${deliveryKey}:reply:hello`]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
@@ -1018,8 +1067,7 @@ describe('RuntimeServer', () => {
       })),
     ).toEqual([
       {
-        idempotencyKey:
-          'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+        idempotencyKey: deliveryKey,
         status: 'delivered',
         attempts: 1,
       },
@@ -1041,6 +1089,8 @@ describe('RuntimeServer', () => {
       agents: bundle.agents,
     });
     const runId = 'discord:guild:workroom:channel:C_general';
+    const target = discord.channel('general');
+    const deliveryKey = assistantDeliveryKey(runId, 0, target);
     await app.run({
       agent: 'main',
       runId,
@@ -1049,17 +1099,17 @@ describe('RuntimeServer', () => {
     app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
-        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        idempotencyKey: deliveryKey,
         message: {
           type: 'assistant',
           content: 'retry me',
         },
-        target: discord.channel('general'),
+        target,
       },
     ]);
     app.markAssistantDelivery(
       runId,
-      `${runId}:turn:1:delivery:final`,
+      deliveryKey,
       'failed',
       new Error('previous delivery failed'),
     );
@@ -1094,9 +1144,7 @@ describe('RuntimeServer', () => {
     await server.start();
 
     expect(order).toEqual(['deliver', 'source-start']);
-    expect(deliveries).toEqual([
-      'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry me',
-    ]);
+    expect(deliveries).toEqual([`${deliveryKey}:retry me`]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         status: entry.status,
@@ -1120,6 +1168,8 @@ describe('RuntimeServer', () => {
       agents: bundle.agents,
     });
     const runId = 'discord:guild:workroom:channel:C_general';
+    const target = discord.channel('general');
+    const deliveryKey = assistantDeliveryKey(runId, 0, target);
     await app.run({
       agent: 'main',
       runId,
@@ -1128,19 +1178,15 @@ describe('RuntimeServer', () => {
     app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
-        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        idempotencyKey: deliveryKey,
         message: {
           type: 'assistant',
           content: 'retry delivering',
         },
-        target: discord.channel('general'),
+        target,
       },
     ]);
-    app.markAssistantDelivery(
-      runId,
-      `${runId}:turn:1:delivery:final`,
-      'delivering',
-    );
+    app.markAssistantDelivery(runId, deliveryKey, 'delivering');
 
     const server = PromptTrail.server({
       bundle,
@@ -1162,9 +1208,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
 
-    expect(deliveries).toEqual([
-      'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry delivering',
-    ]);
+    expect(deliveries).toEqual([`${deliveryKey}:retry delivering`]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         status: entry.status,
@@ -1188,6 +1232,9 @@ describe('RuntimeServer', () => {
       agents: bundle.agents,
     });
     const runId = 'discord:guild:workroom:channel:C_general';
+    const target = discord.channel('general');
+    const firstDeliveryKey = assistantDeliveryKey(runId, 0, target);
+    const secondDeliveryKey = assistantDeliveryKey(runId, 1, target);
     await app.run({
       agent: 'main',
       runId,
@@ -1196,15 +1243,15 @@ describe('RuntimeServer', () => {
     app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
-        idempotencyKey: `${runId}:turn:1:delivery:final`,
+        idempotencyKey: firstDeliveryKey,
         message: { type: 'assistant', content: 'first' },
-        target: discord.channel('general'),
+        target,
       },
       {
         assistantIndex: 1,
-        idempotencyKey: `${runId}:turn:2:delivery:final`,
+        idempotencyKey: secondDeliveryKey,
         message: { type: 'assistant', content: 'second' },
-        target: discord.channel('general'),
+        target,
       },
     ]);
 
@@ -1237,10 +1284,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
 
-    expect(order).toEqual([
-      'deliver:discord:guild:workroom:channel:C_general:turn:1:delivery:final',
-      'source-start',
-    ]);
+    expect(order).toEqual([`deliver:${firstDeliveryKey}`, 'source-start']);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
@@ -1250,15 +1294,13 @@ describe('RuntimeServer', () => {
       })),
     ).toEqual([
       {
-        idempotencyKey:
-          'discord:guild:workroom:channel:C_general:turn:1:delivery:final',
+        idempotencyKey: firstDeliveryKey,
         status: 'failed',
         attempts: 1,
         lastError: 'delivery failed',
       },
       {
-        idempotencyKey:
-          'discord:guild:workroom:channel:C_general:turn:2:delivery:final',
+        idempotencyKey: secondDeliveryKey,
         status: 'pending',
         attempts: 0,
         lastError: undefined,

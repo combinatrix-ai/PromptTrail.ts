@@ -18,6 +18,7 @@ import {
 } from './runtime_bindings';
 import {
   AssistantDeliveryTracker,
+  assistantDeliveryKey,
   dispatchRuntimeBindingEvent,
   findRuntimeBinding,
   isConcreteDiscordDeliveryTarget,
@@ -400,16 +401,30 @@ class MockRuntimeFixture {
     conversationId: string,
     messages: readonly Message<Attrs>[],
   ): void {
-    const pending = this.deliveryTracker.pending(conversationId, messages);
+    const pending = messages
+      .filter(
+        (message): message is Message<Attrs> & { type: 'assistant' } =>
+          message.type === 'assistant',
+      )
+      .map((message, index) => {
+        const attrs = (message.attrs ?? {}) as Record<string, unknown>;
+        const observed = (attrs.observed ?? {}) as Record<string, unknown>;
+        const delivery = observed.delivery as DeliveryTarget | undefined;
+        return {
+          message,
+          assistantIndex: index,
+          idempotencyKey: assistantDeliveryKey(conversationId, index, delivery),
+          target: delivery,
+        };
+      })
+      .filter((delivery) => !this.deliveryTracker.has(delivery.idempotencyKey));
     const deliveryAttempts = this.app.prepareAssistantDeliveries(
       conversationId,
       pending,
     );
     for (const deliveryAttempt of deliveryAttempts) {
       const message = deliveryAttempt.message;
-      const attrs = (message.attrs ?? {}) as Record<string, unknown>;
-      const observed = (attrs.observed ?? {}) as Record<string, unknown>;
-      const delivery = observed.delivery as DeliveryTarget | undefined;
+      const delivery = deliveryAttempt.target as DeliveryTarget | undefined;
       if (!isConcreteDiscordDeliveryTarget(delivery)) {
         this.app.markAssistantDelivery(
           conversationId,
