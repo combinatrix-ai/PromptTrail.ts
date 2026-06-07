@@ -1211,8 +1211,9 @@ describe('RuntimeServer', () => {
           }),
       ],
     });
+    const store = memoryStore();
     const app = PromptTrail.app({
-      store: memoryStore(),
+      store,
       agents: bundle.agents,
     });
     const event: DiscordMessageEvent = {
@@ -1235,7 +1236,40 @@ describe('RuntimeServer', () => {
     });
 
     const runId = 'discord:guild:workroom:channel:C_general:user:U_alice';
-    expect(app.assistantDeliveryOutbox(runId)).toEqual([]);
+    const deliveryKey = assistantDeliveryKey(
+      runId,
+      0,
+      discordDeliveryTarget('general'),
+    );
+    expect(
+      app.assistantDeliveryOutbox(runId).map((entry) => ({
+        id: entry.id,
+        idempotencyKey: entry.idempotencyKey,
+        conversationId: entry.conversationId,
+        messageRef: entry.messageRef,
+        platformBinding: entry.platformBinding,
+        status: entry.status,
+        attempts: entry.attempts,
+      })),
+    ).toEqual([
+      {
+        id: deliveryKey,
+        idempotencyKey: deliveryKey,
+        conversationId: runId,
+        messageRef: {
+          conversationId: runId,
+          assistantIndex: 0,
+        },
+        platformBinding: undefined,
+        status: 'pending',
+        attempts: 0,
+      },
+    ]);
+
+    const run = store.get(runId)!;
+    run.outbox = [];
+    store.set(runId, run);
+    expect(store.get(runId)?.outbox).toEqual([]);
 
     const server = PromptTrail.server({
       bundle,
@@ -1258,11 +1292,6 @@ describe('RuntimeServer', () => {
 
     await server.start();
 
-    const deliveryKey = assistantDeliveryKey(
-      runId,
-      0,
-      discordDeliveryTarget('general'),
-    );
     expect(deliveries).toEqual([`${deliveryKey}:reply:hello`]);
     expect(
       app.assistantDeliveryOutbox(runId).map((entry) => ({
@@ -1385,12 +1414,19 @@ describe('RuntimeServer', () => {
       agents: { main },
     });
     const runId = 'discord:guild:workroom:channel:C_general';
+    const otherRunId = 'discord:guild:workroom:channel:C_other';
     const target = discord.channel('general');
     const deliveryKey = assistantDeliveryKey(runId, 0, target);
+    const otherDeliveryKey = assistantDeliveryKey(otherRunId, 0, target);
 
     await app.run({
       agent: 'main',
       runId,
+      durable: true,
+    });
+    await app.run({
+      agent: 'main',
+      runId: otherRunId,
       durable: true,
     });
     const run = store.get(runId)!;
@@ -1405,29 +1441,18 @@ describe('RuntimeServer', () => {
       } as never,
     ];
     store.set(runId, run);
-
-    expect(app.pendingAssistantDeliveryOutbox()).toEqual([
-      {
-        runId,
-        entry: expect.objectContaining({
-          id: deliveryKey,
-          conversationId: runId,
-          messageRef: {
-            conversationId: runId,
-            assistantIndex: 0,
-          },
-        }),
-      },
-    ]);
-
-    app.prepareAssistantDeliveries(runId, [
+    const otherRun = store.get(otherRunId)!;
+    otherRun.outbox = [
       {
         assistantIndex: 0,
-        idempotencyKey: deliveryKey,
+        idempotencyKey: otherDeliveryKey,
         message: { type: 'assistant', content: 'stored reply' },
         target,
-      },
-    ]);
+        status: 'pending',
+        attempts: 0,
+      } as never,
+    ];
+    store.set(otherRunId, otherRun);
 
     expect(app.assistantDeliveryOutbox(runId)).toEqual([
       expect.objectContaining({
@@ -1439,6 +1464,16 @@ describe('RuntimeServer', () => {
         },
       }),
     ]);
+    expect(store.get(otherRunId)?.outbox?.[0]).toEqual(
+      expect.not.objectContaining({
+        id: otherDeliveryKey,
+        conversationId: otherRunId,
+        messageRef: {
+          conversationId: otherRunId,
+          assistantIndex: 0,
+        },
+      }),
+    );
   });
 
   it('retries pending final deliveries before starting sources', async () => {

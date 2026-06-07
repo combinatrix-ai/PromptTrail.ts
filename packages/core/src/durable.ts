@@ -2359,6 +2359,7 @@ export class PromptTrailApp {
       const session = await run.agent.execute(state);
       run.status = 'done';
       run.result = session;
+      this.materializeAssistantDeliveriesForRun(runId, run);
       await this.emitRunEvent(run, runId, 'run.completed', {
         sessionVersion: state.transitionVersion,
       });
@@ -2380,6 +2381,7 @@ export class PromptTrailApp {
       if (error instanceof Halt) {
         run.status = 'done';
         run.result = error.session as Session<TVars, TAttrs>;
+        this.materializeAssistantDeliveriesForRun(runId, run);
         await this.emitRunEvent(run, runId, 'run.completed', {
           sessionVersion: state.transitionVersion,
         });
@@ -2484,6 +2486,13 @@ export class PromptTrailApp {
     runId: string,
   ): readonly AssistantDeliveryOutboxEntry[] {
     const run = this.store.get(runId);
+    if (!run) {
+      return [];
+    }
+    this.materializeAssistantDeliveriesForRun(runId, run);
+    if (this.backfillAssistantDeliveryOutboxMetadata(runId, run)) {
+      this.store.set(runId, run);
+    }
     return run ? [...(run.outbox ?? [])] : [];
   }
 
@@ -2522,17 +2531,8 @@ export class PromptTrailApp {
     this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
     for (const [runId, run] of this.store.entries()) {
-      let changed = false;
+      const changed = this.backfillAssistantDeliveryOutboxMetadata(runId, run);
       for (const entry of run.outbox ?? []) {
-        const completed = completeAssistantDeliveryOutboxMetadata(runId, entry);
-        if (
-          entry.id !== completed.id ||
-          entry.conversationId !== completed.conversationId ||
-          entry.messageRef !== completed.messageRef
-        ) {
-          Object.assign(entry, completed);
-          changed = true;
-        }
         if (isRetryableAssistantDeliveryStatus(entry.status)) {
           pending.push({ runId, entry });
         }
@@ -2544,25 +2544,52 @@ export class PromptTrailApp {
     return pending;
   }
 
+  private backfillAssistantDeliveryOutboxMetadata<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(runId: string, run: StoredRun<TVars, TAttrs>): boolean {
+    let changed = false;
+    for (const entry of run.outbox ?? []) {
+      const completed = completeAssistantDeliveryOutboxMetadata(runId, entry);
+      if (
+        entry.id !== completed.id ||
+        entry.conversationId !== completed.conversationId ||
+        entry.messageRef !== completed.messageRef
+      ) {
+        Object.assign(entry, completed);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   materializePendingAssistantDeliveries(): void {
     for (const [runId, run] of this.store.entries()) {
-      const target = deliveryTargetFromContext(run.context);
-      if (!target || !run.result) {
-        continue;
-      }
-      const deliveries = run.result.messages
-        .filter(
-          (message): message is PromptTrailMessage & { type: 'assistant' } =>
-            message.type === 'assistant',
-        )
-        .map((message, index) => ({
-          message,
-          assistantIndex: index,
-          idempotencyKey: assistantDeliveryKey(runId, index, target),
-          target,
-        }));
-      this.prepareAssistantDeliveries(runId, deliveries);
+      this.materializeAssistantDeliveriesForRun(runId, run);
     }
+  }
+
+  private materializeAssistantDeliveriesForRun<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(runId: string, run: StoredRun<TVars, TAttrs>): void {
+    const target = deliveryTargetFromContext(run.context);
+    if (!target || !run.result) {
+      return;
+    }
+    const deliveries = run.result.messages
+      .filter(
+        (message): message is PromptTrailMessage<TAttrs> & {
+          type: 'assistant';
+        } => message.type === 'assistant',
+      )
+      .map((message, index) => ({
+        message,
+        assistantIndex: index,
+        idempotencyKey: assistantDeliveryKey(runId, index, target),
+        target,
+      }));
+    this.prepareAssistantDeliveries(runId, deliveries);
   }
 
   private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
