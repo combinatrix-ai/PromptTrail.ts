@@ -7,6 +7,10 @@ import {
   type DiscordMessageEvent,
 } from '../../runtime_bindings';
 import {
+  dispatchRuntimeBindingEvent,
+  mergeBindingDefaults,
+} from '../../runtime_dispatch';
+import {
   type RuntimeAdapter,
   type RuntimeSourceContext,
 } from '../../runtime_server';
@@ -683,6 +687,92 @@ describe('RuntimeServer', () => {
         )
         .map((entry) => entry.status),
     ).toEqual(['completed']);
+  });
+
+  it('materializes missing final delivery outbox entries on startup', async () => {
+    const deliveries: string[] = [];
+    const main = agent('main').chat('chat', (session) => ({
+      content: `reply:${session.getLastMessage()?.content ?? ''}`,
+    }));
+    const bundle = PromptTrail.bundle({
+      name: 'server-outbox-materialize-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const event: DiscordMessageEvent = {
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    };
+    const binding = bundle.bindings[0];
+
+    await dispatchRuntimeBindingEvent({
+      app,
+      binding,
+      event,
+      defaults: mergeBindingDefaults(bundle.defaults, binding.defaults),
+    });
+
+    const runId = 'discord:guild:workroom:channel:C_general:user:U_alice';
+    expect(app.assistantDeliveryOutbox(runId)).toEqual([]);
+
+    const server = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [
+        {
+          name: 'test-discord',
+          deliveries: [
+            {
+              platform: 'discord',
+              deliver(ctx, _target, message) {
+                deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(deliveries).toEqual([
+      'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final:reply:hello',
+    ]);
+    expect(
+      app.assistantDeliveryOutbox(runId).map((entry) => ({
+        idempotencyKey: entry.idempotencyKey,
+        status: entry.status,
+      })),
+    ).toEqual([
+      {
+        idempotencyKey:
+          'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
+        status: 'completed',
+      },
+    ]);
   });
 
   it('retries pending final deliveries before starting sources', async () => {

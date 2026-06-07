@@ -20,7 +20,7 @@ import {
   type RunMiddlewareWrapperResult,
   type RunExecutionPhaseResult,
 } from './interceptors';
-import { bundle } from './runtime_bindings';
+import { bundle, type DeliveryTarget } from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 
@@ -1630,6 +1630,7 @@ export class PromptTrailApp {
   }
 
   pendingAssistantDeliveryOutbox(): PendingAssistantDeliveryOutboxEntry[] {
+    this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
     for (const [runId, run] of this.store.entries()) {
       for (const entry of run.outbox ?? []) {
@@ -1639,6 +1640,27 @@ export class PromptTrailApp {
       }
     }
     return pending;
+  }
+
+  materializePendingAssistantDeliveries(): void {
+    for (const [runId, run] of this.store.entries()) {
+      const target = deliveryTargetFromContext(run.context);
+      if (!target || !run.result) {
+        continue;
+      }
+      const deliveries = run.result.messages
+        .filter(
+          (message): message is PromptTrailMessage & { type: 'assistant' } =>
+            message.type === 'assistant',
+        )
+        .map((message, index) => ({
+          message,
+          assistantIndex: index,
+          idempotencyKey: assistantDeliveryKey(runId, index),
+          target,
+        }));
+      this.prepareAssistantDeliveries(runId, deliveries);
+    }
   }
 
   private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
@@ -1851,6 +1873,25 @@ function normalizeInbound(
   input: string | Omit<Inbound, 'offset'>,
 ): Omit<Inbound, 'offset'> {
   return typeof input === 'string' ? { kind: 'user', content: input } : input;
+}
+
+function deliveryTargetFromContext(
+  context: Record<string, unknown> | undefined,
+): DeliveryTarget | undefined {
+  const delivery = context?.delivery;
+  if (
+    delivery &&
+    typeof delivery === 'object' &&
+    'platform' in delivery &&
+    typeof (delivery as { platform?: unknown }).platform === 'string'
+  ) {
+    return delivery as DeliveryTarget;
+  }
+  return undefined;
+}
+
+function assistantDeliveryKey(runId: string, assistantIndex: number): string {
+  return `${runId}:turn:${assistantIndex + 1}:delivery:final`;
 }
 
 export function agent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
