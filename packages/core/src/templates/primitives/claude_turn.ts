@@ -65,6 +65,7 @@ export class ClaudeTurn<
       retainMessages: this.options.retainMessages,
       attrsKey: this.options.attrsKey,
       sdkOptions: this.options.sdkOptions,
+      context: runtime?.context,
     });
     const result = this.prepareSessionResult(
       await collectClaudeAgentTurnResult(

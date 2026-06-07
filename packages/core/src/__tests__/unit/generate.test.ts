@@ -187,11 +187,15 @@ describe('assertNativeStreamingToolLoopSupported', () => {
 
 describe('streamPromptTrailToolLoop', () => {
   it('executes streamed tool calls and continues with tool results in session', async () => {
+    const toolContexts: unknown[] = [];
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
       parameters: z.object({ query: z.string() }),
-      execute: ({ query }) => ({ value: `result:${query}` }),
+      execute: ({ query }, context) => {
+        toolContexts.push(context.context);
+        return { value: `result:${query}` };
+      },
     });
     const seenTurns: string[][] = [];
 
@@ -206,6 +210,7 @@ describe('streamPromptTrailToolLoop', () => {
             api: 'responses',
           },
           capabilities: [lookup],
+          context: { channel: 'stream-context' },
         },
         {
           provider: 'openai',
@@ -267,19 +272,25 @@ describe('streamPromptTrailToolLoop', () => {
       },
     ]);
     expect(seenTurns).toEqual([['user'], ['user', 'assistant', 'tool_result']]);
+    expect(toolContexts).toEqual([{ channel: 'stream-context' }]);
   });
 
   it('runs beforeTool and afterTool middleware around streamed tool calls', async () => {
+    const toolContexts: unknown[] = [];
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
       parameters: z.object({ query: z.string() }),
-      execute: ({ query }) => ({ value: `result:${query}` }),
+      execute: ({ query }, context) => {
+        toolContexts.push(context.context);
+        return { value: `result:${query}` };
+      },
     });
     const seenTurnVars: Array<Record<string, unknown>> = [];
     const events: string[] = [];
     let seq = 0;
     const runtime = createExecutionRuntimeState({
+      context: { channel: 'runtime-context' },
       middleware: [
         Middleware.create({
           name: 'toolPolicy',
@@ -376,6 +387,7 @@ describe('streamPromptTrailToolLoop', () => {
       '2:session.patched:afterTool',
       '3:tool.completed:call-1',
     ]);
+    expect(toolContexts).toEqual([{ channel: 'runtime-context' }]);
   });
 
   it('wraps streamed tool calls with middleware', async () => {

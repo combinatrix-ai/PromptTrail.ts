@@ -723,6 +723,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       execute: ({ query }, context) => ({
         query,
         provider: context.provider,
+        channel: context.context?.channel,
       }),
     });
     const calls = collectOpenAIResponseFunctionCalls([
@@ -749,7 +750,9 @@ describe('OpenAI Responses native adapter helpers', () => {
     ]);
 
     await expect(
-      createOpenAIToolOutputItem(calls[0], [tool], Session.create()),
+      createOpenAIToolOutputItem(calls[0], [tool], Session.create(), undefined, {
+        channel: 'claw-test',
+      }),
     ).resolves.toEqual({
       type: 'function_call_output',
       call_id: 'call-1',
@@ -757,10 +760,18 @@ describe('OpenAI Responses native adapter helpers', () => {
         content: [
           {
             type: 'json',
-            json: { query: 'capabilities', provider: 'openai' },
+            json: {
+              query: 'capabilities',
+              provider: 'openai',
+              channel: 'claw-test',
+            },
           },
         ],
-        structuredContent: { query: 'capabilities', provider: 'openai' },
+        structuredContent: {
+          query: 'capabilities',
+          provider: 'openai',
+          channel: 'claw-test',
+        },
       }),
     });
   });

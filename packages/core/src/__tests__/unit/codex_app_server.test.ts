@@ -489,9 +489,16 @@ describe('Codex App Server helpers', () => {
       execute: ({ query }, context) => ({
         query,
         provider: context.provider,
+        channel: context.context?.channel,
       }),
     });
-    const handler = createCodexToolRequestHandler([tool], createSession());
+    const handler = createCodexToolRequestHandler(
+      [tool],
+      createSession(),
+      undefined,
+      undefined,
+      { channel: 'claw-test' },
+    );
 
     await expect(
       handler({
@@ -504,10 +511,18 @@ describe('Codex App Server helpers', () => {
       content: [
         {
           type: 'json',
-          json: { query: 'capabilities', provider: 'codex' },
+          json: {
+            query: 'capabilities',
+            provider: 'codex',
+            channel: 'claw-test',
+          },
         },
       ],
-      structuredContent: { query: 'capabilities', provider: 'codex' },
+      structuredContent: {
+        query: 'capabilities',
+        provider: 'codex',
+        channel: 'claw-test',
+      },
     });
   });
 

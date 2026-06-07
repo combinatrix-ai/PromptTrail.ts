@@ -56,6 +56,7 @@ export class CodexTurn<
             session: currentSession,
             fallback: this.options.onRequest,
             approvalHandler: this.options.approvalHandler,
+            context: runtime?.context,
           })
         : this.options.onRequest;
     const ownsClient = this.options.client === undefined;

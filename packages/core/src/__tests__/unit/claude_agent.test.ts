@@ -26,11 +26,17 @@ describe('Claude Agent SDK adapter helpers', () => {
       name: 'lookup',
       description: 'Lookup docs',
       inputSchema: z.object({ query: z.string() }),
-      execute: ({ query }, context) => ({ query, provider: context.provider }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+        channel: context.context?.channel,
+      }),
     });
     const definition = promptTrailToolToClaudeAgentToolDefinition(
       lookupTool,
       session,
+      undefined,
+      { channel: 'claw-test' },
     );
 
     expect(definition).toMatchObject({
@@ -49,10 +55,18 @@ describe('Claude Agent SDK adapter helpers', () => {
       content: [
         {
           type: 'json',
-          json: { query: 'capabilities', provider: 'claude-agent' },
+          json: {
+            query: 'capabilities',
+            provider: 'claude-agent',
+            channel: 'claw-test',
+          },
         },
       ],
-      structuredContent: { query: 'capabilities', provider: 'claude-agent' },
+      structuredContent: {
+        query: 'capabilities',
+        provider: 'claude-agent',
+        channel: 'claw-test',
+      },
     });
   });
 

@@ -219,6 +219,7 @@ async function generateOpenAIResponsesMessage<
           tools,
           session,
           requestOptions.approvalHandler,
+          requestOptions.context,
         ),
       ),
     );
@@ -733,6 +734,7 @@ export async function createOpenAIToolOutputItem(
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
   approvalHandler?: ApprovalHandler,
+  context?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (!tool) {
@@ -748,6 +750,7 @@ export async function createOpenAIToolOutputItem(
 
   const result = await executePromptTrailTool(tool, call.arguments, {
     session,
+    context,
     provider: 'openai',
     approvalHandler,
     raw: call.raw,

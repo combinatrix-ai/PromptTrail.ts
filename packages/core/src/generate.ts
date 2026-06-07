@@ -264,6 +264,7 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, {
       session,
+      context: options.context,
       approvalHandler: options.approvalHandler,
     }),
     toolChoice: options.toolChoice,
@@ -551,6 +552,7 @@ export async function* generateTextStream<
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, {
       session,
+      context: options.context,
       approvalHandler: options.approvalHandler,
     }),
     toolChoice: options.toolChoice,
@@ -631,6 +633,7 @@ export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
           tools: getPromptTrailToolList(options),
           session: nextSession,
           approvalHandler: options.approvalHandler,
+          context: config.runtime.context,
           runtime: config.runtime,
         });
         yield executed.message as Message<TAttrs>;
@@ -646,6 +649,7 @@ export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
             tools: getPromptTrailToolList(options),
             session: currentSession,
             approvalHandler: options.approvalHandler,
+            context: options.context,
           }),
         ),
       );
@@ -665,6 +669,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     tools: readonly PromptTrailTool[];
     session: Session<any, TAttrs>;
     approvalHandler?: LLMOptions['approvalHandler'];
+    context?: Record<string, unknown>;
     runtime: ExecutionRuntimeState<any, TAttrs>;
   },
 ): Promise<{ message: Message<TAttrs>; session: Session<any, TAttrs> }> {
@@ -689,6 +694,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
         tools: options.tools,
         session,
         approvalHandler: options.approvalHandler,
+        context: options.context,
       }) as Promise<Message<TAttrs>>;
     },
   });
@@ -719,12 +725,14 @@ async function executeStreamingToolCall(
     tools: readonly PromptTrailTool[];
     session: Session<any, any>;
     approvalHandler?: LLMOptions['approvalHandler'];
+    context?: Record<string, unknown>;
   },
 ): Promise<Message> {
   const tool = options.tools.find((candidate) => candidate.name === call.name);
   const result = tool
     ? await executePromptTrailTool(tool, call.arguments, {
         session: options.session,
+        context: options.context,
         provider: options.provider,
         capability: call.name,
         approvalHandler: options.approvalHandler,

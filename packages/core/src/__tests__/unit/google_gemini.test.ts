@@ -648,7 +648,11 @@ describe('Google Gemini native adapter helpers', () => {
       name: 'lookup',
       description: 'Lookup docs',
       inputSchema: z.object({ query: z.string() }),
-      execute: ({ query }, context) => ({ query, provider: context.provider }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+        channel: context.context?.channel,
+      }),
     });
     const calls = collectGeminiFunctionCalls({
       functionCalls: [],
@@ -686,12 +690,22 @@ describe('Google Gemini native adapter helpers', () => {
       },
     ]);
     await expect(
-      createGeminiFunctionResponsePart(calls[0], [tool], Session.create()),
+      createGeminiFunctionResponsePart(
+        calls[0],
+        [tool],
+        Session.create(),
+        undefined,
+        { channel: 'claw-test' },
+      ),
     ).resolves.toEqual({
       functionResponse: {
         id: 'call-1',
         name: 'lookup',
-        response: { query: 'capabilities', provider: 'google' },
+        response: {
+          query: 'capabilities',
+          provider: 'google',
+          channel: 'claw-test',
+        },
       },
     });
   });

@@ -221,6 +221,7 @@ async function generateGoogleGeminiMessage<
           tools,
           session,
           options.approvalHandler,
+          options.context,
         ),
       ),
     );
@@ -1019,11 +1020,13 @@ export async function createGeminiFunctionResponsePart(
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
   approvalHandler?: ApprovalHandler,
+  context?: Record<string, unknown>,
 ) {
   const tool = tools.find((candidate) => candidate.name === call.name);
   const result: CallToolResult = tool
     ? await executePromptTrailTool(tool, call.args, {
         session,
+        context,
         provider: 'google',
         approvalHandler,
         raw: call.raw,

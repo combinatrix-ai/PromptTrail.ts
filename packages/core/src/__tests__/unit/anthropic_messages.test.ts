@@ -533,7 +533,11 @@ describe('Anthropic Messages native adapter helpers', () => {
       name: 'lookup',
       description: 'Lookup docs',
       inputSchema: z.object({ query: z.string() }),
-      execute: ({ query }, context) => ({ query, provider: context.provider }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+        channel: context.context?.channel,
+      }),
     });
     const toolUses = collectAnthropicToolUses([
       {
@@ -559,7 +563,13 @@ describe('Anthropic Messages native adapter helpers', () => {
     ]);
 
     await expect(
-      createAnthropicToolResultBlock(toolUses[0], [tool], Session.create()),
+      createAnthropicToolResultBlock(
+        toolUses[0],
+        [tool],
+        Session.create(),
+        undefined,
+        { channel: 'claw-test' },
+      ),
     ).resolves.toEqual({
       type: 'tool_result',
       tool_use_id: 'toolu-1',
@@ -568,10 +578,18 @@ describe('Anthropic Messages native adapter helpers', () => {
         content: [
           {
             type: 'json',
-            json: { query: 'capabilities', provider: 'anthropic' },
+            json: {
+              query: 'capabilities',
+              provider: 'anthropic',
+              channel: 'claw-test',
+            },
           },
         ],
-        structuredContent: { query: 'capabilities', provider: 'anthropic' },
+        structuredContent: {
+          query: 'capabilities',
+          provider: 'anthropic',
+          channel: 'claw-test',
+        },
       }),
     });
   });

@@ -27,6 +27,7 @@ export type ApprovalPolicy = 'never' | 'always' | 'on-risk' | ApprovalHandler;
 
 export interface ToolExecutionContext {
   session?: Session<any, any>;
+  context?: Record<string, unknown>;
   provider?: ApprovalRequest['provider'] | 'ai-sdk';
   capability?: string;
   raw?: unknown;

@@ -70,6 +70,7 @@ export interface LLMOptions {
   conversationBinding?: 'off' | 'auto';
   skillInjection?: 'warn' | 'error' | 'silent';
   approvalHandler?: ApprovalHandler;
+  context?: Record<string, unknown>;
   thinking?: ThinkingOptions;
   cacheKey?: string;
   cacheRetention?: 'in_memory' | '24h';

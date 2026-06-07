@@ -174,6 +174,7 @@ export async function generateAnthropicMessagesText<
           tools,
           session,
           resolvedOptions.approvalHandler,
+          resolvedOptions.context,
         ),
       ),
     );
@@ -388,6 +389,7 @@ export async function generateAnthropicMessagesWithSchema<
           tools,
           session,
           resolvedOptions.approvalHandler,
+          resolvedOptions.context,
         ),
       ),
     );
@@ -977,6 +979,7 @@ export async function createAnthropicToolResultBlock(
   tools: readonly PromptTrailTool[],
   session: Session<any, any>,
   approvalHandler?: ApprovalHandler,
+  context?: Record<string, unknown>,
 ) {
   const tool = tools.find((candidate) => candidate.name === toolUse.name);
   if (!tool) {
@@ -990,6 +993,7 @@ export async function createAnthropicToolResultBlock(
 
   const result = await executePromptTrailTool(tool, toolUse.input, {
     session,
+    context,
     provider: 'anthropic',
     approvalHandler,
     raw: toolUse.raw,
