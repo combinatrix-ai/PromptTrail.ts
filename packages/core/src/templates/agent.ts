@@ -1,8 +1,17 @@
-import type { Session } from '../session';
+import { Session, type Attrs, type Vars } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
+import {
+  ObserverBus,
+  type ObserverLike,
+  type ResolvedExecutionCommand,
+} from '../execution';
+import {
+  type HookDefinition,
+  type MiddlewareDefinition,
+  runExecutionPhase,
+} from '../interceptors';
 import { ModelOutput, Source, ValidationOptions } from '../source';
-import { Attrs, Vars } from '../session';
 import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
@@ -59,6 +68,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
   ) {}
 
+  private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
+  private readonly hooks: HookDefinition<TC, TM>[] = [];
+  private readonly observers: ObserverLike[] = [];
+
+  private hasInterceptors(): boolean {
+    return (
+      this.middleware.length > 0 ||
+      this.hooks.length > 0 ||
+      this.observers.length > 0
+    );
+  }
+
   /** Static factory methods -------------------------------------------------- */
 
   static create<TC extends Vars = Vars, TM extends Attrs = Attrs>() {
@@ -88,6 +109,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   add(t: Template<TM, TC>) {
     this.root.add(t);
+    return this;
+  }
+
+  use(middleware: MiddlewareDefinition<TC, TM>) {
+    this.middleware.push(middleware);
+    return this;
+  }
+
+  hook(hook: HookDefinition<TC, TM>) {
+    this.hooks.push(hook);
+    return this;
+  }
+
+  observe(observer: ObserverLike) {
+    this.observers.push(observer);
     return this;
   }
 
@@ -210,14 +246,80 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   /** -------------------------------------------------- */
 
   build() {
-    return this.root;
+    return this.hasInterceptors() ? this : this.root;
   }
 
-  execute(session?: Session<TC, TM> | undefined): Promise<Session<TC, TM>> {
-    if (session) {
-      return this.root.execute(session);
-    } else {
-      return this.root.execute();
+  async execute(
+    session?: Session<TC, TM> | undefined,
+  ): Promise<Session<TC, TM>> {
+    if (!this.hasInterceptors()) {
+      return session ? this.root.execute(session) : this.root.execute();
+    }
+
+    const observerBus = new ObserverBus(this.observers);
+    let seq = 0;
+    let current = session ?? Session.create<TC, TM>();
+    await observerBus.emit({
+      id: `agent:${seq}`,
+      type: 'run.started',
+      at: new Date().toISOString(),
+      seq: seq++,
+      replay: 'live',
+    });
+
+    try {
+      const before = await runExecutionPhase({
+        phase: 'beforeAgent',
+        session: current,
+        middleware: this.middleware,
+        hooks: this.hooks,
+        beforeVersion: 0,
+      });
+      assertDirectAgentCommandSupported(before.command);
+      current = before.session;
+
+      current = await this.root.execute(current);
+
+      const after = await runExecutionPhase({
+        phase: 'afterAgent',
+        session: current,
+        middleware: this.middleware,
+        hooks: this.hooks,
+        middlewareState: before.middlewareState,
+        beforeVersion: before.afterVersion,
+      });
+      assertDirectAgentCommandSupported(after.command);
+      current = after.session;
+
+      await observerBus.emit({
+        id: `agent:${seq}`,
+        type: 'run.completed',
+        at: new Date().toISOString(),
+        seq: seq++,
+        replay: 'live',
+      });
+      return current;
+    } catch (error) {
+      await observerBus.emit({
+        id: `agent:${seq}`,
+        type: 'run.failed',
+        at: new Date().toISOString(),
+        seq: seq++,
+        replay: 'live',
+        error,
+      });
+      throw error;
     }
   }
+}
+
+function assertDirectAgentCommandSupported(
+  command: ResolvedExecutionCommand,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `Agent.execute does not support execution command ${command.type} yet.`,
+  );
 }
