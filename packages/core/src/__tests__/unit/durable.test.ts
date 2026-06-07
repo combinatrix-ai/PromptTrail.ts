@@ -1261,24 +1261,62 @@ describe('durable agent runtime', () => {
     expect(app.journal('run-patch-command')).toEqual([]);
   });
 
-  it('rejects middlewareState writes from durable patch transitions', async () => {
-    const assistant = agent('patch-middleware-state').patch('state', () => ({
-      session: {
-        middlewareState: {
-          local: true,
-        },
-      },
-    }));
-    const app = PromptTrail.app({ store: memoryStore() });
+  it('journals middlewareState writes from durable patch transitions', async () => {
+    let patchCalls = 0;
+    const assistant = agent('patch-middleware-state')
+      .patch('state', () => {
+        patchCalls++;
+        return {
+          session: {
+            middlewareState: {
+              local: `token:${patchCalls}`,
+            },
+          },
+        };
+      })
+      .turn('main', (turn) =>
+        turn
+          .steer()
+          .assistant(
+            'reply',
+            (session) => `model:${session.getVarsObject().local}`,
+          )
+          .awaitUser(),
+      );
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'state-reader',
+          beforeModel: ({ middlewareState }) => ({
+            session: {
+              vars: {
+                local: middlewareState.local,
+              },
+            },
+          }),
+        }),
+      ],
+    });
 
-    await expect(
-      app.run({
-        agent: assistant,
-        runId: 'run-patch-middleware-state',
-        durable: true,
-      }),
-    ).rejects.toThrow('Durable patch state cannot write middlewareState yet.');
-    expect(app.journal('run-patch-middleware-state')).toEqual([]);
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-patch-middleware-state',
+      durable: true,
+    });
+    const replay = await app.resume('run-patch-middleware-state');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe('model:token:1');
+    expect(replay.session.getVarsObject()).toEqual({ local: 'token:1' });
+    expect(patchCalls).toBe(1);
+    expect(app.journal('run-patch-middleware-state')).toEqual([
+      'state/transition',
+      'main/steer/peek',
+      'main/reply/beforeModel',
+      'main/reply/model',
+    ]);
   });
 
   it('can run ephemeral executions without persisting them', async () => {

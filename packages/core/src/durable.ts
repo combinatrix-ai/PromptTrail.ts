@@ -1342,8 +1342,11 @@ export class DurableAgent<
           );
         }
         assertDurablePatchTransitionSupported(transition, nodePath);
-        const applied = applyResolvedExecutionTransition(session, transition);
+        const applied = applyResolvedExecutionTransition(session, transition, {
+          middlewareState: state.middlewareState,
+        });
         state.transitionVersion = transition.afterVersion;
+        state.middlewareState = applied.middlewareState;
         state.session = applied.session;
         return applied.session;
       }
@@ -1748,14 +1751,6 @@ function assertDurablePatchTransitionSupported(
   if (transition.command.type !== 'none') {
     throw new Error(
       `Durable patch ${nodePath} returned unsupported command ${transition.command.type}.`,
-    );
-  }
-  if (
-    Object.keys(transition.session.middlewareStateSet).length > 0 ||
-    transition.session.middlewareStateDelete.length > 0
-  ) {
-    throw new Error(
-      `Durable patch ${nodePath} cannot write middlewareState yet.`,
     );
   }
 }
