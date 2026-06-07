@@ -72,6 +72,69 @@ describe('Agent interceptors', () => {
     expect(events).toEqual(['0:run.started', '1:run.completed']);
   });
 
+  it('emits session.patched events for materialized phase patches', async () => {
+    const events: string[] = [];
+    const session = await Agent.create()
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}:${event.phase ?? '-'}`);
+      })
+      .use(
+        Middleware.create({
+          name: 'patchEvents',
+          beforeAgent: () => ({
+            session: {
+              vars: { before: true },
+            },
+          }),
+          afterModel: () => ({
+            session: {
+              vars: { afterModel: true },
+            },
+          }),
+        }),
+      )
+      .assistant('hello')
+      .execute();
+
+    expect(session.getVarsObject()).toEqual({
+      before: true,
+      afterModel: true,
+    });
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:session.patched:beforeAgent',
+      '2:session.patched:afterModel',
+      '3:run.completed:-',
+    ]);
+  });
+
+  it('emits nested agent events to nested observers under a parent runtime', async () => {
+    const parentEvents: string[] = [];
+    const nestedEvents: string[] = [];
+
+    const session = await Agent.create()
+      .observe((event) => {
+        parentEvents.push(`${event.seq}:${event.type}`);
+      })
+      .sequence((agent) =>
+        agent
+          .observe((event) => {
+            nestedEvents.push(`${event.seq}:${event.type}`);
+          })
+          .user('nested hello'),
+      )
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('nested hello');
+    expect(parentEvents).toEqual([
+      '0:run.started',
+      '1:run.started',
+      '2:run.completed',
+      '3:run.completed',
+    ]);
+    expect(nestedEvents).toEqual(['1:run.started', '2:run.completed']);
+  });
+
   it('rejects unsupported direct execution commands', async () => {
     const agent = Agent.create().hook(
       Hook.create({

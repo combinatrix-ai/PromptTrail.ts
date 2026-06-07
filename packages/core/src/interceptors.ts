@@ -1,6 +1,7 @@
 import {
   applyResolvedExecutionTransition,
   resolveExecutionTransition,
+  type ExecutionEvent,
   type ExecutionPatch,
   type ResolvedExecutionCommand,
   type ResolvedExecutionTransition,
@@ -169,6 +170,8 @@ export interface ExecutionRuntimeState<
   version: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
+  emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
+  nextEventSeq?: () => number;
 }
 
 export function createExecutionRuntimeState<
@@ -179,6 +182,8 @@ export function createExecutionRuntimeState<
   hooks?: readonly HookDefinition<TVars, TAttrs>[];
   context?: Record<string, unknown>;
   signal?: AbortSignal;
+  emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
+  nextEventSeq?: () => number;
 }): ExecutionRuntimeState<TVars, TAttrs> {
   return {
     middleware: options?.middleware ?? [],
@@ -187,6 +192,8 @@ export function createExecutionRuntimeState<
     version: 0,
     context: options?.context,
     signal: options?.signal,
+    emitEvent: options?.emitEvent,
+    nextEventSeq: options?.nextEventSeq,
   };
 }
 
@@ -238,7 +245,44 @@ export async function runRuntimeExecutionPhase<
   });
   runtime.middlewareState = phaseResult.middlewareState;
   runtime.version = phaseResult.afterVersion;
+  await emitPhaseStepEvents(runtime, phaseResult.steps);
   return phaseResult;
+}
+
+async function emitPhaseStepEvents<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  steps: readonly ExecutionPhaseStep<TAttrs>[],
+): Promise<void> {
+  if (!runtime.emitEvent || !runtime.nextEventSeq) {
+    return;
+  }
+  for (const step of steps) {
+    if (step.transition.beforeVersion === step.transition.afterVersion) {
+      continue;
+    }
+    const seq = runtime.nextEventSeq();
+    await runtime.emitEvent({
+      id: `phase:${seq}`,
+      type: 'session.patched',
+      at: new Date().toISOString(),
+      seq,
+      phase: step.phase,
+      replay: 'live',
+      sessionVersion: step.transition.afterVersion,
+      source: step.kind,
+      raw: {
+        kind: step.kind,
+        name: step.name,
+        registrationIndex: step.registrationIndex,
+        beforeVersion: step.transition.beforeVersion,
+        afterVersion: step.transition.afterVersion,
+        command: step.transition.command,
+      },
+    });
+  }
 }
 
 export async function runExecutionPhase<

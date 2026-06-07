@@ -3,6 +3,7 @@ import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
 import {
   ObserverBus,
+  type ExecutionEvent,
   type ObserverLike,
   type ResolvedExecutionCommand,
 } from '../execution';
@@ -265,12 +266,31 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const observerBus = new ObserverBus(this.observers);
     let seq = 0;
     let current = session ?? Session.create<TC, TM>();
-    const runtime = parentRuntime ?? createExecutionRuntimeState<TC, TM>();
-    await observerBus.emit({
-      id: `agent:${seq}`,
+    const runtime =
+      parentRuntime ??
+      createExecutionRuntimeState<TC, TM>({
+        emitEvent: (event) => observerBus.emit(event),
+        nextEventSeq: () => seq++,
+      });
+    const previousParentEmitEvent = parentRuntime?.emitEvent;
+    // Child agents run sequentially under the current template runtime, so this
+    // temporary fan-out keeps nested observers attached to the shared event seq.
+    if (parentRuntime && this.observers.length > 0) {
+      parentRuntime.emitEvent = async (event) => {
+        await previousParentEmitEvent?.(event);
+        await observerBus.emit(event);
+      };
+    }
+    const nextSeq = () => runtime.nextEventSeq?.() ?? seq++;
+    const emitEvent = (event: ExecutionEvent) =>
+      runtime.emitEvent?.(event) ?? observerBus.emit(event);
+
+    let eventSeq = nextSeq();
+    await emitEvent({
+      id: `agent:${eventSeq}`,
       type: 'run.started',
       at: new Date().toISOString(),
-      seq: seq++,
+      seq: eventSeq,
       replay: 'live',
     });
 
@@ -301,24 +321,30 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       assertDirectAgentCommandSupported(after.command);
       current = after.session;
 
-      await observerBus.emit({
-        id: `agent:${seq}`,
+      eventSeq = nextSeq();
+      await emitEvent({
+        id: `agent:${eventSeq}`,
         type: 'run.completed',
         at: new Date().toISOString(),
-        seq: seq++,
+        seq: eventSeq,
         replay: 'live',
       });
       return current;
     } catch (error) {
-      await observerBus.emit({
-        id: `agent:${seq}`,
+      eventSeq = nextSeq();
+      await emitEvent({
+        id: `agent:${eventSeq}`,
         type: 'run.failed',
         at: new Date().toISOString(),
-        seq: seq++,
+        seq: eventSeq,
         replay: 'live',
         error,
       });
       throw error;
+    } finally {
+      if (parentRuntime && this.observers.length > 0) {
+        parentRuntime.emitEvent = previousParentEmitEvent;
+      }
     }
   }
 }
