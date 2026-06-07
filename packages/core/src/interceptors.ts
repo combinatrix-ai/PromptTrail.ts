@@ -37,6 +37,18 @@ export interface ExecutionDurableBoundary {
   ): Promise<T>;
 }
 
+export interface ExecutionHandlerDescriptor {
+  kind: 'middleware' | 'hook';
+  name?: string;
+  phase: ExecutionPhase;
+  durability: HandlerDurabilityMode;
+  registrationIndex: number;
+}
+
+export type ExecutionDurableBoundaryProvider = (
+  handler: ExecutionHandlerDescriptor,
+) => ExecutionDurableBoundary;
+
 export interface ExecutionPhaseContext<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -184,6 +196,7 @@ export interface RunExecutionPhaseOptions<
   middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
   hooks?: readonly HookDefinition<TVars, TAttrs>[];
   beforeVersion?: number;
+  durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
 }
 
@@ -228,6 +241,7 @@ export interface RunMiddlewareWrapperOptions<
   middlewareState?: Record<string, unknown>;
   middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
   beforeVersion?: number;
+  durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
 }
 
@@ -254,6 +268,7 @@ export interface ExecutionRuntimeState<
   middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
   hooks: readonly HookDefinition<TVars, TAttrs>[];
   middlewareState: Record<string, unknown>;
+  durableBoundary?: ExecutionDurableBoundaryProvider;
   version: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
@@ -268,6 +283,7 @@ export function createExecutionRuntimeState<
   middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
   hooks?: readonly HookDefinition<TVars, TAttrs>[];
   context?: Record<string, unknown>;
+  durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
@@ -276,6 +292,7 @@ export function createExecutionRuntimeState<
     middleware: options?.middleware ?? [],
     hooks: options?.hooks ?? [],
     middlewareState: {},
+    durableBoundary: options?.durableBoundary,
     version: 0,
     context: options?.context,
     signal: options?.signal,
@@ -328,6 +345,7 @@ export async function runRuntimeExecutionPhase<
     middleware: options.middleware ?? runtime.middleware,
     hooks: options.hooks ?? runtime.hooks,
     beforeVersion: runtime.version,
+    durableBoundary: runtime.durableBoundary,
     signal: runtime.signal,
   });
   runtime.middlewareState = phaseResult.middlewareState;
@@ -363,6 +381,7 @@ export async function runRuntimeMiddlewareWrapper<
     middlewareState: runtime.middlewareState,
     middleware: options.middleware ?? runtime.middleware,
     beforeVersion: runtime.version,
+    durableBoundary: runtime.durableBoundary,
     signal: runtime.signal,
   });
   runtime.middlewareState = wrapperResult.middlewareState;
@@ -440,10 +459,14 @@ export async function runExecutionPhase<
       context: options.context,
       middlewareState,
       durable: durableBoundaryForHandler(
-        'middleware',
-        middleware.name,
-        options.phase,
-        middleware.durability,
+        {
+          kind: 'middleware',
+          name: middleware.name,
+          phase: options.phase,
+          durability: middleware.durability ?? 'materialized-phase',
+          registrationIndex,
+        },
+        options.durableBoundary,
       ),
       signal: options.signal,
     });
@@ -497,10 +520,14 @@ export async function runExecutionPhase<
       context: options.context,
       middlewareState,
       durable: durableBoundaryForHandler(
-        'hook',
-        hook.name,
-        options.phase,
-        hook.durability,
+        {
+          kind: 'hook',
+          name: hook.name,
+          phase: options.phase,
+          durability: hook.durability ?? 'materialized-phase',
+          registrationIndex,
+        },
+        options.durableBoundary,
       ),
       signal: options.signal,
     });
@@ -614,10 +641,14 @@ export async function runMiddlewareWrapper<
         context: options.context,
         middlewareState,
         durable: durableBoundaryForHandler(
-          'middleware',
-          definition.name,
-          options.phase,
-          definition.durability,
+          {
+            kind: 'middleware',
+            name: definition.name,
+            phase: options.phase,
+            durability: definition.durability ?? 'materialized-phase',
+            registrationIndex: index,
+          },
+          options.durableBoundary,
         ),
         signal: options.signal,
       },
@@ -781,14 +812,12 @@ function assertHookPatchAuthority<TVars extends Vars, TAttrs extends Attrs>(
 }
 
 function durableBoundaryForHandler(
-  kind: 'middleware' | 'hook',
-  name: string | undefined,
-  phase: ExecutionPhase,
-  durability: HandlerDurabilityMode | undefined,
+  handler: ExecutionHandlerDescriptor,
+  provider: ExecutionDurableBoundaryProvider | undefined,
 ): ExecutionDurableBoundary {
-  const label = `${kind} ${name ?? '<anonymous>'} ${phase}`;
-  if (durability === 'replayable-handler') {
-    return unavailableDurableBoundary(label);
+  const label = `${handler.kind} ${handler.name ?? '<anonymous>'} ${handler.phase}`;
+  if (handler.durability === 'replayable-handler') {
+    return provider?.(handler) ?? unavailableDurableBoundary(label);
   }
   return materializedDurableBoundary(label);
 }

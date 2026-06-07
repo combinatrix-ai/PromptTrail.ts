@@ -323,6 +323,70 @@ describe('execution interceptors', () => {
     );
   });
 
+  it('injects durable boundaries only for replayable handlers', async () => {
+    const provided: string[] = [];
+    const result = await runExecutionPhase({
+      phase: 'beforeModel',
+      session: createSession(),
+      durableBoundary: (handler) => ({
+        async memo(name, fn) {
+          provided.push(
+            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
+          );
+          return fn();
+        },
+        async activity(_name, _options, fn) {
+          return fn();
+        },
+      }),
+      middleware: [
+        Middleware.create({
+          name: 'clock',
+          durability: 'replayable-handler',
+          beforeModel: async ({ durable }) => ({
+            session: {
+              vars: {
+                now: await durable.memo('now', () => 123),
+              },
+            },
+          }),
+        }),
+      ],
+    });
+
+    expect(result.session.getVarsObject()).toEqual({ now: 123 });
+    expect(provided).toEqual(['middleware:clock:beforeModel:now']);
+
+    await expect(
+      runExecutionPhase({
+        phase: 'beforeModel',
+        session: createSession(),
+        durableBoundary: () => ({
+          async memo(_name, fn) {
+            return fn();
+          },
+          async activity(_name, _options, fn) {
+            return fn();
+          },
+        }),
+        middleware: [
+          Middleware.create({
+            name: 'materialized',
+            beforeModel: async ({ durable }) => ({
+              session: {
+                vars: {
+                  now: await durable.memo('now', () => 456),
+                },
+              },
+            }),
+          }),
+        ],
+      }),
+    ).rejects.toThrow(
+      "ctx.durable.memo() is not allowed in middleware materialized beforeModel; declare durability: 'replayable-handler'",
+    );
+  });
+
   it('runs middleware wrappers around an execution call', async () => {
     const session = createSession({
       messages: [Message.user('start')],
