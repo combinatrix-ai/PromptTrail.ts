@@ -610,6 +610,59 @@ describe('durable agent runtime', () => {
     );
   });
 
+  it('namespaces manually registered anonymous observer delivery bindings', async () => {
+    const claimed: string[] = [];
+    const deliveryBindingStore: ObserverDeliveryBindingStore = {
+      claim(idempotencyKey) {
+        claimed.push(idempotencyKey);
+        return true;
+      },
+      complete() {},
+      delete() {},
+    };
+    const app = PromptTrail.app({
+      agents: { observed: agent('observed-agent').assistant('reply', () => 'hello') },
+      store: memoryStore(),
+    });
+    const first = app.registerObserver(
+      async (event, context) => {
+        if (event.type !== 'run.started') {
+          return;
+        }
+        await context.deliveryBindings?.checkWrite(
+          event.idempotencyKey ?? event.id,
+          () => 'first',
+        );
+      },
+      { deliveryBindingStore },
+    );
+    const second = app.registerObserver(
+      async (event, context) => {
+        if (event.type !== 'run.started') {
+          return;
+        }
+        await context.deliveryBindings?.checkWrite(
+          event.idempotencyKey ?? event.id,
+          () => 'second',
+        );
+      },
+      { deliveryBindingStore },
+    );
+
+    await app.run({
+      agent: 'observed',
+      runId: 'run-manual-observer-store',
+      durable: true,
+    });
+    first();
+    second();
+
+    expect(claimed).toEqual([
+      '["appObserver:0","run-manual-observer-store:run:0:run.started"]',
+      '["appObserver:1","run-manual-observer-store:run:0:run.started"]',
+    ]);
+  });
+
   it('journals durable beforeAgent and afterAgent phases without re-running them on replay', async () => {
     const store = memoryStore();
     let beforeCalls = 0;

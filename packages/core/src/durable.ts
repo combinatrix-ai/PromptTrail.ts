@@ -2,6 +2,7 @@ import { Message, type Message as PromptTrailMessage } from './message';
 import {
   ObserverBus,
   applyResolvedExecutionTransition,
+  normalizeObserver,
   resolveExecutionTransition,
   type ExecutionEvent,
   type ExecutionPatch,
@@ -2169,6 +2170,8 @@ export class PromptTrailApp {
   private readonly observerBus: ObserverBus;
   private readonly strictObservers?: boolean;
   private readonly observerDeliveryBindingOptions?: ObserverDeliveryBindingOptions;
+  private readonly observerBuses: ObserverBus[] = [];
+  private nextObserverBusIndex = 0;
   private readonly defaultDurable: boolean;
   private readonly agentObserverBuses = new WeakMap<
     DurableAgent<any, any>,
@@ -2210,7 +2213,33 @@ export class PromptTrailApp {
     return this;
   }
 
-  registerObserver(observer: ObserverLike): () => void {
+  registerObserver(
+    observer: ObserverLike,
+    observerDeliveryBindings?: ObserverDeliveryBindingOptions,
+    observerNamespace?: string,
+  ): () => void {
+    if (observerDeliveryBindings) {
+      const normalized = normalizeObserver(observer);
+      const namespacedObserver = normalized.name
+        ? normalized
+        : {
+            ...normalized,
+            name:
+              observerNamespace ??
+              `appObserver:${this.nextObserverBusIndex++}`,
+          };
+      const bus = new ObserverBus([namespacedObserver], {
+        strictObservers: this.strictObservers,
+        ...observerDeliveryBindings,
+      });
+      this.observerBuses.push(bus);
+      return () => {
+        const index = this.observerBuses.indexOf(bus);
+        if (index >= 0) {
+          this.observerBuses.splice(index, 1);
+        }
+      };
+    }
     return this.observerBus.add(observer);
   }
 
@@ -2601,6 +2630,9 @@ export class PromptTrailApp {
   ): Promise<void> {
     const context = observerContextFromRunContext(run.context);
     await this.observerBus.emit(event, context);
+    for (const bus of this.observerBuses) {
+      await bus.emit(event, context);
+    }
     const observers = run.agent.runtimeObservers();
     if (observers.length === 0) {
       return;

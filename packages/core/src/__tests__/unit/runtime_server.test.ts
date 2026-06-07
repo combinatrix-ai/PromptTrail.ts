@@ -100,19 +100,35 @@ describe('RuntimeServer', () => {
         async (event, context) => {
           if (
             event.type !== 'delivery.pending' &&
-            event.type !== 'delivery.completed'
+            event.type !== 'delivery.completed' &&
+            event.type !== 'model.started'
           ) {
             return;
           }
           observerEvents.push(
             `${event.seq}:${event.type}:${event.idempotencyKey}`,
           );
+          if (event.type === 'model.started') {
+            await context.deliveryBindings?.checkWrite(
+              event.idempotencyKey ?? event.id,
+              () => 'app',
+            );
+          }
           if (event.type === 'delivery.pending') {
             await context.deliveryBindings?.checkWrite(
               event.idempotencyKey,
               () => 'server',
             );
           }
+        },
+        async (event, context) => {
+          if (event.type !== 'model.started') {
+            return;
+          }
+          await context.deliveryBindings?.checkWrite(
+            event.idempotencyKey ?? event.id,
+            () => 'app-second',
+          );
         },
       ],
       adapters: [adapter],
@@ -133,12 +149,17 @@ describe('RuntimeServer', () => {
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['reply:hello']);
     expect(observerEvents).toEqual([
+      '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-',
       '0:delivery.pending:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
       '1:delivery.completed:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
     ]);
     expect(observerWrites).toEqual([
-      'claim:["observer:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:undefined',
-      'complete:["observer:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:server',
+      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
+      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app',
+      'claim:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
+      'complete:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app-second',
+      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:undefined',
+      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final"]:server',
     ]);
   });
 

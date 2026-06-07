@@ -5,6 +5,7 @@ import type {
 import {
   ObserverFailureError,
   ObserverBus,
+  normalizeObserver,
   type ExecutionEvent,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
@@ -115,6 +116,17 @@ export interface RuntimeServerOptions {
     | ((ctx: RuntimeServerErrorContext) => string | undefined);
 }
 
+function namespaceRuntimeObserver(
+  observer: ObserverLike,
+  namespace: string,
+): ObserverLike {
+  const normalized = normalizeObserver(observer);
+  if (normalized.name) {
+    return normalized;
+  }
+  return { ...normalized, name: namespace };
+}
+
 export function server(options: RuntimeServerOptions): RuntimeServer {
   return new RuntimeServer(options);
 }
@@ -134,7 +146,9 @@ export class RuntimeServer {
     this.runtimeObservers = [
       ...(options.observers ?? []),
       ...options.adapters.flatMap((adapter) => adapter.observers ?? []),
-    ];
+    ].map((observer, index) =>
+      namespaceRuntimeObserver(observer, `runtimeObserver:${index}`),
+    );
     this.observerBus = new ObserverBus(this.runtimeObservers, {
       strictObservers: options.strictObservers,
       ...options.observerDeliveryBindings,
@@ -253,9 +267,13 @@ export class RuntimeServer {
     if (this.runtimeObserverDisposers.length > 0) {
       return;
     }
-    for (const observer of this.runtimeObservers) {
+    for (const [index, observer] of this.runtimeObservers.entries()) {
       this.runtimeObserverDisposers.push(
-        this.options.runtime.registerObserver(observer),
+        this.options.runtime.registerObserver(
+          observer,
+          this.options.observerDeliveryBindings,
+          `runtimeObserver:${index}`,
+        ),
       );
     }
   }
