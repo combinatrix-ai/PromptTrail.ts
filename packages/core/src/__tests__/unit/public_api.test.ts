@@ -111,4 +111,18 @@ describe('public API surface', () => {
 
     expect(session.getLastMessage()?.content).toBe('hello');
   });
+
+  it('types observer delivery binding helpers', async () => {
+    const observer = prompttrail.Observer.create({
+      name: 'progress',
+      async handle(event, context) {
+        await context.deliveryBindings?.checkWrite(
+          event.idempotencyKey ?? event.id,
+          () => ({ platformId: 'message-1' }),
+        );
+      },
+    });
+
+    expect(observer.name).toBe('progress');
+  });
 });

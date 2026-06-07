@@ -198,7 +198,35 @@ export type ObserverReplayPolicy =
 
 export interface ObserverContext {
   signal?: AbortSignal;
+  deliveryBindings?: ObserverDeliveryBindings;
   [key: string]: unknown;
+}
+
+export interface ObserverDeliveryBinding {
+  idempotencyKey: string;
+  status: 'claimed' | 'completed';
+  value?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ObserverDeliveryBindingStore {
+  claim(
+    idempotencyKey: string,
+    binding: ObserverDeliveryBinding,
+  ): boolean | Promise<boolean>;
+  complete(
+    idempotencyKey: string,
+    binding: ObserverDeliveryBinding,
+  ): void | Promise<void>;
+  delete(idempotencyKey: string): void | Promise<void>;
+}
+
+export interface ObserverDeliveryBindings {
+  checkWrite<T>(
+    idempotencyKey: string,
+    write: () => T | Promise<T>,
+  ): Promise<T | undefined>;
 }
 
 export interface Observer {
@@ -219,6 +247,9 @@ export type ObserverLike =
 
 export interface ObserverBusOptions {
   strictObservers?: boolean;
+  deliveryBindingStore?: ObserverDeliveryBindingStore | false;
+  deliveryBindingTtlMs?: number;
+  maxDeliveryBindingEntries?: number;
 }
 
 export class ObserverFailureError extends Error {
@@ -241,11 +272,22 @@ export class ObserverBus {
     ObserverEntry
   >();
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly deliveryBindings?: ObserverDeliveryBindings;
 
   constructor(
     observers: readonly ObserverLike[] = [],
     private readonly options: ObserverBusOptions = {},
   ) {
+    this.deliveryBindings =
+      options.deliveryBindingStore === false
+        ? undefined
+        : createObserverDeliveryBindings(
+            options.deliveryBindingStore ??
+              inMemoryObserverDeliveryBindingStore({
+                maxEntries: options.maxDeliveryBindingEntries,
+                ttlMs: options.deliveryBindingTtlMs,
+              }),
+          );
     for (const observer of observers) {
       this.add(observer);
     }
@@ -278,8 +320,12 @@ export class ObserverBus {
           }))
           .filter(({ observer }) => observerReceives(observer, event))
           .map(async ({ key, observer }) => {
+            const observerContext = this.contextWithDeliveryBindings(
+              context,
+              key,
+            );
             try {
-              await this.enqueue(key, observer, event, context);
+              await this.enqueue(key, observer, event, observerContext);
               return undefined;
             } catch (error) {
               const failure = new ObserverFailureError(
@@ -345,7 +391,12 @@ export class ObserverBus {
         )
         .map(async ({ key, observer }) => {
           try {
-            await this.enqueue(key, observer, failureEvent, context);
+            await this.enqueue(
+              key,
+              observer,
+              failureEvent,
+              this.contextWithDeliveryBindings(context, key),
+            );
           } catch {
             // observer.failed is diagnostic only; failures while reporting it
             // must not recurse indefinitely.
@@ -389,6 +440,23 @@ export class ObserverBus {
       this.observers.splice(index, 1);
     }
   }
+
+  private contextWithDeliveryBindings(
+    context: ObserverContext,
+    observerKey: string,
+  ): ObserverContext {
+    const deliveryBindings = context.deliveryBindings ?? this.deliveryBindings;
+    if (!deliveryBindings) {
+      return context;
+    }
+    return {
+      ...context,
+      deliveryBindings: createNamespacedObserverDeliveryBindings(
+        observerKey,
+        deliveryBindings,
+      ),
+    };
+  }
 }
 
 type ObserverRegistrationKey = string | ObserverLike;
@@ -425,6 +493,124 @@ export function observerReceives(
       return replay === 'live' || replay === 'journaled';
     case 'adopt-replayed':
       return true;
+  }
+}
+
+export function createObserverDeliveryBindings(
+  store: ObserverDeliveryBindingStore,
+): ObserverDeliveryBindings {
+  return {
+    async checkWrite<T>(
+      idempotencyKey: string,
+      write: () => T | Promise<T>,
+    ): Promise<T | undefined> {
+      const now = new Date().toISOString();
+      const claimed = await store.claim(idempotencyKey, {
+        idempotencyKey,
+        status: 'claimed',
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (!claimed) {
+        return undefined;
+      }
+      let value: T;
+      try {
+        value = await write();
+      } catch (error) {
+        await store.delete(idempotencyKey);
+        throw error;
+      }
+      await store.complete(idempotencyKey, {
+        idempotencyKey,
+        status: 'completed',
+        value,
+        createdAt: now,
+        updatedAt: new Date().toISOString(),
+      });
+      return value;
+    },
+  };
+}
+
+function createNamespacedObserverDeliveryBindings(
+  namespace: string,
+  bindings: ObserverDeliveryBindings,
+): ObserverDeliveryBindings {
+  return {
+    checkWrite(idempotencyKey, write) {
+      return bindings.checkWrite(
+        JSON.stringify([namespace, idempotencyKey]),
+        write,
+      );
+    },
+  };
+}
+
+export function inMemoryObserverDeliveryBindingStore(options: {
+  ttlMs?: number;
+  maxEntries?: number;
+} = {}): ObserverDeliveryBindingStore {
+  const ttlMs = options.ttlMs ?? 60 * 60 * 1_000;
+  const maxEntries = options.maxEntries ?? 10_000;
+  const entries = new Map<
+    string,
+    { binding: ObserverDeliveryBinding; expiresAt: number }
+  >();
+
+  return {
+    claim(idempotencyKey, binding) {
+      pruneObserverDeliveryBindings(entries, ttlMs, maxEntries);
+      if (entries.has(idempotencyKey)) {
+        return false;
+      }
+      entries.set(idempotencyKey, {
+        binding,
+        expiresAt: Date.now() + ttlMs,
+      });
+      pruneObserverDeliveryBindings(entries, ttlMs, maxEntries);
+      return true;
+    },
+    complete(idempotencyKey, binding) {
+      pruneObserverDeliveryBindings(entries, ttlMs, maxEntries);
+      entries.set(idempotencyKey, {
+        binding,
+        expiresAt: Date.now() + ttlMs,
+      });
+      pruneObserverDeliveryBindings(entries, ttlMs, maxEntries);
+    },
+    delete(idempotencyKey) {
+      entries.delete(idempotencyKey);
+    },
+  };
+}
+
+function pruneObserverDeliveryBindings(
+  entries: Map<
+    string,
+    { binding: ObserverDeliveryBinding; expiresAt: number }
+  >,
+  ttlMs: number,
+  maxEntries: number,
+): void {
+  if (ttlMs <= 0 || maxEntries <= 0) {
+    entries.clear();
+    return;
+  }
+
+  const now = Date.now();
+  for (const [key, entry] of entries) {
+    if (entry.expiresAt <= now) {
+      entries.delete(key);
+    }
+  }
+
+  while (entries.size > maxEntries) {
+    const oldest = entries.keys().next().value as string | undefined;
+    if (!oldest) {
+      break;
+    }
+    entries.delete(oldest);
   }
 }
 

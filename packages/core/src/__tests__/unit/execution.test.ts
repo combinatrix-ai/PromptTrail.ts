@@ -4,6 +4,8 @@ import {
   Observer,
   ObserverBus,
   applyResolvedExecutionTransition,
+  createObserverDeliveryBindings,
+  inMemoryObserverDeliveryBindingStore,
   observerReceives,
   resolveExecutionTransition,
 } from '../../execution';
@@ -404,5 +406,281 @@ describe('observer bus', () => {
         seq: 3,
       }),
     ).rejects.toThrow('observer broke');
+  });
+
+  it('injects deliveryBindings.checkWrite into observer contexts', async () => {
+    const writes: string[] = [];
+    const bus = new ObserverBus([
+      {
+        name: 'writer',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(String(event.idempotencyKey));
+              return { platformId: `msg:${event.idempotencyKey}` };
+            },
+          );
+        },
+      },
+    ]);
+    const event = {
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      idempotencyKey: 'progress:1',
+    };
+
+    await bus.emit(event);
+    await bus.emit(event);
+
+    expect(writes).toEqual(['progress:1']);
+  });
+
+  it('namespaces delivery binding writes per observer', async () => {
+    const writes: string[] = [];
+    const bus = new ObserverBus([
+      {
+        name: 'discord-progress',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(`discord:${event.idempotencyKey}`);
+            },
+          );
+        },
+      },
+      {
+        name: 'metrics-progress',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(`metrics:${event.idempotencyKey}`);
+            },
+          );
+        },
+      },
+    ]);
+
+    await bus.emit({
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      idempotencyKey: 'progress:1',
+    });
+
+    expect(writes).toEqual(['discord:progress:1', 'metrics:progress:1']);
+  });
+
+  it('uses unambiguous observer delivery binding namespace keys', async () => {
+    const writes: string[] = [];
+    const bus = new ObserverBus([
+      {
+        name: 'observer',
+        async handle(_event, context) {
+          await context.deliveryBindings?.checkWrite(
+            '1:progress',
+            async () => {
+              writes.push('named');
+            },
+          );
+        },
+      },
+      async (_event, context) => {
+        await context.deliveryBindings?.checkWrite('progress', async () => {
+          writes.push('anonymous');
+        });
+      },
+    ]);
+
+    await bus.emit({
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+    });
+
+    expect(writes).toEqual(['named', 'anonymous']);
+  });
+
+  it('namespaces caller-provided observer delivery bindings', async () => {
+    const writes: string[] = [];
+    const bindings = createObserverDeliveryBindings(
+      inMemoryObserverDeliveryBindingStore(),
+    );
+    const bus = new ObserverBus([
+      {
+        name: 'first',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(`first:${event.idempotencyKey}`);
+            },
+          );
+        },
+      },
+      {
+        name: 'second',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(`second:${event.idempotencyKey}`);
+            },
+          );
+        },
+      },
+    ]);
+
+    await bus.emit(
+      {
+        id: 'event-1',
+        type: 'tool.started',
+        at: '2026-01-01T00:00:00.000Z',
+        seq: 3,
+        idempotencyKey: 'progress:1',
+      },
+      { deliveryBindings: bindings },
+    );
+
+    expect(writes).toEqual(['first:progress:1', 'second:progress:1']);
+  });
+
+  it('releases delivery binding claims when observer writes fail', async () => {
+    const writes: string[] = [];
+    let fail = true;
+    const bus = new ObserverBus([
+      {
+        name: 'writer',
+        async handle(event, context) {
+          await context.deliveryBindings?.checkWrite(
+            String(event.idempotencyKey),
+            async () => {
+              writes.push(String(event.idempotencyKey));
+              if (fail) {
+                fail = false;
+                throw new Error('write failed');
+              }
+              return 'sent';
+            },
+          );
+        },
+      },
+    ]);
+    const event = {
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      idempotencyKey: 'progress:retry',
+    };
+
+    await bus.emit(event);
+    await bus.emit(event);
+
+    expect(writes).toEqual(['progress:retry', 'progress:retry']);
+  });
+
+  it('keeps delivery binding claims when completion bookkeeping fails', async () => {
+    const claimed = new Set<string>();
+    const writes: string[] = [];
+    const bus = new ObserverBus(
+      [
+        {
+          name: 'writer',
+          async handle(event, context) {
+            await context.deliveryBindings?.checkWrite(
+              String(event.idempotencyKey),
+              async () => {
+                writes.push(String(event.idempotencyKey));
+                return 'sent';
+              },
+            );
+          },
+        },
+      ],
+      {
+        deliveryBindingStore: {
+          claim(idempotencyKey) {
+            if (claimed.has(idempotencyKey)) {
+              return false;
+            }
+            claimed.add(idempotencyKey);
+            return true;
+          },
+          complete() {
+            throw new Error('complete failed');
+          },
+          delete(idempotencyKey) {
+            claimed.delete(idempotencyKey);
+          },
+        },
+      },
+    );
+    const event = {
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      idempotencyKey: 'progress:complete-failed',
+    };
+
+    await bus.emit(event);
+    await bus.emit(event);
+
+    expect(writes).toEqual(['progress:complete-failed']);
+  });
+
+  it('bounds in-memory observer delivery bindings', async () => {
+    const writes: string[] = [];
+    const bus = new ObserverBus(
+      [
+        {
+          name: 'writer',
+          async handle(event, context) {
+            await context.deliveryBindings?.checkWrite(
+              String(event.idempotencyKey),
+              async () => {
+                writes.push(String(event.idempotencyKey));
+              },
+            );
+          },
+        },
+      ],
+      {
+        deliveryBindingStore: inMemoryObserverDeliveryBindingStore({
+          maxEntries: 1,
+        }),
+      },
+    );
+
+    await bus.emit({
+      id: 'event-1',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 1,
+      idempotencyKey: 'progress:1',
+    });
+    await bus.emit({
+      id: 'event-2',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 2,
+      idempotencyKey: 'progress:2',
+    });
+    await bus.emit({
+      id: 'event-3',
+      type: 'tool.started',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      idempotencyKey: 'progress:1',
+    });
+
+    expect(writes).toEqual(['progress:1', 'progress:2', 'progress:1']);
   });
 });
