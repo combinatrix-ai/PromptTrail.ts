@@ -618,6 +618,7 @@ async function applyDurablePhaseJournal<
       state.sequencePosition - 1,
     );
   }
+  assertDurablePhaseStepOrder(state, record.steps);
 
   let session = baseSession;
   let middlewareState = state.middlewareState;
@@ -681,6 +682,54 @@ function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
     case 'prepareModelInput':
       return undefined;
   }
+}
+
+function assertDurablePhaseStepOrder<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  steps: readonly ExecutionPhaseStep<TAttrs>[],
+): void {
+  for (const step of steps) {
+    const current = durablePhaseStepCoordinate(state, step);
+    const expected = durableRecordedStepCoordinate(step);
+    if (current !== expected) {
+      throw new NondeterminismError(
+        expected,
+        current,
+        state.sequencePosition - 1,
+      );
+    }
+  }
+}
+
+function durableRecordedStepCoordinate<TAttrs extends Attrs>(
+  step: ExecutionPhaseStep<TAttrs>,
+): string {
+  return `${step.kind}:${step.phase}:${step.registrationIndex}:${step.name ?? '<anonymous>'}`;
+}
+
+function durablePhaseStepCoordinate<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  step: ExecutionPhaseStep<TAttrs>,
+): string {
+  if (step.kind === 'middleware') {
+    const middleware = state.middleware[step.registrationIndex];
+    const handler = middleware?.[step.phase];
+    if (!handler) {
+      return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
+    }
+    return `${step.kind}:${step.phase}:${step.registrationIndex}:${middleware.name ?? '<anonymous>'}`;
+  }
+  if (step.phase === 'wrapModelCall' || step.phase === 'wrapToolCall') {
+    return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
+  }
+  const hook = state.hooks[step.registrationIndex];
+  const handler = hook
+    ? hookHandlerForDurablePhase(hook, step.phase)
+    : undefined;
+  if (!handler) {
+    return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
+  }
+  return `${step.kind}:${step.phase}:${step.registrationIndex}:${hook.name ?? '<anonymous>'}`;
 }
 
 async function runDurableMiddlewareWrapper<
@@ -864,6 +913,7 @@ async function applyDurableWrapperJournal<
       state.sequencePosition - 1,
     );
   }
+  assertDurablePhaseStepOrder(state, record.steps);
 
   let session = baseSession;
   let middlewareState = state.middlewareState;

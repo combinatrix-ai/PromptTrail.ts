@@ -1577,6 +1577,56 @@ describe('durable agent runtime', () => {
     );
   });
 
+  it('throws NondeterminismError when middleware order changes on replay', async () => {
+    const store = memoryStore();
+    const assistant = agent('ordered-middleware')
+      .assistant(
+        'reply',
+        (session) =>
+          `model:${session.getVarsObject().first}:${session.getVarsObject().second}`,
+      )
+      .turn('wait', (turn) => turn.awaitUser());
+    const first = Middleware.create({
+      name: 'first',
+      beforeModel: () => ({
+        session: { vars: { first: true } },
+      }),
+    });
+    const second = Middleware.create({
+      name: 'second',
+      beforeModel: () => ({
+        session: { vars: { second: true } },
+      }),
+    });
+    const app = PromptTrail.app({
+      agents: { ordered: assistant },
+      store,
+      middleware: [first, second],
+    });
+
+    const run = await app.run({
+      agent: 'ordered',
+      runId: 'run-middleware-order',
+      durable: true,
+    });
+
+    expect(run.status).toBe('suspended');
+    expect(app.journal('run-middleware-order')).toEqual([
+      'reply/beforeModel',
+      'reply/model',
+    ]);
+
+    const reordered = PromptTrail.app({
+      agents: { ordered: assistant },
+      store,
+      middleware: [second, first],
+    });
+
+    await expect(
+      reordered.resume('run-middleware-order'),
+    ).rejects.toBeInstanceOf(NondeterminismError);
+  });
+
   it('routes events from app sources into durable runs', async () => {
     const source = manualSource();
     const assistant = agent('assistant')
