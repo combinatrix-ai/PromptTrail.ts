@@ -3,8 +3,17 @@ import {
   applyResolvedExecutionTransition,
   resolveExecutionTransition,
   type ExecutionPatch,
+  type ResolvedExecutionCommand,
   type ResolvedExecutionTransition,
 } from './execution';
+import {
+  runExecutionPhase,
+  type ExecutionLifecyclePhase,
+  type ExecutionPhaseStep,
+  type HookDefinition,
+  type MiddlewareDefinition,
+  type RunExecutionPhaseResult,
+} from './interceptors';
 import { bundle } from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
@@ -149,6 +158,26 @@ interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   cursor: number;
   sequencePosition: number;
   transitionVersion: number;
+  middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  hooks: readonly HookDefinition<TVars, TAttrs>[];
+  middlewareState: Record<string, unknown>;
+}
+
+interface DurableModelRequest<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  session: Session<TVars, TAttrs>;
+}
+
+interface DurablePhaseJournal<TAttrs extends Attrs = Attrs> {
+  request?: unknown;
+  result?: unknown;
+  command: ResolvedExecutionCommand;
+  beforeVersion: number;
+  afterVersion: number;
+  middlewareState: Record<string, unknown>;
+  steps: ExecutionPhaseStep<TAttrs>[];
 }
 
 type DurableNode<TVars extends Vars, TAttrs extends Attrs> =
@@ -266,6 +295,127 @@ async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
   state.journal.sequence.push(stepId);
   state.sequencePosition++;
   return result;
+}
+
+async function runDurableExecutionPhase<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  options: {
+    phase: ExecutionLifecyclePhase;
+    session: Session<TVars, TAttrs>;
+    request?: TRequest;
+    result?: TResult;
+  },
+): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
+  if (!hasDurablePhaseHandler(state, options.phase)) {
+    return {
+      session: options.session,
+      request: options.request,
+      result: options.result,
+      middlewareState: state.middlewareState,
+      command: { type: 'none' },
+      beforeVersion: state.transitionVersion,
+      afterVersion: state.transitionVersion,
+      steps: [],
+    };
+  }
+
+  const record = await journaled(state, stepId, async () => {
+    const phase = await runExecutionPhase({
+      phase: options.phase,
+      session: options.session,
+      request: options.request,
+      result: options.result,
+      middlewareState: state.middlewareState,
+      middleware: state.middleware,
+      hooks: state.hooks,
+      beforeVersion: state.transitionVersion,
+    });
+    return {
+      request: phase.request,
+      result: phase.result,
+      command: phase.command,
+      beforeVersion: phase.beforeVersion,
+      afterVersion: phase.afterVersion,
+      middlewareState: phase.middlewareState,
+      steps: phase.steps,
+    } satisfies DurablePhaseJournal<TAttrs>;
+  });
+
+  if (record.beforeVersion !== state.transitionVersion) {
+    throw new NondeterminismError(
+      `version:${state.transitionVersion}`,
+      `version:${record.beforeVersion}`,
+      state.sequencePosition - 1,
+    );
+  }
+
+  let session = options.session;
+  let middlewareState = state.middlewareState;
+  for (const step of record.steps) {
+    if (step.transition.beforeVersion !== state.transitionVersion) {
+      throw new NondeterminismError(
+        `version:${state.transitionVersion}`,
+        `version:${step.transition.beforeVersion}`,
+        state.sequencePosition - 1,
+      );
+    }
+    const applied = applyResolvedExecutionTransition(session, step.transition, {
+      middlewareState,
+    });
+    session = applied.session;
+    middlewareState = applied.middlewareState;
+    state.transitionVersion = step.transition.afterVersion;
+  }
+  state.middlewareState = middlewareState;
+
+  return {
+    session,
+    request: record.request as TRequest | undefined,
+    result: record.result as TResult | undefined,
+    middlewareState,
+    command: record.command,
+    beforeVersion: record.beforeVersion,
+    afterVersion: record.afterVersion,
+    steps: record.steps,
+  };
+}
+
+function hasDurablePhaseHandler<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  phase: ExecutionLifecyclePhase,
+): boolean {
+  return (
+    state.middleware.some((middleware) => Boolean(middleware[phase])) ||
+    state.hooks.some((hook) => Boolean(hookHandlerForDurablePhase(hook, phase)))
+  );
+}
+
+function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
+  hook: HookDefinition<TVars, TAttrs>,
+  phase: ExecutionLifecyclePhase,
+): unknown {
+  switch (phase) {
+    case 'beforeAgent':
+      return hook.onBeforeAgent;
+    case 'afterAgent':
+      return hook.onAfterAgent;
+    case 'beforeModel':
+      return hook.onBeforeModel;
+    case 'afterModel':
+      return hook.onAfterModel;
+    case 'beforeTool':
+      return hook.onBeforeTool;
+    case 'afterTool':
+      return hook.onAfterTool;
+    case 'prepareModelInput':
+      return undefined;
+  }
 }
 
 async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
@@ -470,10 +620,51 @@ export class DurableAgent<
         return applied.session;
       }
       case 'assistant': {
-        const message = await journaled(state, `${nodePath}/model`, async () =>
-          normalizeAssistantMessage(await node.handler(session)),
+        const before = await runDurableExecutionPhase(
+          state,
+          `${nodePath}/beforeModel`,
+          {
+            phase: 'beforeModel',
+            session,
+          },
         );
-        return session.addMessage(message);
+        assertDurablePhaseCommandSupported(before.command, nodePath);
+        session = before.session;
+        state.session = session;
+
+        const request: DurableModelRequest<TVars, TAttrs> = { session };
+        const prepared = await runDurableExecutionPhase<
+          TVars,
+          TAttrs,
+          DurableModelRequest<TVars, TAttrs>
+        >(state, `${nodePath}/prepareModelInput`, {
+          phase: 'prepareModelInput',
+          session,
+          request,
+        });
+        assertDurablePhaseCommandSupported(prepared.command, nodePath);
+        assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
+        const modelSession =
+          (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
+            ?.session ?? session;
+
+        const message = await journaled(state, `${nodePath}/model`, async () =>
+          normalizeAssistantMessage(await node.handler(modelSession)),
+        );
+        const after = await runDurableExecutionPhase(
+          state,
+          `${nodePath}/afterModel`,
+          {
+            phase: 'afterModel',
+            session,
+            result: message,
+          },
+        );
+        assertDurablePhaseCommandSupported(after.command, nodePath);
+        const finalMessage = normalizeAssistantMessage(
+          (after.result as AssistantResult<TAttrs> | undefined) ?? message,
+        );
+        return after.session.addMessage(finalMessage);
       }
       case 'chat': {
         let current = session;
@@ -487,12 +678,54 @@ export class DurableAgent<
             Message.user(inbound.content, inbound.attrs as TAttrs | undefined),
           );
           state.session = current;
+          const before = await runDurableExecutionPhase(
+            state,
+            `${nodePath}#${iteration}/beforeModel`,
+            {
+              phase: 'beforeModel',
+              session: current,
+            },
+          );
+          assertDurablePhaseCommandSupported(before.command, nodePath);
+          current = before.session;
+          state.session = current;
+          const request: DurableModelRequest<TVars, TAttrs> = {
+            session: current,
+          };
+          const prepared = await runDurableExecutionPhase<
+            TVars,
+            TAttrs,
+            DurableModelRequest<TVars, TAttrs>
+          >(state, `${nodePath}#${iteration}/prepareModelInput`, {
+            phase: 'prepareModelInput',
+            session: current,
+            request,
+          });
+          assertDurablePhaseCommandSupported(prepared.command, nodePath);
+          assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
+          const modelSession =
+            (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
+              ?.session ?? current;
           const message = await journaled(
             state,
             `${nodePath}#${iteration}/model`,
-            async () => normalizeAssistantMessage(await node.handler(current)),
+            async () =>
+              normalizeAssistantMessage(await node.handler(modelSession)),
           );
-          current = current.addMessage(message);
+          const after = await runDurableExecutionPhase(
+            state,
+            `${nodePath}#${iteration}/afterModel`,
+            {
+              phase: 'afterModel',
+              session: current,
+              result: message,
+            },
+          );
+          assertDurablePhaseCommandSupported(after.command, nodePath);
+          const finalMessage = normalizeAssistantMessage(
+            (after.result as AssistantResult<TAttrs> | undefined) ?? message,
+          );
+          current = after.session.addMessage(finalMessage);
           state.session = current;
           iteration++;
         }
@@ -618,6 +851,37 @@ function assertDurablePatchTransitionSupported(
   }
 }
 
+function assertDurablePhaseCommandSupported(
+  command: ResolvedExecutionCommand,
+  nodePath: string,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `Durable phase ${nodePath} returned unsupported command ${command.type}.`,
+  );
+}
+
+function assertPrepareModelInputDidNotPersistSession(
+  steps: readonly ExecutionPhaseStep[],
+  nodePath: string,
+): void {
+  const hasPersistentSessionDelta = steps.some(({ transition }) => {
+    const delta = transition.session;
+    return (
+      delta.messageOp.type !== 'none' ||
+      Object.keys(delta.varsSet).length > 0 ||
+      delta.varsDelete.length > 0
+    );
+  });
+  if (hasPersistentSessionDelta) {
+    throw new Error(
+      `Durable prepareModelInput ${nodePath} cannot return persistent session patches. Return request.session instead.`,
+    );
+  }
+}
+
 export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   agent: DurableAgent<TVars, TAttrs>;
   agentName: string;
@@ -703,16 +967,22 @@ export interface PromptTrailAppOptions {
   store?: DurableRunStore;
   agents?: Record<string, DurableAgent<any, any>>;
   sources?: Record<string, EventSource>;
+  middleware?: readonly MiddlewareDefinition<any, any>[];
+  hooks?: readonly HookDefinition<any, any>[];
 }
 
 export class PromptTrailApp {
   private readonly store: DurableRunStore;
   private readonly agents = new Map<string, DurableAgent<any, any>>();
   private readonly sources = new Map<string, EventSource>();
+  private readonly middleware: readonly MiddlewareDefinition<any, any>[];
+  private readonly hooks: readonly HookDefinition<any, any>[];
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.store = options.store ?? new MemoryRunStore();
+    this.middleware = options.middleware ?? [];
+    this.hooks = options.hooks ?? [];
     for (const [name, durableAgent] of Object.entries(options.agents ?? {})) {
       this.agent(name, durableAgent);
     }
@@ -786,6 +1056,9 @@ export class PromptTrailApp {
       cursor: 0,
       sequencePosition: 0,
       transitionVersion: 0,
+      middleware: this.middleware,
+      hooks: this.hooks,
+      middlewareState: {},
     };
 
     try {
@@ -948,6 +1221,9 @@ export class PromptTrailApp {
       cursor: 0,
       sequencePosition: 0,
       transitionVersion: 0,
+      middleware: this.middleware,
+      hooks: this.hooks,
+      middlewareState: {},
     };
     try {
       const session = await run.agent.execute(state);

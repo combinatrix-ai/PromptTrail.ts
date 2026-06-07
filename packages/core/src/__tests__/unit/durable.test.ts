@@ -7,6 +7,7 @@ import {
   manualSource,
   memoryStore,
 } from '../../durable';
+import { Hook, Middleware } from '../../interceptors';
 
 describe('durable agent runtime', () => {
   it('runs durable agents through the app runtime', async () => {
@@ -302,6 +303,193 @@ describe('durable agent runtime', () => {
     expect(replay.session.getVarsObject()).toEqual({ stamp: 1 });
     expect(patchCalls).toBe(1);
     expect(app.journal('run-patch')).toEqual(['stamp/transition']);
+  });
+
+  it('journals app-level model middleware and hooks without re-running them on replay', async () => {
+    let beforeCalls = 0;
+    let afterCalls = 0;
+    let hookCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('intercepted').turn('main', (turn) =>
+      turn
+        .steer()
+        .assistant('reply', (session) => {
+          modelCalls++;
+          return `model:${session.getVarsObject().beforeModel}`;
+        })
+        .awaitUser(),
+    );
+    const app = PromptTrail.app({
+      agents: { intercepted: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'modelPolicy',
+          beforeModel: () => {
+            beforeCalls++;
+            return {
+              session: {
+                vars: { beforeModel: `before:${beforeCalls}` },
+              },
+            };
+          },
+          afterModel: ({ result }) => {
+            afterCalls++;
+            return {
+              result: {
+                content: `${(result as { content: string }).content}:after:${afterCalls}`,
+              },
+              session: {
+                vars: { afterModel: afterCalls },
+              },
+            };
+          },
+        }),
+      ],
+      hooks: [
+        Hook.create({
+          name: 'audit',
+          onAfterModel: () => {
+            hookCalls++;
+            return {
+              session: {
+                vars: { hook: hookCalls },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'intercepted',
+      runId: 'run-intercepted',
+      input: 'hello',
+      durable: true,
+    });
+    const replay = await app.resume('run-intercepted');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe(
+      'model:before:1:after:1',
+    );
+    expect(replay.session.getVarsObject()).toEqual({
+      beforeModel: 'before:1',
+      afterModel: 1,
+      hook: 1,
+    });
+    expect(beforeCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(hookCalls).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-intercepted')).toEqual([
+      'main/steer/peek',
+      'main/reply/beforeModel',
+      'main/reply/model',
+      'main/reply/afterModel',
+    ]);
+  });
+
+  it('applies durable prepareModelInput as transient model input', async () => {
+    const assistant = agent('prepared')
+      .assistant(
+        'reply',
+        (session) => `saw:${session.getVarsObject().temporary}`,
+      )
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { prepared: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'prepare',
+          prepareModelInput: ({ request }) => ({
+            request: {
+              session: (
+                request as {
+                  session: { withVar(key: string, value: string): unknown };
+                }
+              ).session.withVar('temporary', 'yes'),
+            },
+          }),
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'prepared',
+      runId: 'run-prepare',
+      durable: true,
+    });
+    const replay = await app.resume('run-prepare');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe('saw:yes');
+    expect(replay.session.getVarsObject()).toEqual({});
+    expect(app.journal('run-prepare')).toEqual([
+      'reply/prepareModelInput',
+      'reply/model',
+    ]);
+  });
+
+  it('journals app-level model middleware around durable chat nodes', async () => {
+    let beforeCalls = 0;
+    let afterCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('chatty').chat('chat', (session) => {
+      modelCalls++;
+      return `chat:${session.getLastMessage()?.content}:${session.getVarsObject().before}`;
+    });
+    const app = PromptTrail.app({
+      agents: { chatty: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'chatPolicy',
+          beforeModel: () => {
+            beforeCalls++;
+            return {
+              session: {
+                vars: { before: beforeCalls },
+              },
+            };
+          },
+          afterModel: ({ result }) => {
+            afterCalls++;
+            return {
+              result: {
+                content: `${(result as { content: string }).content}:after:${afterCalls}`,
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'chatty',
+      runId: 'run-chat-intercepted',
+      input: 'hello',
+      durable: true,
+    });
+    const replay = await app.resume('run-chat-intercepted');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe(
+      'chat:hello:1:after:1',
+    );
+    expect(beforeCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-chat-intercepted')).toEqual([
+      'chat#0/input',
+      'chat#0/beforeModel',
+      'chat#0/model',
+      'chat#0/afterModel',
+    ]);
   });
 
   it('rejects unsupported commands from durable patch transitions', async () => {
