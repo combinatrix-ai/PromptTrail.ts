@@ -15,6 +15,7 @@ export * from './provider_stream';
 export * from './replay_pins';
 export * from './runtime';
 export * from './runtime_bindings';
+export * from './runtime_discord';
 export * from './runtime_dispatch';
 export * from './runtime_mocks';
 export * from './runtime_server';

@@ -2,27 +2,14 @@ import 'dotenv/config';
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import {
-  ChannelType,
-  Client,
-  Events,
-  GatewayIntentBits,
-  Partials,
-  type Message as DiscordMessage,
-} from 'discord.js';
-import {
   PromptTrail,
   agent,
   bind,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
   discord,
-  isConcreteDiscordDeliveryTarget,
+  discordGateway,
   memoryStore,
-  type ConcreteDiscordDeliveryTarget,
-  type DiscordMessageEvent,
-  type RuntimeActivityHandle,
-  type RuntimeAdapter,
-  type RuntimeSourceContext,
 } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
 
@@ -83,16 +70,6 @@ const runtime = PromptTrail.app({
   agents: bundle.agents,
 });
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-  partials: [Partials.Channel],
-});
-
 const codexThreadIds = new Map<string, string>();
 
 const server = PromptTrail.server({
@@ -102,178 +79,18 @@ const server = PromptTrail.server({
   errorMessage: 'Claw failed to handle that message.',
   adapters: [
     discordGateway({
-      client,
       token: config.token,
       stripBotMention: true,
+      onReady(readyClient) {
+        console.log(`Claw Discord bot logged in as ${readyClient.user.tag}`);
+        console.log(`Allowed channels: ${config.allowedChannels.join(', ')}`);
+        console.log(`Reply mode: ${config.replyMode}`);
+      },
     }),
   ],
 });
 
 await server.start();
-
-function discordGateway(options: {
-  client: Client;
-  token: string;
-  stripBotMention?: boolean;
-}): RuntimeAdapter {
-  const { client } = options;
-  return {
-    name: 'discord',
-    sources: [
-      {
-        type: 'discord.messages',
-        async start(ctx) {
-          client.once(Events.ClientReady, (readyClient) => {
-            console.log(
-              `Claw Discord bot logged in as ${readyClient.user.tag}`,
-            );
-            console.log(
-              `Allowed channels: ${config.allowedChannels.join(', ')}`,
-            );
-            console.log(`Reply mode: ${config.replyMode}`);
-          });
-          client.on(Events.MessageCreate, (message) => {
-            void handleDiscordMessage(ctx, message, options.stripBotMention);
-          });
-          await client.login(options.token);
-        },
-        async stop() {
-          client.destroy();
-        },
-      },
-    ],
-    deliveries: [
-      {
-        platform: 'discord',
-        async deliver(_ctx, target, message) {
-          if (!isConcreteDiscordDeliveryTarget(target)) {
-            return;
-          }
-          const channel = await resolveDiscordDeliveryChannel(client, target);
-          if (!channel?.isSendable()) {
-            console.warn('Discord delivery target is not sendable', target);
-            return;
-          }
-          await channel.send(message.content);
-        },
-      },
-    ],
-    activities: [
-      {
-        platform: 'discord',
-        async start(_ctx, target, activity) {
-          if (
-            !isConcreteDiscordDeliveryTarget(target) ||
-            (activity.kind !== 'typing' && activity.kind !== 'processing')
-          ) {
-            return undefined;
-          }
-          return startDiscordTyping(client, target);
-        },
-      },
-    ],
-  };
-}
-
-async function handleDiscordMessage(
-  ctx: RuntimeSourceContext<DiscordMessageEvent>,
-  message: DiscordMessage,
-  shouldStripBotMention: boolean | undefined,
-): Promise<void> {
-  const event = toDiscordEvent(message.client, message);
-  if (!event) {
-    return;
-  }
-  await ctx.emit(event, {
-    content: shouldStripBotMention
-      ? stripBotMention(event.content, message.client.user?.id)
-      : event.content,
-  });
-}
-
-function toDiscordEvent(
-  client: Client,
-  message: DiscordMessage,
-): DiscordMessageEvent | undefined {
-  if (message.author.bot) {
-    return undefined;
-  }
-
-  const channel = message.channel;
-  const isThread = channel.isThread();
-  const parent = isThread ? channel.parent : undefined;
-  const channelName =
-    (isThread ? parent?.name : 'name' in channel ? channel.name : undefined) ??
-    channel.id;
-  const channelId = isThread ? (parent?.id ?? channel.id) : channel.id;
-  const thread = isThread ? channel.id : undefined;
-
-  return {
-    source: 'discord',
-    guild: message.guildId ?? `dm:${message.author.id}`,
-    channel: channelName,
-    channelId,
-    thread,
-    author: message.author.username,
-    authorId: message.author.id,
-    authorBot: message.author.bot,
-    content: message.content,
-    mentionsBot: client.user ? message.mentions.has(client.user) : false,
-    isDM: channel.type === ChannelType.DM,
-  };
-}
-
-async function resolveDiscordDeliveryChannel(
-  client: Client,
-  delivery: ConcreteDiscordDeliveryTarget,
-) {
-  if (delivery.thread) {
-    return client.channels.fetch(delivery.thread);
-  }
-  const channel = client.channels.cache.find(
-    (candidate) =>
-      candidate.id === delivery.channel ||
-      ('name' in candidate && candidate.name === delivery.channel),
-  );
-  return channel ?? client.channels.fetch(delivery.channel);
-}
-
-async function startDiscordTyping(
-  client: Client,
-  delivery: ConcreteDiscordDeliveryTarget,
-): Promise<RuntimeActivityHandle | undefined> {
-  const target = await resolveDiscordDeliveryChannel(client, delivery).catch(
-    () => undefined,
-  );
-  const sendTyping = getSendTyping(target);
-  if (!sendTyping) {
-    return undefined;
-  }
-
-  await sendTyping().catch(() => undefined);
-  const interval = setInterval(() => {
-    void sendTyping().catch(() => undefined);
-  }, 8_000);
-
-  return {
-    stop() {
-      clearInterval(interval);
-    },
-  };
-}
-
-function getSendTyping(
-  target: Awaited<ReturnType<typeof resolveDiscordDeliveryChannel>> | undefined,
-): (() => Promise<void>) | undefined {
-  if (!target?.isSendable() || !('sendTyping' in target)) {
-    return undefined;
-  }
-  const sendTyping = target.sendTyping;
-  if (typeof sendTyping !== 'function') {
-    return undefined;
-  }
-  return () => sendTyping.call(target);
-}
 
 async function generateReply(session: Session): Promise<string> {
   const last = session.getLastMessage();
@@ -385,19 +202,6 @@ function getRuntimeContext(
     | { runtimeContext?: { conversationId?: string } }
     | undefined;
   return attrs?.runtimeContext;
-}
-
-function stripBotMention(content: string, botUserId?: string): string {
-  if (!botUserId) {
-    return content;
-  }
-  return content
-    .replace(new RegExp(`<@!?${escapeRegExp(botUserId)}>`, 'g'), '')
-    .trim();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function readConfig(): ClawConfig {
