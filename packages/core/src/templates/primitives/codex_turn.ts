@@ -21,6 +21,7 @@ import {
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -34,6 +35,7 @@ export class CodexTurn<
 
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
@@ -94,8 +96,11 @@ export class CodexTurn<
         client,
         rawRuntimeSkills,
       );
-      const resolvedThreadId = await this.resolveThreadId(currentSession);
-      const input = await this.resolveInput(currentSession);
+      const resolvedThreadId = await this.resolveThreadId(
+        currentSession,
+        runtime?.context,
+      );
+      const input = await this.resolveInput(currentSession, runtime?.context);
       const threadId =
         resolvedThreadId ??
         (
@@ -167,6 +172,7 @@ export class CodexTurn<
 
   private async resolveThreadId(
     session: Session<TVars, TAttrs>,
+    context: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
       this.options.threadId === undefined ||
@@ -179,7 +185,7 @@ export class CodexTurn<
     }
 
     if (typeof this.options.threadId === 'function') {
-      return this.options.threadId(session);
+      return this.options.threadId(session, context);
     }
 
     return this.options.threadId;
@@ -187,13 +193,14 @@ export class CodexTurn<
 
   private async resolveInput(
     session: Session<TVars, TAttrs>,
+    context: Record<string, unknown> | undefined,
   ): Promise<string | unknown[] | undefined> {
     if (this.options.input === undefined) {
       return session.getLastMessage()?.content;
     }
 
     if (typeof this.options.input === 'function') {
-      return this.options.input(session);
+      return this.options.input(session, context);
     }
 
     return this.options.input;

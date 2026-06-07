@@ -29,6 +29,7 @@ export type CodexThreadId =
   | 'auto'
   | ((
       session: Session<any, any>,
+      context: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
 export type CodexTurnInput =
@@ -36,6 +37,7 @@ export type CodexTurnInput =
   | unknown[]
   | ((
       session: Session<any, any>,
+      context: Record<string, unknown> | undefined,
     ) => string | unknown[] | Promise<string | unknown[]>);
 
 export interface CodexThreadStartParams {

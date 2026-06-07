@@ -15,7 +15,10 @@ import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
 export type ClaudeAgentInput<TVars extends Vars, TAttrs extends Attrs> =
   | string
-  | ((session: Session<TVars, TAttrs>) => string | Promise<string>);
+  | ((
+      session: Session<TVars, TAttrs>,
+      context: Record<string, unknown> | undefined,
+    ) => string | Promise<string>);
 
 export type ClaudeAgentSessionId<TVars extends Vars, TAttrs extends Attrs> =
   | string
@@ -23,6 +26,7 @@ export type ClaudeAgentSessionId<TVars extends Vars, TAttrs extends Attrs> =
   | 'auto'
   | ((
       session: Session<TVars, TAttrs>,
+      context: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
 export interface ClaudeAgentClient {

@@ -124,6 +124,27 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('passes direct execution context to input callbacks', async () => {
+    const client = new FakeCodexClient();
+    await Agent.create()
+      .codexTurn({
+        client,
+        threadId: (_session, context) => `thread-${context?.channel}`,
+        input: (session, context) =>
+          `${context?.channel}:${session.getLastMessage()?.content}`,
+      })
+      .execute(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        { context: { channel: 'claw-test' } },
+      );
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts[0]).toMatchObject({
+      threadId: 'thread-claw-test',
+      input: [{ type: 'text', text: 'claw-test:hello' }],
+    });
+  });
+
   it('should derive an existing Codex thread when threadId is auto', async () => {
     const client = new FakeCodexClient();
     const initialSession = Session.create()

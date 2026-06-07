@@ -12,6 +12,7 @@ import {
 } from '../../conversation';
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -25,12 +26,16 @@ export class ClaudeTurn<
 
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
     const client =
       this.options.client ?? (await createDefaultClaudeAgentClient());
-    const prompt = await this.resolveInput(currentSession);
-    const sessionId = await this.resolveSessionId(currentSession);
+    const prompt = await this.resolveInput(currentSession, runtime?.context);
+    const sessionId = await this.resolveSessionId(
+      currentSession,
+      runtime?.context,
+    );
     await materializeClaudeAgentSkills({
       capabilities: this.options.capabilities,
       cwd: this.options.cwd,
@@ -99,13 +104,16 @@ export class ClaudeTurn<
     });
   }
 
-  private async resolveInput(session: Session<TVars, TAttrs>): Promise<string> {
+  private async resolveInput(
+    session: Session<TVars, TAttrs>,
+    context: Record<string, unknown> | undefined,
+  ): Promise<string> {
     if (this.options.input === undefined) {
       return session.getLastMessage()?.content ?? '';
     }
 
     if (typeof this.options.input === 'function') {
-      return this.options.input(session);
+      return this.options.input(session, context);
     }
 
     return this.options.input;
@@ -113,6 +121,7 @@ export class ClaudeTurn<
 
   private async resolveSessionId(
     session: Session<TVars, TAttrs>,
+    context: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
       this.options.sessionId === undefined ||
@@ -124,7 +133,7 @@ export class ClaudeTurn<
       return deriveConversationBinding(session, 'claude-agent')?.id;
     }
     if (typeof this.options.sessionId === 'function') {
-      return this.options.sessionId(session);
+      return this.options.sessionId(session, context);
     }
 
     return this.options.sessionId;

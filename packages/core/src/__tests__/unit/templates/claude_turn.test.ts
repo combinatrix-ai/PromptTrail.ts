@@ -97,6 +97,24 @@ describe('ClaudeTurn template', () => {
     });
   });
 
+  it('passes direct execution context to input callbacks', async () => {
+    const client = new FakeClaudeAgentClient();
+    await Agent.create()
+      .claudeTurn({
+        client,
+        sessionId: (_session, context) => `session-${context?.channel}`,
+        input: (session, context) =>
+          `${context?.channel}:${session.getLastMessage()?.content}`,
+      })
+      .execute(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        { context: { channel: 'claw-test' } },
+      );
+
+    expect(client.queries[0].prompt).toBe('claw-test:hello');
+    expect(client.queries[0].options.resume).toBe('session-claw-test');
+  });
+
   it('resumes a Claude Agent session when sessionId is auto', async () => {
     const originalClient = new FakeClaudeAgentClient();
     const originalSession = await Agent.create()
