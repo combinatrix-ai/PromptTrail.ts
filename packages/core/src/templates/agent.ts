@@ -2,6 +2,12 @@ import { Session, type Attrs, type Vars } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
 import {
+  agent as createDurableAgent,
+  app as createDurableApp,
+  memoryStore,
+  type DurableRunStore,
+} from '../durable';
+import {
   ObserverBus,
   type ExecutionEvent,
   type ObserverLike,
@@ -75,6 +81,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
   private readonly hooks: HookDefinition<TC, TM>[] = [];
   private readonly observers: ObserverLike[] = [];
+  private directDurableOptions?: AgentDirectDurableOptions | false;
+  private directDurableStore?: DurableRunStore;
+  private directDurableRunId?: string;
 
   private hasInterceptors(): boolean {
     return (
@@ -128,6 +137,22 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   observe(observer: ObserverLike) {
     this.observers.push(observer);
+    return this;
+  }
+
+  durable(options: AgentDirectDurableOptions | boolean = true) {
+    this.directDurableOptions =
+      typeof options === 'boolean'
+        ? options
+          ? { runId: this.ensureDirectDurableRunId() }
+          : false
+        : {
+            ...options,
+            runId: options.runId ?? this.ensureDirectDurableRunId(),
+          };
+    if (typeof options === 'object' && options.store) {
+      this.directDurableStore = options.store;
+    }
     return this;
   }
 
@@ -261,6 +286,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       ? runtimeOrOptions
       : undefined;
     const executionOptions = parentRuntime ? undefined : runtimeOrOptions;
+    if (!parentRuntime) {
+      const durableOptions = this.resolveDirectDurableOptions(executionOptions);
+      if (durableOptions) {
+        return this.executeDirectDurable(
+          session,
+          executionOptions,
+          durableOptions,
+        );
+      }
+    }
     if (!this.hasInterceptors()) {
       const runtime =
         parentRuntime ??
@@ -387,11 +422,86 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       }
     }
   }
+
+  private resolveDirectDurableOptions(
+    executionOptions: AgentExecutionOptions | undefined,
+  ): ResolvedAgentDirectDurableOptions | undefined {
+    const authored =
+      executionOptions?.durable !== undefined
+        ? executionOptions.durable
+        : this.directDurableOptions;
+    if (authored === undefined || authored === false) {
+      return undefined;
+    }
+    const options = authored === true ? {} : authored;
+    const store =
+      options.store ??
+      this.directDurableStore ??
+      (this.directDurableStore = memoryStore());
+    const runId = options.runId ?? this.ensureDirectDurableRunId();
+    return { runId, store };
+  }
+
+  private ensureDirectDurableRunId(): string {
+    return (this.directDurableRunId ??= createDirectDurableRunId());
+  }
+
+  private async executeDirectDurable(
+    session: Session<TC, TM> | undefined,
+    executionOptions: AgentExecutionOptions | undefined,
+    durableOptions: ResolvedAgentDirectDurableOptions,
+  ): Promise<Session<TC, TM>> {
+    const durableAgent = createDurableAgent<TC, TM>('direct-agent').patch(
+      'agent',
+      async (current) => ({
+        session: await this.execute(current, {
+          context: executionOptions?.context,
+          signal: executionOptions?.signal,
+          durable: false,
+        }),
+      }),
+    );
+    const durableRuntime = createDurableApp({
+      durable: {
+        store: durableOptions.store,
+        defaultDurable: true,
+      },
+    });
+    const result = durableOptions.store.has(durableOptions.runId)
+      ? await durableRuntime.resume<TC, TM>(durableOptions.runId)
+      : await durableRuntime.run<TC, TM>({
+          agent: durableAgent,
+          runId: durableOptions.runId,
+          session,
+          durable: true,
+          context: executionOptions?.context,
+        });
+    return result.session;
+  }
 }
 
 export interface AgentExecutionOptions {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
+  durable?: boolean | AgentDirectDurableOptions;
+}
+
+export interface AgentDirectDurableOptions {
+  runId?: string;
+  store?: DurableRunStore;
+}
+
+interface ResolvedAgentDirectDurableOptions {
+  runId: string;
+  store: DurableRunStore;
+}
+
+function createDirectDurableRunId(): string {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `direct-agent:${random}`;
 }
 
 function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(

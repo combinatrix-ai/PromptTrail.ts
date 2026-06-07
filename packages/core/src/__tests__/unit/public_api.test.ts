@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as prompttrail from '../../index';
 import type {
+  AgentDirectDurableOptions,
   AgentExecutionOptions,
   ExecutionDurableActivityOptions,
 } from '../../index';
@@ -56,9 +57,14 @@ describe('public API surface', () => {
 
   it('types direct agent execution options', async () => {
     const controller = new AbortController();
+    const durable: AgentDirectDurableOptions = {
+      runId: 'public-direct-agent-run',
+      store: prompttrail.memoryStore(),
+    };
     const options: AgentExecutionOptions = {
       context: { userId: 'U1' },
       signal: controller.signal,
+      durable,
     };
     const session = await prompttrail.Agent.user('hello').execute(
       undefined,

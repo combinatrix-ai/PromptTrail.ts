@@ -5,6 +5,7 @@ import { Message } from '../../../message';
 import type { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
+import { memoryStore } from '../../../durable';
 
 describe('Agent interceptors', () => {
   it('runs beforeAgent and afterAgent middleware and hooks', async () => {
@@ -275,6 +276,63 @@ describe('Agent interceptors', () => {
       .execute(undefined, { context: { userId: 'U1' } });
 
     expect(session.getVarsObject()).toEqual({ userId: 'U1' });
+  });
+
+  it('journals direct durable Agent.execute results by runId', async () => {
+    const store = memoryStore();
+    let calls = 0;
+    const source = Source.callback(async () => {
+      calls++;
+      return `reply:${calls}`;
+    });
+    const agent = Agent.create().assistant(source);
+
+    const first = await agent.execute(undefined, {
+      durable: { runId: 'direct-agent-run', store },
+    });
+    const second = await agent.execute(undefined, {
+      durable: { runId: 'direct-agent-run', store },
+    });
+
+    expect(first.getLastMessage()?.content).toBe('reply:1');
+    expect(second.getLastMessage()?.content).toBe('reply:1');
+    expect(calls).toBe(1);
+  });
+
+  it('uses fluent durable defaults for direct Agent.execute', async () => {
+    const store = memoryStore();
+    let calls = 0;
+    const source = Source.callback(async () => {
+      calls++;
+      return `fluent:${calls}`;
+    });
+    const agent = Agent.create()
+      .durable({ store })
+      .assistant(source);
+
+    await agent.execute();
+    const replayed = await agent.execute();
+
+    expect(replayed.getLastMessage()?.content).toBe('fluent:1');
+    expect(calls).toBe(1);
+  });
+
+  it('lets direct execution options disable fluent durability', async () => {
+    const store = memoryStore();
+    let calls = 0;
+    const source = Source.callback(async () => {
+      calls++;
+      return `override:${calls}`;
+    });
+    const agent = Agent.create()
+      .durable({ runId: 'disabled-fluent-direct-agent-run', store })
+      .assistant(source);
+
+    await agent.execute();
+    const ephemeral = await agent.execute(undefined, { durable: false });
+
+    expect(ephemeral.getLastMessage()?.content).toBe('override:2');
+    expect(calls).toBe(2);
   });
 
   it('emits session.patched events for materialized phase patches', async () => {
