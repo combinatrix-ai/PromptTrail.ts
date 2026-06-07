@@ -115,6 +115,31 @@ describe('ClaudeTurn template', () => {
     expect(client.queries[0].options.resume).toBe('session-claw-test');
   });
 
+  it('emits model boundary events for direct execution observers', async () => {
+    const client = new FakeClaudeAgentClient();
+    const events: string[] = [];
+
+    await Agent.create()
+      .observe((event) => {
+        if (event.type.startsWith('model.')) {
+          events.push(
+            `${event.seq}:${event.type}:${event.stepId}:${event.idempotencyKey}`,
+          );
+        }
+      })
+      .user('Review this')
+      .claudeTurn({ client })
+      .execute(Session.create());
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^1:model\.started:claudeTurn:direct-agent:.+:model:1:model\.started$/,
+    );
+    expect(events[1]).toMatch(
+      /^2:model\.completed:claudeTurn:direct-agent:.+:model:2:model\.completed$/,
+    );
+  });
+
   it('resumes a Claude Agent session when sessionId is auto', async () => {
     const originalClient = new FakeClaudeAgentClient();
     const originalSession = await Agent.create()

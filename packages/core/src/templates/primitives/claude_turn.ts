@@ -13,6 +13,7 @@ import {
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
 import type { ExecutionRuntimeState } from '../../interceptors';
+import type { ExecutionEvent } from '../../execution';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -67,42 +68,59 @@ export class ClaudeTurn<
       sdkOptions: this.options.sdkOptions,
       context: runtime?.context,
     });
-    const result = this.prepareSessionResult(
-      await collectClaudeAgentTurnResult(
-        client.query(params),
-        this.options.onEvent,
-      ),
-    );
-
-    if (this.options.squashWith) {
-      return this.options.squashWith(currentSession, result);
-    }
-
-    if (this.options.retainMessages === false) {
-      return currentSession.withVar(
-        this.options.attrsKey ?? 'claudeAgent',
-        result,
+    let emittedModelStarted = false;
+    let providerCompleted = false;
+    try {
+      emittedModelStarted = await emitTurnModelEvent(
+        runtime,
+        'model.started',
+        'claudeTurn',
       );
-    }
+      const result = this.prepareSessionResult(
+        await collectClaudeAgentTurnResult(
+          client.query(params),
+          this.options.onEvent,
+        ),
+      );
 
-    const attrsKey = this.options.attrsKey ?? 'claudeAgent';
-    const message = claudeAgentResultToMessage<TAttrs>(result, attrsKey);
-    const historyFingerprint = createConversationHistoryFingerprint([
-      ...currentSession.messages,
-      message,
-    ]);
-    return currentSession.addMessage({
-      ...message,
-      attrs: {
-        ...message.attrs,
-        [attrsKey]: {
-          ...((message.attrs as Record<string, unknown> | undefined)?.[
-            attrsKey
-          ] as Record<string, unknown> | undefined),
-          historyFingerprint,
-        },
-      } as TAttrs,
-    });
+      let nextSession: Session<TVars, TAttrs>;
+      if (this.options.squashWith) {
+        nextSession = await this.options.squashWith(currentSession, result);
+      } else if (this.options.retainMessages === false) {
+        nextSession = currentSession.withVar(
+          this.options.attrsKey ?? 'claudeAgent',
+          result,
+        );
+      } else {
+        const attrsKey = this.options.attrsKey ?? 'claudeAgent';
+        const message = claudeAgentResultToMessage<TAttrs>(result, attrsKey);
+        const historyFingerprint = createConversationHistoryFingerprint([
+          ...currentSession.messages,
+          message,
+        ]);
+        nextSession = currentSession.addMessage({
+          ...message,
+          attrs: {
+            ...message.attrs,
+            [attrsKey]: {
+              ...((message.attrs as Record<string, unknown> | undefined)?.[
+                attrsKey
+              ] as Record<string, unknown> | undefined),
+              historyFingerprint,
+            },
+          } as TAttrs,
+        });
+      }
+
+      providerCompleted = true;
+      await emitTurnModelEvent(runtime, 'model.completed', 'claudeTurn');
+      return nextSession;
+    } catch (error) {
+      if (emittedModelStarted && !providerCompleted) {
+        await emitTurnModelEvent(runtime, 'model.failed', 'claudeTurn', error);
+      }
+      throw error;
+    }
   }
 
   private async resolveInput(
@@ -158,6 +176,37 @@ export class ClaudeTurn<
       events: summarizeClaudeAgentEvents(events),
     };
   }
+}
+
+async function emitTurnModelEvent<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+  type: 'model.started' | 'model.completed' | 'model.failed',
+  stepId: string,
+  error?: unknown,
+): Promise<boolean> {
+  if (!runtime?.emitEvent || !runtime.nextEventSeq) {
+    return false;
+  }
+  const seq = runtime.nextEventSeq();
+  const event: ExecutionEvent = {
+    id: `model:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    replay: 'live',
+    source: 'model',
+    phase: 'model',
+    stepId,
+    idempotencyKey: `${runtime.eventScopeId ?? 'direct'}:model:${seq}:${type}`,
+  };
+  if (error !== undefined) {
+    event.error = error;
+  }
+  await runtime.emitEvent(event);
+  return true;
 }
 
 function getClaudeConfiguredApprovalCapabilities(

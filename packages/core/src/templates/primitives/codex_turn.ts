@@ -22,6 +22,7 @@ import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import type { ExecutionRuntimeState } from '../../interceptors';
+import type { ExecutionEvent } from '../../execution';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -92,7 +93,14 @@ export class CodexTurn<
       );
     }
 
+    let emittedModelStarted = false;
+    let providerCompleted = false;
     try {
+      emittedModelStarted = await emitTurnModelEvent(
+        runtime,
+        'model.started',
+        'codexTurn',
+      );
       const runtimeSkills = await resolveCodexRuntimeSkills(
         client,
         rawRuntimeSkills,
@@ -135,35 +143,43 @@ export class CodexTurn<
       );
       const sessionResult = this.prepareSessionResult(result);
 
+      let nextSession: Session<TVars, TAttrs>;
       if (this.options.squashWith) {
-        return this.options.squashWith(currentSession, result);
-      }
-
-      if (this.options.retainMessages === false) {
-        return currentSession.withVar(
+        nextSession = await this.options.squashWith(currentSession, result);
+      } else if (this.options.retainMessages === false) {
+        nextSession = currentSession.withVar(
           this.options.attrsKey ?? 'codex',
           sessionResult,
         );
+      } else {
+        const attrsKey = this.options.attrsKey ?? 'codex';
+        const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
+        const historyFingerprint = createConversationHistoryFingerprint([
+          ...currentSession.messages,
+          message,
+        ]);
+        nextSession = currentSession.addMessage({
+          ...message,
+          attrs: {
+            ...message.attrs,
+            [attrsKey]: {
+              ...((message.attrs as Record<string, unknown> | undefined)?.[
+                attrsKey
+              ] as Record<string, unknown> | undefined),
+              historyFingerprint,
+            },
+          } as TAttrs,
+        });
       }
 
-      const attrsKey = this.options.attrsKey ?? 'codex';
-      const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
-      const historyFingerprint = createConversationHistoryFingerprint([
-        ...currentSession.messages,
-        message,
-      ]);
-      return currentSession.addMessage({
-        ...message,
-        attrs: {
-          ...message.attrs,
-          [attrsKey]: {
-            ...((message.attrs as Record<string, unknown> | undefined)?.[
-              attrsKey
-            ] as Record<string, unknown> | undefined),
-            historyFingerprint,
-          },
-        } as TAttrs,
-      });
+      providerCompleted = true;
+      await emitTurnModelEvent(runtime, 'model.completed', 'codexTurn');
+      return nextSession;
+    } catch (error) {
+      if (emittedModelStarted && !providerCompleted) {
+        await emitTurnModelEvent(runtime, 'model.failed', 'codexTurn', error);
+      }
+      throw error;
     } finally {
       if (ownsClient) {
         await client.close?.();
@@ -230,6 +246,37 @@ export class CodexTurn<
         : undefined,
     };
   }
+}
+
+async function emitTurnModelEvent<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+  type: 'model.started' | 'model.completed' | 'model.failed',
+  stepId: string,
+  error?: unknown,
+): Promise<boolean> {
+  if (!runtime?.emitEvent || !runtime.nextEventSeq) {
+    return false;
+  }
+  const seq = runtime.nextEventSeq();
+  const event: ExecutionEvent = {
+    id: `model:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    replay: 'live',
+    source: 'model',
+    phase: 'model',
+    stepId,
+    idempotencyKey: `${runtime.eventScopeId ?? 'direct'}:model:${seq}:${type}`,
+  };
+  if (error !== undefined) {
+    event.error = error;
+  }
+  await runtime.emitEvent(event);
+  return true;
 }
 
 function getCodexConfiguredApprovalCapabilities(

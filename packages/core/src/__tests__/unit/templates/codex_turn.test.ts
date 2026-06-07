@@ -145,6 +145,31 @@ describe('CodexTurn template', () => {
     });
   });
 
+  it('emits model boundary events for direct execution observers', async () => {
+    const client = new FakeCodexClient();
+    const events: string[] = [];
+
+    await Agent.create()
+      .observe((event) => {
+        if (event.type.startsWith('model.')) {
+          events.push(
+            `${event.seq}:${event.type}:${event.stepId}:${event.idempotencyKey}`,
+          );
+        }
+      })
+      .user('Implement this')
+      .codexTurn({ client })
+      .execute(Session.create());
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^1:model\.started:codexTurn:direct-agent:.+:model:1:model\.started$/,
+    );
+    expect(events[1]).toMatch(
+      /^2:model\.completed:codexTurn:direct-agent:.+:model:2:model\.completed$/,
+    );
+  });
+
   it('should derive an existing Codex thread when threadId is auto', async () => {
     const client = new FakeCodexClient();
     const initialSession = Session.create()
@@ -171,25 +196,27 @@ describe('CodexTurn template', () => {
   it('requires approval before configuring Codex MCP servers', async () => {
     const client = new FakeCodexClient();
     const approvals: unknown[] = [];
-    const agent = Agent.create().user('Use docs').codexTurn({
-      client,
-      capabilities: [
-        {
-          kind: 'mcp',
-          name: 'docs',
-          transport: {
-            kind: 'http',
-            url: 'https://mcp.example.com',
+    const agent = Agent.create()
+      .user('Use docs')
+      .codexTurn({
+        client,
+        capabilities: [
+          {
+            kind: 'mcp',
+            name: 'docs',
+            transport: {
+              kind: 'http',
+              url: 'https://mcp.example.com',
+            },
+            tools: 'all',
+            approval: 'always',
           },
-          tools: 'all',
-          approval: 'always',
+        ],
+        approvalHandler: async (request) => {
+          approvals.push(request);
+          return { type: 'deny', reason: 'no external servers' };
         },
-      ],
-      approvalHandler: async (request) => {
-        approvals.push(request);
-        return { type: 'deny', reason: 'no external servers' };
-      },
-    });
+      });
 
     await expect(agent.execute(Session.create())).rejects.toThrow(
       'Capability "docs" approval denied: no external servers',
@@ -215,23 +242,25 @@ describe('CodexTurn template', () => {
   it('requires approval before enabling Codex builtin runtime tools', async () => {
     const client = new FakeCodexClient();
     const approvals: unknown[] = [];
-    const agent = Agent.create().user('Run commands').codexTurn({
-      client,
-      capabilities: [
-        {
-          kind: 'builtin',
-          name: 'shell',
-          provider: 'codex',
-          executionMode: 'runtime',
-          config: { sandboxPolicy: 'workspace-write' },
-          approval: 'always',
+    const agent = Agent.create()
+      .user('Run commands')
+      .codexTurn({
+        client,
+        capabilities: [
+          {
+            kind: 'builtin',
+            name: 'shell',
+            provider: 'codex',
+            executionMode: 'runtime',
+            config: { sandboxPolicy: 'workspace-write' },
+            approval: 'always',
+          },
+        ],
+        approvalHandler: async (request) => {
+          approvals.push(request);
+          return { type: 'deny', reason: 'shell disabled' };
         },
-      ],
-      approvalHandler: async (request) => {
-        approvals.push(request);
-        return { type: 'deny', reason: 'shell disabled' };
-      },
-    });
+      });
 
     await expect(agent.execute(Session.create())).rejects.toThrow(
       'Capability "shell" approval denied: shell disabled',
