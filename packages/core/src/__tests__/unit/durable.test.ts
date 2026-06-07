@@ -121,6 +121,155 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('passes activity metadata to durable tool executions', async () => {
+    const contexts: Array<{
+      runId: string;
+      stepId: string;
+      idempotencyKey?: string;
+      toolCallId: string;
+    }> = [];
+    let activityResolutions = 0;
+    const assistant = agent('activity-tool-agent')
+      .tool('sendDiscord', {
+        activity: (call) => {
+          activityResolutions++;
+          return {
+            kind: 'external-write',
+            idempotencyKey: `discord:${call.id}`,
+          };
+        },
+        execute: async (_args, context) => {
+          contexts.push({
+            runId: context.runId,
+            stepId: context.stepId,
+            idempotencyKey: context.activity.idempotencyKey,
+            toolCallId: context.toolCall.id,
+          });
+          return { sent: context.activity.idempotencyKey };
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-send',
+            name: 'sendDiscord',
+            arguments: { channel: 'claw-test' },
+          },
+        ],
+      }))
+      .runTools();
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-activity-tool',
+      durable: true,
+    });
+    const replay = await app.resume('run-activity-tool');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(contexts).toEqual([
+      {
+        runId: 'run-activity-tool',
+        stepId: 'tools/call-send',
+        idempotencyKey: 'discord:call-send',
+        toolCallId: 'call-send',
+      },
+    ]);
+    expect(activityResolutions).toBe(1);
+    expect(app.journal('run-activity-tool')).toEqual([
+      'reply/model',
+      'tools/call-send',
+    ]);
+  });
+
+  it('requires idempotency keys for external-write durable tools', async () => {
+    let toolCalls = 0;
+    const assistant = agent('write-tool-agent')
+      .tool('sendDiscord', {
+        activity: { kind: 'external-write' },
+        execute: async () => {
+          toolCalls++;
+          return 'sent';
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-send',
+            name: 'sendDiscord',
+            arguments: { channel: 'claw-test' },
+          },
+        ],
+      }))
+      .runTools();
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: assistant,
+        runId: 'run-write-tool',
+        durable: true,
+      }),
+    ).rejects.toThrow(
+      'Durable tool sendDiscord external-write activity requires idempotencyKey.',
+    );
+    expect(toolCalls).toBe(0);
+    expect(app.journal('run-write-tool')).toEqual(['reply/model']);
+  });
+
+  it('rejects duplicate durable tool step ids in one batch', async () => {
+    let toolCalls = 0;
+    const assistant = agent('duplicate-tool-agent')
+      .tool('lookup', {
+        execute: async () => {
+          toolCalls++;
+          return 'result';
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tools',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'one' },
+          },
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'two' },
+          },
+        ],
+      }))
+      .runTools();
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: assistant,
+        runId: 'run-duplicate-tools',
+        durable: true,
+      }),
+    ).rejects.toThrow(
+      'Duplicate durable tool step: tools/call-1. Tool call ids must be unique within tools.',
+    );
+    expect(toolCalls).toBe(0);
+    expect(app.journal('run-duplicate-tools')).toEqual(['reply/model']);
+  });
+
   it('journals resolved session transitions without re-running patch handlers', async () => {
     let patchCalls = 0;
     const assistant = agent('patch-agent')

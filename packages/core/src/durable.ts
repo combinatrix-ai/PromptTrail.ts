@@ -23,13 +23,43 @@ export interface DurableTool<
   TResult = unknown,
 > {
   description?: string;
-  execute(args: TArgs): Promise<TResult>;
+  activity?:
+    | DurableActivityOptions
+    | ((
+        call: ToolCall,
+        context: DurableActivityContext,
+      ) => DurableActivityOptions);
+  execute(
+    args: TArgs,
+    context: DurableToolExecutionContext,
+  ): Promise<TResult> | TResult;
 }
 
 export interface ToolCall {
   name: string;
   arguments: Record<string, unknown>;
   id: string;
+}
+
+export type DurableActivityKind =
+  | 'pure-call'
+  | 'external-read'
+  | 'external-write';
+
+export interface DurableActivityOptions {
+  kind: DurableActivityKind;
+  idempotencyKey?: string;
+}
+
+export interface DurableActivityContext {
+  runId: string;
+  stepId: string;
+  session: Session<any, any>;
+}
+
+export interface DurableToolExecutionContext extends DurableActivityContext {
+  toolCall: ToolCall;
+  activity: DurableActivityOptions;
 }
 
 export type AssistantResult<TAttrs extends Attrs = Attrs> =
@@ -159,6 +189,38 @@ function toolCallsOf<TAttrs extends Attrs>(
   return (session.getLastMessage()?.toolCalls ?? []) as ToolCall[];
 }
 
+function resolveDurableToolActivity(
+  tool: DurableTool,
+  call: ToolCall,
+  context: DurableActivityContext,
+): DurableActivityOptions {
+  const activity =
+    typeof tool.activity === 'function'
+      ? tool.activity(call, context)
+      : (tool.activity ?? { kind: 'external-read' });
+  if (activity.kind === 'external-write' && !activity.idempotencyKey) {
+    throw new Error(
+      `Durable tool ${call.name} external-write activity requires idempotencyKey.`,
+    );
+  }
+  return activity;
+}
+
+function assertUniqueDurableToolSteps(
+  stepIds: readonly string[],
+  nodePath: string,
+): void {
+  const seen = new Set<string>();
+  for (const stepId of stepIds) {
+    if (seen.has(stepId)) {
+      throw new Error(
+        `Duplicate durable tool step: ${stepId}. Tool call ids must be unique within ${nodePath}.`,
+      );
+    }
+    seen.add(stepId);
+  }
+}
+
 function childPath(parent: string, id: string): string {
   return parent ? `${parent}/${id}` : id;
 }
@@ -166,7 +228,7 @@ function childPath(parent: string, id: string): string {
 async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
   state: DurableExecutionState<TVars, TAttrs>,
   stepId: string,
-  fn: () => Promise<T>,
+  fn: () => Promise<T> | T,
 ): Promise<T> {
   const expected = state.journal.sequence[state.sequencePosition];
   if (state.journal.results.has(stepId)) {
@@ -314,6 +376,11 @@ export class DurableAgent<
     return this;
   }
 
+  runTools(id = 'tools'): this {
+    this.nodes.push({ type: 'runTools', id });
+    return this;
+  }
+
   turn(
     id: string,
     builder: (
@@ -413,17 +480,31 @@ export class DurableAgent<
       case 'runTools': {
         let next = session;
         const calls = toolCallsOf(session);
+        const stepIds = calls.map(
+          (call, index) => `${nodePath}/${call.id || index}`,
+        );
+        assertUniqueDurableToolSteps(stepIds, nodePath);
         for (let index = 0; index < calls.length; index++) {
           const call = calls[index];
           const tool = this.tools.get(call.name);
           if (!tool) {
             throw new Error(`Unknown durable tool: ${call.name}`);
           }
-          const result = await journaled(
-            state,
-            `${nodePath}/${call.id || index}`,
-            () => tool.execute(call.arguments),
-          );
+          const stepId = stepIds[index];
+          const result = await journaled(state, stepId, () => {
+            const activity = resolveDurableToolActivity(tool, call, {
+              runId: state.runId,
+              stepId,
+              session,
+            });
+            return tool.execute(call.arguments, {
+              runId: state.runId,
+              stepId,
+              session,
+              toolCall: call,
+              activity,
+            });
+          });
           next = next.addMessage({
             type: 'tool_result',
             content: stringifyToolResult(result),
