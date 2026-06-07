@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PromptTrail, agent, memoryStore } from '../../durable';
+import { Middleware } from '../../interceptors';
 import {
   bind,
   discord,
@@ -104,6 +105,94 @@ describe('RuntimeServer', () => {
       '0:delivery.pending:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
       '1:delivery.completed:discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
     ]);
+  });
+
+  it('threads runtime binding context into durable middleware', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const deliveries: string[] = [];
+    const main = agent('main').chat('chat', (session) => ({
+      content: `reply:${session.getVarsObject().channelPrompt}`,
+    }));
+    const bundle = PromptTrail.bundle({
+      name: 'server-context-test',
+      agents: { main },
+      defaults: {
+        durable: true,
+        context: {
+          channelPrompts: {
+            general: 'General channel prompt',
+          },
+        },
+      },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const adapter: RuntimeAdapter = {
+      name: 'test-discord',
+      sources: [
+        {
+          type: 'discord.messages',
+          start(ctx) {
+            emit = ctx.emit;
+          },
+        },
+      ],
+      deliveries: [
+        {
+          platform: 'discord',
+          deliver(_ctx, _target, message) {
+            deliveries.push(message.content);
+          },
+        },
+      ],
+    };
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+        middleware: [
+          Middleware.create({
+            name: 'channelPrompt',
+            beforeModel: ({ context }) => ({
+              session: {
+                vars: {
+                  channelPrompt: (
+                    context as { channelPrompt: string | undefined }
+                  ).channelPrompt,
+                },
+              },
+            }),
+          }),
+        ],
+      }),
+      adapters: [adapter],
+    });
+
+    await server.start();
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    });
+
+    expect(deliveries).toEqual(['reply:General channel prompt']);
   });
 
   it('persists completed final deliveries across server restarts', async () => {

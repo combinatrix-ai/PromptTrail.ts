@@ -70,6 +70,7 @@ export interface DurableActivityContext {
   runId: string;
   stepId: string;
   session: Session<any, any>;
+  context?: Record<string, unknown>;
 }
 
 export interface DurableToolExecutionContext extends DurableActivityContext {
@@ -167,6 +168,7 @@ interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
   hooks: readonly HookDefinition<TVars, TAttrs>[];
   middlewareState: Record<string, unknown>;
+  context?: Record<string, unknown>;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
 }
@@ -377,6 +379,7 @@ async function runDurableExecutionPhase<
       middlewareState: state.middlewareState,
       middleware: state.middleware,
       hooks: state.hooks,
+      context: state.context,
       beforeVersion: state.transitionVersion,
     });
     return {
@@ -506,6 +509,7 @@ async function runDurableMiddlewareWrapper<
     },
     middlewareState: state.middlewareState,
     middleware: state.middleware,
+    context: state.context,
     beforeVersion: state.transitionVersion,
   });
   const record = {
@@ -1251,6 +1255,7 @@ export class DurableAgent<
       runId: state.runId,
       stepId,
       session,
+      context: state.context,
     });
     await emitDurableExecutionEvent(state, 'tool.started', {
       stepId,
@@ -1263,6 +1268,7 @@ export class DurableAgent<
       runId: state.runId,
       stepId,
       session,
+      context: state.context,
       toolCall: call,
       activity,
     });
@@ -1337,6 +1343,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
   eventSeq?: number;
+  context?: Record<string, unknown>;
 }
 
 export interface PromptTrailRunOptions<
@@ -1349,6 +1356,7 @@ export interface PromptTrailRunOptions<
   session?: Session<TVars, TAttrs>;
   durable?: boolean;
   resumable?: boolean;
+  context?: Record<string, unknown>;
 }
 
 export interface PromptTrailSendOptions {
@@ -1357,6 +1365,7 @@ export interface PromptTrailSendOptions {
   input: string | Omit<Inbound, 'offset'>;
   durable?: boolean;
   resumable?: boolean;
+  context?: Record<string, unknown>;
 }
 
 export interface InboundRuntimeEvent {
@@ -1485,9 +1494,13 @@ export class PromptTrailApp {
         runId: options.runId,
         input: options.input,
         durable,
+        context: options.context,
       });
     }
 
+    if (options.context) {
+      existing.context = options.context;
+    }
     this.append(options.runId, normalizeInbound(options.input));
     return this.resume<TVars, TAttrs>(options.runId);
   }
@@ -1511,6 +1524,7 @@ export class PromptTrailApp {
       middleware: this.middleware,
       hooks: this.hooks,
       middlewareState: {},
+      context: run.context,
       emitEvent: (event) => this.observerBus.emit(event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
@@ -1660,6 +1674,7 @@ export class PromptTrailApp {
       outbox: [],
       inbox: [],
       eventSeq: 0,
+      context: options.context,
     };
 
     if (durable) {
@@ -1694,6 +1709,7 @@ export class PromptTrailApp {
       middleware: this.middleware,
       hooks: this.hooks,
       middlewareState: {},
+      context: run.context,
       emitEvent: (event) => this.observerBus.emit(event),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };

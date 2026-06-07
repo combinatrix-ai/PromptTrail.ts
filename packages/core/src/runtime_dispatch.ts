@@ -163,6 +163,7 @@ export async function dispatchRuntimeBindingEvent<
     },
     durable: options.durable ?? options.defaults.durable ?? true,
     resumable: options.resumable,
+    context,
   });
 
   return {

@@ -1171,6 +1171,69 @@ describe('durable agent runtime', () => {
     expect(app.journal('run-model-observer-failure')).toEqual(['reply/model']);
   });
 
+  it('threads durable app execution context into middleware and tools', async () => {
+    const toolContexts: unknown[] = [];
+    const assistant = agent('contextual')
+      .tool('readContext', {
+        execute: async (_args, context) => {
+          toolContexts.push(context.context);
+          return `tool:${(context.context as { requestId: string }).requestId}`;
+        },
+      })
+      .assistant('reply', (session) => ({
+        content: `ctx:${session.getVarsObject().channel}`,
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'readContext',
+            arguments: {},
+          },
+        ],
+      }))
+      .runTools('tools')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { contextual: assistant },
+      middleware: [
+        Middleware.create({
+          name: 'contextReader',
+          beforeModel: ({ context }) => ({
+            session: {
+              vars: {
+                channel: (context as { channel: string }).channel,
+              },
+            },
+          }),
+        }),
+      ],
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'contextual',
+      runId: 'run-contextual',
+      durable: true,
+      context: {
+        channel: 'claw-test',
+        requestId: 'req-1',
+      },
+    });
+    const replay = await app.resume('run-contextual');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'tool:req-1',
+    });
+    expect(toolContexts).toEqual([
+      {
+        channel: 'claw-test',
+        requestId: 'req-1',
+      },
+    ]);
+  });
+
   it('can surface durable app observer failures in strict mode', async () => {
     const assistant = agent('strict-observed').assistant(
       'reply',
