@@ -43,7 +43,7 @@ import {
   runRuntimeExecutionPhase,
   type ExecutionRuntimeState,
 } from './interceptors';
-import type { ResolvedExecutionCommand } from './execution';
+import type { ExecutionEvent, ResolvedExecutionCommand } from './execution';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -677,6 +677,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     (before.request as
       | { id: string; name: string; arguments: Record<string, unknown> }
       | undefined) ?? call;
+  await emitStreamingToolEvent(options.runtime, 'tool.started', nextCall);
   const message = (await executeStreamingToolCall(nextCall, {
     provider: options.provider,
     tools: options.tools,
@@ -690,6 +691,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     result: message,
   });
   assertStreamingToolCommandSupported(after.command);
+  await emitStreamingToolEvent(options.runtime, 'tool.completed', nextCall);
   return {
     message: (after.result as Message<TAttrs> | undefined) ?? message,
     session: after.session,
@@ -739,6 +741,31 @@ function assertStreamingToolCommandSupported(
   throw new Error(
     `streamPromptTrailToolLoop does not support execution command ${command.type} yet.`,
   );
+}
+
+async function emitStreamingToolEvent<TAttrs extends Attrs>(
+  runtime: ExecutionRuntimeState<any, TAttrs>,
+  type: 'tool.started' | 'tool.completed',
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+): Promise<void> {
+  if (!runtime.emitEvent || !runtime.nextEventSeq) {
+    return;
+  }
+  const seq = runtime.nextEventSeq();
+  const event: ExecutionEvent = {
+    id: `tool:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    replay: 'live',
+    source: 'tool',
+    stepId: call.id,
+    idempotencyKey: `${call.id}:${type}`,
+    raw: { call },
+    toolCallId: call.id,
+    name: call.name,
+  };
+  await runtime.emitEvent(event);
 }
 
 function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {

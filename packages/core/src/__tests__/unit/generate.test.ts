@@ -277,6 +277,8 @@ describe('streamPromptTrailToolLoop', () => {
       execute: ({ query }) => ({ value: `result:${query}` }),
     });
     const seenTurnVars: Array<Record<string, unknown>> = [];
+    const events: string[] = [];
+    let seq = 0;
     const runtime = createExecutionRuntimeState({
       middleware: [
         Middleware.create({
@@ -311,6 +313,12 @@ describe('streamPromptTrailToolLoop', () => {
           },
         }),
       ],
+      emitEvent: (event) => {
+        events.push(
+          `${event.seq}:${event.type}:${event.phase ?? event.toolCallId ?? '-'}`,
+        );
+      },
+      nextEventSeq: () => seq++,
     });
 
     const messages = await collectAsync(
@@ -362,6 +370,12 @@ describe('streamPromptTrailToolLoop', () => {
       attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
     });
     expect(seenTurnVars).toEqual([{}, { beforeTool: true, afterTool: true }]);
+    expect(events).toEqual([
+      '0:session.patched:beforeTool',
+      '1:tool.started:call-1',
+      '2:session.patched:afterTool',
+      '3:tool.completed:call-1',
+    ]);
   });
 });
 
