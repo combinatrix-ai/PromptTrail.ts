@@ -145,6 +145,16 @@ export class Suspend extends Error {
   }
 }
 
+export class Halt<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> extends Error {
+  constructor(readonly session: Session<TVars, TAttrs>) {
+    super('halt');
+    this.name = 'Halt';
+  }
+}
+
 export class NondeterminismError extends Error {
   constructor(
     readonly expected: string,
@@ -1143,7 +1153,7 @@ async function runAwaitLifecyclePhase<TVars extends Vars, TAttrs extends Attrs>(
       request: { stepId },
     },
   );
-  assertDurablePhaseCommandSupported(result.command, stepId);
+  handleDurablePhaseCommand(result.command, stepId, result.session);
   state.session = result.session;
 }
 
@@ -1320,7 +1330,7 @@ export class DurableAgent<
       phase: 'beforeAgent',
       session,
     });
-    assertDurablePhaseCommandSupported(before.command, 'beforeAgent');
+    handleDurablePhaseCommand(before.command, 'beforeAgent', before.session);
     session = before.session;
     state.session = session;
     for (const node of this.nodes) {
@@ -1331,7 +1341,7 @@ export class DurableAgent<
       phase: 'afterAgent',
       session,
     });
-    assertDurablePhaseCommandSupported(after.command, 'afterAgent');
+    handleDurablePhaseCommand(after.command, 'afterAgent', after.session);
     state.session = after.session;
     return after.session;
   }
@@ -1378,6 +1388,7 @@ export class DurableAgent<
         state.transitionVersion = transition.afterVersion;
         state.middlewareState = applied.middlewareState;
         state.session = applied.session;
+        handleDurablePhaseCommand(transition.command, nodePath, applied.session);
         return applied.session;
       }
       case 'assistant': {
@@ -1389,7 +1400,7 @@ export class DurableAgent<
             session,
           },
         );
-        assertDurablePhaseCommandSupported(before.command, nodePath);
+        handleDurablePhaseCommand(before.command, nodePath, before.session);
         session = before.session;
         state.session = session;
 
@@ -1403,7 +1414,11 @@ export class DurableAgent<
           session,
           request,
         });
-        assertDurablePhaseCommandSupported(prepared.command, nodePath);
+        handleDurablePhaseCommand(
+          prepared.command,
+          nodePath,
+          prepared.session,
+        );
         assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
         const modelSession =
           (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
@@ -1428,10 +1443,14 @@ export class DurableAgent<
                 node.handler,
               ),
           });
-          assertDurablePhaseCommandSupported(wrapped.command, nodePath);
           session = wrapped.session;
           state.session = session;
           message = normalizeAssistantMessage(wrapped.result);
+          handleDurablePhaseCommand(
+            wrapped.command,
+            nodePath,
+            session.addMessage(message),
+          );
         } else {
           message = await journaled(state, `${nodePath}/model`, async () =>
             normalizeAssistantMessage(
@@ -1453,11 +1472,12 @@ export class DurableAgent<
             result: message,
           },
         );
-        assertDurablePhaseCommandSupported(after.command, nodePath);
         const finalMessage = normalizeAssistantMessage(
           (after.result as AssistantResult<TAttrs> | undefined) ?? message,
         );
-        return after.session.addMessage(finalMessage);
+        const completed = after.session.addMessage(finalMessage);
+        handleDurablePhaseCommand(after.command, nodePath, completed);
+        return completed;
       }
       case 'chat': {
         let current = session;
@@ -1479,7 +1499,7 @@ export class DurableAgent<
               session: current,
             },
           );
-          assertDurablePhaseCommandSupported(before.command, nodePath);
+          handleDurablePhaseCommand(before.command, nodePath, before.session);
           current = before.session;
           state.session = current;
           const request: DurableModelRequest<TVars, TAttrs> = {
@@ -1494,7 +1514,11 @@ export class DurableAgent<
             session: current,
             request,
           });
-          assertDurablePhaseCommandSupported(prepared.command, nodePath);
+          handleDurablePhaseCommand(
+            prepared.command,
+            nodePath,
+            prepared.session,
+          );
           assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
           const modelSession =
             (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
@@ -1518,10 +1542,14 @@ export class DurableAgent<
                   node.handler,
                 ),
             });
-            assertDurablePhaseCommandSupported(wrapped.command, nodePath);
             current = wrapped.session;
             state.session = current;
             message = normalizeAssistantMessage(wrapped.result);
+            handleDurablePhaseCommand(
+              wrapped.command,
+              nodePath,
+              current.addMessage(message),
+            );
           } else {
             message = await journaled(
               state,
@@ -1546,11 +1574,11 @@ export class DurableAgent<
               result: message,
             },
           );
-          assertDurablePhaseCommandSupported(after.command, nodePath);
           const finalMessage = normalizeAssistantMessage(
             (after.result as AssistantResult<TAttrs> | undefined) ?? message,
           );
           current = after.session.addMessage(finalMessage);
+          handleDurablePhaseCommand(after.command, nodePath, current);
           state.session = current;
           iteration++;
         }
@@ -1574,7 +1602,7 @@ export class DurableAgent<
             session: next,
             request: call,
           });
-          assertDurablePhaseCommandSupported(before.command, stepId);
+          handleDurablePhaseCommand(before.command, stepId, before.session);
           let nextCall = (before.request as ToolCall | undefined) ?? call;
           let message: PromptTrailMessage<TAttrs>;
           let toolSession = before.session;
@@ -1599,10 +1627,14 @@ export class DurableAgent<
                   nestedStepIds,
                 }),
             });
-            assertDurablePhaseCommandSupported(wrapped.command, stepId);
             nextCall = (wrapped.request as ToolCall | undefined) ?? nextCall;
             toolSession = wrapped.session;
             message = normalizeToolResultMessage(wrapped.result, nextCall);
+            handleDurablePhaseCommand(
+              wrapped.command,
+              stepId,
+              toolSession.addMessage(message),
+            );
           } else {
             const result = await runDurableCompositeJournal(
               state,
@@ -1632,10 +1664,10 @@ export class DurableAgent<
             request: nextCall,
             result: message,
           });
-          assertDurablePhaseCommandSupported(after.command, stepId);
           next = after.session.addMessage(
             (after.result as PromptTrailMessage<TAttrs> | undefined) ?? message,
           );
+          handleDurablePhaseCommand(after.command, stepId, next);
         }
         return next;
       }
@@ -1778,19 +1810,26 @@ function assertDurablePatchTransitionSupported(
   transition: ResolvedExecutionTransition,
   nodePath: string,
 ): void {
-  if (transition.command.type !== 'none') {
+  if (
+    transition.command.type !== 'none' &&
+    transition.command.type !== 'halt'
+  ) {
     throw new Error(
       `Durable patch ${nodePath} returned unsupported command ${transition.command.type}.`,
     );
   }
 }
 
-function assertDurablePhaseCommandSupported(
+function handleDurablePhaseCommand<TVars extends Vars, TAttrs extends Attrs>(
   command: ResolvedExecutionCommand,
   nodePath: string,
+  session: Session<TVars, TAttrs>,
 ): void {
   if (command.type === 'none') {
     return;
+  }
+  if (command.type === 'halt') {
+    throw new Halt(session);
   }
   throw new Error(
     `Durable phase ${nodePath} returned unsupported command ${command.type}.`,
@@ -2064,6 +2103,18 @@ export class PromptTrailApp {
           session: state.session,
         };
       }
+      if (error instanceof Halt) {
+        run.status = 'done';
+        run.result = error.session as Session<TVars, TAttrs>;
+        await this.emitRunEvent(run, runId, 'run.completed', {
+          sessionVersion: state.transitionVersion,
+        });
+        return {
+          status: 'done',
+          runId,
+          session: run.result,
+        };
+      }
       await this.emitRunEvent(run, runId, 'error', {
         sessionVersion: state.transitionVersion,
         error,
@@ -2267,6 +2318,13 @@ export class PromptTrailApp {
           awaiting: error.stepId,
           session: state.session,
         };
+      }
+      if (error instanceof Halt) {
+        const session = error.session as Session<TVars, TAttrs>;
+        await this.emitRunEvent(run, runId, 'run.completed', {
+          sessionVersion: state.transitionVersion,
+        });
+        return { status: 'done', runId, session };
       }
       await this.emitRunEvent(run, runId, 'error', {
         sessionVersion: state.transitionVersion,

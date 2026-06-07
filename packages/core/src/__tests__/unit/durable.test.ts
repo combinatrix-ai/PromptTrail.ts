@@ -1407,6 +1407,238 @@ describe('durable agent runtime', () => {
     expect(app.journal('run-patch-command')).toEqual([]);
   });
 
+  it('halts durable execution from patch transitions without running later nodes', async () => {
+    const store = memoryStore();
+    let patchCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('patch-halt')
+      .patch('stop', () => {
+        patchCalls++;
+        return {
+          session: { vars: { halted: patchCalls } },
+          command: { type: 'halt', reason: 'done' },
+        };
+      })
+      .assistant('reply', () => {
+        modelCalls++;
+        return 'should not run';
+      });
+    const app = PromptTrail.app({ store });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-patch-halt',
+      durable: true,
+    });
+    const stored = store.get('run-patch-halt')!;
+    stored.status = 'open';
+    stored.result = undefined;
+    const replay = await app.resume('run-patch-halt');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.messages).toEqual([]);
+    expect(replay.session.getVarsObject()).toEqual({ halted: 1 });
+    expect(patchCalls).toBe(1);
+    expect(modelCalls).toBe(0);
+    expect(app.journal('run-patch-halt')).toEqual(['stop/transition']);
+  });
+
+  it('halts durable execution from journaled phase commands', async () => {
+    const store = memoryStore();
+    let beforeCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('phase-halt').assistant('reply', () => {
+      modelCalls++;
+      return 'should not run';
+    });
+    const app = PromptTrail.app({
+      store,
+      middleware: [
+        Middleware.create({
+          name: 'haltBeforeModel',
+          beforeModel: () => {
+            beforeCalls++;
+            return {
+              session: { vars: { before: beforeCalls } },
+              command: { type: 'halt', reason: 'policy' },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-phase-halt',
+      durable: true,
+    });
+    const stored = store.get('run-phase-halt')!;
+    stored.status = 'open';
+    stored.result = undefined;
+    const replay = await app.resume('run-phase-halt');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.messages).toEqual([]);
+    expect(replay.session.getVarsObject()).toEqual({ before: 1 });
+    expect(beforeCalls).toBe(1);
+    expect(modelCalls).toBe(0);
+    expect(app.journal('run-phase-halt')).toEqual(['reply/beforeModel']);
+  });
+
+  it('keeps assistant output when afterModel halts durable execution', async () => {
+    const store = memoryStore();
+    let modelCalls = 0;
+    let afterCalls = 0;
+    const assistant = agent('after-model-halt').assistant('reply', () => {
+      modelCalls++;
+      return 'model reply';
+    });
+    const app = PromptTrail.app({
+      store,
+      middleware: [
+        Middleware.create({
+          name: 'haltAfterModel',
+          afterModel: () => {
+            afterCalls++;
+            return {
+              result: { content: `after:${afterCalls}` },
+              command: { type: 'halt', reason: 'complete' },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-after-model-halt',
+      durable: true,
+    });
+    const stored = store.get('run-after-model-halt')!;
+    stored.status = 'open';
+    stored.result = undefined;
+    const replay = await app.resume('run-after-model-halt');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.messages.map((message) => message.content)).toEqual([
+      'after:1',
+    ]);
+    expect(modelCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(app.journal('run-after-model-halt')).toEqual([
+      'reply/model',
+      'reply/afterModel',
+    ]);
+  });
+
+  it('keeps tool output when afterTool halts durable execution', async () => {
+    const store = memoryStore();
+    let toolCalls = 0;
+    let afterCalls = 0;
+    const assistant = agent('after-tool-halt')
+      .tool('write', {
+        activity: {
+          kind: 'external-write',
+          idempotencyKey: 'write:call-1',
+        },
+        execute: async () => {
+          toolCalls++;
+          return 'tool result';
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need tool',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'write',
+            arguments: {},
+          },
+        ],
+      }))
+      .runTools('tools');
+    const app = PromptTrail.app({
+      store,
+      middleware: [
+        Middleware.create({
+          name: 'haltAfterTool',
+          afterTool: () => {
+            afterCalls++;
+            return {
+              result: {
+                type: 'tool_result',
+                content: `after-tool:${afterCalls}`,
+                attrs: { toolCallId: 'call-1' },
+              },
+              command: { type: 'halt', reason: 'complete' },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-after-tool-halt',
+      durable: true,
+    });
+    const stored = store.get('run-after-tool-halt')!;
+    stored.status = 'open';
+    stored.result = undefined;
+    const replay = await app.resume('run-after-tool-halt');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'after-tool:1',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(toolCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(app.journal('run-after-tool-halt')).toEqual([
+      'reply/model',
+      'tools/call-1',
+      'tools/call-1/afterTool',
+    ]);
+  });
+
+  it('halts ephemeral durable-agent executions from patch transitions', async () => {
+    let patchCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('ephemeral-patch-halt')
+      .patch('stop', () => {
+        patchCalls++;
+        return {
+          session: { vars: { halted: true } },
+          command: { type: 'halt', reason: 'done' },
+        };
+      })
+      .assistant('reply', () => {
+        modelCalls++;
+        return 'should not run';
+      });
+    const app = PromptTrail.app();
+
+    const result = await app.run({
+      agent: assistant,
+      runId: 'run-ephemeral-patch-halt',
+      durable: false,
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.session.messages).toEqual([]);
+    expect(result.session.getVarsObject()).toEqual({ halted: true });
+    expect(patchCalls).toBe(1);
+    expect(modelCalls).toBe(0);
+    expect(() => app.journal('run-ephemeral-patch-halt')).toThrow(
+      'Unknown durable run',
+    );
+  });
+
   it('journals middlewareState writes from durable patch transitions', async () => {
     let patchCalls = 0;
     const assistant = agent('patch-middleware-state')
