@@ -121,6 +121,78 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals resolved session transitions without re-running patch handlers', async () => {
+    let patchCalls = 0;
+    const assistant = agent('patch-agent')
+      .patch('stamp', () => {
+        patchCalls++;
+        return {
+          session: {
+            vars: {
+              stamp: patchCalls,
+            },
+          },
+        };
+      })
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { assistant },
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: assistant,
+      runId: 'run-patch',
+      durable: true,
+    });
+    const replay = await app.resume('run-patch');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(first.session.getVarsObject()).toEqual({ stamp: 1 });
+    expect(replay.session.getVarsObject()).toEqual({ stamp: 1 });
+    expect(patchCalls).toBe(1);
+    expect(app.journal('run-patch')).toEqual(['stamp/transition']);
+  });
+
+  it('rejects unsupported commands from durable patch transitions', async () => {
+    const assistant = agent('patch-command').patch('pause', () => ({
+      command: { type: 'suspend', reason: 'manual' },
+    }));
+    const app = PromptTrail.app({ store: memoryStore() });
+
+    await expect(
+      app.run({
+        agent: assistant,
+        runId: 'run-patch-command',
+        durable: true,
+      }),
+    ).rejects.toThrow(
+      'Durable patch pause returned unsupported command suspend.',
+    );
+    expect(app.journal('run-patch-command')).toEqual([]);
+  });
+
+  it('rejects middlewareState writes from durable patch transitions', async () => {
+    const assistant = agent('patch-middleware-state').patch('state', () => ({
+      session: {
+        middlewareState: {
+          local: true,
+        },
+      },
+    }));
+    const app = PromptTrail.app({ store: memoryStore() });
+
+    await expect(
+      app.run({
+        agent: assistant,
+        runId: 'run-patch-middleware-state',
+        durable: true,
+      }),
+    ).rejects.toThrow('Durable patch state cannot write middlewareState yet.');
+    expect(app.journal('run-patch-middleware-state')).toEqual([]);
+  });
+
   it('can run ephemeral executions without persisting them', async () => {
     const assistant = agent('ephemeral').assistant('reply', () => 'hello');
     const app = PromptTrail.app({ agents: { assistant } });

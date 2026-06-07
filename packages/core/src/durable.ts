@@ -1,4 +1,10 @@
 import { Message, type Message as PromptTrailMessage } from './message';
+import {
+  applyResolvedExecutionTransition,
+  resolveExecutionTransition,
+  type ExecutionPatch,
+  type ResolvedExecutionTransition,
+} from './execution';
 import { bundle } from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
@@ -43,6 +49,13 @@ export type AssistantHandler<
   session: Session<TVars, TAttrs>,
 ) => Promise<AssistantResult<TAttrs>> | AssistantResult<TAttrs>;
 
+export type DurablePatchHandler<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> = (
+  session: Session<TVars, TAttrs>,
+) => Promise<ExecutionPatch<TVars, TAttrs>> | ExecutionPatch<TVars, TAttrs>;
+
 export interface DurableRunResult<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -85,10 +98,16 @@ interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   inbox: Inbound[];
   cursor: number;
   sequencePosition: number;
+  transitionVersion: number;
 }
 
 type DurableNode<TVars extends Vars, TAttrs extends Attrs> =
   | { type: 'system'; id: string; content: string }
+  | {
+      type: 'patch';
+      id: string;
+      handler: DurablePatchHandler<TVars, TAttrs>;
+    }
   | {
       type: 'assistant';
       id: string;
@@ -230,6 +249,11 @@ export class DurableTurnBuilder<
     return this;
   }
 
+  patch(id: string, handler: DurablePatchHandler<TVars, TAttrs>): this {
+    this.nodes.push({ type: 'patch', id, handler });
+    return this;
+  }
+
   runTools(id = 'tools'): this {
     this.nodes.push({ type: 'runTools', id });
     return this;
@@ -280,6 +304,11 @@ export class DurableAgent<
     return this;
   }
 
+  patch(id: string, handler: DurablePatchHandler<TVars, TAttrs>): this {
+    this.nodes.push({ type: 'patch', id, handler });
+    return this;
+  }
+
   chat(id: string, handler: AssistantHandler<TVars, TAttrs>): this {
     this.nodes.push({ type: 'chat', id, handler });
     return this;
@@ -322,6 +351,37 @@ export class DurableAgent<
     switch (node.type) {
       case 'system':
         return session.addMessage(Message.system(node.content));
+      case 'patch': {
+        const transition = await journaled(
+          state,
+          `${nodePath}/transition`,
+          async () => {
+            const resolved = resolveExecutionTransition(
+              session,
+              await node.handler(session),
+              {
+                beforeVersion: state.transitionVersion,
+              },
+            );
+            assertDurablePatchTransitionSupported(resolved, nodePath);
+            return resolved;
+          },
+        );
+        if (transition.beforeVersion !== state.transitionVersion) {
+          // This catches corrupted or hand-edited transition journals. Normal
+          // code-order nondeterminism is still detected by journaled step ids.
+          throw new NondeterminismError(
+            `version:${state.transitionVersion}`,
+            `version:${transition.beforeVersion}`,
+            state.sequencePosition - 1,
+          );
+        }
+        assertDurablePatchTransitionSupported(transition, nodePath);
+        const applied = applyResolvedExecutionTransition(session, transition);
+        state.transitionVersion = transition.afterVersion;
+        state.session = applied.session;
+        return applied.session;
+      }
       case 'assistant': {
         const message = await journaled(state, `${nodePath}/model`, async () =>
           normalizeAssistantMessage(await node.handler(session)),
@@ -435,6 +495,25 @@ export class DurableAgent<
         return current;
       }
     }
+  }
+}
+
+function assertDurablePatchTransitionSupported(
+  transition: ResolvedExecutionTransition,
+  nodePath: string,
+): void {
+  if (transition.command.type !== 'none') {
+    throw new Error(
+      `Durable patch ${nodePath} returned unsupported command ${transition.command.type}.`,
+    );
+  }
+  if (
+    Object.keys(transition.session.middlewareStateSet).length > 0 ||
+    transition.session.middlewareStateDelete.length > 0
+  ) {
+    throw new Error(
+      `Durable patch ${nodePath} cannot write middlewareState yet.`,
+    );
   }
 }
 
@@ -604,6 +683,7 @@ export class PromptTrailApp {
       inbox: run.inbox,
       cursor: 0,
       sequencePosition: 0,
+      transitionVersion: 0,
     };
 
     try {
@@ -690,6 +770,7 @@ export class PromptTrailApp {
       inbox: run.inbox,
       cursor: 0,
       sequencePosition: 0,
+      transitionVersion: 0,
     };
     try {
       const session = await run.agent.execute(state);
