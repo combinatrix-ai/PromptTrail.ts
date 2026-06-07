@@ -1286,11 +1286,24 @@ export class DurableAgent<
     state: DurableExecutionState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     let session = state.session;
+    const before = await runDurableExecutionPhase(state, 'beforeAgent', {
+      phase: 'beforeAgent',
+      session,
+    });
+    assertDurablePhaseCommandSupported(before.command, 'beforeAgent');
+    session = before.session;
+    state.session = session;
     for (const node of this.nodes) {
       session = await this.executeNode(state, node, '', session);
       state.session = session;
     }
-    return session;
+    const after = await runDurableExecutionPhase(state, 'afterAgent', {
+      phase: 'afterAgent',
+      session,
+    });
+    assertDurablePhaseCommandSupported(after.command, 'afterAgent');
+    state.session = after.session;
+    return after.session;
   }
 
   private async executeNode(

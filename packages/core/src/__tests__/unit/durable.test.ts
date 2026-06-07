@@ -391,6 +391,78 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('journals durable beforeAgent and afterAgent phases without re-running them on replay', async () => {
+    const store = memoryStore();
+    let beforeCalls = 0;
+    let afterCalls = 0;
+    let hookCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('agent-phases').assistant('reply', (session) => {
+      modelCalls++;
+      return `model:${session.getVarsObject().beforeAgent}`;
+    });
+    const app = PromptTrail.app({
+      agents: { phased: assistant },
+      store,
+      middleware: [
+        Middleware.create({
+          name: 'agentPolicy',
+          beforeAgent: () => {
+            beforeCalls++;
+            return {
+              session: { vars: { beforeAgent: `before:${beforeCalls}` } },
+            };
+          },
+          afterAgent: () => {
+            afterCalls++;
+            return {
+              session: { vars: { afterAgent: `after:${afterCalls}` } },
+            };
+          },
+        }),
+      ],
+      hooks: [
+        Hook.create({
+          name: 'agentAudit',
+          onAfterAgent: () => {
+            hookCalls++;
+            return {
+              session: { vars: { afterHook: `hook:${hookCalls}` } },
+            };
+          },
+        }),
+      ],
+    });
+
+    const first = await app.run({
+      agent: 'phased',
+      runId: 'run-agent-phases',
+      durable: true,
+    });
+    const stored = store.get('run-agent-phases')!;
+    stored.status = 'open';
+    stored.result = undefined;
+    const replay = await app.resume('run-agent-phases');
+
+    expect(first.status).toBe('done');
+    expect(replay.status).toBe('done');
+    expect(replay.session.getLastMessage()?.content).toBe('model:before:1');
+    expect(replay.session.getVarsObject()).toEqual({
+      beforeAgent: 'before:1',
+      afterAgent: 'after:1',
+      afterHook: 'hook:1',
+    });
+    expect(beforeCalls).toBe(1);
+    expect(afterCalls).toBe(1);
+    expect(hookCalls).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-agent-phases')).toEqual([
+      'beforeAgent',
+      'reply/model',
+      'afterAgent',
+    ]);
+  });
+
   it('replays durable effects inside replayable phase handlers after a mid-phase crash', async () => {
     let handlerCalls = 0;
     let memoCalls = 0;
