@@ -1014,6 +1014,89 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('replays durable effects inside tool bodies after a mid-tool crash', async () => {
+    let toolCalls = 0;
+    let memoCalls = 0;
+    let activityCalls = 0;
+    const assistant = agent('tool-effects')
+      .tool('lookup', {
+        execute: async (_args, { durable }) => {
+          toolCalls++;
+          const token = await durable.memo('token', () => {
+            memoCalls++;
+            return `token:${memoCalls}`;
+          });
+          const profile = await durable.activity(
+            'read-profile',
+            { kind: 'external-read' },
+            () => {
+              activityCalls++;
+              return `profile:${activityCalls}`;
+            },
+          );
+          if (toolCalls === 1) {
+            throw new Error('tool crash');
+          }
+          return `${token}:${profile}:tool:${toolCalls}`;
+        },
+      })
+      .turn('main', (turn) =>
+        turn
+          .steer()
+          .assistant('reply', () => ({
+            content: 'need tool',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'lookup',
+                arguments: {},
+              },
+            ],
+          }))
+          .runTools('tools')
+          .awaitUser(),
+      );
+    const app = PromptTrail.app({
+      agents: { tools: assistant },
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: 'tools',
+        runId: 'run-tool-effects',
+        input: 'hello',
+        durable: true,
+      }),
+    ).rejects.toThrow('tool crash');
+
+    expect(app.journal('run-tool-effects')).toEqual([
+      'main/steer/peek',
+      'main/reply/model',
+      'main/tools/call-1/tool/lookup/memo/token',
+      'main/tools/call-1/tool/lookup/activity/read-profile',
+    ]);
+
+    const replay = await app.resume('run-tool-effects');
+
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'token:1:profile:1:tool:2',
+      attrs: { toolCallId: 'call-1' },
+    });
+    expect(toolCalls).toBe(2);
+    expect(memoCalls).toBe(1);
+    expect(activityCalls).toBe(1);
+    expect(app.journal('run-tool-effects')).toEqual([
+      'main/steer/peek',
+      'main/reply/model',
+      'main/tools/call-1/tool/lookup/memo/token',
+      'main/tools/call-1/tool/lookup/activity/read-profile',
+      'main/tools/call-1',
+    ]);
+  });
+
   it('does not re-run wrapped tools after a post-next crash', async () => {
     let wrapperCalls = 0;
     let toolCalls = 0;

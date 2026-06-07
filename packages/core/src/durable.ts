@@ -13,6 +13,7 @@ import {
   runExecutionPhase,
   runMiddlewareWrapper,
   type ExecutionDurableActivityOptions,
+  type ExecutionDurableBoundary,
   type ExecutionDurableBoundaryProvider,
   type ExecutionHandlerDescriptor,
   type ExecutionLifecyclePhase,
@@ -79,6 +80,7 @@ export interface DurableActivityContext {
 export interface DurableToolExecutionContext extends DurableActivityContext {
   toolCall: ToolCall;
   activity: DurableActivityOptions;
+  durable: ExecutionDurableBoundary;
 }
 
 export type AssistantResult<TAttrs extends Attrs = Attrs> =
@@ -206,6 +208,12 @@ interface DurableWrapperJournal<
   afterVersion: number;
   middlewareState: Record<string, unknown>;
   steps: ExecutionPhaseStep<TAttrs>[];
+  nestedStepIds: string[];
+}
+
+interface DurableCompositeJournal {
+  __promptTrailComposite: true;
+  result: unknown;
   nestedStepIds: string[];
 }
 
@@ -399,6 +407,110 @@ function assertDurableHandlerActivityOptions(
   }
 }
 
+function createDurableToolBoundary<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  parentStepId: string,
+  call: ToolCall,
+  nestedStepIds: string[],
+): ExecutionDurableBoundary {
+  return {
+    memo: async (name, fn) => {
+      const nestedStepId = durableToolEffectStepId(
+        parentStepId,
+        call,
+        'memo',
+        name,
+      );
+      nestedStepIds.push(nestedStepId);
+      return journaled(state, nestedStepId, fn);
+    },
+    activity: async (name, options, fn) => {
+      assertDurableToolActivityOptions(call, name, options);
+      const nestedStepId = durableToolEffectStepId(
+        parentStepId,
+        call,
+        'activity',
+        name,
+      );
+      nestedStepIds.push(nestedStepId);
+      return journaled(state, nestedStepId, fn);
+    },
+  };
+}
+
+function durableToolEffectStepId(
+  parentStepId: string,
+  call: ToolCall,
+  kind: 'memo' | 'activity',
+  name: string,
+): string {
+  return `${parentStepId}/tool/${call.name}/${kind}/${name}`;
+}
+
+function assertDurableToolActivityOptions(
+  call: ToolCall,
+  name: string,
+  options: ExecutionDurableActivityOptions,
+): void {
+  if (options.kind === 'external-write' && !options.idempotencyKey) {
+    throw new Error(
+      `Durable tool ${call.name} activity ${name} external-write requires idempotencyKey.`,
+    );
+  }
+}
+
+async function runDurableCompositeJournal<
+  T,
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  fn: (nestedStepIds: string[]) => Promise<T> | T,
+): Promise<T> {
+  if (state.journal.results.has(stepId)) {
+    const record = state.journal.results.get(stepId);
+    if (isDurableCompositeJournal(record)) {
+      return applyDurableCompositeJournal(state, stepId, record) as T;
+    }
+    return journaled(state, stepId, async () => record as T);
+  }
+  assertCanRunDurableCompositeStep(state, stepId);
+  const nestedStepIds: string[] = [];
+  const result = await fn(nestedStepIds);
+  commitDurableJournalRecord(state, stepId, {
+    __promptTrailComposite: true,
+    result,
+    nestedStepIds,
+  } satisfies DurableCompositeJournal);
+  return result;
+}
+
+function applyDurableCompositeJournal<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  record: DurableCompositeJournal,
+): unknown {
+  replayNestedJournalSteps(state, record.nestedStepIds ?? []);
+  const expected = state.journal.sequence[state.sequencePosition];
+  if (expected !== stepId) {
+    throw new NondeterminismError(expected, stepId, state.sequencePosition);
+  }
+  state.sequencePosition++;
+  return record.result;
+}
+
+function isDurableCompositeJournal(
+  value: unknown,
+): value is DurableCompositeJournal {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { __promptTrailComposite?: unknown }).__promptTrailComposite ===
+      true
+  );
+}
+
 async function runDurableExecutionPhase<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -586,6 +698,8 @@ async function runDurableMiddlewareWrapper<
     call: (input: {
       session: Session<TVars, TAttrs>;
       request: TRequest;
+      journalStepId: string;
+      nestedStepIds: string[];
     }) => Promise<TResult>;
   },
 ): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
@@ -612,7 +726,16 @@ async function runDurableMiddlewareWrapper<
     call: async (input) => {
       const nestedStepId = `${stepId}/next/${nestedCallIndex++}`;
       nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, () => options.call(input));
+      return runDurableCompositeJournal(
+        state,
+        nestedStepId,
+        (callNestedStepIds) =>
+          options.call({
+            ...input,
+            journalStepId: nestedStepId,
+            nestedStepIds: callNestedStepIds,
+          }),
+      );
     },
     middlewareState: state.middlewareState,
     middleware: state.middleware,
@@ -675,6 +798,11 @@ function replayNestedJournalSteps<TVars extends Vars, TAttrs extends Attrs>(
   nestedStepIds: readonly string[],
 ): void {
   for (const nestedStepId of nestedStepIds) {
+    const record = state.journal.results.get(nestedStepId);
+    if (isDurableCompositeJournal(record)) {
+      applyDurableCompositeJournal(state, nestedStepId, record);
+      continue;
+    }
     const expected = state.journal.sequence[state.sequencePosition];
     if (expected !== nestedStepId) {
       throw new NondeterminismError(
@@ -683,7 +811,7 @@ function replayNestedJournalSteps<TVars extends Vars, TAttrs extends Attrs>(
         state.sequencePosition,
       );
     }
-    if (!state.journal.results.has(nestedStepId)) {
+    if (record === undefined && !state.journal.results.has(nestedStepId)) {
       throw new Error(`Missing durable nested step ${nestedStepId}.`);
     }
     state.sequencePosition++;
@@ -1256,16 +1384,36 @@ export class DurableAgent<
               phase: 'wrapToolCall',
               session: before.session,
               request: nextCall,
-              call: async ({ session, request }) =>
-                this.executeDurableTool(state, stepId, request, session),
+              call: async ({
+                session,
+                request,
+                journalStepId,
+                nestedStepIds,
+              }) =>
+                this.executeDurableTool(state, stepId, request, session, {
+                  journalStepId,
+                  nestedStepIds,
+                }),
             });
             assertDurablePhaseCommandSupported(wrapped.command, stepId);
             nextCall = (wrapped.request as ToolCall | undefined) ?? nextCall;
             toolSession = wrapped.session;
             message = normalizeToolResultMessage(wrapped.result, nextCall);
           } else {
-            const result = await journaled(state, stepId, () =>
-              this.executeDurableTool(state, stepId, nextCall, before.session),
+            const result = await runDurableCompositeJournal(
+              state,
+              stepId,
+              (nestedStepIds) =>
+                this.executeDurableTool(
+                  state,
+                  stepId,
+                  nextCall,
+                  before.session,
+                  {
+                    journalStepId: stepId,
+                    nestedStepIds,
+                  },
+                ),
             );
             message = normalizeToolResultMessage(result, nextCall);
           }
@@ -1375,6 +1523,10 @@ export class DurableAgent<
     stepId: string,
     call: ToolCall,
     session: Session<any, TAttrs>,
+    journal: {
+      journalStepId: string;
+      nestedStepIds: string[];
+    },
   ): Promise<unknown> {
     const tool = this.tools.get(call.name);
     if (!tool) {
@@ -1400,6 +1552,12 @@ export class DurableAgent<
       context: state.context,
       toolCall: call,
       activity,
+      durable: createDurableToolBoundary(
+        state,
+        journal.journalStepId,
+        call,
+        journal.nestedStepIds,
+      ),
     });
     await emitDurableExecutionEvent(state, 'tool.completed', {
       stepId,
