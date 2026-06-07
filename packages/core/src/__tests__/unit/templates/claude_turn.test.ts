@@ -171,6 +171,49 @@ describe('ClaudeTurn template', () => {
     expect(session.getVarsObject()).toEqual({ afterModel: 'claude' });
   });
 
+  it('allows wrapModelCall to short-circuit Claude provider calls', async () => {
+    const client = new FakeClaudeAgentClient();
+    const events: string[] = [];
+    const session = await Agent.create()
+      .observe((event) => {
+        if (event.type.startsWith('model.')) {
+          events.push(event.type);
+        }
+      })
+      .use(
+        Middleware.create({
+          name: 'claudeWrapper',
+          wrapModelCall: () => ({
+            session: { vars: { wrapped: 'claude' } },
+            result: {
+              provider: 'claude-agent',
+              status: 'completed',
+              finalAnswer: 'wrapped Claude result',
+              events: [],
+              raw: [],
+              sessionId: 'session-wrapped',
+            },
+          }),
+        }),
+      )
+      .claudeTurn({ client })
+      .execute(Session.create());
+
+    expect(client.queries).toHaveLength(0);
+    expect(events).toEqual([]);
+    expect(session.getVarsObject()).toEqual({ wrapped: 'claude' });
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'wrapped Claude result',
+      attrs: {
+        claudeAgent: {
+          sessionId: 'session-wrapped',
+          provider: 'claude-agent',
+        },
+      },
+    });
+  });
+
   it('applies prepareModelInput as transient Claude input', async () => {
     const client = new FakeClaudeAgentClient();
     const session = await Agent.create()

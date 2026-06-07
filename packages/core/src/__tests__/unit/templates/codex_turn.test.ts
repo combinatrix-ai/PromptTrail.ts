@@ -201,6 +201,48 @@ describe('CodexTurn template', () => {
     expect(session.getVarsObject()).toEqual({ afterModel: 'codex' });
   });
 
+  it('allows wrapModelCall to short-circuit Codex provider calls', async () => {
+    const client = new FakeCodexClient();
+    const events: string[] = [];
+    const session = await Agent.create()
+      .observe((event) => {
+        if (event.type.startsWith('model.')) {
+          events.push(event.type);
+        }
+      })
+      .use(
+        Middleware.create({
+          name: 'codexWrapper',
+          wrapModelCall: () => ({
+            session: { vars: { wrapped: 'codex' } },
+            result: {
+              threadId: 'thread-wrapped',
+              turnId: 'turn-wrapped',
+              status: 'completed',
+              finalAnswer: 'wrapped Codex result',
+            },
+          }),
+        }),
+      )
+      .codexTurn({ client })
+      .execute(Session.create());
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts).toHaveLength(0);
+    expect(events).toEqual([]);
+    expect(session.getVarsObject()).toEqual({ wrapped: 'codex' });
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'wrapped Codex result',
+      attrs: {
+        codex: {
+          threadId: 'thread-wrapped',
+          turnId: 'turn-wrapped',
+        },
+      },
+    });
+  });
+
   it('applies prepareModelInput as transient Codex input', async () => {
     const client = new FakeCodexClient();
     const session = await Agent.create()

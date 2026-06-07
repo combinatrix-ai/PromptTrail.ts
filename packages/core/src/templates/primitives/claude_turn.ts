@@ -14,6 +14,7 @@ import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
 import {
   runExecutionPhase,
+  runRuntimeMiddlewareWrapper,
   runRuntimeExecutionPhase,
   type ExecutionPhaseStep,
   type ExecutionRuntimeState,
@@ -44,8 +45,6 @@ export class ClaudeTurn<
       assertTurnCommandSupported(beforeModel.command, 'ClaudeTurn');
       currentSession = beforeModel.session;
     }
-    const client =
-      this.options.client ?? (await createDefaultClaudeAgentClient());
     let modelSession = currentSession;
     if (runtime) {
       const prepared = await runExecutionPhase({
@@ -67,11 +66,6 @@ export class ClaudeTurn<
         (prepared.request as TurnModelRequest<TVars, TAttrs> | undefined)
           ?.session ?? modelSession;
     }
-    const prompt = await this.resolveInput(modelSession, runtime?.context);
-    const sessionId = await this.resolveSessionId(
-      modelSession,
-      runtime?.context,
-    );
     await materializeClaudeAgentSkills({
       capabilities: this.options.capabilities,
       cwd: this.options.cwd,
@@ -86,88 +80,126 @@ export class ClaudeTurn<
         approvalHandler: this.options.approvalHandler,
       },
     );
-    const params = buildClaudeAgentQueryParams(prompt, modelSession, {
-      cwd: this.options.cwd,
-      model: this.options.model,
-      allowedTools: this.options.allowedTools,
-      disallowedTools: this.options.disallowedTools,
-      sessionId,
-      permissionMode: this.options.permissionMode,
-      settingSources: this.options.settingSources,
-      skills: this.options.skills,
-      capabilities: this.options.capabilities,
-      approvalHandler: this.options.approvalHandler,
-      retain: this.options.retain,
-      retainMessages: this.options.retainMessages,
-      attrsKey: this.options.attrsKey,
-      sdkOptions: this.options.sdkOptions,
-      context: runtime?.context,
-    });
-    let emittedModelStarted = false;
-    let providerCompleted = false;
-    try {
-      emittedModelStarted = await emitTurnModelEvent(
-        runtime,
-        'model.started',
-        'claudeTurn',
+    let openModelEvents = 0;
+    const executeProviderCall = async ({
+      request,
+    }: {
+      request: TurnModelRequest<TVars, TAttrs>;
+    }) => {
+      const client =
+        this.options.client ?? (await createDefaultClaudeAgentClient());
+      const prompt = await this.resolveInput(request.session, runtime?.context);
+      const sessionId = await this.resolveSessionId(
+        request.session,
+        runtime?.context,
       );
-      let result = await collectClaudeAgentTurnResult(
+      const params = buildClaudeAgentQueryParams(prompt, request.session, {
+        cwd: this.options.cwd,
+        model: this.options.model,
+        allowedTools: this.options.allowedTools,
+        disallowedTools: this.options.disallowedTools,
+        sessionId,
+        permissionMode: this.options.permissionMode,
+        settingSources: this.options.settingSources,
+        skills: this.options.skills,
+        capabilities: this.options.capabilities,
+        approvalHandler: this.options.approvalHandler,
+        retain: this.options.retain,
+        retainMessages: this.options.retainMessages,
+        attrsKey: this.options.attrsKey,
+        sdkOptions: this.options.sdkOptions,
+        context: runtime?.context,
+      });
+      if (await emitTurnModelEvent(runtime, 'model.started', 'claudeTurn')) {
+        openModelEvents++;
+      }
+      return collectClaudeAgentTurnResult(
         client.query(params),
         this.options.onEvent,
       );
-      if (runtime) {
-        const afterModel = await runRuntimeExecutionPhase(runtime, {
-          phase: 'afterModel',
+    };
+    const closeModelEvents = async (
+      type: 'model.completed' | 'model.failed',
+      error?: unknown,
+    ) => {
+      while (openModelEvents > 0) {
+        openModelEvents--;
+        await emitTurnModelEvent(runtime, type, 'claudeTurn', error);
+      }
+    };
+
+    let result: Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>;
+    if (runtime) {
+      try {
+        const wrappedModel = await runRuntimeMiddlewareWrapper<
+          TVars,
+          TAttrs,
+          TurnModelRequest<TVars, TAttrs>,
+          Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>
+        >(runtime, {
+          phase: 'wrapModelCall',
           session: currentSession,
-          result,
+          request: { session: modelSession },
+          call: executeProviderCall,
         });
-        assertTurnCommandSupported(afterModel.command, 'ClaudeTurn');
-        currentSession = afterModel.session;
-        result = (afterModel.result ?? result) as typeof result;
+        await closeModelEvents('model.completed');
+        assertTurnCommandSupported(wrappedModel.command, 'ClaudeTurn');
+        currentSession = wrappedModel.session;
+        result = wrappedModel.result;
+      } catch (error) {
+        await closeModelEvents('model.failed', error);
+        throw error;
       }
-      const sessionResult = this.prepareSessionResult(result);
-
-      let nextSession: Session<TVars, TAttrs>;
-      if (this.options.squashWith) {
-        nextSession = await this.options.squashWith(currentSession, result);
-      } else if (this.options.retainMessages === false) {
-        nextSession = currentSession.withVar(
-          this.options.attrsKey ?? 'claudeAgent',
-          sessionResult,
-        );
-      } else {
-        const attrsKey = this.options.attrsKey ?? 'claudeAgent';
-        const message = claudeAgentResultToMessage<TAttrs>(
-          sessionResult,
-          attrsKey,
-        );
-        const historyFingerprint = createConversationHistoryFingerprint([
-          ...currentSession.messages,
-          message,
-        ]);
-        nextSession = currentSession.addMessage({
-          ...message,
-          attrs: {
-            ...message.attrs,
-            [attrsKey]: {
-              ...((message.attrs as Record<string, unknown> | undefined)?.[
-                attrsKey
-              ] as Record<string, unknown> | undefined),
-              historyFingerprint,
-            },
-          } as TAttrs,
-        });
-      }
-
-      providerCompleted = true;
-      await emitTurnModelEvent(runtime, 'model.completed', 'claudeTurn');
-      return nextSession;
-    } catch (error) {
-      if (emittedModelStarted && !providerCompleted) {
-        await emitTurnModelEvent(runtime, 'model.failed', 'claudeTurn', error);
-      }
-      throw error;
+    } else {
+      result = await executeProviderCall({
+        request: { session: modelSession },
+      });
     }
+    if (runtime) {
+      const afterModel = await runRuntimeExecutionPhase(runtime, {
+        phase: 'afterModel',
+        session: currentSession,
+        result,
+      });
+      assertTurnCommandSupported(afterModel.command, 'ClaudeTurn');
+      currentSession = afterModel.session;
+      result = (afterModel.result ?? result) as typeof result;
+    }
+    const sessionResult = this.prepareSessionResult(result);
+
+    let nextSession: Session<TVars, TAttrs>;
+    if (this.options.squashWith) {
+      nextSession = await this.options.squashWith(currentSession, result);
+    } else if (this.options.retainMessages === false) {
+      nextSession = currentSession.withVar(
+        this.options.attrsKey ?? 'claudeAgent',
+        sessionResult,
+      );
+    } else {
+      const attrsKey = this.options.attrsKey ?? 'claudeAgent';
+      const message = claudeAgentResultToMessage<TAttrs>(
+        sessionResult,
+        attrsKey,
+      );
+      const historyFingerprint = createConversationHistoryFingerprint([
+        ...currentSession.messages,
+        message,
+      ]);
+      nextSession = currentSession.addMessage({
+        ...message,
+        attrs: {
+          ...message.attrs,
+          [attrsKey]: {
+            ...((message.attrs as Record<string, unknown> | undefined)?.[
+              attrsKey
+            ] as Record<string, unknown> | undefined),
+            historyFingerprint,
+          },
+        } as TAttrs,
+      });
+    }
+
+    return nextSession;
   }
 
   private async resolveInput(

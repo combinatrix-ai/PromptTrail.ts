@@ -23,6 +23,7 @@ import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
 import {
   runExecutionPhase,
+  runRuntimeMiddlewareWrapper,
   runRuntimeExecutionPhase,
   type ExecutionPhaseStep,
   type ExecutionRuntimeState,
@@ -96,141 +97,177 @@ export class CodexTurn<
           ?.session ?? modelSession;
     }
 
-    const ownsClient = this.options.client === undefined;
-    const client =
-      this.options.client ??
-      (this.options.transport?.kind === 'http'
-        ? createCodexAppServerHttpClient({ url: this.options.transport.url })
-        : this.options.transport?.kind === 'stdio'
-          ? createCodexAppServerStdioClient({
-              command: this.options.transport.command,
-              args: this.options.transport.args,
-              cwd: this.options.transport.cwd,
-              env: this.options.transport.env,
-              timeoutMs: this.options.transport.timeoutMs,
-            })
-          : this.options.transport?.kind === 'unix'
-            ? createCodexAppServerUnixSocketClient({
-                path: this.options.transport.path,
+    let openModelEvents = 0;
+    const executeProviderCall = async ({
+      request,
+    }: {
+      request: TurnModelRequest<TVars, TAttrs>;
+    }) => {
+      const ownsClient = this.options.client === undefined;
+      const client =
+        this.options.client ??
+        (this.options.transport?.kind === 'http'
+          ? createCodexAppServerHttpClient({ url: this.options.transport.url })
+          : this.options.transport?.kind === 'stdio'
+            ? createCodexAppServerStdioClient({
+                command: this.options.transport.command,
+                args: this.options.transport.args,
+                cwd: this.options.transport.cwd,
+                env: this.options.transport.env,
                 timeoutMs: this.options.transport.timeoutMs,
               })
-            : this.options.transport?.kind === 'websocket'
-              ? createCodexAppServerWebSocketClient({
-                  url: this.options.transport.url,
+            : this.options.transport?.kind === 'unix'
+              ? createCodexAppServerUnixSocketClient({
+                  path: this.options.transport.path,
                   timeoutMs: this.options.transport.timeoutMs,
-                  onEvent: this.options.onEvent,
-                  onRequest,
                 })
-              : undefined);
+              : this.options.transport?.kind === 'websocket'
+                ? createCodexAppServerWebSocketClient({
+                    url: this.options.transport.url,
+                    timeoutMs: this.options.transport.timeoutMs,
+                    onEvent: this.options.onEvent,
+                    onRequest,
+                  })
+                : undefined);
 
-    if (!client) {
-      throw new Error(
-        'CodexTurn requires either a Codex App Server client or a transport URL.',
-      );
-    }
-
-    let emittedModelStarted = false;
-    let providerCompleted = false;
-    try {
-      emittedModelStarted = await emitTurnModelEvent(
-        runtime,
-        'model.started',
-        'codexTurn',
-      );
-      const runtimeSkills = await resolveCodexRuntimeSkills(
-        client,
-        rawRuntimeSkills,
-      );
-      const resolvedThreadId = await this.resolveThreadId(
-        modelSession,
-        runtime?.context,
-      );
-      const input = await this.resolveInput(modelSession, runtime?.context);
-      const threadId =
-        resolvedThreadId ??
-        (
-          await client.startThread({
-            cwd: this.options.cwd,
-            model: this.options.model,
-            sandboxPolicy: this.options.sandboxPolicy,
-            approvalPolicy: this.options.approvalPolicy,
-            dynamicTools:
-              promptTrailTools.length > 0
-                ? promptTrailTools.map(promptTrailToolToCodexDynamicTool)
-                : undefined,
-            mcpServers,
-            ...(this.options.threadStart ?? {}),
-          })
-        ).threadId;
-
-      const rawTurnResult = await client.startTurn({
-        threadId,
-        input: normalizeCodexInput(input, runtimeSkills),
-        cwd: this.options.cwd,
-        model: this.options.model,
-        sandboxPolicy: this.options.sandboxPolicy,
-        approvalPolicy: this.options.approvalPolicy,
-        ...(this.options.turnStart ?? {}),
-      });
-      let result = await collectCodexTurnResult(
-        rawTurnResult,
-        { threadId },
-        this.options.onEvent,
-      );
-      if (runtime) {
-        const afterModel = await runRuntimeExecutionPhase(runtime, {
-          phase: 'afterModel',
-          session: currentSession,
-          result,
-        });
-        assertTurnCommandSupported(afterModel.command, 'CodexTurn');
-        currentSession = afterModel.session;
-        result = (afterModel.result ?? result) as typeof result;
-      }
-      const sessionResult = this.prepareSessionResult(result);
-
-      let nextSession: Session<TVars, TAttrs>;
-      if (this.options.squashWith) {
-        nextSession = await this.options.squashWith(currentSession, result);
-      } else if (this.options.retainMessages === false) {
-        nextSession = currentSession.withVar(
-          this.options.attrsKey ?? 'codex',
-          sessionResult,
+      if (!client) {
+        throw new Error(
+          'CodexTurn requires either a Codex App Server client or a transport URL.',
         );
-      } else {
-        const attrsKey = this.options.attrsKey ?? 'codex';
-        const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
-        const historyFingerprint = createConversationHistoryFingerprint([
-          ...currentSession.messages,
-          message,
-        ]);
-        nextSession = currentSession.addMessage({
-          ...message,
-          attrs: {
-            ...message.attrs,
-            [attrsKey]: {
-              ...((message.attrs as Record<string, unknown> | undefined)?.[
-                attrsKey
-              ] as Record<string, unknown> | undefined),
-              historyFingerprint,
-            },
-          } as TAttrs,
-        });
       }
 
-      providerCompleted = true;
-      await emitTurnModelEvent(runtime, 'model.completed', 'codexTurn');
-      return nextSession;
-    } catch (error) {
-      if (emittedModelStarted && !providerCompleted) {
-        await emitTurnModelEvent(runtime, 'model.failed', 'codexTurn', error);
+      try {
+        if (await emitTurnModelEvent(runtime, 'model.started', 'codexTurn')) {
+          openModelEvents++;
+        }
+        const runtimeSkills = await resolveCodexRuntimeSkills(
+          client,
+          rawRuntimeSkills,
+        );
+        const resolvedThreadId = await this.resolveThreadId(
+          request.session,
+          runtime?.context,
+        );
+        const input = await this.resolveInput(
+          request.session,
+          runtime?.context,
+        );
+        const threadId =
+          resolvedThreadId ??
+          (
+            await client.startThread({
+              cwd: this.options.cwd,
+              model: this.options.model,
+              sandboxPolicy: this.options.sandboxPolicy,
+              approvalPolicy: this.options.approvalPolicy,
+              dynamicTools:
+                promptTrailTools.length > 0
+                  ? promptTrailTools.map(promptTrailToolToCodexDynamicTool)
+                  : undefined,
+              mcpServers,
+              ...(this.options.threadStart ?? {}),
+            })
+          ).threadId;
+
+        const rawTurnResult = await client.startTurn({
+          threadId,
+          input: normalizeCodexInput(input, runtimeSkills),
+          cwd: this.options.cwd,
+          model: this.options.model,
+          sandboxPolicy: this.options.sandboxPolicy,
+          approvalPolicy: this.options.approvalPolicy,
+          ...(this.options.turnStart ?? {}),
+        });
+        return collectCodexTurnResult(
+          rawTurnResult,
+          { threadId },
+          this.options.onEvent,
+        );
+      } finally {
+        if (ownsClient) {
+          await client.close?.();
+        }
       }
-      throw error;
-    } finally {
-      if (ownsClient) {
-        await client.close?.();
+    };
+    const closeModelEvents = async (
+      type: 'model.completed' | 'model.failed',
+      error?: unknown,
+    ) => {
+      while (openModelEvents > 0) {
+        openModelEvents--;
+        await emitTurnModelEvent(runtime, type, 'codexTurn', error);
       }
+    };
+
+    let result: Awaited<ReturnType<typeof collectCodexTurnResult>>;
+    if (runtime) {
+      try {
+        const wrappedModel = await runRuntimeMiddlewareWrapper<
+          TVars,
+          TAttrs,
+          TurnModelRequest<TVars, TAttrs>,
+          Awaited<ReturnType<typeof collectCodexTurnResult>>
+        >(runtime, {
+          phase: 'wrapModelCall',
+          session: currentSession,
+          request: { session: modelSession },
+          call: executeProviderCall,
+        });
+        await closeModelEvents('model.completed');
+        assertTurnCommandSupported(wrappedModel.command, 'CodexTurn');
+        currentSession = wrappedModel.session;
+        result = wrappedModel.result;
+      } catch (error) {
+        await closeModelEvents('model.failed', error);
+        throw error;
+      }
+    } else {
+      result = await executeProviderCall({
+        request: { session: modelSession },
+      });
     }
+    if (runtime) {
+      const afterModel = await runRuntimeExecutionPhase(runtime, {
+        phase: 'afterModel',
+        session: currentSession,
+        result,
+      });
+      assertTurnCommandSupported(afterModel.command, 'CodexTurn');
+      currentSession = afterModel.session;
+      result = (afterModel.result ?? result) as typeof result;
+    }
+    const sessionResult = this.prepareSessionResult(result);
+
+    let nextSession: Session<TVars, TAttrs>;
+    if (this.options.squashWith) {
+      nextSession = await this.options.squashWith(currentSession, result);
+    } else if (this.options.retainMessages === false) {
+      nextSession = currentSession.withVar(
+        this.options.attrsKey ?? 'codex',
+        sessionResult,
+      );
+    } else {
+      const attrsKey = this.options.attrsKey ?? 'codex';
+      const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
+      const historyFingerprint = createConversationHistoryFingerprint([
+        ...currentSession.messages,
+        message,
+      ]);
+      nextSession = currentSession.addMessage({
+        ...message,
+        attrs: {
+          ...message.attrs,
+          [attrsKey]: {
+            ...((message.attrs as Record<string, unknown> | undefined)?.[
+              attrsKey
+            ] as Record<string, unknown> | undefined),
+            historyFingerprint,
+          },
+        } as TAttrs,
+      });
+    }
+
+    return nextSession;
   }
 
   private async resolveThreadId(
