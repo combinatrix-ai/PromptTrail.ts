@@ -91,6 +91,7 @@ export interface RuntimeAdapter {
   sources?: readonly RuntimeSourceDriver[];
   deliveries?: readonly RuntimeDeliveryDriver[];
   activities?: readonly RuntimeActivityDriver[];
+  observers?: readonly ObserverLike[];
 }
 
 export interface RuntimeServerErrorContext {
@@ -119,6 +120,8 @@ export function server(options: RuntimeServerOptions): RuntimeServer {
 export class RuntimeServer {
   private readonly deliveryTracker = new AssistantDeliveryTracker();
   private readonly observerBus: ObserverBus;
+  private readonly runtimeObservers: ObserverLike[];
+  private readonly runtimeObserverDisposers: Array<() => void> = [];
   private readonly conversationLocks = new Map<string, Promise<void>>();
   private readonly sources: RuntimeSourceDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
@@ -126,7 +129,11 @@ export class RuntimeServer {
   private eventSeq = 0;
 
   constructor(private readonly options: RuntimeServerOptions) {
-    this.observerBus = new ObserverBus(options.observers ?? [], {
+    this.runtimeObservers = [
+      ...(options.observers ?? []),
+      ...options.adapters.flatMap((adapter) => adapter.observers ?? []),
+    ];
+    this.observerBus = new ObserverBus(this.runtimeObservers, {
       strictObservers: options.strictObservers,
     });
     for (const adapter of options.adapters) {
@@ -141,6 +148,7 @@ export class RuntimeServer {
   }
 
   async start(): Promise<void> {
+    this.registerRuntimeObservers();
     await this.retryPendingDeliveries();
     for (const source of this.sources) {
       await source.start({
@@ -154,6 +162,7 @@ export class RuntimeServer {
     for (const source of this.sources) {
       await source.stop?.();
     }
+    this.unregisterRuntimeObservers();
   }
 
   async dispatch(
@@ -228,6 +237,23 @@ export class RuntimeServer {
       if (this.conversationLocks.get(conversationId) === chain) {
         this.conversationLocks.delete(conversationId);
       }
+    }
+  }
+
+  private registerRuntimeObservers(): void {
+    if (this.runtimeObserverDisposers.length > 0) {
+      return;
+    }
+    for (const observer of this.runtimeObservers) {
+      this.runtimeObserverDisposers.push(
+        this.options.runtime.registerObserver(observer),
+      );
+    }
+  }
+
+  private unregisterRuntimeObservers(): void {
+    while (this.runtimeObserverDisposers.length > 0) {
+      this.runtimeObserverDisposers.pop()?.();
     }
   }
 

@@ -83,6 +83,12 @@ describe('RuntimeServer', () => {
       activity: { kind: 'typing' },
       observers: [
         (event) => {
+          if (
+            event.type !== 'delivery.pending' &&
+            event.type !== 'delivery.completed'
+          ) {
+            return;
+          }
           observerEvents.push(
             `${event.seq}:${event.type}:${event.idempotencyKey}`,
           );
@@ -197,6 +203,105 @@ describe('RuntimeServer', () => {
     });
 
     expect(deliveries).toEqual(['reply:General channel prompt']);
+  });
+
+  it('routes durable tool events to adapter observers', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const observerEvents: string[] = [];
+    const main = agent('main')
+      .tool('lookup', {
+        execute: async () => 'found',
+      })
+      .assistant('reply', () => ({
+        content: 'using tool',
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: {} }],
+      }))
+      .runTools('tools');
+    const bundle = PromptTrail.bundle({
+      name: 'server-adapter-observer-test',
+      agents: { main },
+      defaults: { durable: true },
+      bindings: [
+        bind(discord.messages())
+          .where(discord.notBot())
+          .toAgent('main')
+          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .defaults({
+            delivery: discord.replyToOriginThread(),
+            behavior: {
+              allowedChannels: ['general'],
+              requireMention: false,
+            },
+          }),
+      ],
+    });
+    const adapter: RuntimeAdapter = {
+      name: 'test-discord',
+      sources: [
+        {
+          type: 'discord.messages',
+          start(ctx) {
+            emit = ctx.emit;
+          },
+        },
+      ],
+      deliveries: [
+        {
+          platform: 'discord',
+          deliver() {},
+        },
+      ],
+      observers: [
+        {
+          name: 'adapterProgress',
+          handle(event, context) {
+            if (
+              event.type !== 'tool.started' &&
+              event.type !== 'tool.completed'
+            ) {
+              return;
+            }
+            observerEvents.push(
+              `${event.type}:${event.name}:${(context.delivery as { platform?: string } | undefined)?.platform}`,
+            );
+          },
+        },
+      ],
+    };
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: bundle.agents,
+    });
+    const firstServer = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [adapter],
+    });
+    const secondServer = PromptTrail.server({
+      bundle,
+      runtime: app,
+      adapters: [adapter],
+    });
+
+    await firstServer.start();
+    await secondServer.start();
+    await emit?.({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    });
+
+    expect(observerEvents).toEqual([
+      'tool.started:lookup:discord',
+      'tool.completed:lookup:discord',
+    ]);
+    await firstServer.stop();
+    await secondServer.stop();
   });
 
   it('persists completed final deliveries across server restarts', async () => {

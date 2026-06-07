@@ -229,14 +229,34 @@ export class ObserverFailureError extends Error {
 }
 
 export class ObserverBus {
-  private readonly observers: Observer[];
+  private readonly observers: ObserverEntry[] = [];
+  private readonly observerEntries = new Map<
+    ObserverRegistrationKey,
+    ObserverEntry
+  >();
   private readonly queues = new Map<string, Promise<void>>();
 
   constructor(
     observers: readonly ObserverLike[] = [],
     private readonly options: ObserverBusOptions = {},
   ) {
-    this.observers = observers.map(normalizeObserver);
+    for (const observer of observers) {
+      this.add(observer);
+    }
+  }
+
+  add(observer: ObserverLike): () => void {
+    const normalized = normalizeObserver(observer);
+    const key = observerRegistrationKey(observer, normalized);
+    const existing = this.observerEntries.get(key);
+    if (existing) {
+      existing.refCount += 1;
+      return () => this.remove(key);
+    }
+    const entry: ObserverEntry = { key, observer: normalized, refCount: 1 };
+    this.observerEntries.set(key, entry);
+    this.observers.push(entry);
+    return () => this.remove(key);
   }
 
   async emit(
@@ -246,9 +266,9 @@ export class ObserverBus {
     const failures = (
       await Promise.all(
         this.observers
-          .map((observer, index) => ({
-            key: observer.name ?? `observer:${index}`,
-            observer,
+          .map((entry, index) => ({
+            key: entry.observer.name ?? `observer:${index}`,
+            observer: entry.observer,
           }))
           .filter(({ observer }) => observerReceives(observer, event))
           .map(async ({ key, observer }) => {
@@ -309,9 +329,9 @@ export class ObserverBus {
     };
     await Promise.all(
       this.observers
-        .map((observer, index) => ({
-          key: observer.name ?? `observer:${index}`,
-          observer,
+        .map((entry, index) => ({
+          key: entry.observer.name ?? `observer:${index}`,
+          observer: entry.observer,
         }))
         .filter(
           ({ key, observer }) =>
@@ -347,6 +367,37 @@ export class ObserverBus {
     );
     await next;
   }
+
+  private remove(key: ObserverRegistrationKey): void {
+    const entry = this.observerEntries.get(key);
+    if (!entry) {
+      return;
+    }
+    entry.refCount -= 1;
+    if (entry.refCount > 0) {
+      return;
+    }
+    this.observerEntries.delete(key);
+    const index = this.observers.indexOf(entry);
+    if (index >= 0) {
+      this.observers.splice(index, 1);
+    }
+  }
+}
+
+type ObserverRegistrationKey = string | ObserverLike;
+
+interface ObserverEntry {
+  key: ObserverRegistrationKey;
+  observer: Observer;
+  refCount: number;
+}
+
+function observerRegistrationKey(
+  source: ObserverLike,
+  observer: Observer,
+): ObserverRegistrationKey {
+  return observer.name ? `name:${observer.name}` : source;
 }
 
 export function normalizeObserver(observer: ObserverLike): Observer {

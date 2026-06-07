@@ -7,8 +7,10 @@ import {
   type ClientOptions,
   type Message as DiscordMessage,
 } from 'discord.js';
+import type { Observer, ObserverContext } from './execution';
 import type {
   ConcreteDiscordDeliveryTarget,
+  DeliveryTarget,
   DiscordMessageEvent,
 } from './runtime_bindings';
 import { isConcreteDiscordDeliveryTarget } from './runtime_dispatch';
@@ -23,8 +25,17 @@ export interface DiscordGatewayOptions {
   client?: Client;
   clientOptions?: ClientOptions;
   stripBotMention?: boolean;
+  progress?: false | DiscordProgressObserverOptions;
   onReady?: (client: Client<true>) => void | Promise<void>;
   onError?: (error: unknown, message: DiscordMessage) => void | Promise<void>;
+}
+
+export interface DiscordProgressObserverOptions {
+  format?: (event: {
+    type: 'tool.started' | 'tool.completed';
+    toolName?: string;
+    toolCallId?: string;
+  }) => string | undefined;
 }
 
 export function createDiscordClient(options?: ClientOptions): Client {
@@ -100,6 +111,47 @@ export function discordGateway(options: DiscordGatewayOptions): RuntimeAdapter {
         },
       },
     ],
+    observers:
+      options.progress === false
+        ? []
+        : [discordProgressObserver(client, options.progress)],
+  };
+}
+
+export function discordProgressObserver(
+  client: Client,
+  options: DiscordProgressObserverOptions = {},
+): Observer {
+  return {
+    name: 'discordProgress',
+    replayPolicy: 'live-and-journaled',
+    async handle(event, context) {
+      if (event.type !== 'tool.started' && event.type !== 'tool.completed') {
+        return;
+      }
+      const delivery = progressDeliveryTarget(context);
+      if (!delivery) {
+        return;
+      }
+      const content = options.format
+        ? options.format({
+            type: event.type,
+            toolName: event.name as string | undefined,
+            toolCallId: event.toolCallId as string | undefined,
+          })
+        : defaultDiscordProgressMessage(
+            event.type,
+            event.name as string | undefined,
+          );
+      if (!content) {
+        return;
+      }
+      const channel = await resolveDiscordDeliveryChannel(client, delivery);
+      if (!channel?.isSendable()) {
+        return;
+      }
+      await channel.send(content);
+    },
   };
 }
 
@@ -201,6 +253,34 @@ function getSendTyping(
     return undefined;
   }
   return () => sendTyping.call(target);
+}
+
+function progressDeliveryTarget(
+  context: ObserverContext,
+): ConcreteDiscordDeliveryTarget | undefined {
+  const delivery = context.delivery;
+  return isDeliveryTarget(delivery) && isConcreteDiscordDeliveryTarget(delivery)
+    ? delivery
+    : undefined;
+}
+
+function isDeliveryTarget(value: unknown): value is DeliveryTarget {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'platform' in value &&
+    typeof (value as { platform?: unknown }).platform === 'string'
+  );
+}
+
+function defaultDiscordProgressMessage(
+  type: 'tool.started' | 'tool.completed',
+  toolName: string | undefined,
+): string {
+  const label = toolName ?? 'tool';
+  return type === 'tool.started'
+    ? `Running ${label}...`
+    : `Completed ${label}.`;
 }
 
 function stripBotMention(content: string, botUserId?: string): string {

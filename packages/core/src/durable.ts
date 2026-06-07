@@ -1462,6 +1462,15 @@ export class PromptTrailApp {
     return this;
   }
 
+  observe(observer: ObserverLike): this {
+    this.registerObserver(observer);
+    return this;
+  }
+
+  registerObserver(observer: ObserverLike): () => void {
+    return this.observerBus.add(observer);
+  }
+
   async start(): Promise<void> {
     for (const source of this.sources.values()) {
       await source.start((event) => this.handleEvent(event));
@@ -1525,7 +1534,11 @@ export class PromptTrailApp {
       hooks: this.hooks,
       middlewareState: {},
       context: run.context,
-      emitEvent: (event) => this.observerBus.emit(event),
+      emitEvent: (event) =>
+        this.observerBus.emit(
+          event,
+          observerContextFromRunContext(run.context),
+        ),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
 
@@ -1732,7 +1745,11 @@ export class PromptTrailApp {
       hooks: this.hooks,
       middlewareState: {},
       context: run.context,
-      emitEvent: (event) => this.observerBus.emit(event),
+      emitEvent: (event) =>
+        this.observerBus.emit(
+          event,
+          observerContextFromRunContext(run.context),
+        ),
       nextEventSeq: () => this.nextRunEventSeq(run),
     };
     await this.emitRunEvent(run, runId, 'run.started', {
@@ -1773,17 +1790,20 @@ export class PromptTrailApp {
     options: Partial<ExecutionEvent> = {},
   ): Promise<void> {
     const seq = this.nextRunEventSeq(run);
-    await this.observerBus.emit({
-      id: `${runId}:${seq}:${type}`,
-      type,
-      at: new Date().toISOString(),
-      seq,
-      conversationId: runId,
-      runId,
-      replay: 'live',
-      source: 'app',
-      ...options,
-    });
+    await this.observerBus.emit(
+      {
+        id: `${runId}:${seq}:${type}`,
+        type,
+        at: new Date().toISOString(),
+        seq,
+        conversationId: runId,
+        runId,
+        replay: 'live',
+        source: 'app',
+        ...options,
+      },
+      observerContextFromRunContext(run.context),
+    );
   }
 
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
@@ -1888,6 +1908,15 @@ function deliveryTargetFromContext(
     return delivery as DeliveryTarget;
   }
   return undefined;
+}
+
+function observerContextFromRunContext(
+  context: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return {
+    runContext: context,
+    delivery: deliveryTargetFromContext(context),
+  };
 }
 
 function assistantDeliveryKey(runId: string, assistantIndex: number): string {
