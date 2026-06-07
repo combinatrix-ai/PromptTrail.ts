@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DELETE_VALUE,
+  Observer,
   ObserverBus,
   applyResolvedExecutionTransition,
   observerReceives,
@@ -211,6 +212,29 @@ describe('execution transitions', () => {
 });
 
 describe('observer bus', () => {
+  it('accepts Observer.create object observers', async () => {
+    const seen: string[] = [];
+    const bus = new ObserverBus([
+      Observer.create({
+        name: 'logger',
+        replayPolicy: 'adopt-replayed',
+        handle(event) {
+          seen.push(`${event.replay}:${event.type}`);
+        },
+      }),
+    ]);
+
+    await bus.emit({
+      id: 'event-1',
+      type: 'tool.completed',
+      at: '2026-01-01T00:00:00.000Z',
+      seq: 3,
+      replay: 'replayed',
+    });
+
+    expect(seen).toEqual(['replayed:tool.completed']);
+  });
+
   it('filters events by replay policy', () => {
     const event = {
       id: '1',

@@ -133,10 +133,7 @@ export interface MiddlewareDefinition<
   TAttrs extends Attrs = Attrs,
 > {
   name?: string;
-  /**
-   * Reserved for durable phase execution. The standalone runner materializes
-   * returned patches but does not yet expose nested durable helpers.
-   */
+  /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
   beforeAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
   afterAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
@@ -154,10 +151,7 @@ export interface HookDefinition<
   TAttrs extends Attrs = Attrs,
 > {
   name?: string;
-  /**
-   * Reserved for durable phase execution. The standalone runner materializes
-   * returned patches but does not yet expose nested durable helpers.
-   */
+  /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
   onBeforeAgent?: HookPhaseHandler<TVars, TAttrs>;
   onAfterAgent?: HookPhaseHandler<TVars, TAttrs>;

@@ -207,6 +207,12 @@ export interface Observer {
   handle(event: ExecutionEvent, context: ObserverContext): Promise<void> | void;
 }
 
+export const Observer = {
+  create(definition: Observer): Observer {
+    return definition;
+  },
+};
+
 export type ObserverLike =
   | Observer
   | ((event: ExecutionEvent, context: ObserverContext) => Promise<void> | void);
