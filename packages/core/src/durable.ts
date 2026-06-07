@@ -1,8 +1,11 @@
 import { Message, type Message as PromptTrailMessage } from './message';
 import {
+  ObserverBus,
   applyResolvedExecutionTransition,
   resolveExecutionTransition,
+  type ExecutionEvent,
   type ExecutionPatch,
+  type ObserverLike,
   type ResolvedExecutionCommand,
   type ResolvedExecutionTransition,
 } from './execution';
@@ -1179,6 +1182,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   journal: JournalState;
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
+  eventSeq?: number;
 }
 
 export interface PromptTrailRunOptions<
@@ -1257,6 +1261,8 @@ export interface PromptTrailAppOptions {
   sources?: Record<string, EventSource>;
   middleware?: readonly MiddlewareDefinition<any, any>[];
   hooks?: readonly HookDefinition<any, any>[];
+  observers?: readonly ObserverLike[];
+  strictObservers?: boolean;
 }
 
 export class PromptTrailApp {
@@ -1265,12 +1271,16 @@ export class PromptTrailApp {
   private readonly sources = new Map<string, EventSource>();
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
+  private readonly observerBus: ObserverBus;
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.store = options.store ?? new MemoryRunStore();
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
+    this.observerBus = new ObserverBus(options.observers ?? [], {
+      strictObservers: options.strictObservers,
+    });
     for (const [name, durableAgent] of Object.entries(options.agents ?? {})) {
       this.agent(name, durableAgent);
     }
@@ -1349,14 +1359,24 @@ export class PromptTrailApp {
       middlewareState: {},
     };
 
+    await this.emitRunEvent(run, runId, 'run.started', {
+      sessionVersion: state.transitionVersion,
+    });
     try {
       const session = await run.agent.execute(state);
       run.status = 'done';
       run.result = session;
+      await this.emitRunEvent(run, runId, 'run.completed', {
+        sessionVersion: state.transitionVersion,
+      });
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof Suspend) {
         run.result = state.session;
+        await this.emitRunEvent(run, runId, 'run.suspended', {
+          stepId: error.stepId,
+          sessionVersion: state.transitionVersion,
+        });
         return {
           status: 'suspended',
           runId,
@@ -1364,6 +1384,11 @@ export class PromptTrailApp {
           session: state.session,
         };
       }
+      await this.emitRunEvent(run, runId, 'error', {
+        sessionVersion: state.transitionVersion,
+        error,
+        raw: { error },
+      });
       throw error;
     }
   }
@@ -1478,6 +1503,7 @@ export class PromptTrailApp {
       journal: { results: new Map(), sequence: [] },
       outbox: [],
       inbox: [],
+      eventSeq: 0,
     };
 
     if (durable) {
@@ -1513,11 +1539,21 @@ export class PromptTrailApp {
       hooks: this.hooks,
       middlewareState: {},
     };
+    await this.emitRunEvent(run, runId, 'run.started', {
+      sessionVersion: state.transitionVersion,
+    });
     try {
       const session = await run.agent.execute(state);
+      await this.emitRunEvent(run, runId, 'run.completed', {
+        sessionVersion: state.transitionVersion,
+      });
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof Suspend) {
+        await this.emitRunEvent(run, runId, 'run.suspended', {
+          stepId: error.stepId,
+          sessionVersion: state.transitionVersion,
+        });
         return {
           status: 'suspended',
           runId,
@@ -1525,8 +1561,34 @@ export class PromptTrailApp {
           session: state.session,
         };
       }
+      await this.emitRunEvent(run, runId, 'error', {
+        sessionVersion: state.transitionVersion,
+        error,
+        raw: { error },
+      });
       throw error;
     }
+  }
+
+  private async emitRunEvent<TVars extends Vars, TAttrs extends Attrs>(
+    run: StoredRun<TVars, TAttrs>,
+    runId: string,
+    type: 'run.started' | 'run.completed' | 'run.suspended' | 'error',
+    options: Partial<ExecutionEvent> = {},
+  ): Promise<void> {
+    const seq = run.eventSeq ?? 0;
+    run.eventSeq = seq + 1;
+    await this.observerBus.emit({
+      id: `${runId}:${seq}:${type}`,
+      type,
+      at: new Date().toISOString(),
+      seq,
+      conversationId: runId,
+      runId,
+      replay: 'live',
+      source: 'app',
+      ...options,
+    });
   }
 
   private append(runId: string, message: Omit<Inbound, 'offset'>): void {

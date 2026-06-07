@@ -920,6 +920,73 @@ describe('durable agent runtime', () => {
     expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
   });
 
+  it('emits durable app lifecycle observer events across resume', async () => {
+    const events: string[] = [];
+    const assistant = agent('observed')
+      .assistant('reply', () => 'hello')
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        (event) => {
+          events.push(
+            `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.sessionVersion ?? '-'}`,
+          );
+        },
+      ],
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-observed',
+      durable: true,
+    });
+    const second = await app.send({
+      runId: 'run-observed',
+      input: 'continue',
+    });
+
+    expect(first.status).toBe('suspended');
+    expect(second.status).toBe('done');
+    expect(events).toEqual([
+      '0:run.started:-:0',
+      '1:run.suspended:wait/input/input:0',
+      '2:run.started:-:0',
+      '3:run.completed:-:0',
+    ]);
+  });
+
+  it('can surface durable app observer failures in strict mode', async () => {
+    const assistant = agent('strict-observed').assistant(
+      'reply',
+      () => 'hello',
+    );
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        {
+          name: 'failing',
+          handle(event) {
+            if (event.type === 'run.started') {
+              throw new Error('observer broke');
+            }
+          },
+        },
+      ],
+      strictObservers: true,
+      store: memoryStore(),
+    });
+
+    await expect(
+      app.run({
+        agent: 'observed',
+        runId: 'run-strict-observer',
+        durable: true,
+      }),
+    ).rejects.toThrow('observer broke');
+  });
+
   it('throws NondeterminismError for mismatched journal order', async () => {
     const store = memoryStore();
     const app = PromptTrail.app({ store });
