@@ -9,6 +9,7 @@ import type {
 import { Agent } from '../../../templates';
 import { Session } from '../../../session';
 import { Tool } from '../../../tool';
+import { Middleware } from '../../../interceptors';
 import { z } from 'zod';
 
 class FakeCodexClient implements CodexAppServerClient {
@@ -149,6 +150,29 @@ describe('CodexTurn template', () => {
     expect(client.turnStarts[0]).toMatchObject({
       threadId: 'thread-claw-test',
       input: [{ type: 'text', text: 'claw-test:hello' }],
+    });
+  });
+
+  it('applies beforeModel session patches before resolving Codex input', async () => {
+    const client = new FakeCodexClient();
+
+    await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'codexContext',
+          beforeModel: () => ({
+            session: { vars: { injected: 'from-before-model' } },
+          }),
+        }),
+      )
+      .codexTurn({
+        client,
+        input: (session) => String(session.getVar('injected' as never)),
+      })
+      .execute(Session.create());
+
+    expect(client.turnStarts[0]).toMatchObject({
+      input: [{ type: 'text', text: 'from-before-model' }],
     });
   });
 

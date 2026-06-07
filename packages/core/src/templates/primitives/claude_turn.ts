@@ -12,8 +12,12 @@ import {
 } from '../../conversation';
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import type { Session } from '../../session';
-import type { ExecutionRuntimeState } from '../../interceptors';
+import {
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
+import type { ResolvedExecutionCommand } from '../../execution';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -29,7 +33,15 @@ export class ClaudeTurn<
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
-    const currentSession = this.ensureSession(session);
+    let currentSession = this.ensureSession(session);
+    if (runtime) {
+      const beforeModel = await runRuntimeExecutionPhase(runtime, {
+        phase: 'beforeModel',
+        session: currentSession,
+      });
+      assertTurnCommandSupported(beforeModel.command, 'ClaudeTurn');
+      currentSession = beforeModel.session;
+    }
     const client =
       this.options.client ?? (await createDefaultClaudeAgentClient());
     const prompt = await this.resolveInput(currentSession, runtime?.context);
@@ -207,6 +219,18 @@ async function emitTurnModelEvent<
   }
   await runtime.emitEvent(event);
   return true;
+}
+
+function assertTurnCommandSupported(
+  command: ResolvedExecutionCommand,
+  label: string,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `${label}.execute does not support execution command ${command.type} yet.`,
+  );
 }
 
 function getClaudeConfiguredApprovalCapabilities(

@@ -21,8 +21,12 @@ import {
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
-import type { ExecutionRuntimeState } from '../../interceptors';
+import {
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
+import type { ResolvedExecutionCommand } from '../../execution';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -38,7 +42,15 @@ export class CodexTurn<
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
-    const currentSession = this.ensureSession(session);
+    let currentSession = this.ensureSession(session);
+    if (runtime) {
+      const beforeModel = await runRuntimeExecutionPhase(runtime, {
+        phase: 'beforeModel',
+        session: currentSession,
+      });
+      assertTurnCommandSupported(beforeModel.command, 'CodexTurn');
+      currentSession = beforeModel.session;
+    }
     const promptTrailTools = getPromptTrailTools(this.options.capabilities);
     const rawRuntimeSkills = getCodexRuntimeSkills(this.options.capabilities);
     await requireConfiguredCapabilityApprovals(
@@ -277,6 +289,18 @@ async function emitTurnModelEvent<
   }
   await runtime.emitEvent(event);
   return true;
+}
+
+function assertTurnCommandSupported(
+  command: ResolvedExecutionCommand,
+  label: string,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `${label}.execute does not support execution command ${command.type} yet.`,
+  );
 }
 
 function getCodexConfiguredApprovalCapabilities(

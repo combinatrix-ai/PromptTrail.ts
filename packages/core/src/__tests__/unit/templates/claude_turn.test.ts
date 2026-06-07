@@ -8,6 +8,7 @@ import type {
 } from '../../../claude_agent';
 import { Session } from '../../../session';
 import { Agent } from '../../../templates';
+import { Middleware } from '../../../interceptors';
 
 class FakeClaudeAgentClient implements ClaudeAgentClient {
   queries: ClaudeAgentQueryParams[] = [];
@@ -34,7 +35,7 @@ class FailingClaudeAgentClient implements ClaudeAgentClient {
 
   async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
     this.queries.push(params);
-    throw new Error('claude unavailable');
+    yield await Promise.reject(new Error('claude unavailable'));
   }
 }
 
@@ -122,6 +123,27 @@ describe('ClaudeTurn template', () => {
 
     expect(client.queries[0].prompt).toBe('claw-test:hello');
     expect(client.queries[0].options.resume).toBe('session-claw-test');
+  });
+
+  it('applies beforeModel session patches before resolving Claude input', async () => {
+    const client = new FakeClaudeAgentClient();
+
+    await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'claudeContext',
+          beforeModel: () => ({
+            session: { vars: { injected: 'from-before-model' } },
+          }),
+        }),
+      )
+      .claudeTurn({
+        client,
+        input: (session) => String(session.getVar('injected' as never)),
+      })
+      .execute(Session.create());
+
+    expect(client.queries[0].prompt).toBe('from-before-model');
   });
 
   it('emits model boundary events for direct execution observers', async () => {
