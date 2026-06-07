@@ -396,6 +396,7 @@ interface GraphNode {
     | 'inbox'
     | 'awaitInput'
     | 'goal'
+    | 'turn'
     | 'loop'
     | 'conditional'
     | 'subroutine'

@@ -15,6 +15,11 @@ import {
   type ResolvedExecutionCommand,
 } from '../execution';
 import {
+  createAgentGraph,
+  type AgentGraph,
+  type AgentGraphNode,
+} from '../graph';
+import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
   type ExecutionRuntimeState,
@@ -23,6 +28,7 @@ import {
   runRuntimeExecutionPhase,
 } from '../interceptors';
 import { ModelOutput, Source, ValidationOptions } from '../source';
+import type { PromptTrailTool } from '../tool';
 import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
@@ -43,6 +49,84 @@ import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
 import { User } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
+
+type AgentGraphAssistantHandler<TC extends Vars, TM extends Attrs> = (
+  session: Session<TC, TM>,
+) => unknown | Promise<unknown>;
+
+type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
+  | string
+  | Source<ModelOutput>
+  | Source<string>
+  | AgentGraphAssistantHandler<TC, TM>;
+
+export class AgentTurnGraphBuilder<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> {
+  private readonly nodes: AgentGraphNode[] = [];
+
+  inbox(id: string, options?: Record<string, unknown>): this {
+    this.nodes.push({ id, type: 'inbox', data: options });
+    return this;
+  }
+
+  assistant(
+    id: string,
+    sourceOrHandler?: AgentGraphAssistantInput<TC, TM>,
+    options?: Record<string, unknown>,
+  ): this {
+    this.nodes.push({
+      id,
+      type: 'assistant',
+      data: compactGraphData({
+        input: sourceOrHandler,
+        options,
+      }),
+    });
+    return this;
+  }
+
+  tools(id: string, options?: Record<string, unknown>): this {
+    this.nodes.push({ id, type: 'tools', data: options });
+    return this;
+  }
+
+  repeat(
+    id: string,
+    condition: (context: { session: Session<TC, TM> }) => boolean,
+    builder: (
+      loop: AgentTurnGraphBuilder<TC, TM>,
+    ) => AgentTurnGraphBuilder<TC, TM>,
+    options?: Record<string, unknown>,
+  ): this {
+    const loop = builder(new AgentTurnGraphBuilder<TC, TM>());
+    this.nodes.push({
+      id,
+      type: 'loop',
+      data: compactGraphData({ condition, options }),
+      children: loop.build(),
+    });
+    return this;
+  }
+
+  awaitInput(id: string, options?: Record<string, unknown>): this {
+    this.nodes.push({ id, type: 'awaitInput', data: options });
+    return this;
+  }
+
+  patch(
+    id: string,
+    handler: (session: Session<TC, TM>) => unknown | Promise<unknown>,
+  ): this {
+    this.nodes.push({ id, type: 'patch', data: { handler } });
+    return this;
+  }
+
+  build(): AgentGraphNode[] {
+    return [...this.nodes];
+  }
+}
 
 /**
  * Agent class for building and executing templates
@@ -77,8 +161,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 {
   private constructor(
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
+    private readonly graphName?: string,
   ) {}
 
+  private readonly graphNodes: AgentGraphNode[] = [];
+  private readonly graphTools: Record<string, PromptTrailTool<any, any>> = {};
   private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
   private readonly hooks: HookDefinition<TC, TM>[] = [];
   private readonly observers: ObserverLike[] = [];
@@ -96,8 +183,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   /** Static factory methods -------------------------------------------------- */
 
-  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>() {
-    return new Agent<TC, TM>();
+  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(): Agent<
+    TC,
+    TM
+  >;
+  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
+    name: string,
+  ): Agent<TC, TM>;
+  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
+    name?: string,
+  ) {
+    return new Agent<TC, TM>(new Sequence<TM, TC>(), name);
   }
 
   static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
@@ -141,6 +237,26 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
+  tool(name: string, tool: PromptTrailTool<any, any>) {
+    this.graphTools[name] = tool;
+    return this;
+  }
+
+  toGraph(version?: string): AgentGraph {
+    if (!this.graphName) {
+      throw new Error('Agent.toGraph requires Agent.create(name).');
+    }
+    return createAgentGraph({
+      name: this.graphName,
+      version,
+      nodes: this.graphNodes,
+      tools: this.graphTools,
+      middleware: this.middleware,
+      hooks: this.hooks,
+      observers: this.observers,
+    });
+  }
+
   durable(options: AgentDirectDurableOptions | boolean = true) {
     this.directDurableOptions =
       typeof options === 'boolean'
@@ -157,21 +273,77 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  system(content: string) {
-    this.root.add(new System(content));
+  system(content: string): this;
+  system(id: string, content: string): this;
+  system(idOrContent: string, content?: string) {
+    const resolvedContent = content ?? idOrContent;
+    if (content !== undefined) {
+      this.graphNodes.push({
+        id: idOrContent,
+        type: 'system',
+        data: { content },
+      });
+    }
+    this.root.add(new System(resolvedContent));
     return this;
   }
 
-  user(contentOrSource?: string | Source<string>) {
-    this.root.add(new User(contentOrSource));
+  user(contentOrSource?: string | Source<string>): this;
+  user(id: string, contentOrSource?: string | Source<string>): this;
+  user(
+    idOrContentOrSource?: string | Source<string>,
+    contentOrSource?: string | Source<string>,
+  ) {
+    if (contentOrSource !== undefined) {
+      this.graphNodes.push({
+        id: idOrContentOrSource as string,
+        type: 'user',
+        data: { input: contentOrSource },
+      });
+      this.root.add(new User(contentOrSource));
+      return this;
+    }
+    this.root.add(new User(idOrContentOrSource));
     return this;
   }
 
   assistant(
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
+  ): this;
+  assistant(
+    id: string,
+    sourceOrHandler?: AgentGraphAssistantInput<TC, TM>,
+    options?: Record<string, unknown>,
+  ): this;
+  assistant(
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
+    validatorOrOptions?:
+      | IValidator
+      | ValidationOptions
+      | AgentGraphAssistantInput<TC, TM>,
+    maybeOptions?: Record<string, unknown>,
   ) {
-    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
+    if (maybeOptions !== undefined || isGraphAssistantInput(validatorOrOptions)) {
+      this.graphNodes.push({
+        id: contentOrSource as string,
+        type: 'assistant',
+        data: compactGraphData({
+          input: validatorOrOptions,
+          options: maybeOptions,
+        }),
+      });
+      if (isExecutableAssistantInput(validatorOrOptions)) {
+        this.root.add(new Assistant(validatorOrOptions));
+      }
+      return this;
+    }
+    this.root.add(
+      new Assistant(
+        contentOrSource,
+        validatorOrOptions as IValidator | ValidationOptions | undefined,
+      ),
+    );
     return this;
   }
 
@@ -182,6 +354,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   messages(generateMessages: GenerateMessagesFn<TM, TC>) {
     this.root.add(new GenerateMessages(generateMessages));
+    return this;
+  }
+
+  turn(
+    id: string,
+    builder: (
+      turn: AgentTurnGraphBuilder<TC, TM>,
+    ) => AgentTurnGraphBuilder<TC, TM>,
+  ): this {
+    const turn = builder(new AgentTurnGraphBuilder<TC, TM>());
+    this.graphNodes.push({
+      id,
+      type: 'turn',
+      children: turn.build(),
+    });
     return this;
   }
 
@@ -575,6 +762,31 @@ function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
     'middlewareState' in value &&
     'version' in value
   );
+}
+
+function compactGraphData(
+  data: Record<string, unknown | undefined>,
+): Record<string, unknown> | undefined {
+  const compact = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  );
+  return Object.keys(compact).length > 0 ? compact : undefined;
+}
+
+function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(
+  value: unknown,
+): value is AgentGraphAssistantInput<TC, TM> {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'function' ||
+    value instanceof Source
+  );
+}
+
+function isExecutableAssistantInput(
+  value: unknown,
+): value is string | Source<ModelOutput> | Source<string> {
+  return typeof value === 'string' || value instanceof Source;
 }
 
 async function handleDirectAgentCommand<TC extends Vars, TM extends Attrs>(

@@ -2,6 +2,9 @@ import type { ObserverLike } from './execution';
 import type { HookDefinition, MiddlewareDefinition } from './interceptors';
 import type { PromptTrailTool } from './tool';
 
+type AnyMiddlewareDefinition = MiddlewareDefinition<any, any>;
+type AnyHookDefinition = HookDefinition<any, any>;
+
 export type AgentGraphNodeType =
   | 'system'
   | 'user'
@@ -12,6 +15,7 @@ export type AgentGraphNodeType =
   | 'inbox'
   | 'awaitInput'
   | 'goal'
+  | 'turn'
   | 'loop'
   | 'conditional'
   | 'subroutine'
@@ -42,8 +46,8 @@ export interface AgentGraph {
   nodes: readonly AgentGraphNode[];
   edges: readonly AgentGraphEdge[];
   tools: Record<string, PromptTrailTool<unknown, unknown>>;
-  middleware: readonly MiddlewareDefinition[];
-  hooks: readonly HookDefinition[];
+  middleware: readonly AnyMiddlewareDefinition[];
+  hooks: readonly AnyHookDefinition[];
   observers: readonly ObserverLike[];
 }
 
@@ -53,8 +57,8 @@ export interface AgentGraphInput {
   nodes?: readonly AgentGraphNode[];
   edges?: readonly AgentGraphEdge[];
   tools?: Record<string, PromptTrailTool<unknown, unknown>>;
-  middleware?: readonly MiddlewareDefinition[];
-  hooks?: readonly HookDefinition[];
+  middleware?: readonly AnyMiddlewareDefinition[];
+  hooks?: readonly AnyHookDefinition[];
   observers?: readonly ObserverLike[];
 }
 
