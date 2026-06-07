@@ -134,6 +134,49 @@ describe('Agent interceptors', () => {
     expect(events).toEqual(['0:run.started', '1:run.completed']);
   });
 
+  it('threads direct execution context into middleware', async () => {
+    const session = await Agent.create()
+      .use(
+        Middleware.create({
+          name: 'context',
+          beforeModel: ({ context }) => ({
+            session: {
+              vars: {
+                channel: context?.channel,
+              },
+            },
+          }),
+        }),
+      )
+      .assistant('reply')
+      .execute(undefined, { context: { channel: 'claw-test' } });
+
+    expect(session.getVarsObject()).toEqual({ channel: 'claw-test' });
+  });
+
+  it('threads direct execution context into nested agents', async () => {
+    const session = await Agent.create()
+      .sequence((agent) =>
+        agent
+          .use(
+            Middleware.create({
+              name: 'nestedContext',
+              beforeModel: ({ context }) => ({
+                session: {
+                  vars: {
+                    userId: context?.userId,
+                  },
+                },
+              }),
+            }),
+          )
+          .assistant('reply'),
+      )
+      .execute(undefined, { context: { userId: 'U1' } });
+
+    expect(session.getVarsObject()).toEqual({ userId: 'U1' });
+  });
+
   it('emits session.patched events for materialized phase patches', async () => {
     const events: string[] = [];
     const session = await Agent.create()

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as prompttrail from '../../index';
-import type { ExecutionDurableActivityOptions } from '../../index';
+import type {
+  AgentExecutionOptions,
+  ExecutionDurableActivityOptions,
+} from '../../index';
 
 describe('public API surface', () => {
   it('does not re-export ai-sdk tool helpers from core', () => {
@@ -43,5 +46,19 @@ describe('public API surface', () => {
     });
 
     expect(hook.name).toBe('lifecycle');
+  });
+
+  it('types direct agent execution options', async () => {
+    const controller = new AbortController();
+    const options: AgentExecutionOptions = {
+      context: { userId: 'U1' },
+      signal: controller.signal,
+    };
+    const session = await prompttrail.Agent.user('hello').execute(
+      undefined,
+      options,
+    );
+
+    expect(session.getLastMessage()?.content).toBe('hello');
   });
 });

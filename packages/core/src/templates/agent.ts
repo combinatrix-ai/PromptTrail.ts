@@ -255,12 +255,24 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   async execute(
     session?: Session<TC, TM> | undefined,
-    parentRuntime?: ExecutionRuntimeState<TC, TM>,
+    runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
   ): Promise<Session<TC, TM>> {
+    const parentRuntime = isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
+      ? runtimeOrOptions
+      : undefined;
+    const executionOptions = parentRuntime ? undefined : runtimeOrOptions;
     if (!this.hasInterceptors()) {
+      const runtime =
+        parentRuntime ??
+        (executionOptions
+          ? createExecutionRuntimeState<TC, TM>({
+              context: executionOptions.context,
+              signal: executionOptions.signal,
+            })
+          : undefined);
       return session
-        ? this.root.execute(session, parentRuntime)
-        : this.root.execute(undefined, parentRuntime);
+        ? this.root.execute(session, runtime)
+        : this.root.execute(undefined, runtime);
     }
 
     const observerBus = new ObserverBus(this.observers);
@@ -269,8 +281,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const runtime =
       parentRuntime ??
       createExecutionRuntimeState<TC, TM>({
+        context: executionOptions?.context,
         emitEvent: (event) => observerBus.emit(event),
         nextEventSeq: () => seq++,
+        signal: executionOptions?.signal,
       });
     const previousParentEmitEvent = parentRuntime?.emitEvent;
     // Child agents run sequentially under the current template runtime, so this
@@ -373,6 +387,22 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       }
     }
   }
+}
+
+export interface AgentExecutionOptions {
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
+  value: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions | undefined,
+): value is ExecutionRuntimeState<TC, TM> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'middlewareState' in value &&
+    'version' in value
+  );
 }
 
 async function handleDirectAgentCommand<

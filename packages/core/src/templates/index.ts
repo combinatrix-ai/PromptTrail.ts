@@ -21,6 +21,7 @@ export { User } from './primitives/user';
 
 // Export Agent (Template Builder)
 export { Agent } from './agent';
+export type { AgentExecutionOptions } from './agent';
 
 // Export Scenario API
 export {
