@@ -1,6 +1,6 @@
 // assistant.ts
 import type { AssistantMessage } from '../../message';
-import type { ResolvedExecutionCommand } from '../../execution';
+import type { ExecutionEvent, ResolvedExecutionCommand } from '../../execution';
 import {
   type ExecutionPhaseStep,
   type ExecutionRuntimeState,
@@ -130,27 +130,44 @@ export class Assistant<
         // 1. Get Content
         let rawOutput: string | ModelOutput;
         if (runtime) {
-          const wrappedModel = await runRuntimeMiddlewareWrapper<
-            TVars,
-            TAttrs,
-            AssistantModelRequest<TVars, TAttrs>,
-            string | ModelOutput
-          >(runtime, {
-            phase: 'wrapModelCall',
-            session: validSession,
-            request: { session: modelSession },
-            call: ({ request }) =>
-              this.contentSource!.getContent(request.session) as Promise<
+          let openModelEvents = 0;
+          const closeModelEvents = async (
+            type: 'model.completed' | 'model.failed',
+            error?: unknown,
+          ) => {
+            while (openModelEvents > 0) {
+              openModelEvents--;
+              await emitDirectModelEvent(runtime, type, error);
+            }
+          };
+          const wrappedModel = await (async () => {
+            try {
+              const result = await runRuntimeMiddlewareWrapper<
+                TVars,
+                TAttrs,
+                AssistantModelRequest<TVars, TAttrs>,
                 string | ModelOutput
-              >,
-          });
+              >(runtime, {
+                phase: 'wrapModelCall',
+                session: validSession,
+                request: { session: modelSession },
+                call: async ({ request }) =>
+                  this.getModelContent(request.session, runtime, () => {
+                    openModelEvents++;
+                  }),
+              });
+              await closeModelEvents('model.completed');
+              return result;
+            } catch (error) {
+              await closeModelEvents('model.failed', error);
+              throw error;
+            }
+          })();
           assertAssistantCommandSupported(wrappedModel.command);
           validSession = wrappedModel.session;
           rawOutput = wrappedModel.result;
         } else {
-          rawOutput = (await this.contentSource.getContent(modelSession)) as
-            | string
-            | ModelOutput;
+          rawOutput = await this.getModelContent(modelSession);
         }
         if (runtime) {
           const afterModel = await runRuntimeExecutionPhase(runtime, {
@@ -296,6 +313,53 @@ export class Assistant<
       'Assistant template execution finished in an unexpected state. No result or definitive error.',
     );
   }
+
+  private async getModelContent(
+    session: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+    onModelEventStarted?: () => void,
+  ): Promise<string | ModelOutput> {
+    const emittedStarted = await emitDirectModelEvent(
+      runtime,
+      'model.started',
+    );
+    if (emittedStarted) {
+      onModelEventStarted?.();
+    }
+    return (await this.contentSource!.getContent(session)) as
+      | string
+      | ModelOutput;
+  }
+}
+
+async function emitDirectModelEvent<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+  type: 'model.started' | 'model.completed' | 'model.failed',
+  error?: unknown,
+): Promise<boolean> {
+  if (!runtime?.emitEvent || !runtime.nextEventSeq) {
+    return false;
+  }
+  const seq = runtime.nextEventSeq();
+  const event: ExecutionEvent = {
+    id: `model:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    replay: 'live',
+    source: 'model',
+    phase: 'model',
+    stepId: 'model',
+    idempotencyKey: `model:${seq}:${type}`,
+  };
+  if (error !== undefined) {
+    event.error = error;
+  }
+  await runtime.emitEvent(event);
+  return true;
 }
 
 function assertAssistantCommandSupported(

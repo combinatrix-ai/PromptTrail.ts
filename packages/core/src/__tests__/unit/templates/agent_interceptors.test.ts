@@ -308,8 +308,10 @@ describe('Agent interceptors', () => {
     expect(events).toEqual([
       '0:run.started:-',
       '1:session.patched:beforeAgent',
-      '2:session.patched:afterModel',
-      '3:run.completed:-',
+      '2:model.started:model',
+      '3:model.completed:model',
+      '4:session.patched:afterModel',
+      '5:run.completed:-',
     ]);
   });
 
@@ -408,8 +410,10 @@ describe('Agent interceptors', () => {
     expect(session.getVarsObject()).toEqual({ haltedAfter: true });
     expect(events).toEqual([
       '0:run.started',
-      '1:session.patched',
-      '2:run.completed',
+      '1:model.started',
+      '2:model.completed',
+      '3:session.patched',
+      '4:run.completed',
     ]);
   });
 
@@ -577,6 +581,88 @@ describe('Agent interceptors', () => {
 
     expect(session.getLastMessage()?.content).toBe('model:wrapped:patched');
     expect(session.getVarsObject()).toEqual({ wrapped: true });
+  });
+
+  it('does not emit model boundary events when wrapModelCall short-circuits', async () => {
+    const events: string[] = [];
+    const source = Source.callback(async () => {
+      throw new Error('source should not run');
+    });
+
+    const session = await Agent.create()
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}`);
+      })
+      .use(
+        Middleware.create({
+          name: 'shortCircuit',
+          wrapModelCall: () => ({
+            result: { content: 'from wrapper' },
+          }),
+        }),
+      )
+      .assistant(source)
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('from wrapper');
+    expect(events).toEqual(['0:run.started', '1:run.completed']);
+  });
+
+  it('emits a terminal model event when the model call fails', async () => {
+    const events: string[] = [];
+    const source = Source.callback(async () => {
+      throw new Error('model unavailable');
+    });
+
+    await expect(
+      Agent.create()
+        .observe((event) => {
+          events.push(`${event.seq}:${event.type}`);
+        })
+        .assistant(source)
+        .execute(),
+    ).rejects.toThrow('model unavailable');
+
+    expect(events).toEqual([
+      '0:run.started',
+      '1:model.started',
+      '2:model.failed',
+      '3:run.failed',
+    ]);
+  });
+
+  it('emits model.completed when wrapModelCall recovers from a source error', async () => {
+    const events: string[] = [];
+    const source = Source.callback(async () => {
+      throw new Error('transient model error');
+    });
+
+    const session = await Agent.create()
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}`);
+      })
+      .use(
+        Middleware.create({
+          name: 'recover',
+          wrapModelCall: async (_context, next) => {
+            try {
+              return await next();
+            } catch {
+              return { result: { content: 'fallback' } };
+            }
+          },
+        }),
+      )
+      .assistant(source)
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('fallback');
+    expect(events).toEqual([
+      '0:run.started',
+      '1:model.started',
+      '2:model.completed',
+      '3:run.completed',
+    ]);
   });
 
   it('applies transient prepareModelInput messages only to the model request', async () => {
