@@ -448,16 +448,19 @@ describe('durable agent runtime', () => {
     expect(replay.status).toBe('suspended');
     expect(events).toEqual([
       '1:live:reply/beforeModel:beforeModel:middleware:before',
-      '2:live:reply/afterModel:afterModel:hook:audit',
-      '5:journaled:reply/beforeModel:beforeModel:middleware:before',
-      '6:journaled:reply/afterModel:afterModel:hook:audit',
+      '4:live:reply/afterModel:afterModel:hook:audit',
+      '7:journaled:reply/beforeModel:beforeModel:middleware:before',
+      '8:journaled:reply/afterModel:afterModel:hook:audit',
     ]);
   });
 
   it('surfaces strict durable session.patched observer failures without re-running the phase', async () => {
     let beforeCalls = 0;
     const assistant = agent('strict-patch-observed')
-      .assistant('reply', (session) => `model:${session.getVarsObject().before}`)
+      .assistant(
+        'reply',
+        (session) => `model:${session.getVarsObject().before}`,
+      )
       .turn('wait', (turn) => turn.awaitUser());
     const app = PromptTrail.app({
       agents: { observed: assistant },
@@ -1056,6 +1059,9 @@ describe('durable agent runtime', () => {
       agents: { observed: assistant },
       observers: [
         (event) => {
+          if (!event.type.startsWith('run.')) {
+            return;
+          }
           events.push(
             `${event.seq}:${event.type}:${event.stepId ?? '-'}:${event.sessionVersion ?? '-'}`,
           );
@@ -1078,10 +1084,91 @@ describe('durable agent runtime', () => {
     expect(second.status).toBe('done');
     expect(events).toEqual([
       '0:run.started:-:0',
-      '1:run.suspended:wait/input/input:0',
-      '2:run.started:-:0',
-      '3:run.completed:-:0',
+      '3:run.suspended:wait/input/input:0',
+      '4:run.started:-:0',
+      '5:run.completed:-:0',
     ]);
+  });
+
+  it('emits durable model observer events only for live model execution', async () => {
+    const events: string[] = [];
+    let modelCalls = 0;
+    const assistant = agent('model-observed')
+      .assistant('reply', () => {
+        modelCalls++;
+        return `model:${modelCalls}`;
+      })
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        (event) => {
+          if (
+            event.type.startsWith('model.') ||
+            event.type.startsWith('run.')
+          ) {
+            events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
+          }
+        },
+      ],
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-model-observed',
+      durable: true,
+    });
+    const replay = await app.resume('run-model-observed');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(modelCalls).toBe(1);
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:model.started:reply/model',
+      '2:model.completed:reply/model',
+      '3:run.suspended:wait/input/input',
+      '4:run.started:-',
+      '5:run.suspended:wait/input/input',
+    ]);
+  });
+
+  it('does not let model observer failures re-run durable models', async () => {
+    let modelCalls = 0;
+    const assistant = agent('model-observer-failure')
+      .assistant('reply', () => {
+        modelCalls++;
+        return `model:${modelCalls}`;
+      })
+      .turn('wait', (turn) => turn.awaitUser());
+    const app = PromptTrail.app({
+      agents: { observed: assistant },
+      observers: [
+        {
+          name: 'failingModelProgress',
+          handle(event) {
+            if (event.type === 'model.completed') {
+              throw new Error('model progress failed');
+            }
+          },
+        },
+      ],
+      strictObservers: true,
+      store: memoryStore(),
+    });
+
+    const first = await app.run({
+      agent: 'observed',
+      runId: 'run-model-observer-failure',
+      durable: true,
+    });
+    const replay = await app.resume('run-model-observer-failure');
+
+    expect(first.status).toBe('suspended');
+    expect(replay.status).toBe('suspended');
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-model-observer-failure')).toEqual(['reply/model']);
   });
 
   it('can surface durable app observer failures in strict mode', async () => {
@@ -1162,11 +1249,11 @@ describe('durable agent runtime', () => {
     expect(toolCalls).toBe(1);
     expect(events).toEqual([
       '0:run.started:-:-',
-      '1:tool.started:tools/call-1:lookup',
-      '2:tool.completed:tools/call-1:lookup',
-      '3:run.suspended:wait/input/input:-',
-      '4:run.started:-:-',
+      '3:tool.started:tools/call-1:lookup',
+      '4:tool.completed:tools/call-1:lookup',
       '5:run.suspended:wait/input/input:-',
+      '6:run.started:-:-',
+      '7:run.suspended:wait/input/input:-',
     ]);
   });
 

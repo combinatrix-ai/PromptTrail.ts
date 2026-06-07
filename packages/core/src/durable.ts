@@ -955,7 +955,13 @@ export class DurableAgent<
             phase: 'wrapModelCall',
             session,
             request: { session: modelSession },
-            call: async ({ request }) => node.handler(request.session),
+            call: async ({ request }) =>
+              this.executeDurableModel(
+                state,
+                `${nodePath}/wrapModelCall`,
+                request.session,
+                node.handler,
+              ),
           });
           assertDurablePhaseCommandSupported(wrapped.command, nodePath);
           session = wrapped.session;
@@ -963,7 +969,14 @@ export class DurableAgent<
           message = normalizeAssistantMessage(wrapped.result);
         } else {
           message = await journaled(state, `${nodePath}/model`, async () =>
-            normalizeAssistantMessage(await node.handler(modelSession)),
+            normalizeAssistantMessage(
+              await this.executeDurableModel(
+                state,
+                `${nodePath}/model`,
+                modelSession,
+                node.handler,
+              ),
+            ),
           );
         }
         const after = await runDurableExecutionPhase(
@@ -1032,7 +1045,13 @@ export class DurableAgent<
               phase: 'wrapModelCall',
               session: current,
               request: { session: modelSession },
-              call: async ({ request }) => node.handler(request.session),
+              call: async ({ request }) =>
+                this.executeDurableModel(
+                  state,
+                  `${nodePath}#${iteration}/wrapModelCall`,
+                  request.session,
+                  node.handler,
+                ),
             });
             assertDurablePhaseCommandSupported(wrapped.command, nodePath);
             current = wrapped.session;
@@ -1043,7 +1062,14 @@ export class DurableAgent<
               state,
               `${nodePath}#${iteration}/model`,
               async () =>
-                normalizeAssistantMessage(await node.handler(modelSession)),
+                normalizeAssistantMessage(
+                  await this.executeDurableModel(
+                    state,
+                    `${nodePath}#${iteration}/model`,
+                    modelSession,
+                    node.handler,
+                  ),
+                ),
             );
           }
           const after = await runDurableExecutionPhase(
@@ -1191,6 +1217,24 @@ export class DurableAgent<
         return current;
       }
     }
+  }
+
+  private async executeDurableModel<TVars extends Vars, TAttrs extends Attrs>(
+    state: DurableExecutionState<TVars, TAttrs>,
+    stepId: string,
+    session: Session<TVars, TAttrs>,
+    handler: AssistantHandler<TVars, TAttrs>,
+  ): Promise<AssistantResult<TAttrs>> {
+    await emitDurableExecutionEvent(state, 'model.started', {
+      stepId,
+      phase: 'model',
+    });
+    const result = await handler(session);
+    await emitDurableExecutionEvent(state, 'model.completed', {
+      stepId,
+      phase: 'model',
+    });
+    return result;
   }
 
   private async executeDurableTool<TAttrs extends Attrs>(
