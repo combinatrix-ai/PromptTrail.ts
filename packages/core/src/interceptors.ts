@@ -25,10 +25,28 @@ export type ExecutionPhase = ExecutionLifecyclePhase | ExecutionWrapperPhase;
 
 export type HandlerDurabilityMode = 'materialized-phase' | 'replayable-handler';
 
-export interface ExecutionDurableActivityOptions {
-  idempotencyKey?: string;
-  kind?: string;
+export type ExecutionDurableActivityKind =
+  | 'pure-call'
+  | 'external-read'
+  | 'external-write';
+
+export interface ExecutionDurableRetryPolicy {
+  maxAttempts?: number;
 }
+
+interface ExecutionDurableActivityBaseOptions {
+  retry?: ExecutionDurableRetryPolicy;
+}
+
+export type ExecutionDurableActivityOptions =
+  | (ExecutionDurableActivityBaseOptions & {
+      kind: Exclude<ExecutionDurableActivityKind, 'external-write'>;
+      idempotencyKey?: string;
+    })
+  | (ExecutionDurableActivityBaseOptions & {
+      kind: 'external-write';
+      idempotencyKey: string;
+    });
 
 export interface ExecutionDurableBoundary {
   memo<T>(name: string, fn: () => T | Promise<T>): Promise<T>;
