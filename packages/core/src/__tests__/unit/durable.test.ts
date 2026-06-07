@@ -391,6 +391,98 @@ describe('durable agent runtime', () => {
     ]);
   });
 
+  it('replays durable effects inside replayable phase handlers after a mid-phase crash', async () => {
+    let handlerCalls = 0;
+    let memoCalls = 0;
+    let activityCalls = 0;
+    let modelCalls = 0;
+    const assistant = agent('replayable-effect').turn('main', (turn) =>
+      turn
+        .steer()
+        .assistant('reply', (session) => {
+          modelCalls++;
+          const vars = session.getVarsObject();
+          return `model:${vars.now}:${vars.profile}`;
+        })
+        .awaitUser(),
+    );
+    const app = PromptTrail.app({
+      agents: { replayable: assistant },
+      store: memoryStore(),
+      middleware: [
+        Middleware.create({
+          name: 'profileLoader',
+          durability: 'replayable-handler',
+          beforeModel: async ({ durable }) => {
+            handlerCalls++;
+            const now = await durable.memo('now', () => {
+              memoCalls++;
+              return `now:${memoCalls}`;
+            });
+            const profile = await durable.activity(
+              'load-profile',
+              { kind: 'external-read' },
+              () => {
+                activityCalls++;
+                return `profile:${activityCalls}`;
+              },
+            );
+            if (handlerCalls === 1) {
+              throw new Error('phase crash');
+            }
+            return {
+              session: {
+                vars: {
+                  now,
+                  profile,
+                  handlerCalls,
+                },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      app.run({
+        agent: 'replayable',
+        runId: 'run-replayable-effects',
+        input: 'hello',
+        durable: true,
+      }),
+    ).rejects.toThrow('phase crash');
+
+    expect(app.journal('run-replayable-effects')).toEqual([
+      'main/steer/peek',
+      'main/reply/beforeModel/middleware[0]/beforeModel/profileLoader/memo/now',
+      'main/reply/beforeModel/middleware[0]/beforeModel/profileLoader/activity/load-profile',
+    ]);
+
+    const replay = await app.resume('run-replayable-effects');
+
+    expect(replay.status).toBe('suspended');
+    expect(replay.session.getLastMessage()?.content).toBe(
+      'model:now:1:profile:1',
+    );
+    expect(replay.session.getVarsObject()).toEqual({
+      now: 'now:1',
+      profile: 'profile:1',
+      handlerCalls: 2,
+    });
+    expect(handlerCalls).toBe(2);
+    expect(memoCalls).toBe(1);
+    expect(activityCalls).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(app.journal('run-replayable-effects')).toEqual([
+      'main/steer/peek',
+      'main/reply/beforeModel/middleware[0]/beforeModel/profileLoader/memo/now',
+      'main/reply/beforeModel/middleware[0]/beforeModel/profileLoader/activity/load-profile',
+      'main/reply/beforeModel',
+      'main/reply/model',
+    ]);
+  });
+
   it('emits durable session.patched events for live and journaled phase patches', async () => {
     const events: string[] = [];
     const assistant = agent('patch-observed')

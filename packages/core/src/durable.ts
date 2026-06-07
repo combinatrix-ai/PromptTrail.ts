@@ -12,6 +12,9 @@ import {
 import {
   runExecutionPhase,
   runMiddlewareWrapper,
+  type ExecutionDurableActivityOptions,
+  type ExecutionDurableBoundaryProvider,
+  type ExecutionHandlerDescriptor,
   type ExecutionLifecyclePhase,
   type ExecutionPhaseStep,
   type ExecutionWrapperPhase,
@@ -188,6 +191,7 @@ interface DurablePhaseJournal<TAttrs extends Attrs = Attrs> {
   afterVersion: number;
   middlewareState: Record<string, unknown>;
   steps: ExecutionPhaseStep<TAttrs>[];
+  nestedStepIds: string[];
 }
 
 interface DurableWrapperJournal<
@@ -341,6 +345,60 @@ async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
   return result;
 }
 
+function createDurableBoundaryProvider<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  parentStepId: string,
+  nestedStepIds: string[],
+): ExecutionDurableBoundaryProvider {
+  return (handler) => ({
+    memo: async (name, fn) => {
+      const nestedStepId = durableEffectStepId(
+        parentStepId,
+        handler,
+        'memo',
+        name,
+      );
+      nestedStepIds.push(nestedStepId);
+      return journaled(state, nestedStepId, fn);
+    },
+    activity: async (name, options, fn) => {
+      assertDurableHandlerActivityOptions(handler, name, options);
+      const nestedStepId = durableEffectStepId(
+        parentStepId,
+        handler,
+        'activity',
+        name,
+      );
+      nestedStepIds.push(nestedStepId);
+      return journaled(state, nestedStepId, fn);
+    },
+  });
+}
+
+function durableEffectStepId(
+  parentStepId: string,
+  handler: ExecutionHandlerDescriptor,
+  kind: 'memo' | 'activity',
+  name: string,
+): string {
+  return `${parentStepId}/${handler.kind}[${handler.registrationIndex}]/${handler.phase}/${handler.name ?? '<anonymous>'}/${kind}/${name}`;
+}
+
+function assertDurableHandlerActivityOptions(
+  handler: ExecutionHandlerDescriptor,
+  name: string,
+  options: ExecutionDurableActivityOptions,
+): void {
+  if (options.kind === 'external-write' && !options.idempotencyKey) {
+    throw new Error(
+      `Durable ${handler.kind} ${handler.name ?? '<anonymous>'} activity ${name} external-write requires idempotencyKey.`,
+    );
+  }
+}
+
 async function runDurableExecutionPhase<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -369,30 +427,78 @@ async function runDurableExecutionPhase<
     };
   }
 
-  const replay = state.journal.results.has(stepId) ? 'journaled' : 'live';
-  const record = await journaled(state, stepId, async () => {
-    const phase = await runExecutionPhase({
-      phase: options.phase,
-      session: options.session,
-      request: options.request,
-      result: options.result,
-      middlewareState: state.middlewareState,
-      middleware: state.middleware,
-      hooks: state.hooks,
-      context: state.context,
-      beforeVersion: state.transitionVersion,
-    });
-    return {
-      request: phase.request,
-      result: phase.result,
-      command: phase.command,
-      beforeVersion: phase.beforeVersion,
-      afterVersion: phase.afterVersion,
-      middlewareState: phase.middlewareState,
-      steps: phase.steps,
-    } satisfies DurablePhaseJournal<TAttrs>;
-  });
+  if (state.journal.results.has(stepId)) {
+    const record = state.journal.results.get(
+      stepId,
+    ) as DurablePhaseJournal<TAttrs>;
+    return await applyDurablePhaseJournal<TVars, TAttrs, TRequest, TResult>(
+      state,
+      stepId,
+      options.session,
+      record,
+      'journaled',
+    );
+  }
 
+  assertCanRunDurableCompositeStep(state, stepId);
+  const nestedStepIds: string[] = [];
+  const phase = await runExecutionPhase({
+    phase: options.phase,
+    session: options.session,
+    request: options.request,
+    result: options.result,
+    middlewareState: state.middlewareState,
+    middleware: state.middleware,
+    hooks: state.hooks,
+    context: state.context,
+    beforeVersion: state.transitionVersion,
+    durableBoundary: createDurableBoundaryProvider(
+      state,
+      stepId,
+      nestedStepIds,
+    ),
+  });
+  const record = {
+    request: phase.request,
+    result: phase.result,
+    command: phase.command,
+    beforeVersion: phase.beforeVersion,
+    afterVersion: phase.afterVersion,
+    middlewareState: phase.middlewareState,
+    steps: phase.steps,
+    nestedStepIds,
+  } satisfies DurablePhaseJournal<TAttrs>;
+  commitDurableJournalRecord(state, stepId, record);
+
+  return await applyDurablePhaseJournal<TVars, TAttrs, TRequest, TResult>(
+    state,
+    stepId,
+    options.session,
+    record,
+    'live',
+  );
+}
+
+async function applyDurablePhaseJournal<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+  TRequest = unknown,
+  TResult = unknown,
+>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  stepId: string,
+  baseSession: Session<TVars, TAttrs>,
+  record: DurablePhaseJournal<TAttrs>,
+  replay: 'live' | 'journaled',
+): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
+  if (replay === 'journaled') {
+    replayNestedJournalSteps(state, record.nestedStepIds ?? []);
+    const expected = state.journal.sequence[state.sequencePosition];
+    if (expected !== stepId) {
+      throw new NondeterminismError(expected, stepId, state.sequencePosition);
+    }
+    state.sequencePosition++;
+  }
   if (record.beforeVersion !== state.transitionVersion) {
     throw new NondeterminismError(
       `version:${state.transitionVersion}`,
@@ -401,7 +507,7 @@ async function runDurableExecutionPhase<
     );
   }
 
-  let session = options.session;
+  let session = baseSession;
   let middlewareState = state.middlewareState;
   for (const step of record.steps) {
     if (step.transition.beforeVersion !== state.transitionVersion) {
@@ -496,6 +602,7 @@ async function runDurableMiddlewareWrapper<
     );
   }
 
+  assertCanRunDurableCompositeStep(state, stepId);
   const nestedStepIds: string[] = [];
   let nestedCallIndex = 0;
   const wrapped = await runMiddlewareWrapper({
@@ -511,6 +618,11 @@ async function runDurableMiddlewareWrapper<
     middleware: state.middleware,
     context: state.context,
     beforeVersion: state.transitionVersion,
+    durableBoundary: createDurableBoundaryProvider(
+      state,
+      stepId,
+      nestedStepIds,
+    ),
   });
   const record = {
     session: wrapped.session,
@@ -523,7 +635,7 @@ async function runDurableMiddlewareWrapper<
     steps: wrapped.steps,
     nestedStepIds,
   } satisfies DurableWrapperJournal<TVars, TAttrs>;
-  commitDurableWrapperJournal(state, stepId, record);
+  commitDurableJournalRecord(state, stepId, record);
 
   return await applyDurableWrapperJournal(
     state,
@@ -534,10 +646,10 @@ async function runDurableMiddlewareWrapper<
   );
 }
 
-function commitDurableWrapperJournal<TVars extends Vars, TAttrs extends Attrs>(
+function commitDurableJournalRecord<TVars extends Vars, TAttrs extends Attrs>(
   state: DurableExecutionState<TVars, TAttrs>,
   stepId: string,
-  record: DurableWrapperJournal<TVars, TAttrs>,
+  record: unknown,
 ): void {
   const expected = state.journal.sequence[state.sequencePosition];
   if (expected !== undefined) {
@@ -546,6 +658,36 @@ function commitDurableWrapperJournal<TVars extends Vars, TAttrs extends Attrs>(
   state.journal.results.set(stepId, record);
   state.journal.sequence.push(stepId);
   state.sequencePosition++;
+}
+
+function assertCanRunDurableCompositeStep<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(state: DurableExecutionState<TVars, TAttrs>, stepId: string): void {
+  const expected = state.journal.sequence[state.sequencePosition];
+  if (expected !== undefined && !expected.startsWith(`${stepId}/`)) {
+    throw new NondeterminismError(expected, stepId, state.sequencePosition);
+  }
+}
+
+function replayNestedJournalSteps<TVars extends Vars, TAttrs extends Attrs>(
+  state: DurableExecutionState<TVars, TAttrs>,
+  nestedStepIds: readonly string[],
+): void {
+  for (const nestedStepId of nestedStepIds) {
+    const expected = state.journal.sequence[state.sequencePosition];
+    if (expected !== nestedStepId) {
+      throw new NondeterminismError(
+        expected,
+        nestedStepId,
+        state.sequencePosition,
+      );
+    }
+    if (!state.journal.results.has(nestedStepId)) {
+      throw new Error(`Missing durable nested step ${nestedStepId}.`);
+    }
+    state.sequencePosition++;
+  }
 }
 
 async function replayDurableWrapperJournal<
@@ -559,20 +701,7 @@ async function replayDurableWrapperJournal<
   session: Session<TVars, TAttrs>,
   record: DurableWrapperJournal<TVars, TAttrs>,
 ): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
-  for (const nestedStepId of record.nestedStepIds) {
-    const expected = state.journal.sequence[state.sequencePosition];
-    if (expected !== nestedStepId) {
-      throw new NondeterminismError(
-        expected,
-        nestedStepId,
-        state.sequencePosition,
-      );
-    }
-    if (!state.journal.results.has(nestedStepId)) {
-      throw new Error(`Missing durable wrapper nested step ${nestedStepId}.`);
-    }
-    state.sequencePosition++;
-  }
+  replayNestedJournalSteps(state, record.nestedStepIds ?? []);
 
   const expected = state.journal.sequence[state.sequencePosition];
   if (expected !== stepId) {
