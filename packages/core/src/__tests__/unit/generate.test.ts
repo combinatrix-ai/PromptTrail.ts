@@ -7,6 +7,7 @@ import {
   promptTrailStreamEventsToMessages,
   streamPromptTrailToolLoop,
 } from '../../generate';
+import { createExecutionRuntimeState, Middleware } from '../../interceptors';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 import { z } from 'zod';
@@ -265,10 +266,102 @@ describe('streamPromptTrailToolLoop', () => {
         toolCalls: undefined,
       },
     ]);
-    expect(seenTurns).toEqual([
-      ['user'],
-      ['user', 'assistant', 'tool_result'],
-    ]);
+    expect(seenTurns).toEqual([['user'], ['user', 'assistant', 'tool_result']]);
+  });
+
+  it('runs beforeTool and afterTool middleware around streamed tool calls', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parameters: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ value: `result:${query}` }),
+    });
+    const seenTurnVars: Array<Record<string, unknown>> = [];
+    const runtime = createExecutionRuntimeState({
+      middleware: [
+        Middleware.create({
+          name: 'toolPolicy',
+          beforeTool: ({ request }) => {
+            const call = request as {
+              id: string;
+              name: string;
+              arguments: Record<string, unknown>;
+            };
+            return {
+              request: {
+                ...call,
+                arguments: { ...call.arguments, query: 'rewritten' },
+              },
+              session: {
+                vars: { beforeTool: true },
+              },
+            };
+          },
+          afterTool: ({ result }) => {
+            const message = result as { type: string; content: string };
+            return {
+              result: {
+                ...message,
+                content: 'patched tool result',
+              },
+              session: {
+                vars: { afterTool: true },
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    const messages = await collectAsync(
+      streamPromptTrailToolLoop(
+        Session.create().addMessage({ type: 'user', content: 'Lookup docs.' }),
+        {
+          provider: {
+            type: 'openai',
+            apiKey: 'test-key',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+          },
+          capabilities: [lookup],
+        },
+        {
+          provider: 'openai',
+          attrsKey: 'openai',
+          runtime,
+          events: (turnSession) => {
+            seenTurnVars.push(turnSession.getVarsObject());
+            return seenTurnVars.length === 1
+              ? stream([
+                  {
+                    type: 'tool.start',
+                    index: 0,
+                    callId: 'call-1',
+                    name: 'lookup',
+                  },
+                  {
+                    type: 'tool.args.done',
+                    index: 0,
+                    callId: 'call-1',
+                    args: { query: 'original' },
+                  },
+                  { type: 'message.done', finishReason: 'tool_calls' },
+                ])
+              : stream([
+                  { type: 'text.delta', index: 0, delta: 'Done' },
+                  { type: 'message.done', finishReason: 'stop' },
+                ]);
+          },
+        },
+      ),
+    );
+
+    expect(messages[1]).toMatchObject({
+      type: 'tool_result',
+      content: 'patched tool result',
+      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+    });
+    expect(seenTurnVars).toEqual([{}, { beforeTool: true, afterTool: true }]);
   });
 });
 

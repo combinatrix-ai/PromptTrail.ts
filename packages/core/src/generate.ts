@@ -39,6 +39,11 @@ import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './ai_sdk_tools';
 import { Tool, executePromptTrailTool, isPromptTrailTool } from './tool';
 import type { PromptTrailTool } from './capabilities';
+import {
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from './interceptors';
+import type { ResolvedExecutionCommand } from './execution';
 export type { SchemaGenerationOptions } from './llm_types';
 
 /**
@@ -576,15 +581,16 @@ export async function* generateTextStream<
   }
 }
 
-export async function* streamPromptTrailToolLoop<
-  TAttrs extends Attrs = Attrs,
->(
+export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
   session: Session<any, TAttrs>,
   options: LLMOptions,
   config: {
     provider: 'openai' | 'anthropic' | 'google';
     attrsKey: string;
-    events: (session: Session<any, TAttrs>) => AsyncIterable<PromptTrailStreamEvent>;
+    events: (
+      session: Session<any, TAttrs>,
+    ) => AsyncIterable<PromptTrailStreamEvent>;
+    runtime?: ExecutionRuntimeState<any, TAttrs>;
   },
 ): AsyncGenerator<Message<TAttrs>, void, unknown> {
   const maxToolRounds = options.maxCallLimit ?? 10;
@@ -617,22 +623,77 @@ export async function* streamPromptTrailToolLoop<
     }
 
     let nextSession = currentSession.addMessage(assistant);
-    const toolResults = await Promise.all(
-      toolCalls.map((call) =>
-        executeStreamingToolCall(call, {
+    if (config.runtime) {
+      for (const call of toolCalls) {
+        const executed = await executeStreamingToolCallWithRuntime(call, {
           provider: config.provider,
           tools: getPromptTrailToolList(options),
-          session: currentSession,
+          session: nextSession,
           approvalHandler: options.approvalHandler,
-        }),
-      ),
-    );
-    for (const result of toolResults) {
-      yield result as Message<TAttrs>;
-      nextSession = nextSession.addMessage(result as Message<TAttrs>);
+          runtime: config.runtime,
+        });
+        yield executed.message as Message<TAttrs>;
+        nextSession = executed.session.addMessage(
+          executed.message as Message<TAttrs>,
+        );
+      }
+    } else {
+      const toolResults = await Promise.all(
+        toolCalls.map((call) =>
+          executeStreamingToolCall(call, {
+            provider: config.provider,
+            tools: getPromptTrailToolList(options),
+            session: currentSession,
+            approvalHandler: options.approvalHandler,
+          }),
+        ),
+      );
+      for (const result of toolResults) {
+        yield result as Message<TAttrs>;
+        nextSession = nextSession.addMessage(result as Message<TAttrs>);
+      }
     }
     currentSession = nextSession;
   }
+}
+
+async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+  options: {
+    provider: 'openai' | 'anthropic' | 'google';
+    tools: readonly PromptTrailTool[];
+    session: Session<any, TAttrs>;
+    approvalHandler?: LLMOptions['approvalHandler'];
+    runtime: ExecutionRuntimeState<any, TAttrs>;
+  },
+): Promise<{ message: Message<TAttrs>; session: Session<any, TAttrs> }> {
+  const before = await runRuntimeExecutionPhase(options.runtime, {
+    phase: 'beforeTool',
+    session: options.session,
+    request: call,
+  });
+  assertStreamingToolCommandSupported(before.command);
+  const nextCall =
+    (before.request as
+      | { id: string; name: string; arguments: Record<string, unknown> }
+      | undefined) ?? call;
+  const message = (await executeStreamingToolCall(nextCall, {
+    provider: options.provider,
+    tools: options.tools,
+    session: before.session,
+    approvalHandler: options.approvalHandler,
+  })) as Message<TAttrs>;
+  const after = await runRuntimeExecutionPhase(options.runtime, {
+    phase: 'afterTool',
+    session: before.session,
+    request: nextCall,
+    result: message,
+  });
+  assertStreamingToolCommandSupported(after.command);
+  return {
+    message: (after.result as Message<TAttrs> | undefined) ?? message,
+    session: after.session,
+  };
 }
 
 async function executeStreamingToolCall(
@@ -654,7 +715,9 @@ async function executeStreamingToolCall(
         raw: call,
       })
     : {
-        content: [{ type: 'text' as const, text: `Unknown tool: ${call.name}` }],
+        content: [
+          { type: 'text' as const, text: `Unknown tool: ${call.name}` },
+        ],
         isError: true,
       };
   return {
@@ -665,6 +728,17 @@ async function executeStreamingToolCall(
       toolCallName: call.name,
     },
   };
+}
+
+function assertStreamingToolCommandSupported(
+  command: ResolvedExecutionCommand,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `streamPromptTrailToolLoop does not support execution command ${command.type} yet.`,
+  );
 }
 
 function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {
