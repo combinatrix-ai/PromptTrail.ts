@@ -134,6 +134,8 @@ export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
 export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   extends AssistantDeliveryOutboxInput<TAttrs> {
   status: 'pending' | 'delivering' | 'completed' | 'failed' | 'skipped';
+  attempts: number;
+  lastError?: string;
   error?: unknown;
 }
 
@@ -2259,6 +2261,7 @@ export class PromptTrailApp {
       return deliveries.map((delivery) => ({
         ...delivery,
         status: 'pending',
+        attempts: 0,
       }));
     }
     const outbox = (run.outbox ??=
@@ -2271,6 +2274,7 @@ export class PromptTrailApp {
         outbox.push({
           ...delivery,
           status: 'pending',
+          attempts: 0,
         });
       }
     }
@@ -2301,7 +2305,21 @@ export class PromptTrailApp {
       return;
     }
     entry.status = status;
-    entry.error = error;
+    entry.attempts ??= 0;
+    if (status === 'delivering') {
+      entry.attempts += 1;
+      entry.error = undefined;
+      entry.lastError = undefined;
+    } else if (status === 'failed') {
+      entry.error = error;
+      entry.lastError = errorMessage(error);
+    } else if (status === 'completed' || status === 'skipped') {
+      entry.error = undefined;
+      entry.lastError = undefined;
+    } else {
+      entry.error = error;
+      entry.lastError = error === undefined ? undefined : errorMessage(error);
+    }
     this.store.set(runId, run);
   }
 
@@ -2642,6 +2660,10 @@ function isRetryableAssistantDeliveryStatus(
   return (
     status === 'pending' || status === 'delivering' || status === 'failed'
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function assistantDeliveryKey(runId: string, assistantIndex: number): string {

@@ -947,12 +947,14 @@ describe('RuntimeServer', () => {
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
         status: entry.status,
+        attempts: entry.attempts,
       })),
     ).toEqual([
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:user:U_alice:turn:1:delivery:final',
         status: 'completed',
+        attempts: 1,
       },
     ]);
   });
@@ -1029,8 +1031,12 @@ describe('RuntimeServer', () => {
       'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry me',
     ]);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => entry.status),
-    ).toEqual(['completed']);
+      app.assistantDeliveryOutbox(runId).map((entry) => ({
+        status: entry.status,
+        attempts: entry.attempts,
+        lastError: entry.lastError,
+      })),
+    ).toEqual([{ status: 'completed', attempts: 1, lastError: undefined }]);
   });
 
   it('retries delivering final deliveries on startup', async () => {
@@ -1093,8 +1099,12 @@ describe('RuntimeServer', () => {
       'discord:guild:workroom:channel:C_general:turn:1:delivery:final:retry delivering',
     ]);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => entry.status),
-    ).toEqual(['completed']);
+      app.assistantDeliveryOutbox(runId).map((entry) => ({
+        status: entry.status,
+        attempts: entry.attempts,
+        lastError: entry.lastError,
+      })),
+    ).toEqual([{ status: 'completed', attempts: 2, lastError: undefined }]);
   });
 
   it('stops startup delivery retries for a conversation after the first failure', async () => {
@@ -1168,17 +1178,23 @@ describe('RuntimeServer', () => {
       app.assistantDeliveryOutbox(runId).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
         status: entry.status,
+        attempts: entry.attempts,
+        lastError: entry.lastError,
       })),
     ).toEqual([
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:turn:1:delivery:final',
         status: 'failed',
+        attempts: 1,
+        lastError: 'delivery failed',
       },
       {
         idempotencyKey:
           'discord:guild:workroom:channel:C_general:turn:2:delivery:final',
         status: 'pending',
+        attempts: 0,
+        lastError: undefined,
       },
     ]);
   });
