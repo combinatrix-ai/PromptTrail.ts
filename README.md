@@ -21,7 +21,7 @@ npm install github:combinatrix-ai/PromptTrail.ts
 ```typescript
 import { Agent } from '@prompttrail/core';
 
-const chat = Agent.create()
+const chat = Agent.quick()
   .system("You're a helpful assistant.")
   .user("What's TypeScript?")
   .assistant(); // Uses OpenAI GPT-5.4 nano via the Responses API by default
@@ -35,9 +35,9 @@ console.log(session.getLastMessage()?.content);
 ```typescript
 import { Agent } from '@prompttrail/core';
 
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('You are a helpful assistant.')
-  .loop(
+  .loopForever(
     (l) =>
       l
         .user() // CLI input from user
@@ -52,7 +52,7 @@ await agent.execute(); // Runs forever until user exits
 ```typescript
 import { Agent, Source } from '@prompttrail/core';
 
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('You are a creative writer.')
   .user('Write a haiku about TypeScript.')
   .assistant(
@@ -92,7 +92,7 @@ const session = Session.create({
 });
 
 // Use variables in templates with ${variable} syntax
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('Help ${userName} learn ${language}')
   .user('Explain generics')
   .assistant();
@@ -120,7 +120,7 @@ import { Source } from '@prompttrail/core';
 ```typescript
 import { Agent, Message } from '@prompttrail/core';
 
-const agent = Agent.create()
+const agent = Agent.quick()
   .user('Summarize the external workflow')
   .messages(async (session) => [
     Message.assistant(`Processed ${session.messages.length} messages`),
@@ -135,7 +135,7 @@ back into the PromptTrail session while preserving Codex metadata in message
 attributes.
 
 ```typescript
-const agent = Agent.create()
+const agent = Agent.quick()
   .user('Inspect this repository and suggest the next edit')
   .codexTurn({
     transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
@@ -153,54 +153,50 @@ CODEX_APP_SERVER_URL=ws://127.0.0.1:8390 pnpm --filter @prompttrail/core exec vi
 
 ### Control Flow
 
-PromptTrail offers two ways to build agents with sophisticated control flow:
-
-#### 1. Agent Builder (Template-Level Control)
+Named agents use explicit node ids. The ids become stable graph coordinates for
+app bindings, events, and durable replay.
 
 ```typescript
 import { Agent } from '@prompttrail/core';
 
-const agent = Agent.create()
-  .system('You are helpful.')
-
-  // Conditional logic
+const agent = Agent.create('support')
+  .system('system', 'You are helpful.')
+  .patch('init', (session) => session.withVar('attempts', 0))
   .conditional(
-    (session) => session.getVar('isVip'),
-    (agent) => agent.assistant('Welcome VIP!'),
-    (agent) => agent.assistant('Welcome!'),
+    'greeting',
+    ({ session }) => session.getVar('isVip') === true,
+    (then) => then.assistant('vipReply', 'Welcome VIP!'),
+    (otherwise) => otherwise.assistant('defaultReply', 'Welcome!'),
   )
-
-  // Loops with conditions
   .loop(
-    (agent) => agent.user().assistant(),
-    (session) => session.getVar('continue', true),
+    'retry',
+    (body) =>
+      body.patch('increment', (session) =>
+        session.withVar('attempts', Number(session.getVar('attempts')) + 1),
+      ),
+    ({ session }) => Number(session.getVar('attempts')) < 3,
+    { maxIterations: 3 },
   )
-
-  // Subroutines with isolation
   .subroutine(
-    (agent) =>
-      agent
-        .user('Process this data')
-        .assistant()
-        .transform((session) => session.withVar('processed', true)),
+    'draft',
+    (draft) =>
+      draft
+        .user('request', 'Draft the customer reply')
+        .assistant('reply', 'Draft response'),
     {
-      isolatedContext: true, // Fresh context
-      retainMessages: false, // Don't keep internal messages
+      isolatedContext: true,
+      retainMessages: false,
       squashWith: (parent, sub) =>
-        parent.withVar('result', sub.getVar('processed')),
+        parent.withVar('draft', sub.getLastMessage()?.content),
     },
-  )
-
-  // Parallel execution
-  .add(
-    new Parallel()
-      .addSource(Source.llm().openai(), 2) // Run OpenAI twice
-      .addSource(Source.llm().anthropic(), 1) // Run Anthropic once
-      .setStrategy('best'), // Keep best result
   );
 ```
 
-#### 2. Agent Goals (Goal-Oriented Flow)
+For throwaway scripts and template-level utilities such as `Parallel`,
+`Structured`, `codexTurn()`, and `claudeTurn()`, use `Agent.quick()`.
+Quick agents are ephemeral and cannot run durable.
+
+#### Agent Goals (Goal-Oriented Flow)
 
 ```typescript
 import { Agent } from '@prompttrail/core';
@@ -285,7 +281,7 @@ const role = typedSession.getVar('role'); // 'admin' | 'user' | 'guest'
 const theme = typedSession.getVar('preferences').theme; // 'light' | 'dark'
 
 // 7. Template with typed interpolation
-const typedAgent = Agent.create<UserContext>()
+const typedAgent = Agent.quick<UserContext>()
   .system('Welcome ${role} user ${userId}')
   .user('My theme is ${preferences.theme}')
   .assistant();
@@ -307,7 +303,7 @@ const weatherTool = tool({
   },
 });
 
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('You can check weather.')
   .user('Weather in SF?')
   .assistant(Source.llm().openai().addTool('weather', weatherTool));
@@ -325,7 +321,7 @@ const userSchema = z.object({
   interests: z.array(z.string()),
 });
 
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('Extract user info from text.')
   .user("Hi, I'm Alice, 25, love coding and music.")
   .add(
@@ -367,7 +363,7 @@ const complexValidation = Source.llm()
   .withMaxAttempts(5);
 
 // Use in templates
-const agent = Agent.create()
+const agent = Agent.quick()
   .system('Explain concepts clearly with examples.')
   .user('What is TypeScript?')
   .assistant(complexValidation);
@@ -429,23 +425,29 @@ const contextAwareValidation = Source.llm()
 Beyond basic patterns, PromptTrail offers sophisticated control structures:
 
 ```typescript
-// Nested subroutines for memory management
-const agent = Agent.create()
-  .system('Complex data processor')
+// Nested graph subroutines for memory management
+const agent = Agent.create('processor')
+  .system('system', 'Complex data processor')
   .subroutine(
-    (agent) =>
-      agent
-        .user('Stage 1: Parse data')
-        .assistant()
+    'stage1',
+    (stage) =>
+      stage
+        .user('parse', 'Stage 1: Parse data')
+        .assistant('parseReply', 'Parsed data')
         .subroutine(
-          (innerAgent) =>
-            innerAgent.user('Sub-process: Validate format').assistant(),
+          'validate',
+          (inner) =>
+            inner
+              .user('format', 'Sub-process: Validate format')
+              .assistant('formatReply', 'Format is valid'),
           {
-            isolatedContext: true, // Clean slate for validation
-            retainMessages: false, // Don't pollute main conversation
+            isolatedContext: true,
+            retainMessages: false,
           },
         )
-        .transform((session) => session.withVar('stage1Complete', true)),
+        .patch('markComplete', (session) =>
+          session.withVar('stage1Complete', true),
+        ),
     {
       squashWith: (parent, sub) =>
         parent.withVars({
@@ -456,7 +458,7 @@ const agent = Agent.create()
   );
 
 // Multi-LLM parallel processing
-const researchAgent = Agent.create()
+const researchAgent = Agent.quick()
   .system('Research assistant')
   .user('Compare machine learning frameworks')
   .add(
@@ -490,30 +492,35 @@ const smartResearcher = Agent.create('smartResearcher')
   .goal('synthesizeFindings', 'Synthesize findings and provide recommendations');
 
 // Dynamic flow with error handling
-const robustAgent = Agent.create()
-  .system('Fault-tolerant processor')
-  .transform((session) => session.withVar('retryCount', 0))
+const robustAgent = Agent.create('robustProcessor')
+  .system('system', 'Fault-tolerant processor')
+  .patch('init', (session) => session.withVar('retryCount', 0))
   .loop(
-    (agent) =>
-      agent.conditional(
-        (session) => session.getVar('retryCount') < 3,
-        (agent) =>
-          agent
-            .user('Attempt operation')
-            .assistant()
-            .transform((session) => {
+    'attempts',
+    (attempt) =>
+      attempt.conditional(
+        'canRetry',
+        ({ session }) => Number(session.getVar('retryCount')) < 3,
+        (then) =>
+          then
+            .user('operation', 'Attempt operation')
+            .assistant('result', 'operation result')
+            .patch('recordResult', (session) => {
               const success = session
                 .getLastMessage()
                 ?.content?.includes('success');
               return session.withVars({
                 success,
-                retryCount: session.getVar('retryCount') + 1,
+                retryCount: Number(session.getVar('retryCount')) + 1,
               });
             }),
-        (agent) =>
-          agent.transform((session) => session.withVar('failed', true)),
+        (otherwise) =>
+          otherwise.patch('markFailed', (session) =>
+            session.withVar('failed', true),
+          ),
       ),
-    (session) => !session.getVar('success') && !session.getVar('failed'),
+    ({ session }) => !session.getVar('success') && !session.getVar('failed'),
+    { maxIterations: 3 },
   );
 ```
 
