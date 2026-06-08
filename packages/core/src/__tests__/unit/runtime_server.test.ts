@@ -360,9 +360,9 @@ describe('RuntimeServer', () => {
 
     expect(result.result.status).toBe('done');
     expect(result.result.runId).toBe('discord:graph');
-    expect(result.result.session.messages.map((message) => message.content)).toEqual(
-      ['hello', 'reply:hello'],
-    );
+    expect(
+      result.result.session.messages.map((message) => message.content),
+    ).toEqual(['hello', 'reply:hello']);
   });
 
   it('registers Agent instances from runtime bindings into bundles', () => {
@@ -447,6 +447,76 @@ describe('RuntimeServer', () => {
     expect(
       result.result.session.messages.map((message) => message.content),
     ).toEqual(['hello', 'reply:hello']);
+  });
+
+  it('starts runtime adapter sources from app instances', async () => {
+    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    const deliveries: string[] = [];
+    const activityEvents: string[] = [];
+    const sourceEvents: string[] = [];
+    const main = Agent.create('main')
+      .user('inbound')
+      .assistant('reply', (session) => ({
+        content: `reply:${session.getLastMessage()?.content ?? ''}`,
+      }));
+    const app = PromptTrail.app({
+      name: 'app-start-runtime',
+      defaults: { durable: false },
+    })
+      .source({
+        type: 'discord.messages',
+        start(ctx) {
+          sourceEvents.push('start');
+          emit = ctx.emit;
+        },
+        stop() {
+          sourceEvents.push('stop');
+        },
+      })
+      .delivery({
+        platform: 'discord',
+        deliver(_ctx, target, message) {
+          deliveries.push(`${target.channel}:${message.content}`);
+        },
+      })
+      .activity({
+        platform: 'discord',
+        start(_ctx, target) {
+          activityEvents.push(`start:${target.channel}`);
+          return {
+            stop() {
+              activityEvents.push('stop');
+            },
+          };
+        },
+      })
+      .bind(discord.messages(), (binding) =>
+        binding
+          .to(main)
+          .conversation(() => 'discord:app-start')
+          .delivery(discord.channel('general')),
+      );
+
+    await app.start();
+    if (!emit) {
+      throw new Error('Runtime source did not start.');
+    }
+    await emit({
+      source: 'discord',
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      mentionsBot: true,
+      content: 'hello',
+    });
+    await app.stop();
+
+    expect(sourceEvents).toEqual(['start', 'stop']);
+    expect(activityEvents).toEqual(['start:general', 'stop']);
+    expect(deliveries).toEqual(['general:reply:hello']);
   });
 
   it('registers named Agent instances directly on apps', async () => {

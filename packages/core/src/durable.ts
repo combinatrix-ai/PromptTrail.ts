@@ -41,7 +41,16 @@ import {
   type RuntimeBundle,
   type RuntimeSource,
 } from './runtime_bindings';
-import { server } from './runtime_server';
+import {
+  server,
+  type RuntimeActivity,
+  type RuntimeActivityDriver,
+  type RuntimeAdapter,
+  type RuntimeDeliveryDriver,
+  type RuntimeServer,
+  type RuntimeServerErrorContext,
+  type RuntimeSourceDriver,
+} from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 import {
   GraphExecutionSuspended,
@@ -2140,9 +2149,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
 export type PromptTrailRegisteredAgent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
-> =
-  | DurableAgent<TVars, TAttrs>
-  | GraphAgent<TVars, TAttrs>;
+> = DurableAgent<TVars, TAttrs> | GraphAgent<TVars, TAttrs>;
 
 export interface PromptTrailRunOptions<
   TVars extends Vars = Vars,
@@ -2236,6 +2243,11 @@ export interface PromptTrailAppOptions {
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
+  adapters?: readonly RuntimeAdapter[];
+  activity?: RuntimeActivity | false;
+  errorMessage?:
+    | string
+    | ((ctx: RuntimeServerErrorContext) => string | undefined);
 }
 
 export class PromptTrailApp {
@@ -2254,6 +2266,13 @@ export class PromptTrailApp {
   private readonly observerBuses: ObserverBus[] = [];
   private nextObserverBusIndex = 0;
   private readonly defaultDurable: boolean;
+  private readonly runtimeAdapters: RuntimeAdapter[] = [];
+  private readonly runtimeActivity: RuntimeActivity | false | undefined;
+  private readonly runtimeErrorMessage:
+    | string
+    | ((ctx: RuntimeServerErrorContext) => string | undefined)
+    | undefined;
+  private runtimeServer?: RuntimeServer;
   private readonly agentObserverBuses = new WeakMap<
     DurableAgent<any, any>,
     ObserverBus
@@ -2271,11 +2290,16 @@ export class PromptTrailApp {
     this.hooks = options.hooks ?? [];
     this.strictObservers = options.strictObservers;
     this.observerDeliveryBindingOptions = options.observerDeliveryBindings;
+    this.runtimeAdapters.push(...(options.adapters ?? []));
+    this.runtimeActivity = options.activity;
+    this.runtimeErrorMessage = options.errorMessage;
     this.observerBus = new ObserverBus(options.observers ?? [], {
       strictObservers: options.strictObservers,
       ...options.observerDeliveryBindings,
     });
-    for (const [name, registeredAgent] of Object.entries(options.agents ?? {})) {
+    for (const [name, registeredAgent] of Object.entries(
+      options.agents ?? {},
+    )) {
       this.agent(name, registeredAgent);
     }
     for (const [name, source] of Object.entries(options.sources ?? {})) {
@@ -2314,8 +2338,41 @@ export class PromptTrailApp {
     throw new Error(`Unsupported agent registration: ${name}`);
   }
 
-  source(name: string, source: EventSource): this {
-    this.sources.set(name, source);
+  source(source: RuntimeSourceDriver): this;
+  source(name: string, source: EventSource): this;
+  source(
+    nameOrSource: string | RuntimeSourceDriver,
+    maybeSource?: EventSource,
+  ): this {
+    if (typeof nameOrSource !== 'string') {
+      return this.adapter({
+        name: `source:${nameOrSource.type}`,
+        sources: [nameOrSource],
+      });
+    }
+    if (!maybeSource) {
+      throw new Error('PromptTrail.app.source requires an EventSource.');
+    }
+    this.sources.set(nameOrSource, maybeSource);
+    return this;
+  }
+
+  delivery(driver: RuntimeDeliveryDriver): this {
+    return this.adapter({
+      name: `delivery:${driver.platform}`,
+      deliveries: [driver],
+    });
+  }
+
+  activity(driver: RuntimeActivityDriver): this {
+    return this.adapter({
+      name: `activity:${driver.platform}`,
+      activities: [driver],
+    });
+  }
+
+  adapter(adapter: RuntimeAdapter): this {
+    this.runtimeAdapters.push(adapter);
     return this;
   }
 
@@ -2383,12 +2440,28 @@ export class PromptTrailApp {
   }
 
   async start(): Promise<void> {
+    if (this.runtimeAdapters.length > 0) {
+      if (!this.runtimeServer) {
+        this.runtimeServer = server({
+          bundle: this.bundle(),
+          runtime: this,
+          adapters: this.runtimeAdapters,
+          activity: this.runtimeActivity,
+          strictObservers: this.strictObservers,
+          observerDeliveryBindings: this.observerDeliveryBindingOptions,
+          errorMessage: this.runtimeErrorMessage,
+        });
+      }
+      await this.runtimeServer.start();
+    }
     for (const source of this.sources.values()) {
       await source.start((event) => this.handleEvent(event));
     }
   }
 
   async stop(): Promise<void> {
+    await this.runtimeServer?.stop();
+    this.runtimeServer = undefined;
     for (const source of this.sources.values()) {
       await source.stop?.();
     }
