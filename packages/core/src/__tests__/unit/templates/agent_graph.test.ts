@@ -72,4 +72,31 @@ describe('Agent graph authoring', () => {
         .execute(),
     ).rejects.toThrow(/GraphExecutor/);
   });
+
+  it('compiles goal nodes into a stable subgraph', () => {
+    const graph = Agent.create('research')
+      .goal('researchTopic', 'Research the topic thoroughly', {
+        interaction: 'required',
+        maxAttempts: 3,
+        isSatisfied: ({ session }) => session.messages.length > 2,
+      })
+      .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['research/researchTopic', 'goal'],
+      ['research/researchTopic/prompt', 'user'],
+      ['research/researchTopic/attempts', 'loop'],
+      ['research/researchTopic/attempts/model', 'assistant'],
+      ['research/researchTopic/attempts/tools', 'tools'],
+      ['research/researchTopic/attempts/check', 'patch'],
+      ['research/researchTopic/attempts/interaction', 'awaitInput'],
+    ]);
+    expect(manifest.nodes.find((node) => node.path.endsWith('/check'))?.data)
+      .toMatchObject({
+        kind: 'goalSatisfaction',
+        durability: 'materialized',
+      });
+  });
 });

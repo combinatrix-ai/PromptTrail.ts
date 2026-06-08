@@ -208,12 +208,12 @@ Goal semantics:
 
 - A goal is a graph node, not a separate agent type.
 - A goal compiles to a stable subgraph:
-  - goal prompt/input node
-  - assistant/model node
-  - tool execution node
-  - satisfaction check node
-  - optional user interaction node
-  - retry loop node
+  - `goalId/prompt`: goal prompt/input node
+  - `goalId/attempts`: retry loop node
+  - `goalId/attempts/model`: assistant/model node
+  - `goalId/attempts/tools`: tool execution node
+  - `goalId/attempts/check`: satisfaction check node
+  - `goalId/attempts/interaction`: optional user interaction node
 - `interaction: 'required'` means the goal must ask for user input before it can
   be satisfied.
 - `interaction: 'optional'` permits user input tools but does not require them.

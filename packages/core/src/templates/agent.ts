@@ -23,6 +23,7 @@ import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
   type ExecutionRuntimeState,
+  type ExecutionDurableBoundary,
   type HookDefinition,
   type MiddlewareDefinition,
   runRuntimeExecutionPhase,
@@ -59,6 +60,28 @@ type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
   | Source<ModelOutput>
   | Source<string>
   | AgentGraphAssistantHandler<TC, TM>;
+
+export interface AgentGoalSatisfactionContext<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> {
+  session: Session<TC, TM>;
+  goal: string;
+  attempt: number;
+  durable?: ExecutionDurableBoundary;
+}
+
+export interface AgentGoalOptions<TC extends Vars = Vars, TM extends Attrs = Attrs> {
+  interaction?: 'none' | 'optional' | 'required';
+  maxAttempts?: number;
+  tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
+  model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC, TM>;
+  durability?: 'materialized' | 'replayable';
+  isSatisfied?: (
+    context: AgentGoalSatisfactionContext<TC, TM>,
+  ) => boolean | Promise<boolean>;
+  onUnsatisfied?: 'retry' | 'continue' | 'halt';
+}
 
 export class AgentTurnGraphBuilder<
   TC extends Vars = Vars,
@@ -367,6 +390,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         validatorOrOptions as IValidator | ValidationOptions | undefined,
       ),
     );
+    return this;
+  }
+
+  goal(id: string, goal: string, options: AgentGoalOptions<TC, TM> = {}): this {
+    this.graphNodes.push(createGoalGraphNode(id, goal, options));
     return this;
   }
 
@@ -833,6 +861,71 @@ function isExecutableAssistantInput(
   value: unknown,
 ): value is string | Source<ModelOutput> | Source<string> {
   return typeof value === 'string' || value instanceof Source;
+}
+
+function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
+  id: string,
+  goal: string,
+  options: AgentGoalOptions<TC, TM>,
+): AgentGraphNode {
+  const interaction = options.interaction ?? 'none';
+  const attemptChildren: AgentGraphNode[] = [
+    {
+      id: 'model',
+      type: 'assistant',
+      data: compactGraphData({ input: options.model }),
+    },
+    {
+      id: 'tools',
+      type: 'tools',
+      data: compactGraphData({ tools: options.tools }),
+    },
+    {
+      id: 'check',
+      type: 'patch',
+      data: compactGraphData({
+        kind: 'goalSatisfaction',
+        durability: options.durability ?? 'materialized',
+        isSatisfied: options.isSatisfied,
+      }),
+    },
+  ];
+
+  if (interaction !== 'none') {
+    attemptChildren.push({
+      id: 'interaction',
+      type: 'awaitInput',
+      data: { required: interaction === 'required' },
+    });
+  }
+
+  return {
+    id,
+    type: 'goal',
+    data: compactGraphData({
+      goal,
+      interaction,
+      maxAttempts: options.maxAttempts,
+      onUnsatisfied: options.onUnsatisfied ?? 'retry',
+    }),
+    children: [
+      {
+        id: 'prompt',
+        type: 'user',
+        data: { content: goal },
+      },
+      {
+        id: 'attempts',
+        type: 'loop',
+        data: compactGraphData({
+          kind: 'goalAttempts',
+          maxAttempts: options.maxAttempts,
+          onUnsatisfied: options.onUnsatisfied ?? 'retry',
+        }),
+        children: attemptChildren,
+      },
+    ],
+  };
 }
 
 async function handleDirectAgentCommand<TC extends Vars, TM extends Attrs>(
