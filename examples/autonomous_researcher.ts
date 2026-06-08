@@ -2,6 +2,9 @@ import { Agent, Source, Tool } from '@prompttrail/core';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
+// Goal execution is still being migrated to the graph runtime. This example
+// demonstrates the final Agent.goal authoring API and prints the compiled graph.
+
 const searchDocumentation = Tool.create({
   name: 'searchDocumentation',
   description: 'Search project documentation for information.',
@@ -60,7 +63,7 @@ export function createAutonomousResearcher() {
 
 export async function showAutonomousResearcherGraph() {
   const agent = createAutonomousResearcher();
-  const graph = agent.toGraph('example');
+  const graph = agent.toGraph('v1');
 
   console.log('Agent:', graph.name);
   console.log('Graph version:', graph.version);

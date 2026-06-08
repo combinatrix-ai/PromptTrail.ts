@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as prompttrail from '../../index';
 import type {
   AgentDirectDurableOptions,
+  AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGoalOptions,
   DurableTool,
@@ -108,17 +109,25 @@ describe('public API surface', () => {
       runId: 'public-direct-agent-run',
       store: prompttrail.memoryStore(),
     };
-    const options: AgentExecutionOptions = {
+    const options: AgentExecuteOptions = {
       context: { userId: 'U1' },
       signal: controller.signal,
       durable,
     };
-    const session = await prompttrail.Agent.user('hello').execute(
-      undefined,
-      options,
-    );
+    const session = await prompttrail.Agent.user('hello').execute(options);
 
     expect(session.getLastMessage()?.content).toBe('hello');
+  });
+
+  it('types direct agent execution input option', async () => {
+    const session = await prompttrail.Agent.create()
+      .assistant('reply')
+      .execute({ input: 'hello from options' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello from options',
+      'reply',
+    ]);
   });
 
   it('exports final agent graph authoring helpers', () => {

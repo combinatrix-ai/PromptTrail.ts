@@ -23,6 +23,7 @@ export { User } from './primitives/user';
 export { Agent, AgentTurnGraphBuilder } from './agent';
 export type {
   AgentDirectDurableOptions,
+  AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGraphExecutionOptions,
   AgentGoalOptions,

@@ -97,7 +97,7 @@ const agent = Agent.create()
   .user('Explain generics')
   .assistant();
 
-await agent.execute(session);
+await agent.execute({ session });
 ```
 
 ### Sources - Where Content Comes From
@@ -219,6 +219,9 @@ const researcher = Agent.create('researcher')
   })
   .goal('finalAnswer', 'Provide a comprehensive answer');
 ```
+
+Goal authoring currently compiles into the agent graph; goal execution is wired
+in the graph runtime in a later migration step.
 
 **Key Differences:**
 

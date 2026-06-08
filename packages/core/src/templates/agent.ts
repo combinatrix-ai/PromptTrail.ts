@@ -21,9 +21,10 @@ import {
 } from '../graph';
 import {
   executeAgentGraph,
+  type GraphInboundInput,
   type GraphExecutionOptions,
 } from '../graph_executor';
-import type { Message } from '../message';
+import { Message, type Message as PromptTrailMessage } from '../message';
 import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
@@ -69,9 +70,9 @@ type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
 type AgentGraphMessagesHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
 ) =>
-  | Message<TM>
-  | readonly Message<TM>[]
-  | Promise<Message<TM> | readonly Message<TM>[]>;
+  | PromptTrailMessage<TM>
+  | readonly PromptTrailMessage<TM>[]
+  | Promise<PromptTrailMessage<TM> | readonly PromptTrailMessage<TM>[]>;
 
 type AgentGraphPatchHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
@@ -102,9 +103,14 @@ export interface AgentGoalOptions<TC extends Vars = Vars, TM extends Attrs = Att
 export interface AgentGraphExecutionOptions<
   TC extends Vars = Vars,
   TM extends Attrs = Attrs,
-> extends GraphExecutionOptions<TC, TM> {
+> extends GraphExecutionOptions<TC, TM>, AgentExecutionOptions {
   version?: string;
 }
+
+export interface AgentExecuteOptions<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> extends AgentGraphExecutionOptions<TC, TM> {}
 
 export class AgentTurnGraphBuilder<
   TC extends Vars = Vars,
@@ -621,7 +627,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this.hasInterceptors() ? this : this.root;
   }
 
-  async execute(options?: AgentGraphExecutionOptions<TC, TM>): Promise<Session<TC, TM>>;
+  async execute(options?: AgentExecuteOptions<TC, TM>): Promise<Session<TC, TM>>;
   async execute(
     session?: Session<TC, TM> | undefined,
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
@@ -629,7 +635,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   async execute(
     sessionOrOptions?:
       | Session<TC, TM>
-      | AgentGraphExecutionOptions<TC, TM>
+      | AgentExecuteOptions<TC, TM>
       | undefined,
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
   ): Promise<Session<TC, TM>> {
@@ -637,20 +643,32 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       const options =
         sessionOrOptions instanceof Session
           ? { session: sessionOrOptions }
-          : (sessionOrOptions as AgentGraphExecutionOptions<TC, TM> | undefined);
+          : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
       this.assertGraphExecutionSupported(options);
       return executeAgentGraph(
         this.toGraph(options?.version),
         options,
       );
     }
-    const session = sessionOrOptions as Session<TC, TM> | undefined;
-    const parentRuntime = isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
-      ? runtimeOrOptions
-      : undefined;
-    const executionOptions = parentRuntime
+    const optionsObject =
+      runtimeOrOptions === undefined && !(sessionOrOptions instanceof Session)
+        ? (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined)
+        : undefined;
+    const session = addDirectExecuteInput(
+      optionsObject?.session ??
+        (sessionOrOptions instanceof Session ? sessionOrOptions : undefined),
+      optionsObject?.input,
+    );
+    const parentRuntime = optionsObject
       ? undefined
-      : (runtimeOrOptions as AgentExecutionInternalOptions | undefined);
+      : isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
+        ? runtimeOrOptions
+        : undefined;
+    const executionOptions = optionsObject
+      ? optionsObject
+      : parentRuntime
+        ? undefined
+        : (runtimeOrOptions as AgentExecutionInternalOptions | undefined);
     if (!parentRuntime) {
       const durableOptions = this.resolveDirectDurableOptions(executionOptions);
       if (durableOptions) {
@@ -663,7 +681,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     }
     const eventScopeId =
       parentRuntime?.eventScopeId ??
-      executionOptions?.eventScopeId ??
+      (executionOptions as AgentExecutionInternalOptions | undefined)
+        ?.eventScopeId ??
       createDirectAgentEventScopeId();
     if (!this.hasInterceptors()) {
       const runtime =
@@ -944,6 +963,40 @@ function createDirectAgentEventScopeId(): string {
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `direct-agent:${random}`;
+}
+
+function addDirectExecuteInput<TC extends Vars, TM extends Attrs>(
+  session: Session<TC, TM> | undefined,
+  input: AgentExecuteOptions<TC, TM>['input'] | undefined,
+): Session<TC, TM> | undefined {
+  if (input === undefined) {
+    return session;
+  }
+  let current = session ?? Session.create<TC, TM>();
+  const inputs = normalizeDirectExecuteInput(input);
+  for (const inbound of inputs) {
+    if (inbound.kind === 'control') {
+      continue;
+    }
+    current = current.addMessage(
+      inbound.kind === 'system'
+        ? Message.system(inbound.content, inbound.attrs)
+        : Message.user(inbound.content, inbound.attrs),
+    );
+  }
+  return current;
+}
+
+function normalizeDirectExecuteInput<TAttrs extends Attrs>(
+  input: string | GraphInboundInput<TAttrs> | readonly GraphInboundInput<TAttrs>[],
+): GraphInboundInput<TAttrs>[] {
+  if (typeof input === 'string') {
+    return [{ kind: 'user', content: input }];
+  }
+  if (Array.isArray(input)) {
+    return [...(input as readonly GraphInboundInput<TAttrs>[])];
+  }
+  return [input as GraphInboundInput<TAttrs>];
 }
 
 function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
