@@ -29,20 +29,6 @@ export type {
   AgentGoalSatisfactionContext,
 } from './agent';
 
-// Export Scenario API
-export {
-  Scenario,
-  StepTemplates,
-  Scenarios,
-  isInteractiveStep,
-} from './scenario';
-export type {
-  StepOptions,
-  InteractiveStepOptions,
-  NonInteractiveStepOptions,
-  ScenarioConfig,
-} from './scenario';
-
 // Export Parallel template types
 export type {
   ScoringFunction,

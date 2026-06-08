@@ -132,6 +132,12 @@ describe('public API surface', () => {
     expect(options.interaction).toBe('required');
   });
 
+  it('does not expose Scenario as a public authoring API', () => {
+    expect(prompttrail).not.toHaveProperty('Scenario');
+    expect(prompttrail).not.toHaveProperty('Scenarios');
+    expect(prompttrail).not.toHaveProperty('StepTemplates');
+  });
+
   it('types observer delivery binding helpers', async () => {
     const deliveryBindingStore: ObserverDeliveryBindingStore = {
       claim() {
