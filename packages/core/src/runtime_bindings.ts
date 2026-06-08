@@ -168,6 +168,37 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
     return this.defaults({ delivery });
   }
 
+  durable(durable = true): this {
+    return this.defaults({ durable });
+  }
+
+  toolsets(toolsets: readonly string[]): this {
+    return this.defaults({ toolsets });
+  }
+
+  skills(skills: readonly string[]): this {
+    return this.defaults({ skills });
+  }
+
+  workdir(workdir: string): this {
+    return this.defaults({ workdir });
+  }
+
+  /**
+   * Shallow-merge Discord behavior defaults. Nested arrays such as
+   * allowedChannels are replaced by later calls, not concatenated.
+   */
+  behavior(behavior: DiscordBindingBehavior): this {
+    this.bindingDefaults = {
+      ...this.bindingDefaults,
+      behavior: {
+        ...(this.bindingDefaults.behavior ?? {}),
+        ...behavior,
+      },
+    };
+    return this;
+  }
+
   context(context: RuntimeContextResolver<TEvent>): this {
     this.contextResolver = context;
     return this;

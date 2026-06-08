@@ -36,30 +36,32 @@ function workroomFixture() {
             threadSessionsPerUser: false,
           }),
         )
+        .delivery(discord.replyToOriginThread())
+        .toolsets([
+          'web',
+          'terminal',
+          'file',
+          'memory',
+          'discord',
+          'discord_admin',
+          'cronjob',
+          'skills',
+          'delegation',
+        ])
         .defaults({
-          delivery: discord.replyToOriginThread(),
-          toolsets: [
-            'web',
-            'terminal',
-            'file',
-            'memory',
-            'discord',
-            'discord_admin',
-            'cronjob',
-            'skills',
-            'delegation',
-          ],
           context: {
             historyBackfill: { enabled: true, limit: 50 },
           },
-          behavior: {
-            allowedChannels: ['general', 'cloud-lab', 'news'],
-            freeResponseChannels: ['general', 'cloud-lab', 'news'],
-            threadResponseChannels: ['general', 'cloud-lab', 'news'],
-            requireMention: false,
-            autoThread: true,
-            threadRequireMention: false,
-          },
+        })
+        .behavior({
+          allowedChannels: ['general', 'cloud-lab', 'news'],
+          freeResponseChannels: ['general', 'cloud-lab', 'news'],
+        })
+        .behavior({
+          threadResponseChannels: ['general', 'cloud-lab', 'news'],
+          requireMention: false,
+          autoThread: true,
+          threadRequireMention: false,
         }),
 
       bind(cron.schedule('every 360m'))
@@ -67,22 +69,18 @@ function workroomFixture() {
         .toAgent('main')
         .conversation(({ job }) => `cron:${job.id}`)
         .input((event) => String(event.scriptOutput ?? event.job.name))
-        .defaults({
-          delivery: discord.channel('news'),
-          toolsets: ['web', 'terminal', 'delegation'],
-        }),
+        .delivery(discord.channel('news'))
+        .toolsets(['web', 'terminal', 'delegation']),
 
       bind(cron.schedule('0 20 * * *'))
         .name('Supplier earnings calendar daily update')
         .toAgent('main')
         .conversation(({ job }) => `cron:${job.id}`)
         .input('Maintain the supplier earnings calendar.')
-        .defaults({
-          delivery: Delivery.origin(),
-          skills: ['supplier-research', 'api-change-watchers'],
-          toolsets: ['terminal', 'file', 'web'],
-          workdir: '/home/user/notes/Work/suppliers',
-        }),
+        .delivery(Delivery.origin())
+        .skills(['supplier-research', 'api-change-watchers'])
+        .toolsets(['terminal', 'file', 'web'])
+        .workdir('/home/user/notes/Work/suppliers'),
     ],
   });
 
@@ -259,6 +257,27 @@ function channelContextFixture() {
 }
 
 describe('runtime bindings with mock Discord and cron', () => {
+  it('merges fluent binding behavior defaults across calls', () => {
+    const built = bind(discord.messages())
+      .toAgent('main')
+      .conversation(() => 'discord:test')
+      .behavior({
+        allowedChannels: ['general'],
+        requireMention: true,
+      })
+      .behavior({
+        requireMention: false,
+        autoThread: true,
+      })
+      .build();
+
+    expect(built.defaults.behavior).toEqual({
+      allowedChannels: ['general'],
+      requireMention: false,
+      autoThread: true,
+    });
+  });
+
   it('routes an allowed Discord message to a durable agent conversation', async () => {
     const fixture = workroomFixture();
 
