@@ -2127,7 +2127,10 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
 }
 
-type PromptTrailRegisteredAgent<TVars extends Vars, TAttrs extends Attrs> =
+export type PromptTrailRegisteredAgent<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+> =
   | DurableAgent<TVars, TAttrs>
   | GraphAgent<TVars, TAttrs>;
 

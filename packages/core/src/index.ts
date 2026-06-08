@@ -57,6 +57,7 @@ export type {
   InboundRuntimeEvent,
   PendingAssistantDeliveryOutboxEntry,
   PromptTrailAppOptions,
+  PromptTrailRegisteredAgent,
   PromptTrailRunOptions,
   PromptTrailSendOptions,
   StoredRun,

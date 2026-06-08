@@ -1,4 +1,4 @@
-import type { DurableAgent } from './durable';
+import type { PromptTrailRegisteredAgent } from './durable';
 
 export interface DiscordMessageEvent {
   source: 'discord';
@@ -87,7 +87,7 @@ export interface DiscordBindingBehavior {
   maxAttachmentBytes?: number;
 }
 
-export interface RuntimeSource<TEvent extends RuntimeBindingEvent> {
+export interface RuntimeSource<_TEvent extends RuntimeBindingEvent> {
   type: string;
   schedule?: string;
 }
@@ -108,14 +108,14 @@ export type RuntimeBindingLike<TEvent extends RuntimeBindingEvent> =
 
 export interface RuntimeBundle {
   name: string;
-  agents: Record<string, DurableAgent<any, any>>;
+  agents: Record<string, PromptTrailRegisteredAgent<any, any>>;
   defaults: BindingDefaults;
   bindings: RuntimeBinding<RuntimeBindingEvent>[];
 }
 
 export interface RuntimeBundleOptions {
   name: string;
-  agents?: Record<string, DurableAgent<any, any>>;
+  agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
   defaults?: BindingDefaults;
   bindings?: RuntimeBindingLike<any>[];
 }

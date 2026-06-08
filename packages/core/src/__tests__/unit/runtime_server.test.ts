@@ -7,6 +7,7 @@ import {
   type DeliveryTarget,
   type DiscordMessageEvent,
 } from '../../runtime_bindings';
+import { Agent } from '../../templates';
 import {
   assistantDeliveryKey,
   dispatchRuntimeBindingEvent,
@@ -318,6 +319,88 @@ describe('RuntimeServer', () => {
       `claim:["runtimeObserver:0","${finalDeliveryKey}"]:undefined`,
       `complete:["runtimeObserver:0","${finalDeliveryKey}"]:server`,
     ]);
+  });
+
+  it('routes runtime bundle events to registered Agent graphs', async () => {
+    const main = Agent.create('main')
+      .user('inbound')
+      .assistant('reply', (session) => ({
+        content: `reply:${session.getLastMessage()?.content ?? ''}`,
+      }));
+    const bundle = PromptTrail.bundle({
+      name: 'graph-runtime',
+      agents: { main },
+      defaults: { durable: false },
+      bindings: [
+        bind(discord.messages())
+          .toAgent('main')
+          .conversation(() => 'discord:graph'),
+      ],
+    });
+    const app = PromptTrail.app({
+      agents: bundle.agents,
+    });
+    const result = await dispatchRuntimeBindingEvent({
+      app,
+      binding: bundle.bindings[0]!,
+      event: {
+        source: 'discord',
+        guild: 'workroom',
+        channel: 'general',
+        channelId: 'C_general',
+        author: 'alice',
+        authorId: 'U_alice',
+        authorBot: false,
+        content: 'hello',
+      },
+      defaults: mergeBindingDefaults(
+        bundle.defaults,
+        bundle.bindings[0]!.defaults,
+      ),
+    });
+
+    expect(result.result.status).toBe('done');
+    expect(result.result.runId).toBe('discord:graph');
+    expect(result.result.session.messages.map((message) => message.content)).toEqual(
+      ['hello', 'reply:hello'],
+    );
+  });
+
+  it('keeps runtime bundle Agent graph runs ephemeral-only for now', async () => {
+    const main = Agent.create('main').assistant('reply', () => 'reply');
+    const bundle = PromptTrail.bundle({
+      name: 'durable-graph-runtime',
+      agents: { main },
+      bindings: [
+        bind(discord.messages())
+          .toAgent('main')
+          .conversation(() => 'discord:graph'),
+      ],
+    });
+    const app = PromptTrail.app({
+      agents: bundle.agents,
+    });
+
+    await expect(
+      dispatchRuntimeBindingEvent({
+        app,
+        binding: bundle.bindings[0]!,
+        event: {
+          source: 'discord',
+          guild: 'workroom',
+          channel: 'general',
+          channelId: 'C_general',
+          author: 'alice',
+          authorId: 'U_alice',
+          authorBot: false,
+          content: 'hello',
+        },
+        defaults: mergeBindingDefaults(
+          bundle.defaults,
+          bundle.bindings[0]!.defaults,
+        ),
+      }),
+    ).rejects.toThrow(/does not support durable graph Agent runs yet/);
   });
 
   it('allocates delivery event sequence numbers per conversation', async () => {
