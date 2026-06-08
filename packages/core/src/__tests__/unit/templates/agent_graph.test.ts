@@ -54,6 +54,27 @@ describe('Agent graph authoring', () => {
     );
   });
 
+  it('supports quick ephemeral content-first agents', async () => {
+    const session = await Agent.quick()
+      .system('You are concise.')
+      .user('Hello')
+      .assistant('Hi')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'Hello',
+      'Hi',
+    ]);
+  });
+
+  it('rejects durable execution for quick agents', async () => {
+    expect(() => Agent.quick().durable()).toThrow(/Agent\.quick/);
+    await expect(Agent.quick().execute({ durable: true })).rejects.toThrow(
+      /Agent\.quick/,
+    );
+  });
+
   it('treats assistant(id) as a graph node for named agents', () => {
     const graph = Agent.create('assistant').assistant('reply').toGraph();
 

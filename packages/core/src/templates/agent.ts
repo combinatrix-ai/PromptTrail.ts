@@ -236,6 +236,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   private constructor(
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
     private readonly graphName?: string,
+    private readonly quickMode = false,
   ) {}
 
   private readonly graphNodes: AgentGraphNode[] = [];
@@ -299,6 +300,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     name?: string,
   ) {
     return new Agent<TC, TM>(new Sequence<TM, TC>(), name);
+  }
+
+  static quick<TC extends Vars = Vars, TM extends Attrs = Attrs>(): Agent<
+    TC,
+    TM
+  > {
+    return new Agent<TC, TM>(new Sequence<TM, TC>(), undefined, true);
   }
 
   static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
@@ -371,6 +379,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   durable(options: AgentDirectDurableOptions | boolean = true) {
+    if (this.quickMode && options !== false) {
+      throw new Error('Agent.quick() does not support durable execution.');
+    }
     this.directDurableOptions =
       typeof options === 'boolean'
         ? options
@@ -1065,6 +1076,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       executionOptions?.durable !== undefined
         ? executionOptions.durable
         : this.directDurableOptions;
+    if (this.quickMode && authored !== undefined && authored !== false) {
+      throw new Error('Agent.quick() does not support durable execution.');
+    }
     if (authored === undefined || authored === false) {
       return undefined;
     }
