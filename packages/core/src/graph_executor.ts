@@ -44,9 +44,22 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   inbox: GraphInboundInput<TAttrs>[];
   cursor: number;
   maxLoopIterations: number;
+  activeGoal?: ActiveGoalExecution;
 }
 
 type GraphNodeData = Record<string, unknown>;
+
+interface ActiveGoalExecution {
+  goal: string;
+  nodePath: string;
+  attempt: number;
+  maxAttempts: number;
+  onUnsatisfied: 'retry' | 'continue' | 'halt';
+  interaction: 'none' | 'optional' | 'required';
+  interacted: boolean;
+  satisfied: boolean;
+  stopped: boolean;
+}
 
 export async function executeAgentGraph<
   TVars extends Vars = Vars,
@@ -92,7 +105,8 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeChildren(node.children ?? [], nodePath, state);
       return;
     case 'goal':
-      throw new Error(`Graph node ${nodePath} is not executable yet: goal`);
+      await executeGoalNode(node, nodePath, state);
+      return;
     case 'subroutine':
       throw new Error(
         `Graph node ${nodePath} is not executable yet: subroutine`,
@@ -104,7 +118,11 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeToolsNode(node, nodePath, state);
       return;
     case 'awaitInput':
-      if (!consumeInbox(state)) {
+      if (consumeInbox(state)) {
+        if (state.activeGoal) {
+          state.activeGoal.interacted = true;
+        }
+      } else if (graphNodeData(node).required !== false) {
         throw new GraphExecutionSuspended(nodePath);
       }
       return;
@@ -143,9 +161,8 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
 ): Promise<void> {
   const data = graphNodeData(node);
   if (data.kind === 'goalAttempts') {
-    throw new Error(
-      `Graph node ${nodePath} is not executable yet: goal attempts`,
-    );
+    await executeGoalAttemptsNode(node, nodePath, state);
+    return;
   }
   const condition = data.condition;
   const shouldContinue =
@@ -159,6 +176,60 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
       throw new Error(`Graph loop ${nodePath} exceeded max iterations.`);
     }
     await executeChildren(node.children ?? [], nodePath, state);
+  }
+}
+
+async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const data = graphNodeData(node);
+  const goal = stringValue(data.goal);
+  if (!goal) {
+    throw new Error(`Graph node ${nodePath} requires a goal.`);
+  }
+  const previousGoal = state.activeGoal;
+  state.activeGoal = {
+    goal,
+    nodePath,
+    attempt: 0,
+    maxAttempts: positiveInteger(data.maxAttempts) ?? state.maxLoopIterations,
+    onUnsatisfied: goalOnUnsatisfied(data.onUnsatisfied),
+    interaction: goalInteraction(data.interaction),
+    interacted: false,
+    satisfied: false,
+    stopped: false,
+  };
+  try {
+    await executeChildren(node.children ?? [], nodePath, state);
+  } finally {
+    state.activeGoal = previousGoal;
+  }
+}
+
+async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const goal = state.activeGoal;
+  if (!goal) {
+    throw new Error(`Graph node ${nodePath} requires an active goal.`);
+  }
+
+  while (!goal.satisfied && !goal.stopped) {
+    if (goal.attempt >= goal.maxAttempts) {
+      handleUnsatisfiedGoal(goal, nodePath, 'exceeded max attempts');
+      return;
+    }
+    goal.attempt += 1;
+    for (const child of node.children ?? []) {
+      await executeGraphNode(child, `${nodePath}/${child.id}`, state);
+      if (goal.satisfied || goal.stopped) {
+        break;
+      }
+    }
   }
 }
 
@@ -207,9 +278,8 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
 ): Promise<void> {
   const data = graphNodeData(node);
   if (data.kind === 'goalSatisfaction') {
-    throw new Error(
-      `Graph node ${nodePath} is not executable yet: goal satisfaction`,
-    );
+    await executeGoalSatisfactionNode(data, nodePath, state);
+    return;
   }
   const handler = data.handler;
   if (typeof handler !== 'function') {
@@ -222,6 +292,45 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   }
   if (result !== undefined) {
     throw new Error(`Graph node ${nodePath} returned an invalid patch result.`);
+  }
+}
+
+async function executeGoalSatisfactionNode<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  data: GraphNodeData,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const goal = state.activeGoal;
+  if (!goal) {
+    throw new Error(`Graph node ${nodePath} requires an active goal.`);
+  }
+  const handler = data.isSatisfied;
+  const canSatisfy = goal.interaction !== 'required' || goal.interacted;
+  const satisfied =
+    canSatisfy &&
+    (typeof handler === 'function'
+      ? Boolean(
+          await handler({
+            session: state.session,
+            goal: goal.goal,
+            attempt: goal.attempt,
+          }),
+        )
+      : true);
+
+  if (satisfied) {
+    goal.satisfied = true;
+    return;
+  }
+  if (goal.onUnsatisfied === 'continue') {
+    goal.stopped = true;
+    return;
+  }
+  if (goal.onUnsatisfied === 'halt') {
+    throw new Error(`Graph goal ${goal.nodePath} was not satisfied.`);
   }
 }
 
@@ -372,6 +481,9 @@ function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
     );
     return true;
   }
+  if (inbound.kind === 'control') {
+    return true;
+  }
   state.session = state.session.addMessage(
     Message.user(inbound.content, inbound.attrs),
   );
@@ -442,6 +554,38 @@ function graphNodeData(node: AgentGraphNode): GraphNodeData {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return Number.isInteger(value) && (value as number) > 0
+    ? (value as number)
+    : undefined;
+}
+
+function goalOnUnsatisfied(
+  value: unknown,
+): ActiveGoalExecution['onUnsatisfied'] {
+  return value === 'continue' || value === 'halt' || value === 'retry'
+    ? value
+    : 'retry';
+}
+
+function goalInteraction(value: unknown): ActiveGoalExecution['interaction'] {
+  return value === 'optional' || value === 'required' || value === 'none'
+    ? value
+    : 'none';
+}
+
+function handleUnsatisfiedGoal(
+  goal: ActiveGoalExecution,
+  nodePath: string,
+  reason: string,
+): void {
+  if (goal.onUnsatisfied === 'continue') {
+    goal.stopped = true;
+    return;
+  }
+  throw new Error(`Graph goal ${goal.nodePath} ${reason} at ${nodePath}.`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

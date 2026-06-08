@@ -220,8 +220,8 @@ const researcher = Agent.create('researcher')
   .goal('finalAnswer', 'Provide a comprehensive answer');
 ```
 
-Goal authoring currently compiles into the agent graph; goal execution is wired
-in the graph runtime in a later migration step.
+Goal authoring compiles into the agent graph and executes through the graph
+runtime with stable retry, tool, satisfaction, and interaction node paths.
 
 **Key Differences:**
 

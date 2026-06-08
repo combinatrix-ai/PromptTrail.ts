@@ -217,6 +217,10 @@ Goal semantics:
   - `goalId/attempts/tools`: tool execution node
   - `goalId/attempts/check`: satisfaction check node
   - `goalId/attempts/interaction`: optional user interaction node
+- `model` defaults to `Source.llm()`.
+- `maxAttempts` defaults to the graph executor's loop limit.
+- If `isSatisfied` is omitted, a goal is satisfied after one model/tool attempt,
+  except that `interaction: 'required'` still requires an input turn first.
 - `interaction: 'required'` means the goal must ask for user input before it can
   be satisfied.
 - `interaction: 'optional'` permits user input tools but does not require them.

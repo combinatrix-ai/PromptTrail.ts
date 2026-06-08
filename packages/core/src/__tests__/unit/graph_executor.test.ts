@@ -260,15 +260,82 @@ describe('GraphExecutor', () => {
     );
   });
 
-  it('fails goal nodes until attempts and satisfaction are executable', async () => {
+  it('executes goal nodes with model and satisfaction checks', async () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic', {
         model: Source.literal('done'),
+        isSatisfied: ({ session, goal, attempt }) => {
+          expect(goal).toBe('Research the topic');
+          expect(attempt).toBe(1);
+          return session.getLastMessage()?.content === 'done';
+        },
       })
       .toGraph();
 
-    await expect(
-      executeAgentGraph(graph, { maxLoopIterations: 1 }),
-    ).rejects.toThrow(/research\/researchTopic is not executable yet: goal/);
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Research the topic',
+      'done',
+    ]);
+  });
+
+  it('retries goals until the satisfaction check passes', async () => {
+    const graph = Agent.create('research')
+      .goal('researchTopic', 'Research the topic', {
+        model: ({ messages }) => `attempt:${messages.length}`,
+        maxAttempts: 3,
+        isSatisfied: ({ attempt }) => attempt === 2,
+      })
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Research the topic',
+      'attempt:1',
+      'attempt:2',
+    ]);
+  });
+
+  it('suspends required interactive goals until input is provided', async () => {
+    const graph = Agent.create('research')
+      .goal('collectQuestion', 'Get the user question', {
+        interaction: 'required',
+        model: ({ messages }) =>
+          messages.some((message) => message.content === 'What is TypeScript?')
+            ? 'done'
+            : 'question?',
+      })
+      .toGraph();
+
+    await expect(executeAgentGraph(graph)).rejects.toMatchObject({
+      nodePath: 'research/collectQuestion/attempts/interaction',
+    });
+
+    const session = await executeAgentGraph(graph, {
+      input: 'What is TypeScript?',
+    });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Get the user question',
+      'question?',
+      'What is TypeScript?',
+      'done',
+    ]);
+  });
+
+  it('fails retrying goals after maxAttempts is exhausted', async () => {
+    const graph = Agent.create('research')
+      .goal('researchTopic', 'Research the topic', {
+        model: Source.literal('not enough'),
+        maxAttempts: 2,
+        isSatisfied: () => false,
+      })
+      .toGraph();
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      /research\/researchTopic exceeded max attempts/,
+    );
   });
 });

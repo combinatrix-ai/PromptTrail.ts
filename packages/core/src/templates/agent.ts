@@ -1039,7 +1039,7 @@ function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
     {
       id: 'model',
       type: 'assistant',
-      data: compactGraphData({ input: options.model }),
+      data: compactGraphData({ input: options.model ?? Source.llm() }),
     },
     {
       id: 'tools',
