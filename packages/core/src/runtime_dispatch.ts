@@ -92,6 +92,18 @@ export function resolveRuntimeInput<TEvent extends RuntimeBindingEvent>(
   return 'content' in event ? event.content : event.job.name;
 }
 
+export function resolveRuntimeBindingContext<TEvent extends RuntimeBindingEvent>(
+  binding: RuntimeBinding<TEvent>,
+  event: TEvent,
+): Record<string, unknown> | undefined {
+  if (!binding.context) {
+    return undefined;
+  }
+  return typeof binding.context === 'function'
+    ? binding.context(event as TEvent & Record<string, unknown>)
+    : binding.context;
+}
+
 export function resolveRuntimeDelivery(
   delivery: DeliveryTarget | undefined,
   event: RuntimeBindingEvent,
@@ -139,15 +151,22 @@ export async function dispatchRuntimeBindingEvent<
   options: RuntimeDispatchOptions<TEvent>,
 ): Promise<RuntimeDispatchResult<TVars, TAttrs>> {
   const conversationId = options.binding.conversation(options.event);
+  const bindingContext = resolveRuntimeBindingContext(
+    options.binding,
+    options.event,
+  );
+  const defaults = bindingContext
+    ? mergeBindingDefaults(options.defaults, { context: bindingContext })
+    : options.defaults;
   const resolvedDelivery = resolveRuntimeDelivery(
-    options.defaults.delivery,
+    defaults.delivery,
     options.event,
   );
   const contextDelivery = cloneRuntimeDispatchValue(resolvedDelivery);
   const delivery = cloneRuntimeDispatchValue(resolvedDelivery);
   const context = runtimeContextFromDefaults(
     conversationId,
-    options.defaults,
+    defaults,
     contextDelivery,
     options.event,
   );
@@ -166,7 +185,7 @@ export async function dispatchRuntimeBindingEvent<
         runtimeContext: context,
       },
     },
-    durable: options.durable ?? options.defaults.durable ?? true,
+    durable: options.durable ?? defaults.durable ?? true,
     resumable: options.resumable,
     context,
   });

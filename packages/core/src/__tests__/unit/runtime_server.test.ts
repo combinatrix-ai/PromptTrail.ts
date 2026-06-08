@@ -396,9 +396,19 @@ describe('RuntimeServer', () => {
       }));
     const app = PromptTrail.app({
       name: 'graph-runtime-app',
-      defaults: { durable: false },
+      defaults: {
+        durable: false,
+        context: { appScope: 'runtime-app' },
+      },
     }).bind(discord.messages(), (binding) => {
-      binding.to(main).conversation(() => 'discord:graph');
+      binding
+        .to(main)
+        .conversation(() => 'discord:graph')
+        .delivery(discord.channel('general'))
+        .context((event) => ({
+          bindingScope: 'discord-message',
+          channelId: event.channelId,
+        }));
     });
     const bundle = app.bundle();
     const result = await dispatchRuntimeBindingEvent({
@@ -423,6 +433,17 @@ describe('RuntimeServer', () => {
     expect(bundle.name).toBe('graph-runtime-app');
     expect(bundle.agents.main).toBe(main);
     expect(bundle.bindings[0]!.agent).toBe('main');
+    expect(bundle.bindings[0]!.defaults.delivery).toEqual(
+      discord.channel('general'),
+    );
+    expect(result.context).toEqual(
+      expect.objectContaining({
+        appScope: 'runtime-app',
+        bindingScope: 'discord-message',
+        channelId: 'C_general',
+        delivery: discord.channel('general'),
+      }),
+    );
     expect(
       result.result.session.messages.map((message) => message.content),
     ).toEqual(['hello', 'reply:hello']);

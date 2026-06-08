@@ -39,6 +39,10 @@ export type InputResolver<TEvent extends RuntimeBindingEvent> =
   | string
   | ((event: TEvent & Record<string, unknown>) => string);
 
+export type RuntimeContextResolver<TEvent extends RuntimeBindingEvent> =
+  | Record<string, unknown>
+  | ((event: TEvent & Record<string, unknown>) => Record<string, unknown>);
+
 export interface OriginDeliveryTarget {
   platform: 'origin';
 }
@@ -98,6 +102,7 @@ export interface RuntimeBinding<TEvent extends RuntimeBindingEvent> {
   agent: string;
   conversation: ConversationResolver<TEvent>;
   input?: InputResolver<TEvent>;
+  context?: RuntimeContextResolver<TEvent>;
   defaults: BindingDefaults;
   name?: string;
 }
@@ -128,6 +133,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
   private agentRef?: RuntimeAgentRef;
   private conversationResolver?: ConversationResolver<TEvent>;
   private inputResolver?: InputResolver<TEvent>;
+  private contextResolver?: RuntimeContextResolver<TEvent>;
   private bindingDefaults: BindingDefaults = {};
   private bindingName?: string;
 
@@ -155,6 +161,15 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
 
   input(input: InputResolver<TEvent>): this {
     this.inputResolver = input;
+    return this;
+  }
+
+  delivery(delivery: DeliveryTarget): this {
+    return this.defaults({ delivery });
+  }
+
+  context(context: RuntimeContextResolver<TEvent>): this {
+    this.contextResolver = context;
     return this;
   }
 
@@ -191,6 +206,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
       agent: this.agentName,
       conversation: this.conversationResolver,
       input: this.inputResolver,
+      context: this.contextResolver,
       defaults: { ...this.bindingDefaults },
       name: this.bindingName,
     };
