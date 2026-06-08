@@ -1,25 +1,12 @@
 // assistant.ts
 import type { AssistantMessage } from '../../message';
-import type { ExecutionEvent, ResolvedExecutionCommand } from '../../execution';
-import {
-  type ExecutionPhaseStep,
-  type ExecutionRuntimeState,
-  runExecutionPhase,
-  runRuntimeMiddlewareWrapper,
-  runRuntimeExecutionPhase,
-} from '../../interceptors';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import type { Session } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
 import { Attrs, Vars } from '../../session';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
-
-export interface AssistantModelRequest<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
-}
+import { executeRuntimeModelCall } from './model_runtime';
 
 export class Assistant<
   TAttrs extends Attrs = Attrs,
@@ -90,94 +77,19 @@ export class Assistant<
       let currentError: Error | undefined;
 
       try {
-        if (runtime) {
-          const beforeModel = await runRuntimeExecutionPhase(runtime, {
-            phase: 'beforeModel',
-            session: validSession,
-          });
-          assertAssistantCommandSupported(beforeModel.command);
-          validSession = beforeModel.session;
-        }
-
-        let modelSession = validSession;
-        if (runtime) {
-          const request: AssistantModelRequest<TVars, TAttrs> = {
-            session: modelSession,
-          };
-          const prepared = await runExecutionPhase({
-            phase: 'prepareModelInput',
-            session: validSession,
-            request,
-            context: runtime.context,
-            middlewareState: runtime.middlewareState,
-            middleware: runtime.middleware,
-            hooks: runtime.hooks,
-            beforeVersion: runtime.version,
-            signal: runtime.signal,
-          });
-          assertAssistantCommandSupported(prepared.command);
-          assertPrepareModelInputDidNotPersistSession(prepared.steps);
-          runtime.middlewareState = prepared.middlewareState;
-          runtime.version = prepared.afterVersion;
-          modelSession =
-            (
-              prepared.request as
-                | AssistantModelRequest<TVars, TAttrs>
-                | undefined
-            )?.session ?? modelSession;
-        }
-
         // 1. Get Content
         let rawOutput: string | ModelOutput;
         if (runtime) {
-          let openModelEvents = 0;
-          const closeModelEvents = async (
-            type: 'model.completed' | 'model.failed',
-            error?: unknown,
-          ) => {
-            while (openModelEvents > 0) {
-              openModelEvents--;
-              await emitDirectModelEvent(runtime, type, error);
-            }
-          };
-          const wrappedModel = await (async () => {
-            try {
-              const result = await runRuntimeMiddlewareWrapper<
-                TVars,
-                TAttrs,
-                AssistantModelRequest<TVars, TAttrs>,
-                string | ModelOutput
-              >(runtime, {
-                phase: 'wrapModelCall',
-                session: validSession,
-                request: { session: modelSession },
-                call: async ({ request }) =>
-                  this.getModelContent(request.session, runtime, () => {
-                    openModelEvents++;
-                  }),
-              });
-              await closeModelEvents('model.completed');
-              return result;
-            } catch (error) {
-              await closeModelEvents('model.failed', error);
-              throw error;
-            }
-          })();
-          assertAssistantCommandSupported(wrappedModel.command);
-          validSession = wrappedModel.session;
-          rawOutput = wrappedModel.result;
+          const modelCall = await executeRuntimeModelCall(
+            runtime,
+            validSession,
+            (modelSession) => this.getModelContent(modelSession, runtime),
+            'Assistant.execute',
+          );
+          validSession = modelCall.session;
+          rawOutput = modelCall.result;
         } else {
-          rawOutput = await this.getModelContent(modelSession);
-        }
-        if (runtime) {
-          const afterModel = await runRuntimeExecutionPhase(runtime, {
-            phase: 'afterModel',
-            session: validSession,
-            result: rawOutput,
-          });
-          assertAssistantCommandSupported(afterModel.command);
-          validSession = afterModel.session;
-          rawOutput = (afterModel.result ?? rawOutput) as typeof rawOutput;
+          rawOutput = await this.getModelContent(validSession);
         }
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
@@ -317,76 +229,9 @@ export class Assistant<
   private async getModelContent(
     session: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-    onModelEventStarted?: () => void,
   ): Promise<string | ModelOutput> {
-    const emittedStarted = await emitDirectModelEvent(runtime, 'model.started');
-    if (emittedStarted) {
-      onModelEventStarted?.();
-    }
     return (await this.contentSource!.getContent(session, runtime)) as
       | string
       | ModelOutput;
-  }
-}
-
-async function emitDirectModelEvent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
-  type: 'model.started' | 'model.completed' | 'model.failed',
-  error?: unknown,
-): Promise<boolean> {
-  if (!runtime?.emitEvent || !runtime.nextEventSeq) {
-    return false;
-  }
-  const seq = runtime.nextEventSeq();
-  const event: ExecutionEvent = {
-    id: `model:${seq}`,
-    type,
-    at: new Date().toISOString(),
-    seq,
-    replay: 'live',
-    source: 'model',
-    phase: 'model',
-    stepId: 'model',
-    idempotencyKey: `${runtime.eventScopeId ?? 'direct'}:model:${seq}:${type}`,
-  };
-  if (error !== undefined) {
-    event.error = error;
-  }
-  await runtime.emitEvent(event);
-  return true;
-}
-
-function assertAssistantCommandSupported(
-  command: ResolvedExecutionCommand,
-): void {
-  if (command.type === 'none') {
-    return;
-  }
-  throw new Error(
-    `Assistant.execute does not support execution command ${command.type} yet.`,
-  );
-}
-
-function assertPrepareModelInputDidNotPersistSession(
-  steps: readonly ExecutionPhaseStep[],
-): void {
-  // prepareModelInput may update runtime middlewareState, but it must not
-  // persist transcript messages or user vars. Use request.session for
-  // model-only session shaping.
-  const hasSessionDelta = steps.some(({ transition }) => {
-    const delta = transition.session;
-    return (
-      delta.messageOp.type !== 'none' ||
-      Object.keys(delta.varsSet).length > 0 ||
-      delta.varsDelete.length > 0
-    );
-  });
-  if (hasSessionDelta) {
-    throw new Error(
-      'prepareModelInput cannot return persistent session patches. Return a request.session instead.',
-    );
   }
 }

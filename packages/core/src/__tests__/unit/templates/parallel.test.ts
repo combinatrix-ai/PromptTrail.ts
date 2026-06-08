@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createExecutionRuntimeState, Middleware } from '../../../interceptors';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Parallel } from '../../../templates/composite/parallel';
@@ -148,6 +149,56 @@ describe('Parallel Template', () => {
 
       const messages = Array.from(result.messages);
       expect(messages).toHaveLength(3); // 2 + 1
+    });
+
+    it('should run runtime model phases for configured sources', async () => {
+      const calls: string[] = [];
+      mockLlmSource1.getContent.mockImplementation(async (session: Session) => {
+        calls.push(`source:${String(session.getVar('beforeModel'))}`);
+        return {
+          content: 'parallel response',
+          metadata: { sourceId: 'source1' },
+        };
+      });
+      const runtime = createExecutionRuntimeState({
+        middleware: [
+          Middleware.create({
+            name: 'parallelRuntime',
+            beforeModel: () => {
+              calls.push('beforeModel');
+              return { session: { vars: { beforeModel: true } } };
+            },
+            wrapModelCall: async (_context, next) => {
+              calls.push('wrapModelCall');
+              return next();
+            },
+            afterModel: ({ result }) => {
+              calls.push('afterModel');
+              return {
+                result: {
+                  ...(result as { content: string; metadata?: unknown }),
+                  content: 'parallel response afterModel',
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      const result = await new Parallel()
+        .addSource(mockLlmSource1)
+        .execute(Session.create(), runtime);
+
+      expect(calls).toEqual([
+        'beforeModel',
+        'wrapModelCall',
+        'source:true',
+        'afterModel',
+      ]);
+      expect(result.getVar('beforeModel')).toBe(true);
+      expect(result.getLastMessage()?.content).toBe(
+        'parallel response afterModel',
+      );
     });
 
     it('should handle source failures gracefully', async () => {

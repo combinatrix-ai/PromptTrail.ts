@@ -1,7 +1,9 @@
 import type { Session } from '../../session';
 import { LlmSource } from '../../source';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
+import { executeRuntimeModelCall } from '../primitives/model_runtime';
 
 /**
  * Type for scoring function that evaluates a session
@@ -182,6 +184,7 @@ export class Parallel<
    */
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     const currentSession = this.ensureSession(session);
 
@@ -189,9 +192,22 @@ export class Parallel<
       return currentSession;
     }
 
+    if (runtime) {
+      const results: Session<TVars, TAttrs>[] = [];
+      // Runtime middleware state is ordered and mutable; keep runtime-backed
+      // source calls sequential so phase/version updates cannot race.
+      for (const config of this.sources) {
+        for (let i = 0; i < config.repetitions; i++) {
+          results.push(
+            await this.executeSource(config.source, currentSession, runtime),
+          );
+        }
+      }
+      return this.aggregateResults(results, currentSession);
+    }
+
     // Create execution tasks for all sources with their repetitions
     const executionTasks: Promise<Session<TVars, TAttrs>>[] = [];
-
     for (const config of this.sources) {
       for (let i = 0; i < config.repetitions; i++) {
         const task = this.executeSource(config.source, currentSession);
@@ -214,15 +230,20 @@ export class Parallel<
   private async executeSource(
     source: LlmSource,
     session: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
     try {
-      const content = await source.getContent(session);
+      const output = runtime
+        ? await executeRuntimeModelCall(runtime, session, (modelSession) =>
+            source.getContent(modelSession, runtime),
+          )
+        : { session, result: await source.getContent(session) };
 
       // Add the LLM response as an assistant message
-      return session.addMessage({
+      return output.session.addMessage({
         type: 'assistant',
-        content: content.content,
-        attrs: content.metadata as TAttrs,
+        content: output.result.content,
+        attrs: output.result.metadata as TAttrs,
       });
     } catch (error) {
       console.warn(`Parallel source execution failed:`, error);
@@ -277,6 +298,12 @@ export class Parallel<
       const newMessages = result.messages.slice(
         originalSession.messages.length,
       );
+      if (newMessages.length === 0 && result === originalSession) {
+        continue;
+      }
+      aggregatedSession = aggregatedSession.withVars(
+        result.getVarsObject(),
+      ) as Session<TVars, TAttrs>;
 
       for (const message of newMessages) {
         aggregatedSession = aggregatedSession.addMessage(message);

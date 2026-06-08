@@ -596,35 +596,111 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  codexTurn(options: CodexTurnOptions<TM, TC>) {
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.codexTurn is not executable yet.');
+  codexTurn(options: CodexTurnOptions<TM, TC>): this;
+  codexTurn(id: string, options: CodexTurnOptions<TM, TC>): this;
+  codexTurn(
+    idOrOptions: string | CodexTurnOptions<TM, TC>,
+    maybeOptions?: CodexTurnOptions<TM, TC>,
+  ) {
+    if (typeof idOrOptions === 'string') {
+      if (!maybeOptions) {
+        throw new Error(
+          'Graph Agent.codexTurn requires codexTurn(id, options).',
+        );
+      }
+      this.graphNodes.push({
+        id: idOrOptions,
+        type: 'codexTurn',
+        data: { template: new CodexTurn(maybeOptions) },
+      });
+      return this;
     }
-    this.root.add(new CodexTurn(options));
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.codexTurn requires codexTurn(id, options).');
+    }
+    this.root.add(new CodexTurn(idOrOptions));
     return this;
   }
 
-  claudeTurn(options: ClaudeTurnOptions<TM, TC>) {
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.claudeTurn is not executable yet.');
+  claudeTurn(options: ClaudeTurnOptions<TM, TC>): this;
+  claudeTurn(id: string, options: ClaudeTurnOptions<TM, TC>): this;
+  claudeTurn(
+    idOrOptions: string | ClaudeTurnOptions<TM, TC>,
+    maybeOptions?: ClaudeTurnOptions<TM, TC>,
+  ) {
+    if (typeof idOrOptions === 'string') {
+      if (!maybeOptions) {
+        throw new Error(
+          'Graph Agent.claudeTurn requires claudeTurn(id, options).',
+        );
+      }
+      this.graphNodes.push({
+        id: idOrOptions,
+        type: 'claudeTurn',
+        data: { template: new ClaudeTurn(maybeOptions) },
+      });
+      return this;
     }
-    this.root.add(new ClaudeTurn(options));
+    if (this.isGraphAuthoringMode()) {
+      throw new Error(
+        'Graph Agent.claudeTurn requires claudeTurn(id, options).',
+      );
+    }
+    this.root.add(new ClaudeTurn(idOrOptions));
     return this;
   }
 
-  parallel(template: Parallel<TM, TC>) {
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.parallel is not executable yet.');
+  parallel(template: Parallel<TM, TC>): this;
+  parallel(id: string, template: Parallel<TM, TC>): this;
+  parallel(
+    idOrTemplate: string | Parallel<TM, TC>,
+    maybeTemplate?: Parallel<TM, TC>,
+  ) {
+    if (typeof idOrTemplate === 'string') {
+      if (!maybeTemplate) {
+        throw new Error(
+          'Graph Agent.parallel requires parallel(id, template).',
+        );
+      }
+      this.graphNodes.push({
+        id: idOrTemplate,
+        type: 'parallel',
+        data: { template: maybeTemplate },
+      });
+      return this;
     }
-    this.root.add(template);
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.parallel requires parallel(id, template).');
+    }
+    this.root.add(idOrTemplate);
     return this;
   }
 
-  structured(template: Structured<TM, TC>) {
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.structured is not executable yet.');
+  structured(template: Structured<TM, TC>): this;
+  structured(id: string, template: Structured<TM, TC>): this;
+  structured(
+    idOrTemplate: string | Structured<TM, TC>,
+    maybeTemplate?: Structured<TM, TC>,
+  ) {
+    if (typeof idOrTemplate === 'string') {
+      if (!maybeTemplate) {
+        throw new Error(
+          'Graph Agent.structured requires structured(id, template).',
+        );
+      }
+      this.graphNodes.push({
+        id: idOrTemplate,
+        type: 'structured',
+        data: { template: maybeTemplate },
+      });
+      return this;
     }
-    this.root.add(template);
+    if (this.isGraphAuthoringMode()) {
+      throw new Error(
+        'Graph Agent.structured requires structured(id, template).',
+      );
+    }
+    this.root.add(idOrTemplate);
     return this;
   }
 

@@ -10,8 +10,8 @@ import {
 } from '../../../interceptors';
 import { Message } from '../../../message';
 import { Session } from '../../../session';
-import { Source } from '../../../source';
-import { Agent } from '../../../templates';
+import { type ModelOutput, Source } from '../../../source';
+import { Agent, Parallel, Structured } from '../../../templates';
 import { Tool } from '../../../tool';
 
 describe('Agent graph authoring', () => {
@@ -333,6 +333,86 @@ describe('Agent graph authoring', () => {
     expect(session.getVar('marked')).toBe(true);
   });
 
+  it('executes graph structured and parallel template nodes', async () => {
+    const calls: string[] = [];
+    const events: string[] = [];
+    const structuredSource = new (class extends Source<ModelOutput> {
+      async getContent(session: Session): Promise<ModelOutput> {
+        calls.push(`source:${String(session.getVar('beforeModel'))}`);
+        return {
+          content: 'structured reply',
+          structuredOutput: { ok: true },
+        };
+      }
+    })();
+    const agent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'structuredRuntime',
+          beforeModel: ({ session }) => {
+            calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
+            return { session: { vars: { beforeModel: true } } };
+          },
+          wrapModelCall: async (_context, next) => {
+            calls.push('wrapModelCall');
+            return next();
+          },
+          afterModel: ({ result }) => {
+            calls.push('afterModel');
+            return {
+              result: {
+                ...(result as ModelOutput),
+                content: 'structured reply afterModel',
+              },
+            };
+          },
+        }),
+      )
+      .observe((event) => {
+        events.push(event.type);
+      })
+      .structured(
+        'structuredReply',
+        Structured.withSource(structuredSource, z.object({ ok: z.boolean() })),
+      )
+      .parallel('emptyParallel', new Parallel());
+
+    const graph = agent.toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+    const session = await agent.execute();
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/structuredReply', 'structured'],
+      ['assistant/emptyParallel', 'parallel'],
+    ]);
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'structured reply afterModel',
+      structuredContent: { ok: true },
+    });
+    expect(calls).toEqual([
+      'beforeModel:undefined',
+      'wrapModelCall',
+      'source:true',
+      'afterModel',
+    ]);
+    expect(events).toContain('model.started');
+    expect(events).toContain('model.completed');
+  });
+
+  it('compiles graph Codex and Claude turn template nodes', () => {
+    const graph = Agent.create('assistant')
+      .codexTurn('codex', {} as never)
+      .claudeTurn('claude', {} as never)
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/codex', 'codexTurn'],
+      ['assistant/claude', 'claudeTurn'],
+    ]);
+  });
+
   it('requires explicit ids for named graph messages and patch nodes', () => {
     expect(() =>
       Agent.create('assistant').messages(() => [
@@ -539,6 +619,18 @@ describe('Agent graph authoring', () => {
     );
     expect(() => graphStarted().patch((session) => session)).toThrow(
       /Graph Agent\.patch/,
+    );
+    expect(() =>
+      graphStarted().structured(Structured.withSchema(z.object({}))),
+    ).toThrow(/Graph Agent\.structured/);
+    expect(() => graphStarted().parallel(new Parallel())).toThrow(
+      /Graph Agent\.parallel/,
+    );
+    expect(() => graphStarted().codexTurn({} as never)).toThrow(
+      /Graph Agent\.codexTurn/,
+    );
+    expect(() => graphStarted().claudeTurn({} as never)).toThrow(
+      /Graph Agent\.claudeTurn/,
     );
     expect(() => graphStarted().transform((session) => session)).toThrow(
       /Graph Agent\.transform/,

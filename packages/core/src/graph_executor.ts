@@ -21,6 +21,7 @@ import {
 } from './message';
 import { Session, type Attrs, type Vars } from './session';
 import { type ModelOutput, Source } from './source';
+import type { Template } from './templates/base';
 import {
   executePromptTrailTool,
   isPromptTrailTool,
@@ -310,11 +311,13 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'messages':
       await executeMessagesNode(node, nodePath, state);
       return;
-    case 'parallel':
     case 'structured':
-    case 'transform':
     case 'codexTurn':
     case 'claudeTurn':
+    case 'parallel':
+      await executeTemplateNode(node, nodePath, state);
+      return;
+    case 'transform':
       throw new Error(
         `Graph node ${nodePath} is not executable yet: ${node.type}`,
       );
@@ -601,6 +604,18 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   if (result !== undefined) {
     throw new Error(`Graph node ${nodePath} returned an invalid patch result.`);
   }
+}
+
+async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const template = graphNodeData(node).template;
+  if (!isTemplate<TVars, TAttrs>(template)) {
+    throw new Error(`Graph node ${nodePath} requires a template.`);
+  }
+  state.session = await template.execute(state.session, state.runtime);
 }
 
 async function resolveGraphAssistantInput<
@@ -1105,4 +1120,10 @@ function isPromptTrailMessage(value: unknown): value is PromptTrailMessage {
     value.type === 'assistant' ||
     value.type === 'tool_result'
   );
+}
+
+function isTemplate<TVars extends Vars, TAttrs extends Attrs>(
+  value: unknown,
+): value is Template<TAttrs, TVars> {
+  return isRecord(value) && typeof value.execute === 'function';
 }

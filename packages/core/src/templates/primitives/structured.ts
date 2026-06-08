@@ -1,10 +1,12 @@
 // structured.ts
 import { z } from 'zod';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import type { SchemaGenerationMode } from '../../llm_types';
 import type { Session } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
+import { executeRuntimeModelCall } from './model_runtime';
 
 /**
  * Template that enforces structured output according to a Zod schema
@@ -86,22 +88,31 @@ export class Structured<
 
   async execute(
     session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
-    const validSession = this.ensureSession(session);
+    let validSession = this.ensureSession(session);
 
     if (!this.source) {
       throw new Error('No source provided for Structured template');
     }
 
     try {
-      const output = await this.source.getContent(validSession);
+      const output = runtime
+        ? await executeRuntimeModelCall(runtime, validSession, (modelSession) =>
+            this.source.getContent(modelSession, runtime),
+          )
+        : {
+            session: validSession,
+            result: await this.source.getContent(validSession),
+          };
+      validSession = output.session;
 
       return validSession.addMessage({
         type: 'assistant',
-        content: output.content,
-        toolCalls: output.toolCalls,
-        structuredContent: output.structuredOutput,
-        attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
+        content: output.result.content,
+        toolCalls: output.result.toolCalls,
+        structuredContent: output.result.structuredOutput,
+        attrs: (output.result.metadata as TAttrs) ?? ({} as TAttrs),
       });
     } catch (error) {
       const err = error as Error;
