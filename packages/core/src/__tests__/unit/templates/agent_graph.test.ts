@@ -254,4 +254,20 @@ describe('Agent graph authoring', () => {
       ['assistant/retry/tick', 'assistant'],
     ]);
   });
+
+  it('compiles named graph sequences into stable sequential subgraphs', () => {
+    const graph = Agent.create('assistant')
+      .sequence('draft', (step) =>
+        step.user('prompt', 'Draft').assistant('reply', 'ok'),
+      )
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/draft', 'turn'],
+      ['assistant/draft/prompt', 'user'],
+      ['assistant/draft/reply', 'assistant'],
+    ]);
+    expect(graph.nodes[0]?.data).toEqual({ kind: 'sequence' });
+  });
 });

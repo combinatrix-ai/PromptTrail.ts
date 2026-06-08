@@ -148,6 +148,23 @@ describe('GraphExecutor', () => {
     expect(session.getVar('count')).toBe(3);
   });
 
+  it('executes named graph sequences in child order', async () => {
+    const graph = Agent.create('assistant')
+      .sequence('draft', (step) =>
+        step.user('prompt', 'Draft').assistant('reply', 'ok'),
+      )
+      .assistant('after', 'done')
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Draft',
+      'ok',
+      'done',
+    ]);
+  });
+
   it('suspends awaitInput nodes with a typed signal and stable node path', async () => {
     const graph = createAgentGraph({
       name: 'assistant',

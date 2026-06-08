@@ -759,7 +759,33 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
+  sequence(
+    id: string,
+    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+  ): this;
+  sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>): this;
+  sequence(
+    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    maybeBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+  ): this {
+    if (typeof idOrBuilderFn === 'string') {
+      if (!maybeBuilderFn) {
+        throw new Error('Graph Agent.sequence requires sequence(id, builder).');
+      }
+      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
+      const builtAgent = maybeBuilderFn(innerAgent);
+      this.graphNodes.push({
+        id: idOrBuilderFn,
+        type: 'turn',
+        data: { kind: 'sequence' },
+        children: builtAgent.graphNodes,
+      });
+      return this;
+    }
+    if (this.graphName) {
+      throw new Error('Graph Agent.sequence requires sequence(id, builder).');
+    }
+    const builderFn = idOrBuilderFn;
     const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const sequenceTemplate = builtAgent.build();
