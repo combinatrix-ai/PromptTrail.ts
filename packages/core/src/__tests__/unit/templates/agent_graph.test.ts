@@ -51,4 +51,25 @@ describe('Agent graph authoring', () => {
       /Agent\.create\(name\)/,
     );
   });
+
+  it('treats assistant(id) as a graph node for named agents', () => {
+    const graph = Agent.create('assistant').assistant('reply').toGraph();
+
+    expect(graph.nodes).toEqual([
+      {
+        id: 'reply',
+        type: 'assistant',
+        data: undefined,
+      },
+    ]);
+  });
+
+  it('does not execute graph-authored agents through the legacy template runtime', async () => {
+    await expect(
+      Agent.create('assistant')
+        .system('system', 'You are concise.')
+        .turn('main', (turn) => turn.assistant('reply'))
+        .execute(),
+    ).rejects.toThrow(/GraphExecutor/);
+  });
 });

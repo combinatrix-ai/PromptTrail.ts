@@ -199,20 +199,23 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     content: string,
   ) {
-    return new Agent<TC, TM>().system(content);
+    return new Agent<TC, TM>().legacySystem(content);
   }
 
   static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     contentOrSource?: string | Source<string>,
   ) {
-    return new Agent<TC, TM>().user(contentOrSource);
+    return new Agent<TC, TM>().legacyUser(contentOrSource);
   }
 
   static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ) {
-    return new Agent<TC, TM>().assistant(contentOrSource, validatorOrOptions);
+    return new Agent<TC, TM>().legacyAssistant(
+      contentOrSource,
+      validatorOrOptions,
+    );
   }
 
   /** fluent helpers -------------------------------------------------- */
@@ -276,6 +279,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   system(content: string): this;
   system(id: string, content: string): this;
   system(idOrContent: string, content?: string) {
+    if (this.graphName) {
+      this.graphNodes.push({
+        id: idOrContent,
+        type: 'system',
+        data: content === undefined ? undefined : { content },
+      });
+      return this;
+    }
     const resolvedContent = content ?? idOrContent;
     if (content !== undefined) {
       this.graphNodes.push({
@@ -294,6 +305,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     idOrContentOrSource?: string | Source<string>,
     contentOrSource?: string | Source<string>,
   ) {
+    if (this.graphName) {
+      this.graphNodes.push({
+        id: idOrContentOrSource as string,
+        type: 'user',
+        data:
+          contentOrSource === undefined
+            ? undefined
+            : { input: contentOrSource },
+      });
+      return this;
+    }
     if (contentOrSource !== undefined) {
       this.graphNodes.push({
         id: idOrContentOrSource as string,
@@ -324,7 +346,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       | AgentGraphAssistantInput<TC, TM>,
     maybeOptions?: Record<string, unknown>,
   ) {
-    if (maybeOptions !== undefined || isGraphAssistantInput(validatorOrOptions)) {
+    if (
+      this.graphName ||
+      maybeOptions !== undefined ||
+      isGraphAssistantInput(validatorOrOptions)
+    ) {
       this.graphNodes.push({
         id: contentOrSource as string,
         type: 'assistant',
@@ -333,9 +359,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
           options: maybeOptions,
         }),
       });
-      if (isExecutableAssistantInput(validatorOrOptions)) {
-        this.root.add(new Assistant(validatorOrOptions));
-      }
       return this;
     }
     this.root.add(
@@ -470,6 +493,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     session?: Session<TC, TM> | undefined,
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
   ): Promise<Session<TC, TM>> {
+    if (this.graphNodes.length > 0) {
+      throw new Error(
+        'Agent graph authoring is not executable through the legacy template runtime yet. Use Agent.toGraph() while GraphExecutor is being implemented.',
+      );
+    }
     const parentRuntime = isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
       ? runtimeOrOptions
       : undefined;
@@ -704,6 +732,24 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
           context: executionOptions?.context,
         });
     return result.session;
+  }
+
+  private legacySystem(content: string): this {
+    this.root.add(new System(content));
+    return this;
+  }
+
+  private legacyUser(contentOrSource?: string | Source<string>): this {
+    this.root.add(new User(contentOrSource));
+    return this;
+  }
+
+  private legacyAssistant(
+    contentOrSource?: string | Source<ModelOutput> | Source<string>,
+    validatorOrOptions?: IValidator | ValidationOptions,
+  ): this {
+    this.root.add(new Assistant(contentOrSource, validatorOrOptions));
+    return this;
   }
 }
 
