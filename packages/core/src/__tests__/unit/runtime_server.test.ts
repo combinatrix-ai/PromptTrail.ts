@@ -388,6 +388,44 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('registers named Agent instances directly on apps', async () => {
+    const main = Agent.create('main')
+      .user('inbound')
+      .assistant('reply', (session) => ({
+        content: `reply:${session.getLastMessage()?.content ?? ''}`,
+      }));
+    const app = PromptTrail.app().agent(main);
+    const result = await app.run({
+      agent: 'main',
+      runId: 'app-agent-instance',
+      input: 'hello',
+      durable: false,
+    });
+
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'reply:hello',
+    ]);
+  });
+
+  it('registers DurableAgent instances directly on apps', async () => {
+    const durable = agent('durable').assistant('reply', () => 'ok');
+    const app = PromptTrail.app().agent(durable);
+    const result = await app.run({
+      agent: 'durable',
+      runId: 'app-durable-agent-instance',
+      durable: false,
+    });
+
+    expect(result.session.getLastMessage()?.content).toBe('ok');
+  });
+
+  it('rejects unnamed Agent instances registered directly on apps', () => {
+    expect(() => PromptTrail.app().agent(Agent.quick())).toThrow(
+      /Agent\.create\(name\)/,
+    );
+  });
+
   it('keeps runtime bundle Agent graph runs ephemeral-only for now', async () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
     const bundle = PromptTrail.bundle({

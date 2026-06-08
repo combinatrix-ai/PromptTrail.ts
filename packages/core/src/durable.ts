@@ -2265,10 +2265,24 @@ export class PromptTrailApp {
     }
   }
 
+  agent(registeredAgent: PromptTrailRegisteredAgent<any, any>): this;
   agent(
     name: string,
     registeredAgent: PromptTrailRegisteredAgent<any, any>,
+  ): this;
+  agent(
+    nameOrAgent: string | PromptTrailRegisteredAgent<any, any>,
+    maybeAgent?: PromptTrailRegisteredAgent<any, any>,
   ): this {
+    const registeredAgent =
+      typeof nameOrAgent === 'string' ? maybeAgent : nameOrAgent;
+    if (!registeredAgent) {
+      throw new Error('PromptTrail.app.agent requires an Agent instance.');
+    }
+    const name =
+      typeof nameOrAgent === 'string'
+        ? nameOrAgent
+        : registeredAgentName(registeredAgent);
     if (registeredAgent instanceof DurableAgent) {
       this.agents.set(name, registeredAgent);
       this.graphAgents.delete(name);
@@ -3134,6 +3148,13 @@ function isGraphAgent(value: unknown): value is GraphAgent<any, any> {
     typeof (value as { execute?: unknown }).execute === 'function' &&
     typeof (value as { toGraph?: unknown }).toGraph === 'function'
   );
+}
+
+function registeredAgentName(agent: PromptTrailRegisteredAgent): string {
+  if (typeof agent.name === 'string' && agent.name.length > 0) {
+    return agent.name;
+  }
+  throw new Error('PromptTrail.app.agent requires Agent.create(name).');
 }
 
 function graphInboundFromAppInput<TAttrs extends Attrs>(
