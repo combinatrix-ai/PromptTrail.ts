@@ -200,32 +200,30 @@ const agent = Agent.create()
   );
 ```
 
-#### 2. Scenario API (Goal-Oriented Flow)
+#### 2. Agent Goals (Goal-Oriented Flow)
 
 ```typescript
-import { Scenario } from '@prompttrail/core';
+import { Agent } from '@prompttrail/core';
 
-const scenario = Scenario.system(
-  'You are a research assistant with access to tools.',
-)
-  .step("Get the user's research question", {
-    allow_interaction: true, // Uses built-in ask_user tool
+const researcher = Agent.create('researcher')
+  .system('system', 'You are a research assistant with access to tools.')
+  .goal('collectQuestion', "Get the user's research question", {
+    interaction: 'required',
   })
-  .step('Research the topic thoroughly', {
-    max_attempts: 6,
-    is_satisfied: (session, goal) => {
-      // Custom validation for goal completion
-      const toolCalls = getToolCallsFromSession(session);
-      return toolCalls.length >= 3;
+  .goal('researchTopic', 'Research the topic thoroughly', {
+    maxAttempts: 6,
+    isSatisfied: ({ session }) => {
+      const toolResults = session.getMessagesByType('tool_result');
+      return toolResults.length >= 3;
     },
   })
-  .step('Provide a comprehensive answer');
+  .goal('finalAnswer', 'Provide a comprehensive answer');
 ```
 
 **Key Differences:**
 
 - **Agent**: Low-level template composition, full control
-- **Scenario**: High-level goal tracking with built-in tools (`ask_user`, `check_goal`)
+- **Agent.goal**: High-level goal tracking on the same Agent graph API
 
 ## 🛠️ Advanced Features
 
@@ -470,20 +468,23 @@ const researchAgent = Agent.create()
   );
 
 // Goal-oriented research with custom satisfaction
-const smartScenario = Scenario.system('You are an expert researcher.')
-  .step('Understand research requirements', { allow_interaction: true })
-  .step('Gather comprehensive information', {
-    max_attempts: 8,
-    is_satisfied: (session, goal) => {
+const smartResearcher = Agent.create('smartResearcher')
+  .system('system', 'You are an expert researcher.')
+  .goal('understandRequirements', 'Understand research requirements', {
+    interaction: 'required',
+  })
+  .goal('gatherInformation', 'Gather comprehensive information', {
+    maxAttempts: 8,
+    isSatisfied: ({ session }) => {
+      const toolResults = session.getMessagesByType('tool_result');
       const messages = session.getMessagesByType('assistant');
-      const hasToolCalls = messages.some((m) => m.toolCalls?.length > 0);
-      const hasDetailedAnalysis = messages.some(
-        (m) => m.content?.length > 500 && m.content.includes('analysis'),
+      const hasDetailedAnalysis = messages.some((message) =>
+        message.content.includes('analysis'),
       );
-      return hasToolCalls && hasDetailedAnalysis;
+      return toolResults.length >= 3 && hasDetailedAnalysis;
     },
   })
-  .step('Synthesize findings and provide recommendations');
+  .goal('synthesizeFindings', 'Synthesize findings and provide recommendations');
 
 // Dynamic flow with error handling
 const robustAgent = Agent.create()
@@ -517,7 +518,7 @@ const robustAgent = Agent.create()
 
 - **Nested isolation** - Subroutines within subroutines for memory management
 - **Multi-provider consensus** - Run multiple LLMs and aggregate results
-- **Custom goal validation** - Define complex satisfaction criteria for scenarios
+- **Custom goal validation** - Define complex satisfaction criteria for agent goals
 - **Error recovery** - Retry logic with fallback strategies
 
 ### Streaming Responses
