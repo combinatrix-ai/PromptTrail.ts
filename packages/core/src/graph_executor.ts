@@ -126,9 +126,8 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeGoalNode(node, nodePath, state);
       return;
     case 'subroutine':
-      throw new Error(
-        `Graph node ${nodePath} is not executable yet: subroutine`,
-      );
+      await executeSubroutineNode(node, nodePath, state);
+      return;
     case 'loop':
       await executeLoopNode(node, nodePath, state);
       return;
@@ -226,6 +225,37 @@ async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
   } finally {
     state.activeGoal = previousGoal;
   }
+}
+
+async function executeSubroutineNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const data = graphNodeData(node);
+  const parentSession = state.session;
+  const initWith = data.initWith;
+  const subroutineInitial =
+    typeof initWith === 'function'
+      ? await initWith(parentSession)
+      : defaultSubroutineInitialSession(parentSession, data);
+  if (!(subroutineInitial instanceof Session)) {
+    throw new Error(`Graph node ${nodePath} returned an invalid init session.`);
+  }
+
+  const subState: GraphExecutionState<TVars, TAttrs> = {
+    ...state,
+    session: subroutineInitial as Session<TVars, TAttrs>,
+  };
+  await executeChildren(node.children ?? [], nodePath, subState);
+  state.cursor = subState.cursor;
+  state.session = await squashSubroutineSession(
+    nodePath,
+    data,
+    parentSession,
+    subroutineInitial as Session<TVars, TAttrs>,
+    subState.session,
+  );
 }
 
 async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -400,6 +430,67 @@ async function executeMessagesNode<TVars extends Vars, TAttrs extends Attrs>(
       message as PromptTrailMessage<TAttrs>,
     );
   }
+}
+
+function defaultSubroutineInitialSession<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  parentSession: Session<TVars, TAttrs>,
+  data: GraphNodeData,
+): Session<TVars, TAttrs> {
+  if (data.isolatedContext === true) {
+    return Session.create<TVars, TAttrs>();
+  }
+  let initial = Session.create<TVars, TAttrs>({
+    vars: parentSession.getVarsObject(),
+  });
+  for (const message of parentSession.messages) {
+    initial = initial.addMessage(message);
+  }
+  return initial;
+}
+
+async function squashSubroutineSession<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  nodePath: string,
+  data: GraphNodeData,
+  parentSession: Session<TVars, TAttrs>,
+  initialSession: Session<TVars, TAttrs>,
+  subroutineSession: Session<TVars, TAttrs>,
+): Promise<Session<TVars, TAttrs>> {
+  const squashWith = data.squashWith;
+  if (typeof squashWith === 'function') {
+    const result = await squashWith(parentSession, subroutineSession);
+    if (result instanceof Session) {
+      return result as Session<TVars, TAttrs>;
+    }
+    throw new Error(
+      `Graph node ${nodePath} returned an invalid squash session.`,
+    );
+  }
+
+  const retainMessages = data.retainMessages !== false;
+  const isolatedContext = data.isolatedContext === true;
+  const messages = retainMessages
+    ? [
+        ...parentSession.messages,
+        ...subroutineSession.messages.slice(initialSession.messages.length),
+      ]
+    : [...parentSession.messages];
+  const vars = isolatedContext
+    ? parentSession.getVarsObject()
+    : {
+        ...parentSession.getVarsObject(),
+        ...subroutineSession.getVarsObject(),
+      };
+  let merged = Session.create<TVars, TAttrs>({ vars: vars as TVars });
+  for (const message of messages) {
+    merged = merged.addMessage(message);
+  }
+  return merged;
 }
 
 async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(

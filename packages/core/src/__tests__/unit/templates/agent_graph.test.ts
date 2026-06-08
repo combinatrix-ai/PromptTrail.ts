@@ -197,4 +197,19 @@ describe('Agent graph authoring', () => {
         durability: 'materialized',
       });
   });
+
+  it('compiles named graph subroutines into a stable subgraph', () => {
+    const graph = Agent.create('assistant')
+      .subroutine('draft', (sub) =>
+        sub.user('prompt', 'Draft a reply').assistant('reply', 'ok'),
+      )
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/draft', 'subroutine'],
+      ['assistant/draft/prompt', 'user'],
+      ['assistant/draft/reply', 'assistant'],
+    ]);
+  });
 });

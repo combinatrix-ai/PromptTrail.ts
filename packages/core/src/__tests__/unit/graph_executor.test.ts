@@ -5,6 +5,7 @@ import {
   executeAgentGraph,
   GraphExecutionSuspended,
 } from '../../graph_executor';
+import { Session } from '../../session';
 import { Source } from '../../source';
 import { Agent } from '../../templates';
 import { Tool } from '../../tool';
@@ -258,6 +259,76 @@ describe('GraphExecutor', () => {
     await expect(executeAgentGraph(graph)).rejects.toThrow(
       /assistant\/tools allows unknown tool lookup/,
     );
+  });
+
+  it('executes graph subroutines and merges new messages and vars', async () => {
+    const graph = Agent.create('assistant')
+      .user('before', 'before')
+      .patch('parentVar', (session) => session.withVar('parent', true))
+      .subroutine('draft', (sub) =>
+        sub
+          .user('prompt', 'inside')
+          .patch('subVar', (session) => session.withVar('sub', true))
+          .assistant('reply', 'ok'),
+      )
+      .assistant('after', 'after')
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'before',
+      'inside',
+      'ok',
+      'after',
+    ]);
+    expect(session.getVarsObject()).toEqual({ parent: true, sub: true });
+  });
+
+  it('supports isolated graph subroutines without retaining messages', async () => {
+    const graph = Agent.create('assistant')
+      .user('before', 'before')
+      .patch('parentVar', (session) => session.withVar('parent', true))
+      .subroutine(
+        'draft',
+        (sub) =>
+          sub
+            .user('prompt', 'inside')
+            .patch('subVar', (session) => session.withVar('sub', true)),
+        { isolatedContext: true, retainMessages: false },
+      )
+      .assistant('after', 'after')
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'before',
+      'after',
+    ]);
+    expect(session.getVarsObject()).toEqual({ parent: true });
+  });
+
+  it('supports custom graph subroutine init and squash handlers', async () => {
+    const graph = Agent.create('assistant')
+      .patch('parentVar', (session) => session.withVar('parent', 'kept'))
+      .subroutine(
+        'draft',
+        (sub) => sub.patch('subVar', (session) => session.withVar('sub', true)),
+        {
+          initWith: () => Session.create({ vars: { seed: 'custom' } }),
+          squashWith: (parent, subroutine) =>
+            parent.withVar('summary', subroutine.getVar('seed')),
+        },
+      )
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.getVarsObject()).toEqual({
+      parent: 'kept',
+      summary: 'custom',
+    });
   });
 
   it('executes goal nodes with model and satisfaction checks', async () => {

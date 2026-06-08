@@ -611,7 +611,37 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   subroutine(
     builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
     opts?: ISubroutineTemplateOptions<TM, TC>,
-  ) {
+  ): this;
+  subroutine(
+    id: string,
+    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    opts?: ISubroutineTemplateOptions<TM, TC>,
+  ): this;
+  subroutine(
+    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    builderOrOptions?:
+      | ((agent: Agent<TC, TM>) => Agent<TC, TM>)
+      | ISubroutineTemplateOptions<TM, TC>,
+    maybeOptions?: ISubroutineTemplateOptions<TM, TC>,
+  ): this {
+    if (typeof idOrBuilderFn === 'string') {
+      const builderFn = builderOrOptions as (
+        agent: Agent<TC, TM>,
+      ) => Agent<TC, TM>;
+      const innerAgent = Agent.create<TC, TM>();
+      const builtAgent = builderFn(innerAgent);
+      this.graphNodes.push({
+        id: idOrBuilderFn,
+        type: 'subroutine',
+        data: maybeOptions,
+        children: builtAgent.graphNodes,
+      });
+      return this;
+    }
+    const builderFn = idOrBuilderFn;
+    const opts = builderOrOptions as
+      | ISubroutineTemplateOptions<TM, TC>
+      | undefined;
     const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
