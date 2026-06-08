@@ -976,6 +976,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       at: new Date().toISOString(),
       seq: eventSeq,
       replay: 'live',
+      source: 'agent',
+      sessionVersion: current.messages.length,
       idempotencyKey: directAgentEventIdempotencyKey(
         eventScopeId,
         eventSeq,
@@ -1001,6 +1003,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
               at: new Date().toISOString(),
               seq: eventSeq,
               replay: 'live',
+              source: 'agent',
+              sessionVersion: current.messages.length,
               idempotencyKey: directAgentEventIdempotencyKey(
                 eventScopeId,
                 eventSeq,
@@ -1036,6 +1040,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
               at: new Date().toISOString(),
               seq: eventSeq,
               replay: 'live',
+              source: 'agent',
+              sessionVersion: current.messages.length,
               idempotencyKey: directAgentEventIdempotencyKey(
                 eventScopeId,
                 eventSeq,
@@ -1053,6 +1059,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         at: new Date().toISOString(),
         seq: eventSeq,
         replay: 'live',
+        source: 'agent',
+        sessionVersion: current.messages.length,
         idempotencyKey: directAgentEventIdempotencyKey(
           eventScopeId,
           eventSeq,
@@ -1068,6 +1076,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         at: new Date().toISOString(),
         seq: eventSeq,
         replay: 'live',
+        source: 'agent',
+        sessionVersion: current.messages.length,
         idempotencyKey: directAgentEventIdempotencyKey(
           eventScopeId,
           eventSeq,

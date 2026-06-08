@@ -227,7 +227,9 @@ describe('Agent interceptors', () => {
     const session = await Agent.create()
       .observe((event) => {
         eventKeys.push(String(event.idempotencyKey));
-        events.push(`${event.seq}:${event.type}:${event.idempotencyKey}`);
+        events.push(
+          `${event.seq}:${event.type}:${event.source}:${event.sessionVersion}:${event.idempotencyKey}`,
+        );
       })
       .user('hello')
       .execute();
@@ -235,10 +237,10 @@ describe('Agent interceptors', () => {
     expect(session.getLastMessage()?.content).toBe('hello');
     expect(events).toHaveLength(2);
     expect(events[0]).toMatch(
-      /^0:run\.started:direct-agent:.+:agent:0:run\.started$/,
+      /^0:run\.started:agent:0:direct-agent:.+:agent:0:run\.started$/,
     );
     expect(events[1]).toMatch(
-      /^1:run\.completed:direct-agent:.+:agent:1:run\.completed$/,
+      /^1:run\.completed:agent:1:direct-agent:.+:agent:1:run\.completed$/,
     );
     expect(eventKeys[0]?.split(':').slice(0, 2).join(':')).toBe(
       eventKeys[1]?.split(':').slice(0, 2).join(':'),
