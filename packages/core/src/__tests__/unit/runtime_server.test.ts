@@ -454,6 +454,8 @@ describe('RuntimeServer', () => {
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const sourceEvents: string[] = [];
+    const observerEvents: string[] = [];
+    const runtimeObserverEvents: string[] = [];
     const main = Agent.create('main')
       .user('inbound')
       .assistant('reply', (session) => ({
@@ -490,12 +492,37 @@ describe('RuntimeServer', () => {
           };
         },
       })
+      .adapter({
+        name: 'runtime-observer',
+        observers: [
+          (event) => {
+            if (
+              event.type === 'run.started' ||
+              event.type === 'run.completed' ||
+              event.type === 'delivery.pending' ||
+              event.type === 'delivery.completed'
+            ) {
+              runtimeObserverEvents.push(event.type);
+            }
+          },
+        ],
+      })
       .bind(discord.messages(), (binding) =>
         binding
           .to(main)
           .conversation(() => 'discord:app-start')
           .delivery(discord.channel('general')),
-      );
+      )
+      .observe((event) => {
+        if (
+          event.type === 'run.started' ||
+          event.type === 'run.completed' ||
+          event.type === 'delivery.pending' ||
+          event.type === 'delivery.completed'
+        ) {
+          observerEvents.push(event.type);
+        }
+      });
 
     await app.start();
     if (!emit) {
@@ -517,6 +544,18 @@ describe('RuntimeServer', () => {
     expect(sourceEvents).toEqual(['start', 'stop']);
     expect(activityEvents).toEqual(['start:general', 'stop']);
     expect(deliveries).toEqual(['general:reply:hello']);
+    expect(observerEvents).toEqual([
+      'run.started',
+      'run.completed',
+      'delivery.pending',
+      'delivery.completed',
+    ]);
+    expect(runtimeObserverEvents).toEqual([
+      'run.started',
+      'run.completed',
+      'delivery.pending',
+      'delivery.completed',
+    ]);
   });
 
   it('registers named Agent instances directly on apps', async () => {

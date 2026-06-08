@@ -270,7 +270,7 @@ export class RuntimeServer {
     }
     for (const [index, observer] of this.runtimeObservers.entries()) {
       this.runtimeObserverDisposers.push(
-        this.options.runtime.registerObserver(
+        this.options.runtime.registerRuntimeObserver(
           observer,
           this.options.observerDeliveryBindings,
           `runtimeObserver:${index}`,
@@ -533,6 +533,10 @@ export class RuntimeServer {
     };
     try {
       await this.observerBus.emit(event, {
+        delivery,
+        runtimeEvent: options.event,
+      });
+      await this.options.runtime.emitRuntimeDeliveryEvent(event, {
         delivery,
         runtimeEvent: options.event,
       });

@@ -6,6 +6,7 @@ import {
   resolveExecutionTransition,
   type ExecutionEvent,
   type ExecutionPatch,
+  type ObserverContext,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
   type ResolvedExecutionCommand,
@@ -2261,9 +2262,11 @@ export class PromptTrailApp {
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
   private readonly observerBus: ObserverBus;
+  private readonly deliveryObserverBus: ObserverBus;
   private readonly strictObservers?: boolean;
   private readonly observerDeliveryBindingOptions?: ObserverDeliveryBindingOptions;
   private readonly observerBuses: ObserverBus[] = [];
+  private readonly deliveryObserverBuses: ObserverBus[] = [];
   private nextObserverBusIndex = 0;
   private readonly defaultDurable: boolean;
   private readonly runtimeAdapters: RuntimeAdapter[] = [];
@@ -2294,6 +2297,10 @@ export class PromptTrailApp {
     this.runtimeActivity = options.activity;
     this.runtimeErrorMessage = options.errorMessage;
     this.observerBus = new ObserverBus(options.observers ?? [], {
+      strictObservers: options.strictObservers,
+      ...options.observerDeliveryBindings,
+    });
+    this.deliveryObserverBus = new ObserverBus(options.observers ?? [], {
       strictObservers: options.strictObservers,
       ...options.observerDeliveryBindings,
     });
@@ -2415,28 +2422,101 @@ export class PromptTrailApp {
     observerDeliveryBindings?: ObserverDeliveryBindingOptions,
     observerNamespace?: string,
   ): () => void {
+    const namespace = this.resolveObserverNamespace(
+      observerDeliveryBindings,
+      observerNamespace,
+    );
+    const disposeObserver = this.registerObserverOn(
+      this.observerBus,
+      this.observerBuses,
+      observer,
+      observerDeliveryBindings,
+      namespace,
+    );
+    const disposeDeliveryObserver = this.registerObserverOn(
+      this.deliveryObserverBus,
+      this.deliveryObserverBuses,
+      observer,
+      observerDeliveryBindings,
+      namespace,
+    );
+    return () => {
+      disposeObserver();
+      disposeDeliveryObserver();
+    };
+  }
+
+  registerRuntimeObserver(
+    observer: ObserverLike,
+    observerDeliveryBindings?: ObserverDeliveryBindingOptions,
+    observerNamespace?: string,
+  ): () => void {
+    const namespace = this.resolveObserverNamespace(
+      observerDeliveryBindings,
+      observerNamespace,
+    );
+    return this.registerObserverOn(
+      this.observerBus,
+      this.observerBuses,
+      observer,
+      observerDeliveryBindings,
+      namespace,
+    );
+  }
+
+  async emitRuntimeDeliveryEvent(
+    event: ExecutionEvent,
+    context: ObserverContext,
+  ): Promise<void> {
+    await this.deliveryObserverBus.emit(event, context);
+    for (const bus of this.deliveryObserverBuses) {
+      await bus.emit(event, context);
+    }
+  }
+
+  private registerObserverOn(
+    observerBus: ObserverBus,
+    observerBuses: ObserverBus[],
+    observer: ObserverLike,
+    observerDeliveryBindings?: ObserverDeliveryBindingOptions,
+    observerNamespace?: string,
+  ): () => void {
     if (observerDeliveryBindings) {
+      if (!observerNamespace) {
+        throw new Error(
+          'PromptTrail observer delivery binding registration requires a namespace.',
+        );
+      }
       const normalized = normalizeObserver(observer);
       const namespacedObserver = normalized.name
         ? normalized
         : {
             ...normalized,
-            name:
-              observerNamespace ?? `appObserver:${this.nextObserverBusIndex++}`,
+            name: observerNamespace,
           };
       const bus = new ObserverBus([namespacedObserver], {
         strictObservers: this.strictObservers,
         ...observerDeliveryBindings,
       });
-      this.observerBuses.push(bus);
+      observerBuses.push(bus);
       return () => {
-        const index = this.observerBuses.indexOf(bus);
+        const index = observerBuses.indexOf(bus);
         if (index >= 0) {
-          this.observerBuses.splice(index, 1);
+          observerBuses.splice(index, 1);
         }
       };
     }
-    return this.observerBus.add(observer);
+    return observerBus.add(observer);
+  }
+
+  private resolveObserverNamespace(
+    observerDeliveryBindings: ObserverDeliveryBindingOptions | undefined,
+    observerNamespace: string | undefined,
+  ): string | undefined {
+    if (!observerDeliveryBindings || observerNamespace) {
+      return observerNamespace;
+    }
+    return `appObserver:${this.nextObserverBusIndex++}`;
   }
 
   async start(): Promise<void> {
