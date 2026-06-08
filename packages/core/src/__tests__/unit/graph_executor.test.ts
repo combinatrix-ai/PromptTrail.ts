@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { createAgentGraph } from '../../graph';
 import {
   executeAgentGraph,
@@ -6,6 +7,7 @@ import {
 } from '../../graph_executor';
 import { Source } from '../../source';
 import { Agent } from '../../templates';
+import { Tool } from '../../tool';
 
 describe('GraphExecutor', () => {
   it('executes basic system, inbox, and assistant graph nodes', async () => {
@@ -61,7 +63,51 @@ describe('GraphExecutor', () => {
     );
   });
 
-  it('fails tools nodes that see pending tool calls before tool execution is implemented', async () => {
+  it('executes registered tools from assistant tool calls', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+    const graph = createAgentGraph({
+      name: 'assistant',
+      tools: { lookup },
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: () => ({
+              type: 'assistant',
+              content: '',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            }),
+          },
+        },
+        { id: 'tools', type: 'tools' },
+      ],
+    });
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.type)).toEqual([
+      'assistant',
+      'tool_result',
+    ]);
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'tool_result',
+      content: 'value:1',
+      attrs: {
+        toolCallId: 'call-1',
+        toolName: 'lookup',
+      },
+    });
+  });
+
+  it('fails tools nodes when a tool call cannot be resolved', async () => {
     const graph = createAgentGraph({
       name: 'assistant',
       nodes: [
@@ -83,7 +129,7 @@ describe('GraphExecutor', () => {
     });
 
     await expect(executeAgentGraph(graph)).rejects.toThrow(
-      /assistant\/tools cannot execute tool calls yet/,
+      /assistant\/tools cannot resolve tool lookup/,
     );
   });
 
