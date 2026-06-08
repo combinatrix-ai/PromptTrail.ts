@@ -402,6 +402,9 @@ function normalizeAssistantResult<TAttrs extends Attrs>(
   if (typeof result === 'string') {
     return Message.assistant(result) as AssistantMessage<TAttrs>;
   }
+  if (isAssistantMessage(result)) {
+    return result as AssistantMessage<TAttrs>;
+  }
   if (isModelOutput(result)) {
     return {
       type: 'assistant',
@@ -410,9 +413,6 @@ function normalizeAssistantResult<TAttrs extends Attrs>(
       structuredContent: result.structuredOutput,
       attrs: result.metadata as TAttrs | undefined,
     };
-  }
-  if (isAssistantMessage(result)) {
-    return result as AssistantMessage<TAttrs>;
   }
   throw new Error(`Graph node ${nodePath} returned an invalid assistant result.`);
 }

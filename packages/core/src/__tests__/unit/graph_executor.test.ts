@@ -43,6 +43,35 @@ describe('GraphExecutor', () => {
     );
   });
 
+  it('preserves assistant messages returned by assistant handlers', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: () => ({
+              type: 'assistant',
+              content: 'ok',
+              attrs: { traceId: 'trace-1' },
+              structuredContent: { ok: true },
+            }),
+          },
+        },
+      ],
+    });
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'ok',
+      attrs: { traceId: 'trace-1' },
+      structuredContent: { ok: true },
+    });
+  });
+
   it('executes turn repeat blocks with source-backed assistant nodes', async () => {
     let calls = 0;
     const graph = Agent.create('assistant')
