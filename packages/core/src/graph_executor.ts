@@ -4,10 +4,14 @@ import {
   type ExecutionEvent,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
+  type ResolvedExecutionCommand,
 } from './execution';
 import type { AgentGraph, AgentGraphNode } from './graph';
 import {
   createExecutionRuntimeState,
+  runExecutionPhase,
+  runRuntimeExecutionPhase,
+  runRuntimeMiddlewareWrapper,
   type ExecutionRuntimeState,
 } from './interceptors';
 import {
@@ -70,6 +74,10 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   activeGoal?: ActiveGoalExecution;
 }
 
+interface GraphModelRequest<TVars extends Vars, TAttrs extends Attrs> {
+  session: Session<TVars, TAttrs>;
+}
+
 type GraphNodeData = Record<string, unknown>;
 type ConsumedInboxKind = 'user' | 'system' | 'control' | false;
 
@@ -117,6 +125,8 @@ export async function executeAgentGraph<
     context: options.context,
     signal: options.signal,
     runtime: createExecutionRuntimeState<TVars, TAttrs>({
+      middleware: graph.middleware,
+      hooks: graph.hooks,
       context: options.context,
       signal: options.signal,
       emitEvent,
@@ -129,9 +139,40 @@ export async function executeAgentGraph<
     sessionVersion: state.session.messages.length,
   });
   try {
+    const before = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'beforeAgent',
+      session: state.session,
+    });
+    state.session = before.session;
+    if (before.command.type !== 'none') {
+      if (before.command.type === 'halt') {
+        await emitGraphRunEvent('run.completed', state, {
+          sessionVersion: state.session.messages.length,
+        });
+        return state.session;
+      }
+      throwUnsupportedGraphCommand(before.command, 'beforeAgent');
+    }
+
     for (const node of graph.nodes) {
       await executeGraphNode(node, `${graph.name}/${node.id}`, state);
     }
+
+    const after = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'afterAgent',
+      session: state.session,
+    });
+    state.session = after.session;
+    if (after.command.type !== 'none') {
+      if (after.command.type === 'halt') {
+        await emitGraphRunEvent('run.completed', state, {
+          sessionVersion: state.session.messages.length,
+        });
+        return state.session;
+      }
+      throwUnsupportedGraphCommand(after.command, 'afterAgent');
+    }
+
     await emitGraphRunEvent('run.completed', state, {
       sessionVersion: state.session.messages.length,
     });
@@ -194,6 +235,25 @@ function createGraphExecutionEventScopeId(): string {
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `graph-agent:${random}`;
+}
+
+function throwUnsupportedGraphCommand(
+  command: ResolvedExecutionCommand,
+  phase: string,
+): never {
+  throw new Error(
+    `GraphExecutor does not support execution command ${command.type} in ${phase} yet.`,
+  );
+}
+
+function assertGraphPhaseCommandSupported(
+  command: ResolvedExecutionCommand,
+  phase: string,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throwUnsupportedGraphCommand(command, phase);
 }
 
 async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -456,18 +516,61 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
       `Graph node ${nodePath} requires an assistant source or handler.`,
     );
   }
-  const result =
-    typeof input === 'function'
-      ? await input(state.session, {
-          context: state.context,
-          signal: state.signal,
-        })
-      : await resolveGraphContent(
-          input,
-          nodePath,
-          state.session,
-          state.runtime,
-        );
+  const beforeModel = await runRuntimeExecutionPhase(state.runtime, {
+    phase: 'beforeModel',
+    session: state.session,
+  });
+  assertGraphPhaseCommandSupported(beforeModel.command, 'beforeModel');
+  state.session = beforeModel.session;
+
+  let modelSession = state.session;
+  const prepared = await runExecutionPhase({
+    phase: 'prepareModelInput',
+    session: state.session,
+    request: { session: modelSession } satisfies GraphModelRequest<
+      TVars,
+      TAttrs
+    >,
+    context: state.context,
+    middlewareState: state.runtime.middlewareState,
+    middleware: state.runtime.middleware,
+    hooks: state.runtime.hooks,
+    beforeVersion: state.runtime.version,
+    signal: state.signal,
+  });
+  assertGraphPhaseCommandSupported(prepared.command, 'prepareModelInput');
+  assertPrepareModelInputDidNotPersistGraphSession(prepared.steps, nodePath);
+  state.runtime.middlewareState = prepared.middlewareState;
+  state.runtime.version = prepared.afterVersion;
+  modelSession =
+    (prepared.request as GraphModelRequest<TVars, TAttrs> | undefined)
+      ?.session ?? modelSession;
+
+  const wrappedModel = await runRuntimeMiddlewareWrapper<
+    TVars,
+    TAttrs,
+    GraphModelRequest<TVars, TAttrs>,
+    string | ModelOutput
+  >(state.runtime, {
+    phase: 'wrapModelCall',
+    session: state.session,
+    request: { session: modelSession },
+    call: async ({ request }) =>
+      resolveGraphAssistantInput(input, nodePath, request.session, state),
+  });
+  assertGraphPhaseCommandSupported(wrappedModel.command, 'wrapModelCall');
+  state.session = wrappedModel.session;
+
+  const afterModel = await runRuntimeExecutionPhase(state.runtime, {
+    phase: 'afterModel',
+    session: state.session,
+    result: wrappedModel.result,
+  });
+  assertGraphPhaseCommandSupported(afterModel.command, 'afterModel');
+  state.session = afterModel.session;
+  const result = (afterModel.result ?? wrappedModel.result) as
+    | string
+    | ModelOutput;
   state.session = state.session.addMessage(
     normalizeAssistantResult(result, nodePath),
   );
@@ -497,6 +600,54 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   }
   if (result !== undefined) {
     throw new Error(`Graph node ${nodePath} returned an invalid patch result.`);
+  }
+}
+
+async function resolveGraphAssistantInput<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  input: unknown,
+  nodePath: string,
+  session: Session<TVars, TAttrs>,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<string | ModelOutput> {
+  if (typeof input === 'function') {
+    const result = await input(session, {
+      context: state.context,
+      signal: state.signal,
+    });
+    if (typeof result === 'string' || isModelOutput(result)) {
+      return result;
+    }
+    if (isAssistantMessage(result)) {
+      return {
+        content: result.content,
+        toolCalls: result.toolCalls,
+        metadata: result.attrs,
+        structuredOutput: result.structuredContent,
+      };
+    }
+    throw new Error(
+      `Graph node ${nodePath} returned an invalid assistant result.`,
+    );
+  }
+  return resolveGraphContent(input, nodePath, session, state.runtime);
+}
+
+function assertPrepareModelInputDidNotPersistGraphSession(
+  steps: readonly {
+    transition: { beforeVersion: number; afterVersion: number };
+  }[],
+  nodePath: string,
+): void {
+  const persisted = steps.find(
+    (step) => step.transition.beforeVersion !== step.transition.afterVersion,
+  );
+  if (persisted) {
+    throw new Error(
+      `Graph node ${nodePath} prepareModelInput cannot persist session patches.`,
+    );
   }
 }
 
@@ -643,20 +794,52 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
 
   const tools = resolveGraphTools(data.tools, state.graph.tools, nodePath);
   for (const call of toolCalls) {
-    const tool = tools[call.name];
+    const beforeTool = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'beforeTool',
+      session: state.session,
+      request: call,
+    });
+    assertGraphPhaseCommandSupported(beforeTool.command, 'beforeTool');
+    state.session = beforeTool.session;
+    const nextCall = (beforeTool.request as typeof call | undefined) ?? call;
+
+    const tool = tools[nextCall.name];
     if (!tool) {
       throw new Error(
-        `Graph node ${nodePath} cannot resolve tool ${call.name}.`,
+        `Graph node ${nodePath} cannot resolve tool ${nextCall.name}.`,
       );
     }
-    const result = await executePromptTrailTool(tool, call.arguments, {
+    const wrappedTool = await runRuntimeMiddlewareWrapper<
+      TVars,
+      TAttrs,
+      typeof nextCall,
+      PromptTrailMessage<TAttrs>
+    >(state.runtime, {
+      phase: 'wrapToolCall',
       session: state.session,
-      raw: call,
-      capability: call.name,
+      request: nextCall,
+      call: async ({ session, request }) => {
+        const result = await executePromptTrailTool(tool, request.arguments, {
+          session,
+          raw: request,
+          capability: request.name,
+        });
+        return normalizeToolResultMessage(result, request);
+      },
     });
-    state.session = state.session.addMessage(
-      normalizeToolResultMessage(result, call),
-    );
+    assertGraphPhaseCommandSupported(wrappedTool.command, 'wrapToolCall');
+    const afterTool = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'afterTool',
+      session: wrappedTool.session,
+      request: wrappedTool.request,
+      result: wrappedTool.result,
+    });
+    assertGraphPhaseCommandSupported(afterTool.command, 'afterTool');
+    const result =
+      (afterTool.result as PromptTrailMessage<TAttrs> | undefined) ??
+      wrappedTool.result;
+    state.session = afterTool.session;
+    state.session = state.session.addMessage(result);
   }
 }
 
@@ -902,7 +1085,9 @@ function isModelOutput(value: unknown): value is ModelOutput {
   return isRecord(value) && typeof value.content === 'string';
 }
 
-function isAssistantMessage(value: unknown): value is { type: 'assistant' } {
+function isAssistantMessage<TAttrs extends Attrs = Attrs>(
+  value: unknown,
+): value is AssistantMessage<TAttrs> {
   return (
     isRecord(value) &&
     value.type === 'assistant' &&

@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { memoryStore } from '../../../durable';
 import { createAgentGraphManifest } from '../../../graph';
 import { GraphExecutionSuspended } from '../../../graph_executor';
-import type { ExecutionRuntimeState } from '../../../interceptors';
+import {
+  Hook,
+  Middleware,
+  type ExecutionRuntimeState,
+} from '../../../interceptors';
+import { Message } from '../../../message';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
@@ -178,6 +183,135 @@ describe('Agent graph authoring', () => {
     expect(events).toEqual([
       '0:run.started:0:-',
       '1:run.failed:0:model failed',
+    ]);
+  });
+
+  it('runs graph middleware and hooks around agent, model, and tool phases', async () => {
+    const calls: string[] = [];
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+
+    const session = await Agent.create('assistant')
+      .tool('lookup', lookup)
+      .use(
+        Middleware.create({
+          name: 'graphMiddleware',
+          beforeAgent: () => {
+            calls.push('beforeAgent');
+            return { session: { vars: { beforeAgent: true } } };
+          },
+          beforeModel: ({ session }) => {
+            calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
+            return { session: { vars: { beforeModel: true } } };
+          },
+          prepareModelInput: ({ request }) => {
+            calls.push('prepareModelInput');
+            const modelRequest = request as { session: Session };
+            return {
+              request: {
+                session: modelRequest.session.addMessage(
+                  Message.system('prepared'),
+                ),
+              },
+            };
+          },
+          wrapModelCall: async (_context, next) => {
+            calls.push('wrapModelCall');
+            return next();
+          },
+          afterModel: ({ result }) => {
+            calls.push(`afterModel:${String(result)}`);
+            return {
+              result: {
+                content: 'needs lookup',
+                toolCalls: [
+                  { id: 'call-1', name: 'lookup', arguments: { id: 'one' } },
+                ],
+              },
+            };
+          },
+          beforeTool: ({ request }) => {
+            const call = request as {
+              id: string;
+              name: string;
+              arguments: Record<string, unknown>;
+            };
+            calls.push(`beforeTool:${call.name}:${String(call.arguments.id)}`);
+            return {
+              request: {
+                ...call,
+                arguments: { id: 'two' },
+              },
+            };
+          },
+          wrapToolCall: async (_context, next) => {
+            calls.push('wrapToolCall');
+            return next();
+          },
+          afterTool: ({ result }) => {
+            const message = result as { content: string };
+            calls.push(`afterTool:${message.content}`);
+            return { result };
+          },
+          afterAgent: ({ session }) => {
+            calls.push('afterAgent');
+            return {
+              session: {
+                vars: { afterAgentMessages: session.messages.length },
+              },
+            };
+          },
+        }),
+      )
+      .hook(
+        Hook.create({
+          name: 'graphHook',
+          onRunStart: () => {
+            calls.push('hookStart');
+          },
+          onRunEnd: () => {
+            calls.push('hookEnd');
+          },
+        }),
+      )
+      .turn('main', (turn) =>
+        turn
+          .assistant('reply', (modelSession) => {
+            calls.push(
+              `handler:${modelSession.getLastMessage()?.content ?? '-'}`,
+            );
+            return 'raw model';
+          })
+          .tools('tools'),
+      )
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'needs lookup',
+      'value:two',
+    ]);
+    expect(session.getVarsObject()).toMatchObject({
+      beforeAgent: true,
+      beforeModel: true,
+      afterAgentMessages: 2,
+    });
+    expect(calls).toEqual([
+      'beforeAgent',
+      'hookStart',
+      'beforeModel:true',
+      'prepareModelInput',
+      'wrapModelCall',
+      'handler:prepared',
+      'afterModel:raw model',
+      'beforeTool:lookup:one',
+      'wrapToolCall',
+      'afterTool:value:two',
+      'afterAgent',
+      'hookEnd',
     ]);
   });
 
