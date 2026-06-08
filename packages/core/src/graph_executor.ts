@@ -28,6 +28,7 @@ export class GraphExecutionSuspended extends Error {
   constructor(
     public readonly nodePath: string,
     message = `Graph execution suspended at ${nodePath}`,
+    public readonly session?: Session,
   ) {
     super(message);
     this.name = 'GraphExecutionSuspended';
@@ -130,7 +131,7 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
           state.activeGoal.interacted = true;
         }
       } else if (graphNodeData(node).required !== false) {
-        throw new GraphExecutionSuspended(nodePath);
+        throw new GraphExecutionSuspended(nodePath, undefined, state.session);
       }
       return;
     case 'patch':

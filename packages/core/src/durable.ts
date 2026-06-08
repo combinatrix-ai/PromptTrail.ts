@@ -33,6 +33,11 @@ import { assistantDeliveryKey } from './runtime_delivery_keys';
 import { bundle, type DeliveryTarget } from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
+import {
+  GraphExecutionSuspended,
+  type GraphInboundInput,
+} from './graph_executor';
+import type { Agent as GraphAgent } from './templates/agent';
 
 export type InboundKind = 'user' | 'system' | 'control';
 
@@ -2122,11 +2127,15 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
 }
 
+type PromptTrailRegisteredAgent<TVars extends Vars, TAttrs extends Attrs> =
+  | DurableAgent<TVars, TAttrs>
+  | GraphAgent<TVars, TAttrs>;
+
 export interface PromptTrailRunOptions<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
 > {
-  agent: string | DurableAgent<TVars, TAttrs>;
+  agent: string | PromptTrailRegisteredAgent<TVars, TAttrs>;
   runId?: string;
   input?: string | Omit<Inbound, 'offset'>;
   session?: Session<TVars, TAttrs>;
@@ -2205,7 +2214,7 @@ export interface PromptTrailAppOptions {
     store?: DurableRunStore;
     defaultDurable?: boolean;
   };
-  agents?: Record<string, DurableAgent<any, any>>;
+  agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
   sources?: Record<string, EventSource>;
   middleware?: readonly MiddlewareDefinition<any, any>[];
   hooks?: readonly HookDefinition<any, any>[];
@@ -2217,6 +2226,7 @@ export interface PromptTrailAppOptions {
 export class PromptTrailApp {
   private readonly store: DurableRunStore;
   private readonly agents = new Map<string, DurableAgent<any, any>>();
+  private readonly graphAgents = new Map<string, GraphAgent<any, any>>();
   private readonly sources = new Map<string, EventSource>();
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
@@ -2244,17 +2254,29 @@ export class PromptTrailApp {
       strictObservers: options.strictObservers,
       ...options.observerDeliveryBindings,
     });
-    for (const [name, durableAgent] of Object.entries(options.agents ?? {})) {
-      this.agent(name, durableAgent);
+    for (const [name, registeredAgent] of Object.entries(options.agents ?? {})) {
+      this.agent(name, registeredAgent);
     }
     for (const [name, source] of Object.entries(options.sources ?? {})) {
       this.sources.set(name, source);
     }
   }
 
-  agent(name: string, durableAgent: DurableAgent<any, any>): this {
-    this.agents.set(name, durableAgent);
-    return this;
+  agent(
+    name: string,
+    registeredAgent: PromptTrailRegisteredAgent<any, any>,
+  ): this {
+    if (registeredAgent instanceof DurableAgent) {
+      this.agents.set(name, registeredAgent);
+      this.graphAgents.delete(name);
+      return this;
+    }
+    if (isGraphAgent(registeredAgent)) {
+      this.graphAgents.set(name, registeredAgent);
+      this.agents.delete(name);
+      return this;
+    }
+    throw new Error(`Unsupported agent registration: ${name}`);
   }
 
   source(name: string, source: EventSource): this {
@@ -2637,6 +2659,15 @@ export class PromptTrailApp {
     options: PromptTrailRunOptions<TVars, TAttrs>,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const durable = options.durable ?? options.resumable ?? this.defaultDurable;
+    const graphAgent = this.resolveGraphAgent(options.agent);
+    if (graphAgent) {
+      if (durable) {
+        throw new Error(
+          'PromptTrail.app does not support durable graph Agent runs yet.',
+        );
+      }
+      return this.executeGraphAgentRun(graphAgent, options);
+    }
     const durableAgent = this.resolveAgent(options.agent);
     const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
     const initial = options.session ?? Session.create<TVars, TAttrs>();
@@ -2724,6 +2755,81 @@ export class PromptTrailApp {
         error,
         raw: { error },
       });
+      throw error;
+    }
+  }
+
+  private async executeGraphAgentRun<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(
+    graphAgent: GraphAgent<TVars, TAttrs>,
+    options: PromptTrailRunOptions<TVars, TAttrs>,
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    const graph = graphAgent.toGraph();
+    const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
+    await this.observerBus.emit(
+      {
+        id: `${runId}:run:0:run.started`,
+        type: 'run.started',
+        at: new Date().toISOString(),
+        runId,
+        seq: 0,
+        phase: 'agent',
+        idempotencyKey: runEventIdempotencyKey(runId, 0, 'run.started'),
+        sessionVersion: 0,
+      },
+      observerContextFromRunContext(options.context),
+    );
+    try {
+      const session = await graphAgent.execute({
+        session: options.session,
+        input:
+          options.input === undefined
+            ? undefined
+            : graphInboundFromAppInput(options.input),
+        context: options.context,
+      });
+      await this.observerBus.emit(
+        {
+          id: `${runId}:run:1:run.completed`,
+          type: 'run.completed',
+          at: new Date().toISOString(),
+          runId,
+          seq: 1,
+          phase: 'agent',
+          idempotencyKey: runEventIdempotencyKey(runId, 1, 'run.completed'),
+          sessionVersion: session.messages.length,
+        },
+        observerContextFromRunContext(options.context),
+      );
+      return { status: 'done', runId, session };
+    } catch (error) {
+      if (error instanceof GraphExecutionSuspended) {
+        return {
+          status: 'suspended',
+          runId,
+          awaiting: error.nodePath,
+          session:
+            (error.session as Session<TVars, TAttrs> | undefined) ??
+            options.session ??
+            Session.create<TVars, TAttrs>(),
+        };
+      }
+      await this.observerBus.emit(
+        {
+          id: `${runId}:run:1:error`,
+          type: 'error',
+          at: new Date().toISOString(),
+          runId,
+          seq: 1,
+          phase: 'agent',
+          idempotencyKey: runEventIdempotencyKey(runId, 1, 'error'),
+          sessionVersion: 0,
+          raw: { error },
+        },
+        observerContextFromRunContext(options.context),
+      );
       throw error;
     }
   }
@@ -2849,16 +2955,32 @@ export class PromptTrailApp {
   }
 
   private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
-    durableAgent: string | DurableAgent<TVars, TAttrs>,
+    durableAgent: string | PromptTrailRegisteredAgent<TVars, TAttrs>,
   ): DurableAgent<TVars, TAttrs> {
-    if (typeof durableAgent !== 'string') {
+    if (durableAgent instanceof DurableAgent) {
       return durableAgent;
+    }
+    if (typeof durableAgent !== 'string') {
+      throw new Error('Graph Agent cannot be used as a durable agent yet.');
     }
     const resolved = this.agents.get(durableAgent);
     if (!resolved) {
       throw new Error(`Unknown agent: ${durableAgent}`);
     }
     return resolved as DurableAgent<TVars, TAttrs>;
+  }
+
+  private resolveGraphAgent<TVars extends Vars, TAttrs extends Attrs>(
+    registeredAgent: string | PromptTrailRegisteredAgent<TVars, TAttrs>,
+  ): GraphAgent<TVars, TAttrs> | undefined {
+    if (typeof registeredAgent === 'string') {
+      return this.graphAgents.get(registeredAgent) as
+        | GraphAgent<TVars, TAttrs>
+        | undefined;
+    }
+    return isGraphAgent(registeredAgent)
+      ? (registeredAgent as GraphAgent<TVars, TAttrs>)
+      : undefined;
   }
 
   private getRun<TVars extends Vars, TAttrs extends Attrs>(
@@ -3003,6 +3125,29 @@ function cloneDurableRuntimeValue<T>(value: T): T {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isGraphAgent(value: unknown): value is GraphAgent<any, any> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !(value instanceof DurableAgent) &&
+    typeof (value as { execute?: unknown }).execute === 'function' &&
+    typeof (value as { toGraph?: unknown }).toGraph === 'function'
+  );
+}
+
+function graphInboundFromAppInput<TAttrs extends Attrs>(
+  input: string | Omit<Inbound, 'offset'>,
+): GraphInboundInput<TAttrs> {
+  if (typeof input === 'string') {
+    return { kind: 'user', content: input };
+  }
+  return {
+    kind: input.kind,
+    content: input.content,
+    attrs: input.attrs as TAttrs | undefined,
+  };
 }
 
 function runEventIdempotencyKey(

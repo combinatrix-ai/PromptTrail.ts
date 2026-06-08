@@ -10,6 +10,8 @@ import {
 import type { DurableRunStore, StoredRun } from '../../durable';
 import type { ObserverDeliveryBindingStore } from '../../execution';
 import { Hook, Middleware } from '../../interceptors';
+import { Source } from '../../source';
+import { Agent } from '../../templates';
 
 class TrackingRunStore implements DurableRunStore {
   readonly runs = new Map<string, StoredRun<any, any>>();
@@ -2490,6 +2492,59 @@ describe('durable agent runtime', () => {
       'hello',
     ]);
     expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
+  });
+
+  it('can run graph Agents through PromptTrail.app ephemerally', async () => {
+    const assistant = Agent.create('graphAssistant')
+      .turn('main', (turn) =>
+        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
+      );
+    const app = PromptTrail.app({ agents: { assistant } });
+
+    const result = await app.run({
+      agent: 'assistant',
+      input: 'hello',
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.runId).toBe('graphAssistant-1');
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+    expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
+  });
+
+  it('rejects durable app runs for graph Agents until graph journaling exists', async () => {
+    const assistant = Agent.create('graphAssistant').assistant(
+      'reply',
+      Source.literal('ok'),
+    );
+    const app = PromptTrail.app({ agents: { assistant } });
+
+    await expect(
+      app.run({
+        agent: 'assistant',
+        durable: true,
+      }),
+    ).rejects.toThrow(/durable graph Agent runs yet/);
+  });
+
+  it('returns suspended graph Agent app runs with the current session', async () => {
+    const assistant = Agent.create('graphAssistant').goal('collect', 'Collect input', {
+      interaction: 'required',
+      model: Source.literal('question?'),
+    });
+    const app = PromptTrail.app({ agents: { assistant } });
+
+    const result = await app.run({ agent: 'assistant' });
+
+    expect(result.status).toBe('suspended');
+    expect(result.awaiting).toBe('graphAssistant/collect/attempts/interaction');
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'Collect input',
+      'question?',
+    ]);
   });
 
   it('uses app durable defaults for direct runs unless explicitly disabled', async () => {
