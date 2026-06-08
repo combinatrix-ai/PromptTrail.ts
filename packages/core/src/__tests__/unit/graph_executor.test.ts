@@ -30,6 +30,19 @@ describe('GraphExecutor', () => {
     expect(session.getLastMessage()?.content).toBe('ok');
   });
 
+  it('fails assistant nodes that return invalid results', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        { id: 'reply', type: 'assistant', data: { input: () => 123 } },
+      ],
+    });
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      /assistant\/reply returned an invalid assistant result/,
+    );
+  });
+
   it('executes turn repeat blocks with source-backed assistant nodes', async () => {
     let calls = 0;
     const graph = Agent.create('assistant')

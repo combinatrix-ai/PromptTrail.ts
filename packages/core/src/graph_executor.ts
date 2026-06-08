@@ -195,7 +195,9 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
     typeof input === 'function'
       ? await input(state.session)
       : await resolveGraphContent(input, nodePath, state.session);
-  state.session = state.session.addMessage(normalizeAssistantResult(result));
+  state.session = state.session.addMessage(
+    normalizeAssistantResult(result, nodePath),
+  );
 }
 
 async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -395,6 +397,7 @@ async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
 
 function normalizeAssistantResult<TAttrs extends Attrs>(
   result: unknown,
+  nodePath: string,
 ): AssistantMessage<TAttrs> {
   if (typeof result === 'string') {
     return Message.assistant(result) as AssistantMessage<TAttrs>;
@@ -411,7 +414,7 @@ function normalizeAssistantResult<TAttrs extends Attrs>(
   if (isAssistantMessage(result)) {
     return result as AssistantMessage<TAttrs>;
   }
-  return Message.assistant(String(result)) as AssistantMessage<TAttrs>;
+  throw new Error(`Graph node ${nodePath} returned an invalid assistant result.`);
 }
 
 function normalizeGraphInbox<TAttrs extends Attrs>(
