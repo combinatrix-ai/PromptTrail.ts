@@ -247,15 +247,35 @@ async function executeSubroutineNode<TVars extends Vars, TAttrs extends Attrs>(
     ...state,
     session: subroutineInitial as Session<TVars, TAttrs>,
   };
-  await executeChildren(node.children ?? [], nodePath, subState);
-  state.cursor = subState.cursor;
-  state.session = await squashSubroutineSession(
-    nodePath,
-    data,
-    parentSession,
-    subroutineInitial as Session<TVars, TAttrs>,
-    subState.session,
-  );
+  try {
+    await executeChildren(node.children ?? [], nodePath, subState);
+    state.cursor = subState.cursor;
+    state.session = await squashSubroutineSession(
+      nodePath,
+      data,
+      parentSession,
+      subroutineInitial as Session<TVars, TAttrs>,
+      subState.session,
+    );
+  } catch (error) {
+    state.cursor = subState.cursor;
+    if (error instanceof GraphExecutionSuspended) {
+      const suspendedSession = await squashSubroutineSession(
+        nodePath,
+        data,
+        parentSession,
+        subroutineInitial as Session<TVars, TAttrs>,
+        subState.session,
+      );
+      state.session = suspendedSession;
+      throw new GraphExecutionSuspended(
+        error.nodePath,
+        error.message,
+        suspendedSession,
+      );
+    }
+    throw error;
+  }
 }
 
 async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>(

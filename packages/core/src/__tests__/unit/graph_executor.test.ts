@@ -331,6 +331,33 @@ describe('GraphExecutor', () => {
     });
   });
 
+  it('squashes graph subroutine sessions when execution suspends', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        { id: 'before', type: 'user', data: { content: 'before' } },
+        {
+          id: 'draft',
+          type: 'subroutine',
+          data: { isolatedContext: true, retainMessages: false },
+          children: [
+            { id: 'inbound', type: 'inbox' },
+            { id: 'wait', type: 'awaitInput' },
+          ],
+        },
+      ],
+    });
+
+    await expect(executeAgentGraph(graph, { input: 'inside' })).rejects.toMatchObject(
+      {
+        nodePath: 'assistant/draft/wait',
+        session: {
+          messages: [expect.objectContaining({ content: 'before' })],
+        },
+      },
+    );
+  });
+
   it('executes goal nodes with model and satisfaction checks', async () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic', {
