@@ -1,10 +1,4 @@
-import {
-  agent,
-  app,
-  MemoryRunStore,
-  type AssistantResult,
-  type DurableAgent,
-} from './durable';
+import { agent, app, MemoryRunStore, type AssistantResult } from './durable';
 import type { Message } from './message';
 import type { Attrs } from './session';
 import {
@@ -284,9 +278,9 @@ class MockRuntimeFixture {
     };
   }
 
-  private buildAgents(): Record<string, DurableAgent<any, any>> {
+  private buildAgents(): Record<string, ReturnType<typeof agent>> {
     const assistant = this.options.assistant ?? deterministicAssistant();
-    const agents: Record<string, DurableAgent<any, any>> = {};
+    const agents: Record<string, ReturnType<typeof agent>> = {};
     for (const name of Object.keys(this.options.bundle.agents)) {
       agents[name] = agent(name).chat('chat', (session) => {
         const last = session.getLastMessage();

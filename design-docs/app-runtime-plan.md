@@ -9,10 +9,9 @@ definitions should stay lightweight. The core split is:
 - App/Runtime: owns execution, persistence, event sources, routing, and resume.
 - EventSource: adapts external inputs into runtime events.
 
-The durable prototype currently exposes a separate `MemoryDurableRuntime`.
-That should be treated as a prototype slice. The final API should have one
-runtime/app concept, where `durable` / `resumable` is an execution option rather
-than a separate runtime family.
+The old durable prototype exposed a separate `MemoryDurableRuntime`. The final
+API should have one runtime/app concept, where `durable` / `resumable` is an
+execution option rather than a separate runtime family.
 
 ## Target API Sketch
 

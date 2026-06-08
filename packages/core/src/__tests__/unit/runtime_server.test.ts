@@ -578,7 +578,7 @@ describe('RuntimeServer', () => {
     ]);
   });
 
-  it('registers DurableAgent instances directly on apps', async () => {
+  it('registers durable agent factory results directly on apps', async () => {
     const durable = agent('durable').assistant('reply', () => 'ok');
     const app = PromptTrail.app().agent(durable);
     const result = await app.run({

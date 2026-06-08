@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MemoryDurableRuntime,
   NondeterminismError,
   PromptTrail,
   agent,
@@ -3350,19 +3349,5 @@ describe('durable agent runtime', () => {
       'hello',
       'seen:1',
     ]);
-  });
-
-  it('keeps MemoryDurableRuntime as a compatibility wrapper', async () => {
-    const runtime = new MemoryDurableRuntime();
-    const assistant = agent('assistant')
-      .assistant('reply', () => 'hello')
-      .turn('wait', (turn) => turn.awaitUser());
-
-    const result = await runtime.start(assistant, {
-      runId: 'compat',
-    });
-
-    expect(result.status).toBe('suspended');
-    expect(runtime.journal('compat')).toEqual(['reply/model']);
   });
 });

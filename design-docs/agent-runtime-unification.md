@@ -3,9 +3,9 @@
 ## Purpose
 
 This document defines the final API and implementation direction for unifying
-`Agent`, `DurableAgent`, `Scenario`, and app bindings. Backward compatibility is
-not a goal for this design. Existing APIs may be removed, renamed, or replaced
-when they conflict with the final model.
+`Agent`, the old durable-agent prototype, `Scenario`, and app bindings. Backward
+compatibility is not a goal for this design. Existing APIs may be removed,
+renamed, or replaced when they conflict with the final model.
 
 The core decision is:
 
@@ -17,20 +17,20 @@ The core decision is:
 
 ## Final Vocabulary
 
-| Term | Meaning |
-| --- | --- |
-| `Agent` | A named, reusable graph of prompt, model, tool, goal, and control nodes. |
-| `App` | Owns stores, sources, routing, execution, resume, locks, and delivery. |
-| `Binding` | Maps platform events to an agent, conversation id, input, and defaults. |
-| `Run` | One execution instance of an agent for a conversation/task. |
-| `Durable` | A run mode where graph execution, inputs, model/tool effects, and session transitions are journaled. |
-| `Goal` | A high-level agent node that loops model/tool/user interaction until a satisfaction condition succeeds or attempts are exhausted. |
-| `Middleware` | Changes model/tool requests, results, or session patches through deterministic phases. |
-| `Hook` | Observes lifecycle phases and may return explicit session patches. |
-| `Observer` | Receives emitted facts and may perform idempotent presentation/metrics side effects. |
+| Term         | Meaning                                                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent`      | A named, reusable graph of prompt, model, tool, goal, and control nodes.                                                          |
+| `App`        | Owns stores, sources, routing, execution, resume, locks, and delivery.                                                            |
+| `Binding`    | Maps platform events to an agent, conversation id, input, and defaults.                                                           |
+| `Run`        | One execution instance of an agent for a conversation/task.                                                                       |
+| `Durable`    | A run mode where graph execution, inputs, model/tool effects, and session transitions are journaled.                              |
+| `Goal`       | A high-level agent node that loops model/tool/user interaction until a satisfaction condition succeeds or attempts are exhausted. |
+| `Middleware` | Changes model/tool requests, results, or session patches through deterministic phases.                                            |
+| `Hook`       | Observes lifecycle phases and may return explicit session patches.                                                                |
+| `Observer`   | Receives emitted facts and may perform idempotent presentation/metrics side effects.                                              |
 
-`DurableAgent`, `DurableTurnBuilder`, `Scenario`, and
-`MemoryDurableRuntime` are not final public concepts. A serializable
+The old `DurableAgent`, `DurableTurnBuilder`, `Scenario`, and
+`MemoryDurableRuntime` concepts are not final public APIs. A serializable
 `RuntimeBundle` can remain as an internal/exportable configuration IR, but it
 should not be the ordinary authoring API.
 
@@ -49,10 +49,13 @@ const assistant = Agent.create('assistant')
     turn
       .inbox('inbound')
       .assistant('model', Source.llm().openai({ api: 'responses' }))
-      .repeat('tool-loop', ({ session }) => session.hasToolCalls(), (loop) =>
-        loop
-          .tools('tools')
-          .assistant('model', Source.llm().openai({ api: 'responses' })),
+      .repeat(
+        'tool-loop',
+        ({ session }) => session.hasToolCalls(),
+        (loop) =>
+          loop
+            .tools('tools')
+            .assistant('model', Source.llm().openai({ api: 'responses' })),
       )
       .awaitInput('next'),
   );
@@ -123,8 +126,8 @@ for nested effect boundaries. External writes require an idempotency key.
 
 ### Turns
 
-`turn(...)` is the low-level durable control surface. It replaces the current
-public `DurableAgent.turn(...)` API.
+`turn(...)` is the low-level durable control surface. It replaces the old public
+`DurableAgent.turn(...)` API.
 
 ```ts
 const agent = Agent.create('main')
@@ -133,10 +136,10 @@ const agent = Agent.create('main')
     turn
       .inbox('inbound')
       .assistant('reply', Source.llm().openai())
-      .repeat('tool-loop', ({ session }) => session.hasToolCalls(), (loop) =>
-        loop
-          .tools('tools')
-          .assistant('reply', Source.llm().openai()),
+      .repeat(
+        'tool-loop',
+        ({ session }) => session.hasToolCalls(),
+        (loop) => loop.tools('tools').assistant('reply', Source.llm().openai()),
       )
       .awaitInput('next'),
   );
@@ -194,8 +197,9 @@ interface GoalOptions<TVars, TAttrs> {
   tools?: readonly string[] | Record<string, Tool>;
   model?: Source<ModelOutput> | AssistantHandler<TVars, TAttrs>;
   durability?: 'materialized' | 'replayable';
-  isSatisfied?: (ctx: GoalSatisfactionContext<TVars, TAttrs>) =>
-    boolean | Promise<boolean>;
+  isSatisfied?: (
+    ctx: GoalSatisfactionContext<TVars, TAttrs>,
+  ) => boolean | Promise<boolean>;
   onUnsatisfied?: 'retry' | 'continue' | 'halt';
 }
 
@@ -290,10 +294,12 @@ const app = PromptTrail.app({
       .where(discord.notBot())
       .where(discord.inChannels(['general', 'news']))
       .to(assistant)
-      .conversation(discord.sessionKey({
-        groupSessionsPerUser: true,
-        threadSessionsPerUser: false,
-      }))
+      .conversation(
+        discord.sessionKey({
+          groupSessionsPerUser: true,
+          threadSessionsPerUser: false,
+        }),
+      )
       .input((event) => event.content)
       .delivery(discord.replyToOriginThread())
       .context((event) => ({
@@ -528,7 +534,8 @@ split runtime instead of layering more adapters over it.
 - Require explicit node ids for app/durable agents.
 - Keep `Agent.quick()` for ephemeral content-first examples.
 - Remove or stop exporting `DurableAgent`, `DurableTurnBuilder`, `Scenario`,
-  and `MemoryDurableRuntime`.
+  and `MemoryDurableRuntime`. `DurableAgent` may remain as an internal legacy
+  implementation while graph execution becomes authoritative.
 - Define the serializable `RuntimeBundle` IR that app bindings compile to.
 
 ### Phase 2: Map Existing Semantics to Graph Nodes
@@ -563,9 +570,9 @@ split runtime instead of layering more adapters over it.
   - final delivery outbox
   - event replay
   - nondeterminism errors
-- First convert the current `DurableAgent` graph to `AgentGraph` internally and
-  keep existing durable tests green. Then remove the old durable switch once the
-  graph executor is authoritative.
+- First map the internal legacy durable-agent graph to `AgentGraph` and keep
+  existing durable tests green. Then remove the old durable switch once the graph
+  executor is authoritative.
 
 ### Phase 4: Rebuild Agent DSL on Graph IR
 

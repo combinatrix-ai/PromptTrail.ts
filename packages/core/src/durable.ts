@@ -1414,10 +1414,7 @@ export class DurableTurnBuilder<
   }
 }
 
-export class DurableAgent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+class DurableAgent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   private nodes: DurableNode<TVars, TAttrs>[] = [];
   private tools = new Map<string, DurableTool>();
   private middlewareDefinitions: MiddlewareDefinition<TVars, TAttrs>[] = [];
@@ -3335,48 +3332,6 @@ export class PromptTrailApp {
       throw new Error(`Unknown durable run: ${runId}`);
     }
     return run as StoredRun<TVars, TAttrs>;
-  }
-}
-
-export class MemoryDurableRuntime {
-  private readonly app = new PromptTrailApp();
-
-  async start<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    durableAgent: DurableAgent<TVars, TAttrs>,
-    options: {
-      runId: string;
-      session?: Session<TVars, TAttrs>;
-      input?: string;
-    },
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    return this.app.run<TVars, TAttrs>({
-      agent: durableAgent,
-      runId: options.runId,
-      session: options.session,
-      input: options.input,
-      durable: true,
-    });
-  }
-
-  async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    runId: string,
-    content: string | Omit<Inbound, 'offset'>,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    return this.app.send<TVars, TAttrs>({
-      runId,
-      input: content,
-      durable: true,
-    });
-  }
-
-  async resume<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    runId: string,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    return this.app.resume<TVars, TAttrs>(runId);
-  }
-
-  journal(runId: string): readonly string[] {
-    return this.app.journal(runId);
   }
 }
 
