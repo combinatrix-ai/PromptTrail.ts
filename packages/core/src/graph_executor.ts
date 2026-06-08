@@ -9,7 +9,6 @@ import {
 import type { AgentGraph, AgentGraphNode } from './graph';
 import {
   createExecutionRuntimeState,
-  runExecutionPhase,
   runRuntimeExecutionPhase,
   runRuntimeMiddlewareWrapper,
   type ExecutionRuntimeState,
@@ -22,6 +21,7 @@ import {
 import { Session, type Attrs, type Vars } from './session';
 import { type ModelOutput, Source } from './source';
 import type { Template } from './templates/base';
+import { executeRuntimeModelCall } from './templates/primitives/model_runtime';
 import {
   executePromptTrailTool,
   isPromptTrailTool,
@@ -80,10 +80,6 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   runtime: ExecutionRuntimeState<TVars, TAttrs>;
   skipNode?: GraphExecutionOptions<TVars, TAttrs>['skipNode'];
   activeGoal?: ActiveGoalExecution;
-}
-
-interface GraphModelRequest<TVars extends Vars, TAttrs extends Attrs> {
-  session: Session<TVars, TAttrs>;
 }
 
 type GraphNodeData = Record<string, unknown>;
@@ -527,61 +523,19 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
       `Graph node ${nodePath} requires an assistant source or handler.`,
     );
   }
-  const beforeModel = await runRuntimeExecutionPhase(state.runtime, {
-    phase: 'beforeModel',
-    session: state.session,
-  });
-  assertGraphPhaseCommandSupported(beforeModel.command, 'beforeModel');
-  state.session = beforeModel.session;
-
-  let modelSession = state.session;
-  const prepared = await runExecutionPhase({
-    phase: 'prepareModelInput',
-    session: state.session,
-    request: { session: modelSession } satisfies GraphModelRequest<
-      TVars,
-      TAttrs
-    >,
-    context: state.context,
-    middlewareState: state.runtime.middlewareState,
-    middleware: state.runtime.middleware,
-    hooks: state.runtime.hooks,
-    beforeVersion: state.runtime.version,
-    signal: state.signal,
-  });
-  assertGraphPhaseCommandSupported(prepared.command, 'prepareModelInput');
-  assertPrepareModelInputDidNotPersistGraphSession(prepared.steps, nodePath);
-  state.runtime.middlewareState = prepared.middlewareState;
-  state.runtime.version = prepared.afterVersion;
-  modelSession =
-    (prepared.request as GraphModelRequest<TVars, TAttrs> | undefined)
-      ?.session ?? modelSession;
-
-  const wrappedModel = await runRuntimeMiddlewareWrapper<
+  const modelCall = await executeRuntimeModelCall<
     TVars,
     TAttrs,
-    GraphModelRequest<TVars, TAttrs>,
     string | ModelOutput
-  >(state.runtime, {
-    phase: 'wrapModelCall',
-    session: state.session,
-    request: { session: modelSession },
-    call: async ({ request }) =>
-      resolveGraphAssistantInput(input, nodePath, request.session, state),
-  });
-  assertGraphPhaseCommandSupported(wrappedModel.command, 'wrapModelCall');
-  state.session = wrappedModel.session;
-
-  const afterModel = await runRuntimeExecutionPhase(state.runtime, {
-    phase: 'afterModel',
-    session: state.session,
-    result: wrappedModel.result,
-  });
-  assertGraphPhaseCommandSupported(afterModel.command, 'afterModel');
-  state.session = afterModel.session;
-  const result = (afterModel.result ?? wrappedModel.result) as
-    | string
-    | ModelOutput;
+  >(
+    state.runtime,
+    state.session,
+    (modelSession) =>
+      resolveGraphAssistantInput(input, nodePath, modelSession, state),
+    `Graph node ${nodePath} model execution`,
+  );
+  state.session = modelCall.session;
+  const result = modelCall.result;
   state.session = state.session.addMessage(
     normalizeAssistantResult(result, nodePath),
   );
@@ -656,22 +610,6 @@ async function resolveGraphAssistantInput<
     );
   }
   return resolveGraphContent(input, nodePath, session, state.runtime);
-}
-
-function assertPrepareModelInputDidNotPersistGraphSession(
-  steps: readonly {
-    transition: { beforeVersion: number; afterVersion: number };
-  }[],
-  nodePath: string,
-): void {
-  const persisted = steps.find(
-    (step) => step.transition.beforeVersion !== step.transition.afterVersion,
-  );
-  if (persisted) {
-    throw new Error(
-      `Graph node ${nodePath} prepareModelInput cannot persist session patches.`,
-    );
-  }
 }
 
 async function executeGoalSatisfactionNode<

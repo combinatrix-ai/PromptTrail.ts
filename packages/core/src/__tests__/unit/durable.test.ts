@@ -2561,7 +2561,12 @@ describe('durable agent runtime', () => {
       graphCursor: 0,
     });
     expect(app.journal(result.runId)).toEqual([]);
-    expect(events).toEqual(['0:run.started:graph', '1:run.completed:graph']);
+    expect(events).toEqual([
+      '0:run.started:graph',
+      '1:model.started:model',
+      '2:model.completed:model',
+      '3:run.completed:graph',
+    ]);
   });
 
   it('returns suspended graph Agent app runs with the current session', async () => {

@@ -144,9 +144,16 @@ describe('Agent graph authoring', () => {
     expect(session.getLastMessage()?.content).toBe('ok');
     expect(builderEvents).toEqual([
       '0:run.started:graph:0',
-      '1:run.completed:graph:1',
+      '1:model.started:model:undefined',
+      '2:model.completed:model:undefined',
+      '3:run.completed:graph:1',
     ]);
-    expect(callEvents).toEqual(['0:run.started', '1:run.completed']);
+    expect(callEvents).toEqual([
+      '0:run.started',
+      '1:model.started',
+      '2:model.completed',
+      '3:run.completed',
+    ]);
   });
 
   it('emits graph suspension observer events', async () => {
@@ -182,7 +189,9 @@ describe('Agent graph authoring', () => {
 
     expect(events).toEqual([
       '0:run.started:0:-',
-      '1:run.failed:0:model failed',
+      '1:model.started:undefined:-',
+      '2:model.failed:undefined:model failed',
+      '3:run.failed:0:model failed',
     ]);
   });
 
