@@ -628,7 +628,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       const builderFn = builderOrOptions as (
         agent: Agent<TC, TM>,
       ) => Agent<TC, TM>;
-      const innerAgent = Agent.create<TC, TM>();
+      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
       const builtAgent = builderFn(innerAgent);
       this.graphNodes.push({
         id: idOrBuilderFn,

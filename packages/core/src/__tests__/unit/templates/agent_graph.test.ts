@@ -212,4 +212,18 @@ describe('Agent graph authoring', () => {
       ['assistant/draft/reply', 'assistant'],
     ]);
   });
+
+  it('uses graph-mode authoring inside named graph subroutines', () => {
+    const graph = Agent.create('assistant')
+      .subroutine('draft', (sub) => sub.assistant('reply'))
+      .toGraph('v1');
+
+    expect(graph.nodes[0]?.children).toEqual([
+      {
+        id: 'reply',
+        type: 'assistant',
+        data: undefined,
+      },
+    ]);
+  });
 });
