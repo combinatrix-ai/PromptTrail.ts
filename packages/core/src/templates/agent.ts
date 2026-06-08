@@ -86,7 +86,10 @@ export interface AgentGraphHandlerRuntime {
   signal?: AbortSignal;
 }
 
-export type AgentGraphCondition<TC extends Vars = Vars, TM extends Attrs = Attrs> =
+export type AgentGraphCondition<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> =
   | boolean
   | ((context: {
       session: Session<TC, TM>;
@@ -110,7 +113,10 @@ export interface AgentGoalSatisfactionContext<
   durable?: ExecutionDurableBoundary;
 }
 
-export interface AgentGoalOptions<TC extends Vars = Vars, TM extends Attrs = Attrs> {
+export interface AgentGoalOptions<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> {
   interaction?: 'none' | 'optional' | 'required';
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
@@ -125,7 +131,8 @@ export interface AgentGoalOptions<TC extends Vars = Vars, TM extends Attrs = Att
 export interface AgentGraphExecutionOptions<
   TC extends Vars = Vars,
   TM extends Attrs = Attrs,
-> extends GraphExecutionOptions<TC, TM>, AgentExecutionOptions {
+> extends GraphExecutionOptions<TC, TM>,
+    AgentExecutionOptions {
   version?: string;
 }
 
@@ -279,11 +286,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     }
 
     const rawOptions = options as Record<string, unknown> | undefined;
-    const unsupportedOption = [
-      'durable',
-      'store',
-      'observers',
-    ].find((key) => rawOptions && key in rawOptions);
+    const unsupportedOption = ['durable', 'runId', 'store', 'observers'].find(
+      (key) => rawOptions && key in rawOptions,
+    );
     if (unsupportedOption) {
       throw new Error(
         `Graph Agent.execute does not support option ${unsupportedOption} yet.`,
@@ -674,7 +679,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.loop requires loop(id, builder, condition).');
+      throw new Error(
+        'Graph Agent.loop requires loop(id, builder, condition).',
+      );
     }
     const builderFn = idOrBuilderFn;
     const loopIf = builderOrLoopIf as
@@ -804,7 +811,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.subroutine requires subroutine(id, builder).');
+      throw new Error(
+        'Graph Agent.subroutine requires subroutine(id, builder).',
+      );
     }
     const builderFn = idOrBuilderFn;
     const opts = builderOrOptions as
@@ -859,7 +868,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this.hasInterceptors() ? this : this.root;
   }
 
-  async execute(options?: AgentExecuteOptions<TC, TM>): Promise<Session<TC, TM>>;
+  async execute(
+    options?: AgentExecuteOptions<TC, TM>,
+  ): Promise<Session<TC, TM>>;
   async execute(
     session?: Session<TC, TM> | undefined,
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
@@ -877,10 +888,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
           ? { session: sessionOrOptions }
           : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
       this.assertGraphExecutionSupported(options);
-      return executeAgentGraph(
-        this.toGraph(options?.version),
-        options,
-      );
+      return executeAgentGraph(this.toGraph(options?.version), options);
     }
     const optionsObject =
       runtimeOrOptions === undefined && !(sessionOrOptions instanceof Session)
@@ -916,7 +924,15 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       (executionOptions as AgentExecutionInternalOptions | undefined)
         ?.eventScopeId ??
       createDirectAgentEventScopeId();
-    if (!this.hasInterceptors()) {
+    const executionObservers = [
+      ...this.observers,
+      ...(executionOptions?.observers ?? []),
+    ];
+    if (
+      this.middleware.length === 0 &&
+      this.hooks.length === 0 &&
+      executionObservers.length === 0
+    ) {
       const runtime =
         parentRuntime ??
         (executionOptions
@@ -931,7 +947,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         : this.root.execute(undefined, runtime);
     }
 
-    const observerBus = new ObserverBus(this.observers, {
+    const observerBus = new ObserverBus(executionObservers, {
       strictObservers: executionOptions?.strictObservers,
       ...executionOptions?.observerDeliveryBindings,
     });
@@ -949,7 +965,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const previousParentEmitEvent = parentRuntime?.emitEvent;
     // Child agents run sequentially under the current template runtime, so this
     // temporary fan-out keeps nested observers attached to the shared event seq.
-    if (parentRuntime && this.observers.length > 0) {
+    if (parentRuntime && executionObservers.length > 0) {
       parentRuntime.emitEvent = async (event) => {
         await previousParentEmitEvent?.(event);
         await observerBus.emit(event);
@@ -1067,7 +1083,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       throw error;
     } finally {
-      if (parentRuntime && this.observers.length > 0) {
+      if (parentRuntime && executionObservers.length > 0) {
         parentRuntime.emitEvent = previousParentEmitEvent;
       }
     }
@@ -1089,9 +1105,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const options = authored === true ? {} : authored;
     const store =
       options.store ??
+      executionOptions?.store ??
       this.directDurableStore ??
       (this.directDurableStore = memoryStore());
-    const runId = options.runId ?? this.ensureDirectDurableRunId();
+    const runId =
+      options.runId ??
+      executionOptions?.runId ??
+      this.ensureDirectDurableRunId();
     return { runId, store };
   }
 
@@ -1110,6 +1130,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         session: await this.execute(current, {
           context: executionOptions?.context,
           eventScopeId: durableOptions.runId,
+          observers: executionOptions?.observers,
           observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
           strictObservers: executionOptions?.strictObservers,
           signal: executionOptions?.signal,
@@ -1163,9 +1184,12 @@ function directAgentEventIdempotencyKey(
 }
 
 export interface AgentExecutionOptions {
+  runId?: string;
+  store?: DurableRunStore;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   durable?: boolean | AgentDirectDurableOptions;
+  observers?: readonly ObserverLike[];
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
   strictObservers?: boolean;
 }
@@ -1223,7 +1247,10 @@ function addDirectExecuteInput<TC extends Vars, TM extends Attrs>(
 }
 
 function normalizeDirectExecuteInput<TAttrs extends Attrs>(
-  input: string | GraphInboundInput<TAttrs> | readonly GraphInboundInput<TAttrs>[],
+  input:
+    | string
+    | GraphInboundInput<TAttrs>
+    | readonly GraphInboundInput<TAttrs>[],
 ): GraphInboundInput<TAttrs>[] {
   if (typeof input === 'string') {
     return [{ kind: 'user', content: input }];
@@ -1257,7 +1284,9 @@ function compactGraphData(
 function compactGraphChildren(
   children: Array<AgentGraphNode | undefined>,
 ): AgentGraphNode[] {
-  return children.filter((child): child is AgentGraphNode => child !== undefined);
+  return children.filter(
+    (child): child is AgentGraphNode => child !== undefined,
+  );
 }
 
 function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(

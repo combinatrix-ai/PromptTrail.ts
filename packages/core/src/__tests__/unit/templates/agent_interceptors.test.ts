@@ -245,6 +245,42 @@ describe('Agent interceptors', () => {
     );
   });
 
+  it('accepts per-call observers in direct execution options', async () => {
+    const events: string[] = [];
+    const session = await Agent.create()
+      .user('hello')
+      .execute({
+        observers: [
+          (event) => {
+            events.push(`${event.seq}:${event.type}`);
+          },
+        ],
+      });
+
+    expect(session.getLastMessage()?.content).toBe('hello');
+    expect(events).toEqual(['0:run.started', '1:run.completed']);
+  });
+
+  it('merges builder and per-call observers in direct execution', async () => {
+    const builderEvents: string[] = [];
+    const callEvents: string[] = [];
+    await Agent.create()
+      .observe((event) => {
+        builderEvents.push(event.type);
+      })
+      .user('hello')
+      .execute({
+        observers: [
+          (event) => {
+            callEvents.push(event.type);
+          },
+        ],
+      });
+
+    expect(builderEvents).toEqual(['run.started', 'run.completed']);
+    expect(callEvents).toEqual(['run.started', 'run.completed']);
+  });
+
   it('scopes direct execution observer event keys per execute call', async () => {
     const keys: string[] = [];
     const agent = Agent.create()
@@ -386,6 +422,50 @@ describe('Agent interceptors', () => {
       'direct-agent-run:model:2:model.completed',
       'direct-agent-run:agent:3:run.completed',
     ]);
+  });
+
+  it('accepts top-level runId and store in direct durable options', async () => {
+    const store = memoryStore();
+    let calls = 0;
+    const source = Source.callback(async () => {
+      calls++;
+      return `reply:${calls}`;
+    });
+    const agent = Agent.create().assistant(source);
+
+    const first = await agent.execute({
+      durable: true,
+      runId: 'direct-agent-top-level-options',
+      store,
+    });
+    const second = await agent.execute({
+      durable: true,
+      runId: 'direct-agent-top-level-options',
+      store,
+    });
+
+    expect(first.getLastMessage()?.content).toBe('reply:1');
+    expect(second.getLastMessage()?.content).toBe('reply:1');
+    expect(calls).toBe(1);
+  });
+
+  it('threads per-call observers through direct durable execution', async () => {
+    const store = memoryStore();
+    const events: string[] = [];
+    await Agent.create()
+      .user('hello')
+      .execute({
+        durable: true,
+        runId: 'direct-agent-durable-call-observers',
+        store,
+        observers: [
+          (event) => {
+            events.push(`${event.seq}:${event.type}`);
+          },
+        ],
+      });
+
+    expect(events).toEqual(['0:run.started', '1:run.completed']);
   });
 
   it('uses fluent durable defaults for direct Agent.execute', async () => {

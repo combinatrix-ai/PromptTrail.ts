@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { memoryStore } from '../../../durable';
 import { createAgentGraphManifest } from '../../../graph';
 import type { ExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
@@ -22,12 +23,11 @@ describe('Agent graph authoring', () => {
       .turn('main', (turn) =>
         turn
           .inbox('inbound')
-          .repeat('toolLoop', ({ session }) => session.messages.length > 0, (
-            loop,
-          ) =>
-            loop
-              .assistant('reply', Source.literal('ok'))
-              .tools('tools'),
+          .repeat(
+            'toolLoop',
+            ({ session }) => session.messages.length > 0,
+            (loop) =>
+              loop.assistant('reply', Source.literal('ok')).tools('tools'),
           )
           .awaitInput('next'),
       );
@@ -73,6 +73,24 @@ describe('Agent graph authoring', () => {
     await expect(Agent.quick().execute({ durable: true })).rejects.toThrow(
       /Agent\.quick/,
     );
+  });
+
+  it('rejects run metadata that graph execution does not support yet', async () => {
+    const store = memoryStore();
+    const graph = Agent.create('assistant').assistant('reply', () => 'ok');
+
+    await expect(
+      graph.execute({ durable: true, input: 'hello' }),
+    ).rejects.toThrow(/option durable/);
+    await expect(
+      graph.execute({ runId: 'graph-run', input: 'hello' }),
+    ).rejects.toThrow(/option runId/);
+    await expect(graph.execute({ store, input: 'hello' })).rejects.toThrow(
+      /option store/,
+    );
+    await expect(
+      graph.execute({ observers: [() => undefined], input: 'hello' }),
+    ).rejects.toThrow(/option observers/);
   });
 
   it('treats assistant(id) as a graph node for named agents', () => {
@@ -126,9 +144,9 @@ describe('Agent graph authoring', () => {
         { type: 'user', content: 'missing id' },
       ]),
     ).toThrow(/messages\(id, handler\)/);
-    expect(() =>
-      Agent.create('assistant').patch((session) => session),
-    ).toThrow(/patch\(id, handler\)/);
+    expect(() => Agent.create('assistant').patch((session) => session)).toThrow(
+      /patch\(id, handler\)/,
+    );
   });
 
   it('does not silently discard unsupported durable graph execution', async () => {
@@ -212,11 +230,12 @@ describe('Agent graph authoring', () => {
       ['research/researchTopic/attempts/check', 'patch'],
       ['research/researchTopic/attempts/interaction', 'awaitInput'],
     ]);
-    expect(manifest.nodes.find((node) => node.path.endsWith('/check'))?.data)
-      .toMatchObject({
-        kind: 'goalSatisfaction',
-        durability: 'materialized',
-      });
+    expect(
+      manifest.nodes.find((node) => node.path.endsWith('/check'))?.data,
+    ).toMatchObject({
+      kind: 'goalSatisfaction',
+      durability: 'materialized',
+    });
   });
 
   it('compiles named graph subroutines into a stable subgraph', () => {
@@ -315,7 +334,9 @@ describe('Agent graph authoring', () => {
   it('rejects mixing legacy leaf methods after graph authoring starts', () => {
     const graphStarted = () => Agent.create().assistant('reply', () => 'ok');
 
-    expect(() => graphStarted().system('legacy')).toThrow(/Graph Agent\.system/);
+    expect(() => graphStarted().system('legacy')).toThrow(
+      /Graph Agent\.system/,
+    );
     expect(() => graphStarted().user('legacy')).toThrow(/Graph Agent\.user/);
     expect(() => graphStarted().assistant()).toThrow(/Graph Agent\.assistant/);
     expect(() => graphStarted().messages(() => [])).toThrow(

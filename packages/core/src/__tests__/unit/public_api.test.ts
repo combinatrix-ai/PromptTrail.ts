@@ -110,9 +110,16 @@ describe('public API surface', () => {
       store: prompttrail.memoryStore(),
     };
     const options: AgentExecuteOptions = {
+      runId: 'public-direct-agent-run',
+      store: prompttrail.memoryStore(),
       context: { userId: 'U1' },
       signal: controller.signal,
       durable,
+      observers: [
+        () => {
+          // type coverage only
+        },
+      ],
     };
     const session = await prompttrail.Agent.user('hello').execute(options);
 
@@ -204,7 +211,9 @@ describe('public API surface', () => {
     const events: ExecutionEvent[] = [];
     const app = prompttrail.PromptTrail.app({
       agents: {
-        assistant: prompttrail.agent('assistant').assistant('reply', () => 'ok'),
+        assistant: prompttrail
+          .agent('assistant')
+          .assistant('reply', () => 'ok'),
       },
       store: prompttrail.memoryStore(),
     });
