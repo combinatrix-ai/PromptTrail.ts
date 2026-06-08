@@ -106,6 +106,8 @@ export type RuntimeBindingLike<TEvent extends RuntimeBindingEvent> =
   | RuntimeBinding<TEvent>
   | BindingBuilder<TEvent>;
 
+export type RuntimeAgentRef = string | PromptTrailRegisteredAgent;
+
 export interface RuntimeBundle {
   name: string;
   agents: Record<string, PromptTrailRegisteredAgent<any, any>>;
@@ -135,9 +137,13 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
     return this;
   }
 
-  toAgent(agent: string): this {
-    this.agentName = agent;
+  to(agent: RuntimeAgentRef): this {
+    this.agentName = resolveRuntimeAgentName(agent);
     return this;
+  }
+
+  toAgent(agent: RuntimeAgentRef): this {
+    return this.to(agent);
   }
 
   conversation(resolver: ConversationResolver<TEvent>): this {
@@ -183,6 +189,24 @@ export function bind<TEvent extends RuntimeBindingEvent>(
   source: RuntimeSource<TEvent>,
 ): BindingBuilder<TEvent> {
   return new BindingBuilder(source);
+}
+
+function resolveRuntimeAgentName(agentRef: RuntimeAgentRef): string {
+  if (typeof agentRef === 'string') {
+    return agentRef;
+  }
+  if (hasRuntimeAgentName(agentRef)) {
+    return agentRef.name;
+  }
+  throw new Error('Runtime binding agent must be an agent name or Agent.');
+}
+
+function hasRuntimeAgentName(value: unknown): value is { name: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { name?: unknown }).name === 'string'
+  );
 }
 
 export const Delivery = {

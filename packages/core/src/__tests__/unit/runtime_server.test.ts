@@ -403,6 +403,27 @@ describe('RuntimeServer', () => {
     ).rejects.toThrow(/does not support durable graph Agent runs yet/);
   });
 
+  it('accepts Agent instances in runtime bindings', () => {
+    const main = Agent.create('main').assistant('reply', () => 'reply');
+    const durable = agent('durable');
+    const binding = bind(discord.messages())
+      .to(main)
+      .conversation(() => 'discord:graph')
+      .build();
+    const aliasBinding = bind(discord.messages())
+      .toAgent(main)
+      .conversation(() => 'discord:graph')
+      .build();
+    const durableBinding = bind(discord.messages())
+      .to(durable)
+      .conversation(() => 'discord:durable')
+      .build();
+
+    expect(binding.agent).toBe('main');
+    expect(aliasBinding.agent).toBe('main');
+    expect(durableBinding.agent).toBe('durable');
+  });
+
   it('allocates delivery event sequence numbers per conversation', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveryEvents: string[] = [];

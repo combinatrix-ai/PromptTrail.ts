@@ -2128,8 +2128,8 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
 }
 
 export type PromptTrailRegisteredAgent<
-  TVars extends Vars,
-  TAttrs extends Attrs,
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
 > =
   | DurableAgent<TVars, TAttrs>
   | GraphAgent<TVars, TAttrs>;

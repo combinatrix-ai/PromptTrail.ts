@@ -252,6 +252,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this.graphName !== undefined || this.graphNodes.length > 0;
   }
 
+  get name(): string | undefined {
+    return this.graphName;
+  }
+
   private hasInterceptors(): boolean {
     return (
       this.middleware.length > 0 ||
