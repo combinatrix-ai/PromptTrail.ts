@@ -131,6 +131,9 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'loop':
       await executeLoopNode(node, nodePath, state);
       return;
+    case 'conditional':
+      await executeConditionalNode(node, nodePath, state);
+      return;
     case 'tools':
       await executeToolsNode(node, nodePath, state);
       return;
@@ -151,7 +154,6 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'messages':
       await executeMessagesNode(node, nodePath, state);
       return;
-    case 'conditional':
     case 'parallel':
     case 'structured':
     case 'transform':
@@ -183,19 +185,37 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
     await executeGoalAttemptsNode(node, nodePath, state);
     return;
   }
-  const condition = data.condition;
-  const shouldContinue =
-    typeof condition === 'function'
-      ? () => Boolean(condition({ session: state.session }))
-      : () => false;
+  const shouldContinue = () =>
+    resolveGraphCondition(data.condition, nodePath, state);
 
   let iterations = 0;
+  const maxIterations =
+    positiveInteger(data.maxIterations) ?? state.maxLoopIterations;
   while (shouldContinue()) {
-    if (iterations++ >= state.maxLoopIterations) {
+    if (iterations++ >= maxIterations) {
       throw new Error(`Graph loop ${nodePath} exceeded max iterations.`);
     }
     await executeChildren(node.children ?? [], nodePath, state);
   }
+}
+
+async function executeConditionalNode<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const data = graphNodeData(node);
+  const branchId = resolveGraphCondition(data.condition, nodePath, state)
+    ? 'then'
+    : 'else';
+  const branch = (node.children ?? []).find((child) => child.id === branchId);
+  if (!branch) {
+    return;
+  }
+  await executeGraphNode(branch, `${nodePath}/${branch.id}`, state);
 }
 
 async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -646,6 +666,26 @@ function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
     Message.user(inbound.content, inbound.attrs),
   );
   return kind;
+}
+
+function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
+  condition: unknown,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): boolean {
+  if (typeof condition === 'boolean') {
+    return condition;
+  }
+  if (typeof condition === 'function') {
+    return Boolean(
+      condition({
+        session: state.session,
+        context: state.context,
+        signal: state.signal,
+      }),
+    );
+  }
+  throw new Error(`Graph node ${nodePath} requires a condition.`);
 }
 
 async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(

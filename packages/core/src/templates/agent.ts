@@ -86,6 +86,18 @@ export interface AgentGraphHandlerRuntime {
   signal?: AbortSignal;
 }
 
+export type AgentGraphCondition<TC extends Vars = Vars, TM extends Attrs = Attrs> =
+  | boolean
+  | ((context: {
+      session: Session<TC, TM>;
+      context?: Record<string, unknown>;
+      signal?: AbortSignal;
+    }) => boolean);
+
+export interface AgentGraphLoopOptions {
+  maxIterations?: number;
+}
+
 export interface AgentGoalSatisfactionContext<
   TC extends Vars = Vars,
   TM extends Attrs = Attrs,
@@ -564,10 +576,55 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   /** Function-based template builders -------------------------------------------------- */
 
   loop(
+    id: string,
+    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    loopIf: AgentGraphCondition<TC, TM>,
+    options?: AgentGraphLoopOptions,
+  ): this;
+  loop(
     builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
     loopIf: boolean | ((s: Session<TC, TM>) => boolean),
     maxIterations?: number,
-  ) {
+  ): this;
+  loop(
+    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    builderOrLoopIf:
+      | ((agent: Agent<TC, TM>) => Agent<TC, TM>)
+      | boolean
+      | ((s: Session<TC, TM>) => boolean)
+      | AgentGraphCondition<TC, TM>,
+    loopIfOrMaxIterations?:
+      | AgentGraphCondition<TC, TM>
+      | boolean
+      | ((s: Session<TC, TM>) => boolean)
+      | number,
+    maybeOptions?: AgentGraphLoopOptions,
+  ): this {
+    if (typeof idOrBuilderFn === 'string') {
+      const builderFn = builderOrLoopIf as (
+        agent: Agent<TC, TM>,
+      ) => Agent<TC, TM>;
+      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
+      const builtAgent = builderFn(innerAgent);
+      this.graphNodes.push({
+        id: idOrBuilderFn,
+        type: 'loop',
+        data: compactGraphData({
+          condition: loopIfOrMaxIterations as AgentGraphCondition<TC, TM>,
+          maxIterations: maybeOptions?.maxIterations,
+        }),
+        children: builtAgent.graphNodes,
+      });
+      return this;
+    }
+    if (this.graphName) {
+      throw new Error('Graph Agent.loop requires loop(id, builder, condition).');
+    }
+    const builderFn = idOrBuilderFn;
+    const loopIf = builderOrLoopIf as
+      | boolean
+      | ((s: Session<TC, TM>) => boolean);
+    const maxIterations = loopIfOrMaxIterations as number | undefined;
     const innerAgent = Agent.create<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
@@ -585,10 +642,62 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   conditional(
+    id: string,
+    condition: AgentGraphCondition<TC, TM>,
+    thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+  ): this;
+  conditional(
     condition: (s: Session<TC, TM>) => boolean,
     thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
     elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-  ) {
+  ): this;
+  conditional(
+    idOrCondition:
+      | string
+      | ((s: Session<TC, TM>) => boolean)
+      | AgentGraphCondition<TC, TM>,
+    conditionOrThenBuilder:
+      | AgentGraphCondition<TC, TM>
+      | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    thenOrElseBuilder?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    maybeElseBuilder?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+  ): this {
+    if (typeof idOrCondition === 'string') {
+      const thenAgent = Agent.create<TC, TM>('then');
+      const thenBuilderFn = thenOrElseBuilder;
+      if (!thenBuilderFn) {
+        throw new Error(
+          'Graph Agent.conditional requires conditional(id, condition, thenBuilder).',
+        );
+      }
+      const thenChildren = thenBuilderFn(thenAgent).graphNodes;
+      const elseChildren = maybeElseBuilder
+        ? maybeElseBuilder(Agent.create<TC, TM>('else')).graphNodes
+        : undefined;
+      this.graphNodes.push({
+        id: idOrCondition,
+        type: 'conditional',
+        data: { condition: conditionOrThenBuilder },
+        children: compactGraphChildren([
+          { id: 'then', type: 'turn', children: thenChildren },
+          elseChildren
+            ? { id: 'else', type: 'turn', children: elseChildren }
+            : undefined,
+        ]),
+      });
+      return this;
+    }
+    if (this.graphName) {
+      throw new Error(
+        'Graph Agent.conditional requires conditional(id, condition, thenBuilder).',
+      );
+    }
+    const condition = idOrCondition as (s: Session<TC, TM>) => boolean;
+    const thenBuilderFn = conditionOrThenBuilder as (
+      agent: Agent<TC, TM>,
+    ) => Agent<TC, TM>;
+    const elseBuilderFn = thenOrElseBuilder;
     const thenAgent = Agent.create<TC, TM>();
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
@@ -1055,6 +1164,12 @@ function compactGraphData(
     Object.entries(data).filter(([, value]) => value !== undefined),
   );
   return Object.keys(compact).length > 0 ? compact : undefined;
+}
+
+function compactGraphChildren(
+  children: Array<AgentGraphNode | undefined>,
+): AgentGraphNode[] {
+  return children.filter((child): child is AgentGraphNode => child !== undefined);
 }
 
 function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(

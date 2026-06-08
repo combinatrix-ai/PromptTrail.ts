@@ -226,4 +226,32 @@ describe('Agent graph authoring', () => {
       },
     ]);
   });
+
+  it('compiles named graph conditionals and loops into stable subgraphs', () => {
+    const graph = Agent.create('assistant')
+      .conditional(
+        'branch',
+        ({ session }) => session.getVar('ready') === true,
+        (then) => then.assistant('thenReply', 'ready'),
+        (otherwise) => otherwise.assistant('elseReply', 'not ready'),
+      )
+      .loop(
+        'retry',
+        (body) => body.assistant('tick', 'tick'),
+        ({ session }) => session.messages.length < 2,
+        { maxIterations: 3 },
+      )
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/branch', 'conditional'],
+      ['assistant/branch/then', 'turn'],
+      ['assistant/branch/then/thenReply', 'assistant'],
+      ['assistant/branch/else', 'turn'],
+      ['assistant/branch/else/elseReply', 'assistant'],
+      ['assistant/retry', 'loop'],
+      ['assistant/retry/tick', 'assistant'],
+    ]);
+  });
 });

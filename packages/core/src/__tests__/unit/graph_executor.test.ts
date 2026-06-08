@@ -108,6 +108,46 @@ describe('GraphExecutor', () => {
     ]);
   });
 
+  it('executes named graph conditional branches', async () => {
+    const graph = Agent.create('assistant')
+      .conditional(
+        'branch',
+        ({ context }) => context?.ready === true,
+        (then) => then.assistant('reply', 'ready'),
+        (otherwise) => otherwise.assistant('reply', 'not ready'),
+      )
+      .toGraph();
+
+    const thenSession = await executeAgentGraph(graph, {
+      context: { ready: true },
+    });
+    const elseSession = await executeAgentGraph(graph, {
+      context: { ready: false },
+    });
+
+    expect(thenSession.getLastMessage()?.content).toBe('ready');
+    expect(elseSession.getLastMessage()?.content).toBe('not ready');
+  });
+
+  it('executes named graph loops with node-local max iterations', async () => {
+    const graph = Agent.create('assistant')
+      .patch('init', (session) => session.withVar('count', 0))
+      .loop(
+        'retry',
+        (body) =>
+          body.patch('increment', (session) =>
+            session.withVar('count', Number(session.getVar('count')) + 1),
+          ),
+        ({ session }) => Number(session.getVar('count')) < 3,
+        { maxIterations: 3 },
+      )
+      .toGraph();
+
+    const session = await executeAgentGraph(graph, { maxLoopIterations: 1 });
+
+    expect(session.getVar('count')).toBe(3);
+  });
+
   it('suspends awaitInput nodes with a typed signal and stable node path', async () => {
     const graph = createAgentGraph({
       name: 'assistant',
