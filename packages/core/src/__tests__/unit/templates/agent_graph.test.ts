@@ -79,6 +79,35 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
+  it('builds top-level graph messages and patch nodes', async () => {
+    const agent = Agent.create('assistant')
+      .messages('derived', () => [{ type: 'user', content: 'derived input' }])
+      .patch('mark', (session) => session.withVar('marked', true));
+
+    const graph = agent.toGraph('v1');
+    const session = await agent.execute();
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['derived', 'messages'],
+      ['mark', 'patch'],
+    ]);
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'derived input',
+    ]);
+    expect(session.getVar('marked')).toBe(true);
+  });
+
+  it('requires explicit ids for named graph messages and patch nodes', () => {
+    expect(() =>
+      Agent.create('assistant').messages(() => [
+        { type: 'user', content: 'missing id' },
+      ]),
+    ).toThrow(/messages\(id, handler\)/);
+    expect(() =>
+      Agent.create('assistant').patch((session) => session),
+    ).toThrow(/patch\(id, handler\)/);
+  });
+
   it('does not silently discard unsupported durable graph execution', async () => {
     const agent = Agent.create('assistant')
       .assistant('reply', Source.literal('ok'))

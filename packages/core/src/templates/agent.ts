@@ -23,6 +23,7 @@ import {
   executeAgentGraph,
   type GraphExecutionOptions,
 } from '../graph_executor';
+import type { Message } from '../message';
 import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
@@ -64,6 +65,17 @@ type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
   | Source<ModelOutput>
   | Source<string>
   | AgentGraphAssistantHandler<TC, TM>;
+
+type AgentGraphMessagesHandler<TC extends Vars, TM extends Attrs> = (
+  session: Session<TC, TM>,
+) =>
+  | Message<TM>
+  | readonly Message<TM>[]
+  | Promise<Message<TM> | readonly Message<TM>[]>;
+
+type AgentGraphPatchHandler<TC extends Vars, TM extends Attrs> = (
+  session: Session<TC, TM>,
+) => Session<TC, TM> | void | Promise<Session<TC, TM> | void>;
 
 export interface AgentGoalSatisfactionContext<
   TC extends Vars = Vars,
@@ -438,13 +450,65 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
+  patch(handler: AgentGraphPatchHandler<TC, TM>): this;
+  patch(id: string, handler: AgentGraphPatchHandler<TC, TM>): this;
+  patch(
+    idOrHandler: string | AgentGraphPatchHandler<TC, TM>,
+    handler?: AgentGraphPatchHandler<TC, TM>,
+  ) {
+    if (this.graphName || handler !== undefined) {
+      if (typeof idOrHandler !== 'string' || !handler) {
+        throw new Error('Graph Agent.patch requires patch(id, handler).');
+      }
+      this.graphNodes.push({
+        id: idOrHandler,
+        type: 'patch',
+        data: { handler },
+      });
+      return this;
+    }
+    this.root.add(
+      new Transform(async (session) => {
+        const result = await (idOrHandler as AgentGraphPatchHandler<TC, TM>)(
+          session,
+        );
+        return result ?? session;
+      }),
+    );
+    return this;
+  }
+
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
     this.root.add(new Transform(transform));
     return this;
   }
 
-  messages(generateMessages: GenerateMessagesFn<TM, TC>) {
-    this.root.add(new GenerateMessages(generateMessages));
+  messages(generateMessages: GenerateMessagesFn<TM, TC>): this;
+  messages(
+    id: string,
+    generateMessages: AgentGraphMessagesHandler<TC, TM>,
+  ): this;
+  messages(
+    idOrGenerateMessages:
+      | string
+      | GenerateMessagesFn<TM, TC>
+      | AgentGraphMessagesHandler<TC, TM>,
+    generateMessages?: AgentGraphMessagesHandler<TC, TM>,
+  ) {
+    if (this.graphName || generateMessages !== undefined) {
+      if (typeof idOrGenerateMessages !== 'string' || !generateMessages) {
+        throw new Error('Graph Agent.messages requires messages(id, handler).');
+      }
+      this.graphNodes.push({
+        id: idOrGenerateMessages,
+        type: 'messages',
+        data: { handler: generateMessages },
+      });
+      return this;
+    }
+    this.root.add(
+      new GenerateMessages(idOrGenerateMessages as GenerateMessagesFn<TM, TC>),
+    );
     return this;
   }
 

@@ -112,6 +112,8 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executePatchNode(node, nodePath, state);
       return;
     case 'messages':
+      await executeMessagesNode(node, nodePath, state);
+      return;
     case 'conditional':
     case 'parallel':
     case 'structured':
@@ -214,6 +216,33 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   const result = await handler(state.session);
   if (result instanceof Session) {
     state.session = result as Session<TVars, TAttrs>;
+    return;
+  }
+  if (result !== undefined) {
+    throw new Error(`Graph node ${nodePath} returned an invalid patch result.`);
+  }
+}
+
+async function executeMessagesNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const handler = graphNodeData(node).handler;
+  if (typeof handler !== 'function') {
+    throw new Error(`Graph node ${nodePath} requires a messages handler.`);
+  }
+  const result = await handler(state.session);
+  const messages = Array.isArray(result) ? result : [result];
+  for (const message of messages) {
+    if (!isPromptTrailMessage(message)) {
+      throw new Error(
+        `Graph node ${nodePath} returned an invalid message result.`,
+      );
+    }
+    state.session = state.session.addMessage(
+      message as PromptTrailMessage<TAttrs>,
+    );
   }
 }
 
@@ -422,4 +451,16 @@ function isModelOutput(value: unknown): value is ModelOutput {
 
 function isAssistantMessage(value: unknown): value is { type: 'assistant' } {
   return isRecord(value) && value.type === 'assistant';
+}
+
+function isPromptTrailMessage(value: unknown): value is PromptTrailMessage {
+  if (!isRecord(value) || typeof value.content !== 'string') {
+    return false;
+  }
+  return (
+    value.type === 'system' ||
+    value.type === 'user' ||
+    value.type === 'assistant' ||
+    value.type === 'tool_result'
+  );
 }
