@@ -513,6 +513,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.patch requires patch(id, handler).');
+    }
     this.root.add(
       new Transform(async (session) => {
         const result = await (idOrHandler as AgentGraphPatchHandler<TC, TM>)(

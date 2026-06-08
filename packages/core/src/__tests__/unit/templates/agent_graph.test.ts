@@ -300,6 +300,9 @@ describe('Agent graph authoring', () => {
     expect(() => graphStarted().messages(() => [])).toThrow(
       /Graph Agent\.messages/,
     );
+    expect(() => graphStarted().patch((session) => session)).toThrow(
+      /Graph Agent\.patch/,
+    );
     expect(() => graphStarted().transform((session) => session)).toThrow(
       /Graph Agent\.transform/,
     );
