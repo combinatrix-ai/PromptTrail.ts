@@ -138,6 +138,12 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('StepTemplates');
   });
 
+  it('does not expose durable agent classes as public authoring APIs', () => {
+    expect(prompttrail).not.toHaveProperty('DurableAgent');
+    expect(prompttrail).not.toHaveProperty('DurableTurnBuilder');
+    expect(prompttrail).not.toHaveProperty('MemoryDurableRuntime');
+  });
+
   it('types observer delivery binding helpers', async () => {
     const deliveryBindingStore: ObserverDeliveryBindingStore = {
       claim() {

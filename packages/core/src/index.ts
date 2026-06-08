@@ -27,7 +27,41 @@ export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
 export * from './skills';
 export * from './stream';
-export * from './durable';
+export {
+  Halt,
+  MemoryRunStore,
+  NondeterminismError,
+  PromptTrail,
+  Suspend,
+  agent,
+  app,
+  manualSource,
+  memoryStore,
+} from './durable';
+export type {
+  AssistantDeliveryOutboxEntry,
+  AssistantDeliveryOutboxInput,
+  AssistantHandler,
+  AssistantResult,
+  DurableActivityContext,
+  DurableActivityKind,
+  DurableActivityOptions,
+  DurablePatchHandler,
+  DurableRunResult,
+  DurableRunStore,
+  DurableTool,
+  DurableToolExecutionContext,
+  EventSource,
+  Inbound,
+  InboundKind,
+  InboundRuntimeEvent,
+  PendingAssistantDeliveryOutboxEntry,
+  PromptTrailAppOptions,
+  PromptTrailRunOptions,
+  PromptTrailSendOptions,
+  StoredRun,
+  ToolCall,
+} from './durable';
 export * from './templates';
 export * from './templates/primitives/structured';
 export * from './tool';
