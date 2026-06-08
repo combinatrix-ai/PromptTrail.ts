@@ -293,7 +293,10 @@ function isStableGraphId(value: unknown): value is string {
   );
 }
 
-function toManifestValue(value: unknown, seen = new WeakSet<object>()): unknown {
+function toManifestValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+): unknown {
   if (
     value === undefined ||
     value === null ||
@@ -317,6 +320,12 @@ function toManifestValue(value: unknown, seen = new WeakSet<object>()): unknown 
     if (Array.isArray(value)) {
       return value.map((item) => toManifestValue(item, seen));
     }
+    if (isManifestDescribable(value)) {
+      return {
+        kind: 'manifestDescriptor',
+        descriptor: toManifestValue(value.getManifestDescriptor(), seen),
+      };
+    }
     if (!isPlainObject(value)) {
       return {
         kind: 'object',
@@ -337,6 +346,17 @@ function toManifestValue(value: unknown, seen = new WeakSet<object>()): unknown 
 function isPlainObject(value: object): boolean {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+interface ManifestDescribable {
+  getManifestDescriptor: () => unknown;
+}
+
+function isManifestDescribable(value: object): value is ManifestDescribable {
+  return (
+    typeof (value as { getManifestDescriptor?: unknown })
+      .getManifestDescriptor === 'function'
+  );
 }
 
 function stableHash(value: unknown): string {

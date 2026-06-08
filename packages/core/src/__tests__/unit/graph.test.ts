@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   AgentGraphValidationError,
   createAgentGraph,
@@ -6,6 +7,7 @@ import {
   validateAgentGraph,
   type AgentGraph,
 } from '../../graph';
+import { Source } from '../../source';
 
 describe('AgentGraph', () => {
   it('creates a durable/app graph manifest with stable node paths', () => {
@@ -53,16 +55,12 @@ describe('AgentGraph', () => {
     const left = createAgentGraph({
       name: 'stable',
       version: 'v1',
-      nodes: [
-        { id: 'node', type: 'patch', data: { b: 2, a: 1 } },
-      ],
+      nodes: [{ id: 'node', type: 'patch', data: { b: 2, a: 1 } }],
     });
     const right = createAgentGraph({
       name: 'stable',
       version: 'v1',
-      nodes: [
-        { id: 'node', type: 'patch', data: { a: 1, b: 2 } },
-      ],
+      nodes: [{ id: 'node', type: 'patch', data: { a: 1, b: 2 } }],
     });
 
     expect(createAgentGraphManifest(left).hash).toBe(
@@ -87,6 +85,176 @@ describe('AgentGraph', () => {
       left: { model: 'gpt-test' },
       right: { model: 'gpt-test' },
     });
+  });
+
+  it('captures opaque LLM source config without leaking credentials', () => {
+    const buildSource = (schema = z.object({ ok: z.boolean() })) =>
+      Source.llm()
+        .anthropic({
+          apiKey: 'sk-secret',
+          modelName: 'claude-test',
+          baseURL: 'https://private.example.test',
+        })
+        .temperature(0.2)
+        .maxTokens(64)
+        .withCapabilities([
+          {
+            kind: 'tool',
+            name: 'local_lookup',
+            description: 'Lookup local state.',
+            inputSchema: z.object({ query: z.string() }),
+            execute: function localLookup() {
+              return 'ok';
+            },
+          },
+          {
+            kind: 'skill',
+            name: 'planner',
+            description: 'Plan work.',
+            instructions: 'Break the work into concrete steps.',
+            path: 'skills/planner',
+          },
+          {
+            kind: 'builtin',
+            name: 'web_search',
+            provider: 'openai',
+            executionMode: 'provider',
+            config: { apiToken: 'tool-secret' },
+            metadata: { owner: 'secret-owner' },
+          },
+          {
+            kind: 'mcp',
+            name: 'private-mcp',
+            transport: {
+              kind: 'http',
+              url: 'https://mcp.example.test',
+              headers: { Authorization: 'secret-header' },
+            },
+            tools: ['lookup'],
+          },
+        ])
+        .dangerouslyAllowBrowser()
+        .withSchema(schema, {
+          mode: 'tool',
+          functionName: 'make_result',
+        });
+    const source = buildSource();
+    const graph = createAgentGraph({
+      name: 'llmManifest',
+      version: 'v1',
+      nodes: [{ id: 'reply', type: 'assistant', data: { input: source } }],
+    });
+    const sameConfig = createAgentGraph({
+      name: 'llmManifest',
+      version: 'v1',
+      nodes: [
+        { id: 'reply', type: 'assistant', data: { input: buildSource() } },
+      ],
+    });
+    const modelChanged = createAgentGraph({
+      name: 'llmManifest',
+      version: 'v1',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: Source.llm().anthropic({ modelName: 'claude-other' }),
+          },
+        },
+      ],
+    });
+    const schemaChanged = createAgentGraph({
+      name: 'llmManifest',
+      version: 'v1',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: buildSource(
+              z.object({ ok: z.boolean(), danger: z.string() }),
+            ),
+          },
+        },
+      ],
+    });
+
+    const manifest = createAgentGraphManifest(graph);
+    const data = manifest.nodes[0].data;
+
+    expect(data).toMatchObject({
+      input: {
+        kind: 'manifestDescriptor',
+        descriptor: {
+          kind: 'source',
+          sourceType: 'LlmSource',
+          config: {
+            provider: {
+              type: 'anthropic',
+              modelName: 'claude-test',
+              apiKey: { present: true },
+              baseURL: { present: true },
+            },
+            generation: {
+              temperature: 0.2,
+              maxTokens: 64,
+              dangerouslyAllowBrowser: true,
+            },
+            schema: {
+              mode: 'tool',
+              functionName: 'make_result',
+            },
+            capabilities: [
+              {
+                kind: 'tool',
+                name: 'local_lookup',
+                description: 'Lookup local state.',
+                inputSchema: {
+                  typeName: 'ZodObject',
+                },
+                execute: { kind: 'function', name: 'localLookup' },
+              },
+              {
+                kind: 'skill',
+                name: 'planner',
+                description: 'Plan work.',
+                instructions: 'Break the work into concrete steps.',
+                path: 'skills/planner',
+              },
+              {
+                kind: 'builtin',
+                name: 'web_search',
+                provider: 'openai',
+                executionMode: 'provider',
+                configKeys: ['apiToken'],
+                metadataKeys: ['owner'],
+              },
+              {
+                kind: 'mcp',
+                name: 'private-mcp',
+                transport: {
+                  kind: 'http',
+                  url: 'https://mcp.example.test',
+                  headerKeys: ['Authorization'],
+                },
+                tools: ['lookup'],
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(data)).not.toContain('sk-secret');
+    expect(JSON.stringify(data)).not.toContain('private.example.test');
+    expect(JSON.stringify(data)).not.toContain('tool-secret');
+    expect(JSON.stringify(data)).not.toContain('secret-owner');
+    expect(JSON.stringify(data)).not.toContain('secret-header');
+    expect(manifest.hash).toBe(createAgentGraphManifest(sameConfig).hash);
+    expect(manifest.hash).not.toBe(createAgentGraphManifest(modelChanged).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(schemaChanged).hash,
+    );
   });
 
   it('rejects missing stable ids for app and durable graphs', () => {

@@ -1,7 +1,11 @@
 // content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
-import type { ApprovalHandler, CapabilitySet } from './capabilities';
+import type {
+  ApprovalHandler,
+  CapabilitySet,
+  McpTransport,
+} from './capabilities';
 import type { PromptTrailTool } from './capabilities';
 import { ValidationError } from './errors';
 import {
@@ -17,6 +21,7 @@ import type {
   LLMOptions,
   ModelOutput,
   OpenAIProviderConfig,
+  ProviderConfig,
   SchemaGenerationMode,
   SchemaGenerationOptions,
 } from './llm_types';
@@ -48,6 +53,261 @@ function getMaxLLMCalls(): number {
  */
 const llmCallCounter = new Map<string, number>();
 
+function manifestDescriptorValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  key?: string,
+): unknown {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value;
+  }
+  if (typeof value === 'function') {
+    if (key === 'shape') {
+      try {
+        return manifestDescriptorValue(value(), seen);
+      } catch {
+        return { kind: 'function', name: value.name || undefined };
+      }
+    }
+    return { kind: 'function', name: value.name || undefined };
+  }
+  if (typeof value !== 'object') {
+    return { kind: typeof value };
+  }
+  if (seen.has(value)) {
+    return { kind: 'circular' };
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => manifestDescriptorValue(item, seen));
+    }
+    if (value instanceof RegExp) {
+      return { kind: 'regexp', source: value.source, flags: value.flags };
+    }
+    if (isZodSchemaLike(value)) {
+      return zodSchemaManifestDescriptor(value, seen);
+    }
+    if (!isPlainObject(value)) {
+      return {
+        kind: 'object',
+        ctor: value.constructor?.name || undefined,
+      };
+    }
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((entryKey) => [
+          entryKey,
+          manifestDescriptorValue(record[entryKey], seen, entryKey),
+        ]),
+    );
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function isPlainObject(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isZodSchemaLike(value: object): value is z.ZodType {
+  const definition = (value as { _def?: unknown })._def;
+  return (
+    typeof definition === 'object' &&
+    definition !== null &&
+    typeof (definition as { typeName?: unknown }).typeName === 'string'
+  );
+}
+
+function zodSchemaManifestDescriptor(
+  schema: z.ZodType,
+  seen = new WeakSet<object>(),
+) {
+  const definition = (schema as { _def?: unknown })._def;
+  return {
+    typeName:
+      typeof definition === 'object' && definition !== null
+        ? (definition as { typeName?: unknown }).typeName
+        : schema.constructor?.name || undefined,
+    definition: manifestDescriptorValue(definition, seen),
+  };
+}
+
+function llmProviderManifestDescriptor(provider: ProviderConfig) {
+  const base = {
+    type: provider.type,
+    modelName: provider.modelName,
+    adapter: provider.adapter,
+    baseURL: provider.baseURL ? { present: true } : undefined,
+    apiKey: provider.apiKey ? { present: true } : undefined,
+  };
+  switch (provider.type) {
+    case 'openai':
+      return {
+        ...base,
+        api: provider.api,
+        organization: provider.organization ? { present: true } : undefined,
+        dangerouslyAllowBrowser: provider.dangerouslyAllowBrowser,
+      };
+    case 'anthropic':
+      return base;
+    case 'google':
+      return {
+        ...base,
+        retry: provider.retry,
+      };
+  }
+}
+
+function llmGenerationManifestDescriptor(options: LLMOptions) {
+  return {
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+    topP: options.topP,
+    topK: options.topK,
+    toolChoice: options.toolChoice,
+    retain: options.retain,
+    conversationBinding: options.conversationBinding,
+    skillInjection: options.skillInjection,
+    maxCallLimit: options.maxCallLimit,
+    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+    cacheKey: options.cacheKey ? { present: true } : undefined,
+    cacheRetention: options.cacheRetention,
+    compaction: options.compaction,
+    thinking: options.thinking,
+    aiSdk: options.aiSdk
+      ? {
+          providerOptionProviders: options.aiSdk.providerOptions
+            ? Object.keys(options.aiSdk.providerOptions).sort()
+            : undefined,
+          sdkOptionKeys: options.aiSdk.sdkOptions
+            ? Object.keys(options.aiSdk.sdkOptions).sort()
+            : undefined,
+        }
+      : undefined,
+    anthropic: options.anthropic,
+    approvalHandler: options.approvalHandler
+      ? { present: true, name: options.approvalHandler.name || undefined }
+      : undefined,
+    context: options.context ? { present: true } : undefined,
+  };
+}
+
+function capabilitySetManifestDescriptor(
+  capabilities: CapabilitySet | undefined,
+) {
+  if (!capabilities?.length) {
+    return undefined;
+  }
+  return capabilities?.map((capability) => {
+    switch (capability.kind) {
+      case 'tool':
+        return promptTrailToolManifestDescriptor(capability);
+      case 'skill':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          description: capability.description,
+          instructions: capability.instructions,
+          path: capability.path,
+          skillId: capability.skillId,
+          materialize: capability.materialize,
+          cache: capability.cache,
+          metadataKeys: objectKeysManifestDescriptor(capability.metadata),
+        };
+      case 'builtin':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          provider: capability.provider,
+          executionMode: capability.executionMode,
+          configKeys: objectKeysManifestDescriptor(capability.config),
+          approval: approvalManifestDescriptor(capability.approval),
+          cache: capability.cache,
+          metadataKeys: objectKeysManifestDescriptor(capability.metadata),
+        };
+      case 'mcp':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          transport: mcpTransportManifestDescriptor(capability.transport),
+          tools: capability.tools,
+          approval: approvalManifestDescriptor(capability.approval),
+          cache: capability.cache,
+        };
+    }
+  });
+}
+
+function promptTrailToolManifestDescriptor(tool: PromptTrailTool<any, any>) {
+  return {
+    kind: tool.kind,
+    name: tool.name,
+    description: tool.description,
+    inputSchema: zodSchemaManifestDescriptor(tool.inputSchema),
+    execute: { kind: 'function', name: tool.execute.name || undefined },
+    approval: approvalManifestDescriptor(tool.approval),
+    cache: tool.cache,
+    metadataKeys: objectKeysManifestDescriptor(tool.metadata),
+  };
+}
+
+function promptTrailToolsManifestDescriptor(
+  tools: Record<string, PromptTrailTool<any, any>> | undefined,
+) {
+  const entries = Object.values(tools ?? {}).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+  return entries.length
+    ? entries.map((tool) => promptTrailToolManifestDescriptor(tool))
+    : undefined;
+}
+
+function approvalManifestDescriptor(approval: unknown) {
+  return typeof approval === 'function'
+    ? { kind: 'function', name: approval.name || undefined }
+    : approval;
+}
+
+function objectKeysManifestDescriptor(
+  value: Record<string, unknown> | undefined,
+) {
+  return value ? Object.keys(value).sort() : undefined;
+}
+
+function mcpTransportManifestDescriptor(transport: McpTransport) {
+  if (transport.kind === 'stdio') {
+    return {
+      kind: transport.kind,
+      command: transport.command,
+      args: transport.args,
+      envKeys: transport.env ? Object.keys(transport.env).sort() : undefined,
+    };
+  }
+  if (transport.kind === 'http') {
+    return {
+      kind: transport.kind,
+      url: transport.url,
+      headerKeys: transport.headers
+        ? Object.keys(transport.headers).sort()
+        : undefined,
+    };
+  }
+  return {
+    kind: transport.kind,
+    server: { present: true },
+  };
+}
+
 export type {
   AnthropicProviderConfig,
   GoogleProviderConfig,
@@ -57,6 +317,17 @@ export type {
   ProviderConfig,
   SchemaGenerationOptions,
 } from './llm_types';
+
+export interface SourceManifestDescriptor {
+  kind: 'source';
+  sourceType: string;
+  validation?: {
+    validator?: string;
+    maxAttempts: number;
+    raiseError: boolean;
+  };
+  config?: unknown;
+}
 
 /**
  * Options for validation behavior
@@ -121,6 +392,27 @@ export abstract class Source<T = unknown> {
   getValidator(): IValidator | undefined {
     return this.validator;
   }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      kind: 'source',
+      sourceType: this.constructor?.name || 'Source',
+      validation: this.validationManifestDescriptor(),
+    };
+  }
+
+  protected validationManifestDescriptor():
+    | SourceManifestDescriptor['validation']
+    | undefined {
+    if (!this.validator && this.maxAttempts === 1 && this.raiseError === true) {
+      return undefined;
+    }
+    return {
+      validator: this.validator?.constructor?.name || undefined,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
+  }
 }
 
 /**
@@ -148,9 +440,16 @@ export class RandomSource extends StringSource {
     super(options);
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(_session: Session<any, any>): Promise<string> {
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: { itemCount: this.contentList.length },
+    };
   }
 }
 
@@ -216,6 +515,16 @@ export class ListSource extends StringSource {
    */
   atEnd(): boolean {
     return !this.loop && this.index >= this.contentList.length;
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        itemCount: this.contentList.length,
+        loop: this.loop,
+      },
+    };
   }
 }
 
@@ -335,6 +644,16 @@ export class CLISource extends StringSource {
       rl.close();
     }
   }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        prompt: this.promptText,
+        hasDefault: this.defaultVal !== undefined,
+      },
+    };
+  }
 }
 
 /**
@@ -442,6 +761,15 @@ export class CallbackSource extends StringSource {
       );
     }
   }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        callback: this.callback.name || undefined,
+      },
+    };
+  }
 }
 
 /**
@@ -512,6 +840,15 @@ export class LiteralSource extends StringSource {
       throw new ValidationError(errorMessage);
     }
     return interpolatedContent;
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        content: this.content,
+      },
+    };
   }
 }
 
@@ -618,6 +955,33 @@ export class LlmSource extends ModelSource {
     if (isDebugMode()) {
       llmCallCounter.set(this.instanceId, 0);
     }
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        provider: llmProviderManifestDescriptor(this.options.provider),
+        generation: llmGenerationManifestDescriptor(this.options),
+        schema: this.schemaConfig
+          ? {
+              mode: this.schemaConfig.mode ?? 'native',
+              functionName: this.schemaConfig.functionName,
+              schema: zodSchemaManifestDescriptor(this.schemaConfig.schema),
+            }
+          : undefined,
+        tools: promptTrailToolsManifestDescriptor(this.options.tools),
+        capabilities: capabilitySetManifestDescriptor(
+          this.options.capabilities,
+        ),
+        mocked: this._mockState
+          ? {
+              responseCount: this._mockState.mockResponses.length,
+              callback: this._mockState.mockCallback?.name || undefined,
+            }
+          : undefined,
+      },
+    };
   }
 
   // Helper method to create new instance with merged options
