@@ -315,12 +315,9 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'codexTurn':
     case 'claudeTurn':
     case 'parallel':
+    case 'transform':
       await executeTemplateNode(node, nodePath, state);
       return;
-    case 'transform':
-      throw new Error(
-        `Graph node ${nodePath} is not executable yet: ${node.type}`,
-      );
   }
 }
 

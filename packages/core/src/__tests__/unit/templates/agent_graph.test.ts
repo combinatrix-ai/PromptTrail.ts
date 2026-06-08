@@ -400,6 +400,23 @@ describe('Agent graph authoring', () => {
     expect(events).toContain('model.completed');
   });
 
+  it('executes graph transform template nodes', async () => {
+    const session = await Agent.create('assistant')
+      .user('input', 'hello')
+      .transform('mark', (current) => current.withVar('marked', true))
+      .assistant(
+        'reply',
+        (current) => `marked:${String(current.getVar('marked'))}`,
+      )
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'marked:true',
+    ]);
+    expect(session.getVar('marked')).toBe(true);
+  });
+
   it('compiles graph Codex and Claude turn template nodes', () => {
     const graph = Agent.create('assistant')
       .codexTurn('codex', {} as never)

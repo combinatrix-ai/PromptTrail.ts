@@ -541,11 +541,32 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this;
   }
 
-  transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.transform requires patch(id, handler).');
+  transform(transform: (s: Session<TC, TM>) => Session<TC, TM>): this;
+  transform(
+    id: string,
+    transform: (s: Session<TC, TM>) => Session<TC, TM>,
+  ): this;
+  transform(
+    idOrTransform: string | ((s: Session<TC, TM>) => Session<TC, TM>),
+    maybeTransform?: (s: Session<TC, TM>) => Session<TC, TM>,
+  ) {
+    if (typeof idOrTransform === 'string') {
+      if (!maybeTransform) {
+        throw new Error(
+          'Graph Agent.transform requires transform(id, handler).',
+        );
+      }
+      this.graphNodes.push({
+        id: idOrTransform,
+        type: 'transform',
+        data: { template: new Transform(maybeTransform) },
+      });
+      return this;
     }
-    this.root.add(new Transform(transform));
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.transform requires transform(id, handler).');
+    }
+    this.root.add(new Transform(idOrTransform));
     return this;
   }
 
