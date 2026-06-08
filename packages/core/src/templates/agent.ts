@@ -29,7 +29,6 @@ import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
   type ExecutionRuntimeState,
-  type ExecutionDurableBoundary,
   type HookDefinition,
   type MiddlewareDefinition,
   runRuntimeExecutionPhase,
@@ -110,7 +109,6 @@ export interface AgentGoalSatisfactionContext<
   attempt: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
-  durable?: ExecutionDurableBoundary;
 }
 
 export interface AgentGoalOptions<
@@ -121,7 +119,6 @@ export interface AgentGoalOptions<
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
   model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC, TM>;
-  durability?: 'materialized' | 'replayable';
   isSatisfied?: (
     context: AgentGoalSatisfactionContext<TC, TM>,
   ) => boolean | Promise<boolean>;
@@ -1440,7 +1437,6 @@ function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
       type: 'patch',
       data: compactGraphData({
         kind: 'goalSatisfaction',
-        durability: options.durability ?? 'materialized',
         isSatisfied: options.isSatisfied,
       }),
     },

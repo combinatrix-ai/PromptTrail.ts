@@ -531,12 +531,11 @@ describe('Agent graph authoring', () => {
       ['research/researchTopic/attempts/check', 'patch'],
       ['research/researchTopic/attempts/interaction', 'awaitInput'],
     ]);
-    expect(
-      manifest.nodes.find((node) => node.path.endsWith('/check'))?.data,
-    ).toMatchObject({
-      kind: 'goalSatisfaction',
-      durability: 'materialized',
-    });
+    const checkData = manifest.nodes.find((node) =>
+      node.path.endsWith('/check'),
+    )?.data;
+    expect(checkData).toMatchObject({ kind: 'goalSatisfaction' });
+    expect(checkData).not.toHaveProperty('durability');
   });
 
   it('compiles named graph subroutines into a stable subgraph', () => {

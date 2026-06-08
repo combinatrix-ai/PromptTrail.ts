@@ -196,7 +196,6 @@ interface GoalOptions<TVars, TAttrs> {
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, Tool>;
   model?: Source<ModelOutput> | AssistantHandler<TVars, TAttrs>;
-  durability?: 'materialized' | 'replayable';
   isSatisfied?: (
     ctx: GoalSatisfactionContext<TVars, TAttrs>,
   ) => boolean | Promise<boolean>;
@@ -207,7 +206,8 @@ interface GoalSatisfactionContext<TVars, TAttrs> {
   session: Session<TVars, TAttrs>;
   goal: string;
   attempt: number;
-  durable?: ExecutionDurableBoundary;
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 ```
 
@@ -229,10 +229,9 @@ Goal semantics:
   be satisfied.
 - `interaction: 'optional'` permits user input tools but does not require them.
 - `interaction: 'none'` forbids user input tools.
-- `isSatisfied` defaults to `durability: 'materialized'` and must be
-  deterministic with respect to the session.
-- `durability: 'replayable'` passes `ctx.durable` to `isSatisfied`; external
-  work must use `ctx.durable.activity`.
+- `isSatisfied` must be deterministic with respect to the session. External
+  work belongs in model/tool/middleware phases, not in the goal satisfaction
+  check.
 - Interactive goals use `awaitInput` internally. The suspend step id is derived
   from the goal subgraph path, for example
   `research-topic/attempts/interaction`.
