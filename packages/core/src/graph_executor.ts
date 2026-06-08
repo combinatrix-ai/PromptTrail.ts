@@ -453,7 +453,11 @@ function isModelOutput(value: unknown): value is ModelOutput {
 }
 
 function isAssistantMessage(value: unknown): value is { type: 'assistant' } {
-  return isRecord(value) && value.type === 'assistant';
+  return (
+    isRecord(value) &&
+    value.type === 'assistant' &&
+    typeof value.content === 'string'
+  );
 }
 
 function isPromptTrailMessage(value: unknown): value is PromptTrailMessage {

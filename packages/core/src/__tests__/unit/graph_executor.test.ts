@@ -43,6 +43,23 @@ describe('GraphExecutor', () => {
     );
   });
 
+  it('fails assistant messages without string content', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: { input: () => ({ type: 'assistant' }) },
+        },
+      ],
+    });
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      /assistant\/reply returned an invalid assistant result/,
+    );
+  });
+
   it('preserves assistant messages returned by assistant handlers', async () => {
     const graph = createAgentGraph({
       name: 'assistant',
