@@ -270,4 +270,24 @@ describe('Agent graph authoring', () => {
     ]);
     expect(graph.nodes[0]?.data).toEqual({ kind: 'sequence' });
   });
+
+  it('rejects mixing legacy control-flow after graph authoring starts', () => {
+    const graphStarted = () => Agent.create().assistant('reply', () => 'ok');
+
+    expect(() =>
+      graphStarted().loop((body) => body.assistant('legacy'), false),
+    ).toThrow(/Graph Agent\.loop/);
+    expect(() =>
+      graphStarted().conditional(
+        () => true,
+        (then) => then.assistant('legacy'),
+      ),
+    ).toThrow(/Graph Agent\.conditional/);
+    expect(() =>
+      graphStarted().subroutine((sub) => sub.assistant('legacy')),
+    ).toThrow(/Graph Agent\.subroutine/);
+    expect(() =>
+      graphStarted().sequence((step) => step.assistant('legacy')),
+    ).toThrow(/Graph Agent\.sequence/);
+  });
 });

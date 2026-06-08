@@ -247,6 +247,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   private directDurableStore?: DurableRunStore;
   private directDurableRunId?: string;
 
+  private isGraphAuthoringMode(): boolean {
+    return this.graphName !== undefined || this.graphNodes.length > 0;
+  }
+
   private hasInterceptors(): boolean {
     return (
       this.middleware.length > 0 ||
@@ -617,7 +621,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
-    if (this.graphName) {
+    if (this.isGraphAuthoringMode()) {
       throw new Error('Graph Agent.loop requires loop(id, builder, condition).');
     }
     const builderFn = idOrBuilderFn;
@@ -688,7 +692,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
-    if (this.graphName) {
+    if (this.isGraphAuthoringMode()) {
       throw new Error(
         'Graph Agent.conditional requires conditional(id, condition, thenBuilder).',
       );
@@ -747,6 +751,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.subroutine requires subroutine(id, builder).');
+    }
     const builderFn = idOrBuilderFn;
     const opts = builderOrOptions as
       | ISubroutineTemplateOptions<TM, TC>
@@ -782,7 +789,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
-    if (this.graphName) {
+    if (this.isGraphAuthoringMode()) {
       throw new Error('Graph Agent.sequence requires sequence(id, builder).');
     }
     const builderFn = idOrBuilderFn;
