@@ -1,4 +1,10 @@
 import type { CallToolResult } from './capabilities';
+import {
+  ObserverBus,
+  type ExecutionEvent,
+  type ObserverDeliveryBindingOptions,
+  type ObserverLike,
+} from './execution';
 import type { AgentGraph, AgentGraphNode } from './graph';
 import {
   createExecutionRuntimeState,
@@ -22,10 +28,17 @@ export interface GraphExecutionOptions<
   TAttrs extends Attrs = Attrs,
 > {
   session?: Session<TVars, TAttrs>;
-  input?: string | GraphInboundInput<TAttrs> | readonly GraphInboundInput<TAttrs>[];
+  input?:
+    | string
+    | GraphInboundInput<TAttrs>
+    | readonly GraphInboundInput<TAttrs>[];
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   maxLoopIterations?: number;
+  observers?: readonly ObserverLike[];
+  observerDeliveryBindings?: ObserverDeliveryBindingOptions;
+  strictObservers?: boolean;
+  eventScopeId?: string;
 }
 
 export class GraphExecutionSuspended extends Error {
@@ -79,6 +92,22 @@ export async function executeAgentGraph<
   graph: AgentGraph,
   options: GraphExecutionOptions<TVars, TAttrs> = {},
 ): Promise<Session<TVars, TAttrs>> {
+  const observerBus = new ObserverBus(
+    [...graph.observers, ...(options.observers ?? [])],
+    {
+      strictObservers: options.strictObservers,
+      ...options.observerDeliveryBindings,
+    },
+  );
+  const eventScopeId =
+    options.eventScopeId ?? createGraphExecutionEventScopeId();
+  let eventSeq = 0;
+  const nextEventSeq = () => eventSeq++;
+  const emitEvent = (event: ExecutionEvent) =>
+    observerBus.emit(event, {
+      ...options.context,
+      signal: options.signal,
+    });
   const state: GraphExecutionState<TVars, TAttrs> = {
     graph,
     session: options.session ?? Session.create<TVars, TAttrs>(),
@@ -90,14 +119,81 @@ export async function executeAgentGraph<
     runtime: createExecutionRuntimeState<TVars, TAttrs>({
       context: options.context,
       signal: options.signal,
+      emitEvent,
+      eventScopeId,
+      nextEventSeq,
     }),
   };
 
-  for (const node of graph.nodes) {
-    await executeGraphNode(node, `${graph.name}/${node.id}`, state);
+  await emitGraphRunEvent('run.started', state, {
+    sessionVersion: state.session.messages.length,
+  });
+  try {
+    for (const node of graph.nodes) {
+      await executeGraphNode(node, `${graph.name}/${node.id}`, state);
+    }
+    await emitGraphRunEvent('run.completed', state, {
+      sessionVersion: state.session.messages.length,
+    });
+    return state.session;
+  } catch (error) {
+    if (error instanceof GraphExecutionSuspended) {
+      await emitGraphRunEvent('run.suspended', state, {
+        stepId: error.nodePath,
+        sessionVersion:
+          error.session?.messages.length ?? state.session.messages.length,
+      });
+      throw error;
+    }
+    await emitGraphRunEvent('run.failed', state, {
+      sessionVersion: state.session.messages.length,
+      error,
+    });
+    throw error;
   }
+}
 
-  return state.session;
+async function emitGraphRunEvent<TVars extends Vars, TAttrs extends Attrs>(
+  type: 'run.started' | 'run.completed' | 'run.suspended' | 'run.failed',
+  state: GraphExecutionState<TVars, TAttrs>,
+  event: Partial<ExecutionEvent> = {},
+): Promise<void> {
+  if (!state.runtime.emitEvent || !state.runtime.nextEventSeq) {
+    return;
+  }
+  const seq = state.runtime.nextEventSeq();
+  await state.runtime.emitEvent({
+    id: `agent:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    replay: 'live',
+    source: 'graph',
+    ...event,
+    idempotencyKey:
+      event.idempotencyKey ??
+      graphExecutionEventIdempotencyKey(
+        state.runtime.eventScopeId ?? state.graph.name,
+        seq,
+        type,
+      ),
+  });
+}
+
+function graphExecutionEventIdempotencyKey(
+  eventScopeId: string,
+  seq: number,
+  type: string,
+): string {
+  return `${eventScopeId}:agent:${seq}:${type}`;
+}
+
+function createGraphExecutionEventScopeId(): string {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `graph-agent:${random}`;
 }
 
 async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -199,10 +295,7 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeConditionalNode<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function executeConditionalNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
@@ -298,7 +391,10 @@ async function executeSubroutineNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeGoalAttemptsNode<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
   node: AgentGraphNode,
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
@@ -309,8 +405,7 @@ async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>
   }
 
   while (!goal.satisfied && !goal.stopped) {
-    const countsAsAttempt =
-      goal.interaction !== 'required' || goal.interacted;
+    const countsAsAttempt = goal.interaction !== 'required' || goal.interacted;
     if (countsAsAttempt) {
       if (goal.attempt >= goal.maxAttempts) {
         handleUnsatisfiedGoal(goal, nodePath, 'exceeded max attempts');
@@ -541,7 +636,7 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
   const data = graphNodeData(node);
   const lastMessage = state.session.getLastMessage();
   const toolCalls =
-    lastMessage?.type === 'assistant' ? lastMessage.toolCalls ?? [] : [];
+    lastMessage?.type === 'assistant' ? (lastMessage.toolCalls ?? []) : [];
   if (toolCalls.length === 0) {
     return;
   }
@@ -581,9 +676,7 @@ function resolveGraphTools(
       }
       const tool = graphTools[name];
       if (!tool) {
-        throw new Error(
-          `Graph node ${nodePath} allows unknown tool ${name}.`,
-        );
+        throw new Error(`Graph node ${nodePath} allows unknown tool ${name}.`);
       }
       tools[name] = tool;
     }
@@ -725,7 +818,9 @@ function normalizeAssistantResult<TAttrs extends Attrs>(
       attrs: result.metadata as TAttrs | undefined,
     };
   }
-  throw new Error(`Graph node ${nodePath} returned an invalid assistant result.`);
+  throw new Error(
+    `Graph node ${nodePath} returned an invalid assistant result.`,
+  );
 }
 
 function normalizeGraphInbox<TAttrs extends Attrs>(
@@ -794,7 +889,9 @@ function throwIfGraphAborted<TVars extends Vars, TAttrs extends Attrs>(
     return;
   }
   const reason = state.signal.reason;
-  throw reason instanceof Error ? reason : new Error('Graph execution aborted.');
+  throw reason instanceof Error
+    ? reason
+    : new Error('Graph execution aborted.');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

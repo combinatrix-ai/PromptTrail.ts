@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { memoryStore } from '../../../durable';
 import { createAgentGraphManifest } from '../../../graph';
+import { GraphExecutionSuspended } from '../../../graph_executor';
 import type { ExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
@@ -75,7 +76,7 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('rejects run metadata that graph execution does not support yet', async () => {
+  it('rejects durable run metadata that graph execution does not support yet', async () => {
     const store = memoryStore();
     const graph = Agent.create('assistant').assistant('reply', () => 'ok');
 
@@ -88,9 +89,6 @@ describe('Agent graph authoring', () => {
     await expect(graph.execute({ store, input: 'hello' })).rejects.toThrow(
       /option store/,
     );
-    await expect(
-      graph.execute({ observers: [() => undefined], input: 'hello' }),
-    ).rejects.toThrow(/option observers/);
   });
 
   it('treats assistant(id) as a graph node for named agents', () => {
@@ -117,6 +115,69 @@ describe('Agent graph authoring', () => {
       'You are concise.',
       'hello',
       'ok',
+    ]);
+  });
+
+  it('emits graph execution observer events', async () => {
+    const builderEvents: string[] = [];
+    const callEvents: string[] = [];
+    const session = await Agent.create('assistant')
+      .observe((event) => {
+        builderEvents.push(
+          `${event.seq}:${event.type}:${event.source}:${event.sessionVersion}`,
+        );
+      })
+      .assistant('reply', 'ok')
+      .execute({
+        observers: [
+          (event) => {
+            callEvents.push(`${event.seq}:${event.type}`);
+          },
+        ],
+      });
+
+    expect(session.getLastMessage()?.content).toBe('ok');
+    expect(builderEvents).toEqual([
+      '0:run.started:graph:0',
+      '1:run.completed:graph:1',
+    ]);
+    expect(callEvents).toEqual(['0:run.started', '1:run.completed']);
+  });
+
+  it('emits graph suspension observer events', async () => {
+    const events: string[] = [];
+    const agent = Agent.create('assistant')
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
+      })
+      .turn('main', (turn) => turn.awaitInput('next'));
+
+    await expect(agent.execute()).rejects.toThrow(GraphExecutionSuspended);
+
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:run.suspended:assistant/main/next',
+    ]);
+  });
+
+  it('emits graph failure observer events', async () => {
+    const events: string[] = [];
+    const agent = Agent.create('assistant')
+      .observe((event) => {
+        const error = event.error as Error | undefined;
+        events.push(
+          `${event.seq}:${event.type}:${event.sessionVersion}:${error?.message ?? '-'}`,
+        );
+      })
+      .assistant('reply', () => {
+        throw new Error('model failed');
+      });
+
+    await expect(agent.execute()).rejects.toThrow('model failed');
+
+    expect(events).toEqual([
+      '0:run.started:0:-',
+      '1:run.failed:0:model failed',
     ]);
   });
 

@@ -279,14 +279,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         'Graph Agent.execute does not support durable execution yet.',
       );
     }
-    if (this.hasInterceptors()) {
+    if (this.middleware.length > 0 || this.hooks.length > 0) {
       throw new Error(
-        'Graph Agent.execute does not support middleware, hooks, or observers yet.',
+        'Graph Agent.execute does not support middleware or hooks yet.',
       );
     }
 
     const rawOptions = options as Record<string, unknown> | undefined;
-    const unsupportedOption = ['durable', 'runId', 'store', 'observers'].find(
+    const unsupportedOption = ['durable', 'runId', 'store'].find(
       (key) => rawOptions && key in rawOptions,
     );
     if (unsupportedOption) {
