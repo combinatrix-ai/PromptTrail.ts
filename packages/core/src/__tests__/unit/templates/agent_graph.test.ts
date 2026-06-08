@@ -118,6 +118,33 @@ describe('Agent graph authoring', () => {
     );
   });
 
+  it('passes context and signal to graph handlers', async () => {
+    const controller = new AbortController();
+    const session = await Agent.create('assistant')
+      .assistant('reply', (_session, runtime) => {
+        expect(runtime?.context?.channel).toBe('docs');
+        expect(runtime?.signal).toBe(controller.signal);
+        return 'ok';
+      })
+      .execute({
+        context: { channel: 'docs' },
+        signal: controller.signal,
+      });
+
+    expect(session.getLastMessage()?.content).toBe('ok');
+  });
+
+  it('aborts graph execution before running nodes', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('stop'));
+
+    await expect(
+      Agent.create('assistant')
+        .assistant('reply', () => 'unreachable')
+        .execute({ signal: controller.signal }),
+    ).rejects.toThrow(/stop/);
+  });
+
   it('compiles goal nodes into a stable subgraph', () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic thoroughly', {

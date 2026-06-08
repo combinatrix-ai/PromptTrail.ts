@@ -19,6 +19,8 @@ export interface GraphExecutionOptions<
 > {
   session?: Session<TVars, TAttrs>;
   input?: string | GraphInboundInput<TAttrs> | readonly GraphInboundInput<TAttrs>[];
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
   maxLoopIterations?: number;
 }
 
@@ -44,6 +46,8 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   inbox: GraphInboundInput<TAttrs>[];
   cursor: number;
   maxLoopIterations: number;
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
   activeGoal?: ActiveGoalExecution;
 }
 
@@ -74,6 +78,8 @@ export async function executeAgentGraph<
     inbox: normalizeGraphInbox<TAttrs>(options.input),
     cursor: 0,
     maxLoopIterations: options.maxLoopIterations ?? 10,
+    context: options.context,
+    signal: options.signal,
   };
 
   for (const node of graph.nodes) {
@@ -88,6 +94,7 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
+  throwIfGraphAborted(state);
   switch (node.type) {
     case 'system':
       addMessageFromNode(state, node, 'system');
@@ -264,7 +271,10 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
   }
   const result =
     typeof input === 'function'
-      ? await input(state.session)
+      ? await input(state.session, {
+          context: state.context,
+          signal: state.signal,
+        })
       : await resolveGraphContent(input, nodePath, state.session);
   state.session = state.session.addMessage(
     normalizeAssistantResult(result, nodePath),
@@ -285,7 +295,10 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   if (typeof handler !== 'function') {
     throw new Error(`Graph node ${nodePath} requires a patch handler.`);
   }
-  const result = await handler(state.session);
+  const result = await handler(state.session, {
+    context: state.context,
+    signal: state.signal,
+  });
   if (result instanceof Session) {
     state.session = result as Session<TVars, TAttrs>;
     return;
@@ -317,6 +330,8 @@ async function executeGoalSatisfactionNode<
             session: state.session,
             goal: goal.goal,
             attempt: goal.attempt,
+            context: state.context,
+            signal: state.signal,
           }),
         )
       : true);
@@ -343,7 +358,10 @@ async function executeMessagesNode<TVars extends Vars, TAttrs extends Attrs>(
   if (typeof handler !== 'function') {
     throw new Error(`Graph node ${nodePath} requires a messages handler.`);
   }
-  const result = await handler(state.session);
+  const result = await handler(state.session, {
+    context: state.context,
+    signal: state.signal,
+  });
   const messages = Array.isArray(result) ? result : [result];
   for (const message of messages) {
     if (!isPromptTrailMessage(message)) {
@@ -586,6 +604,16 @@ function handleUnsatisfiedGoal(
     return;
   }
   throw new Error(`Graph goal ${goal.nodePath} ${reason} at ${nodePath}.`);
+}
+
+function throwIfGraphAborted<TVars extends Vars, TAttrs extends Attrs>(
+  state: GraphExecutionState<TVars, TAttrs>,
+): void {
+  if (!state.signal?.aborted) {
+    return;
+  }
+  const reason = state.signal.reason;
+  throw reason instanceof Error ? reason : new Error('Graph execution aborted.');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

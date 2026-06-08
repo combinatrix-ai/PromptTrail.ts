@@ -59,6 +59,7 @@ import { ISubroutineTemplateOptions } from './template_types';
 
 type AgentGraphAssistantHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
+  runtime?: AgentGraphHandlerRuntime,
 ) => unknown | Promise<unknown>;
 
 type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
@@ -69,6 +70,7 @@ type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
 
 type AgentGraphMessagesHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
+  runtime?: AgentGraphHandlerRuntime,
 ) =>
   | PromptTrailMessage<TM>
   | readonly PromptTrailMessage<TM>[]
@@ -76,7 +78,13 @@ type AgentGraphMessagesHandler<TC extends Vars, TM extends Attrs> = (
 
 type AgentGraphPatchHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
+  runtime?: AgentGraphHandlerRuntime,
 ) => Session<TC, TM> | void | Promise<Session<TC, TM> | void>;
+
+export interface AgentGraphHandlerRuntime {
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
 
 export interface AgentGoalSatisfactionContext<
   TC extends Vars = Vars,
@@ -85,6 +93,8 @@ export interface AgentGoalSatisfactionContext<
   session: Session<TC, TM>;
   goal: string;
   attempt: number;
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
   durable?: ExecutionDurableBoundary;
 }
 
@@ -251,9 +261,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const unsupportedOption = [
       'durable',
       'store',
-      'context',
       'observers',
-      'signal',
     ].find((key) => rawOptions && key in rawOptions);
     if (unsupportedOption) {
       throw new Error(
