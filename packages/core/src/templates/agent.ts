@@ -20,6 +20,10 @@ import {
   type AgentGraphNode,
 } from '../graph';
 import {
+  executeAgentGraph,
+  type GraphExecutionOptions,
+} from '../graph_executor';
+import {
   createExecutionRuntimeState,
   extendExecutionRuntimeState,
   type ExecutionRuntimeState,
@@ -81,6 +85,13 @@ export interface AgentGoalOptions<TC extends Vars = Vars, TM extends Attrs = Att
     context: AgentGoalSatisfactionContext<TC, TM>,
   ) => boolean | Promise<boolean>;
   onUnsatisfied?: 'retry' | 'continue' | 'halt';
+}
+
+export interface AgentGraphExecutionOptions<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> extends GraphExecutionOptions<TC, TM> {
+  version?: string;
 }
 
 export class AgentTurnGraphBuilder<
@@ -517,15 +528,29 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     return this.hasInterceptors() ? this : this.root;
   }
 
+  async execute(options?: AgentGraphExecutionOptions<TC, TM>): Promise<Session<TC, TM>>;
   async execute(
     session?: Session<TC, TM> | undefined,
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
+  ): Promise<Session<TC, TM>>;
+  async execute(
+    sessionOrOptions?:
+      | Session<TC, TM>
+      | AgentGraphExecutionOptions<TC, TM>
+      | undefined,
+    runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
   ): Promise<Session<TC, TM>> {
     if (this.graphNodes.length > 0) {
-      throw new Error(
-        'Agent graph authoring is not executable through the legacy template runtime yet. Use Agent.toGraph() while GraphExecutor is being implemented.',
+      const options =
+        sessionOrOptions instanceof Session
+          ? { session: sessionOrOptions }
+          : (sessionOrOptions as AgentGraphExecutionOptions<TC, TM> | undefined);
+      return executeAgentGraph(
+        this.toGraph(options?.version),
+        options,
       );
     }
+    const session = sessionOrOptions as Session<TC, TM> | undefined;
     const parentRuntime = isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
       ? runtimeOrOptions
       : undefined;

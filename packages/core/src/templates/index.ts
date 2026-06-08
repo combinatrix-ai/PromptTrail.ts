@@ -24,6 +24,7 @@ export { Agent, AgentTurnGraphBuilder } from './agent';
 export type {
   AgentDirectDurableOptions,
   AgentExecutionOptions,
+  AgentGraphExecutionOptions,
   AgentGoalOptions,
   AgentGoalSatisfactionContext,
 } from './agent';

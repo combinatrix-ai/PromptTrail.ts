@@ -64,13 +64,19 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
-  it('does not execute graph-authored agents through the legacy template runtime', async () => {
-    await expect(
-      Agent.create('assistant')
-        .system('system', 'You are concise.')
-        .turn('main', (turn) => turn.assistant('reply'))
-        .execute(),
-    ).rejects.toThrow(/GraphExecutor/);
+  it('executes graph-authored agents through GraphExecutor', async () => {
+    const session = await Agent.create('assistant')
+      .system('system', 'You are concise.')
+      .turn('main', (turn) =>
+        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
+      )
+      .execute({ input: 'hello' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'hello',
+      'ok',
+    ]);
   });
 
   it('compiles goal nodes into a stable subgraph', () => {
