@@ -15,6 +15,16 @@ export interface GraphExecutionOptions<
   maxLoopIterations?: number;
 }
 
+export class GraphExecutionSuspended extends Error {
+  constructor(
+    public readonly nodePath: string,
+    message = `Graph execution suspended at ${nodePath}`,
+  ) {
+    super(message);
+    this.name = 'GraphExecutionSuspended';
+  }
+}
+
 export interface GraphInboundInput<TAttrs extends Attrs = Attrs> {
   kind?: 'user' | 'system' | 'control';
   content: string;
@@ -45,7 +55,7 @@ export async function executeAgentGraph<
   };
 
   for (const node of graph.nodes) {
-    await executeGraphNode(node, state);
+    await executeGraphNode(node, `${graph.name}/${node.id}`, state);
   }
 
   return state.session;
@@ -53,6 +63,7 @@ export async function executeAgentGraph<
 
 async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
+  nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   switch (node.type) {
@@ -63,28 +74,34 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeUserNode(node, state);
       return;
     case 'assistant':
-      await executeAssistantNode(node, state);
+      await executeAssistantNode(node, nodePath, state);
       return;
     case 'inbox':
       consumeInbox(state);
       return;
     case 'turn':
-    case 'subroutine':
+      await executeChildren(node.children ?? [], nodePath, state);
+      return;
     case 'goal':
-      await executeChildren(node.children ?? [], state);
+      throw new Error(`Graph node ${nodePath} is not executable yet: goal`);
+    case 'subroutine':
+      throw new Error(
+        `Graph node ${nodePath} is not executable yet: subroutine`,
+      );
       return;
     case 'loop':
-      await executeLoopNode(node, state);
+      await executeLoopNode(node, nodePath, state);
       return;
     case 'tools':
+      assertNoPendingToolCalls(nodePath, state);
       return;
     case 'awaitInput':
       if (!consumeInbox(state)) {
-        throw new Error(`Graph execution suspended at ${node.id}`);
+        throw new GraphExecutionSuspended(nodePath);
       }
       return;
     case 'patch':
-      await executePatchNode(node, state);
+      await executePatchNode(node, nodePath, state);
       return;
     case 'messages':
     case 'conditional':
@@ -93,24 +110,33 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'transform':
     case 'codexTurn':
     case 'claudeTurn':
-      throw new Error(`Graph node type ${node.type} is not executable yet.`);
+      throw new Error(
+        `Graph node ${nodePath} is not executable yet: ${node.type}`,
+      );
   }
 }
 
 async function executeChildren<TVars extends Vars, TAttrs extends Attrs>(
   nodes: readonly AgentGraphNode[],
+  parentPath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   for (const child of nodes) {
-    await executeGraphNode(child, state);
+    await executeGraphNode(child, `${parentPath}/${child.id}`, state);
   }
 }
 
 async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
+  nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
+  if (data.kind === 'goalAttempts') {
+    throw new Error(
+      `Graph node ${nodePath} is not executable yet: goal attempts`,
+    );
+  }
   const condition = data.condition;
   const shouldContinue =
     typeof condition === 'function'
@@ -120,9 +146,9 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
   let iterations = 0;
   while (shouldContinue()) {
     if (iterations++ >= state.maxLoopIterations) {
-      throw new Error(`Graph loop ${node.id} exceeded max iterations.`);
+      throw new Error(`Graph loop ${nodePath} exceeded max iterations.`);
     }
-    await executeChildren(node.children ?? [], state);
+    await executeChildren(node.children ?? [], nodePath, state);
   }
 }
 
@@ -144,12 +170,15 @@ async function executeUserNode<TVars extends Vars, TAttrs extends Attrs>(
 
 async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
+  nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const input = data.input;
   if (input === undefined) {
-    return;
+    throw new Error(
+      `Graph node ${nodePath} requires an assistant source or handler.`,
+    );
   }
   const result =
     typeof input === 'function'
@@ -160,15 +189,36 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
 
 async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
+  nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
-  const handler = graphNodeData(node).handler;
+  const data = graphNodeData(node);
+  if (data.kind === 'goalSatisfaction') {
+    throw new Error(
+      `Graph node ${nodePath} is not executable yet: goal satisfaction`,
+    );
+  }
+  const handler = data.handler;
   if (typeof handler !== 'function') {
-    return;
+    throw new Error(`Graph node ${nodePath} requires a patch handler.`);
   }
   const result = await handler(state.session);
   if (result instanceof Session) {
     state.session = result as Session<TVars, TAttrs>;
+  }
+}
+
+function assertNoPendingToolCalls<TVars extends Vars, TAttrs extends Attrs>(
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): void {
+  const lastMessage = state.session.getLastMessage();
+  const toolCalls =
+    lastMessage?.type === 'assistant' ? lastMessage.toolCalls ?? [] : [];
+  if (toolCalls.length > 0) {
+    throw new Error(
+      `Graph node ${nodePath} cannot execute tool calls yet.`,
+    );
   }
 }
 

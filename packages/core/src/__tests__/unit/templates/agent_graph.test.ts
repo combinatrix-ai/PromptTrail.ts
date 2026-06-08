@@ -79,6 +79,16 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
+  it('does not silently discard unsupported durable graph execution', async () => {
+    const agent = Agent.create('assistant')
+      .assistant('reply', Source.literal('ok'))
+      .durable();
+
+    await expect(agent.execute({ input: 'hello' })).rejects.toThrow(
+      /durable execution yet/,
+    );
+  });
+
   it('compiles goal nodes into a stable subgraph', () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic thoroughly', {

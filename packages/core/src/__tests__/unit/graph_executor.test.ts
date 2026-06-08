@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createAgentGraph } from '../../graph';
-import { executeAgentGraph } from '../../graph_executor';
+import {
+  executeAgentGraph,
+  GraphExecutionSuspended,
+} from '../../graph_executor';
 import { Source } from '../../source';
 import { Agent } from '../../templates';
 
@@ -43,17 +46,56 @@ describe('GraphExecutor', () => {
     ]);
   });
 
-  it('executes the stable goal prompt and model skeleton', async () => {
+  it('suspends awaitInput nodes with a typed signal and stable node path', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [{ id: 'wait', type: 'awaitInput' }],
+    });
+
+    await expect(executeAgentGraph(graph)).rejects.toMatchObject({
+      name: 'GraphExecutionSuspended',
+      nodePath: 'assistant/wait',
+    });
+    await expect(executeAgentGraph(graph)).rejects.toBeInstanceOf(
+      GraphExecutionSuspended,
+    );
+  });
+
+  it('fails tools nodes that see pending tool calls before tool execution is implemented', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: () => ({
+              type: 'assistant',
+              content: '',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            }),
+          },
+        },
+        { id: 'tools', type: 'tools' },
+      ],
+    });
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      /assistant\/tools cannot execute tool calls yet/,
+    );
+  });
+
+  it('fails goal nodes until attempts and satisfaction are executable', async () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic', {
         model: Source.literal('done'),
       })
       .toGraph();
 
-    const session = await executeAgentGraph(graph, { maxLoopIterations: 1 });
-
-    expect(session.messages.map((message) => message.content)).toEqual([
-      'Research the topic',
-    ]);
+    await expect(
+      executeAgentGraph(graph, { maxLoopIterations: 1 }),
+    ).rejects.toThrow(/research\/researchTopic is not executable yet: goal/);
   });
 });

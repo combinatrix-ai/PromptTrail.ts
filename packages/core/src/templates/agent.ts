@@ -215,6 +215,35 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     );
   }
 
+  private assertGraphExecutionSupported(
+    options: AgentGraphExecutionOptions<TC, TM> | undefined,
+  ): void {
+    if (this.directDurableOptions) {
+      throw new Error(
+        'Graph Agent.execute does not support durable execution yet.',
+      );
+    }
+    if (this.hasInterceptors()) {
+      throw new Error(
+        'Graph Agent.execute does not support middleware, hooks, or observers yet.',
+      );
+    }
+
+    const rawOptions = options as Record<string, unknown> | undefined;
+    const unsupportedOption = [
+      'durable',
+      'store',
+      'context',
+      'observers',
+      'signal',
+    ].find((key) => rawOptions && key in rawOptions);
+    if (unsupportedOption) {
+      throw new Error(
+        `Graph Agent.execute does not support option ${unsupportedOption} yet.`,
+      );
+    }
+  }
+
   /** Static factory methods -------------------------------------------------- */
 
   static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(): Agent<
@@ -545,6 +574,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         sessionOrOptions instanceof Session
           ? { session: sessionOrOptions }
           : (sessionOrOptions as AgentGraphExecutionOptions<TC, TM> | undefined);
+      this.assertGraphExecutionSupported(options);
       return executeAgentGraph(
         this.toGraph(options?.version),
         options,
