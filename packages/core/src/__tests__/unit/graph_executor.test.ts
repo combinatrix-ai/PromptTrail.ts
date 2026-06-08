@@ -107,6 +107,48 @@ describe('GraphExecutor', () => {
     });
   });
 
+  it('supports pre-condition model/tool loops with Session.hasToolCalls', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+
+    const graph = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .turn('main', (turn) =>
+        turn
+          .assistant('model', (session) =>
+            session.getMessagesByType('tool_result').length === 0
+              ? {
+                  content: '',
+                  toolCalls: [
+                    { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+                  ],
+                }
+              : 'final',
+          )
+          .repeat('toolLoop', ({ session }) => session.hasToolCalls(), (loop) =>
+            loop.tools('tools').assistant('model', (session) =>
+              session.getMessagesByType('tool_result').length > 0
+                ? 'final'
+                : '',
+            ),
+          ),
+      )
+      .toGraph();
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.type)).toEqual([
+      'assistant',
+      'tool_result',
+      'assistant',
+    ]);
+    expect(session.getLastMessage()?.content).toBe('final');
+  });
+
   it('fails tools nodes when a tool call cannot be resolved', async () => {
     const graph = createAgentGraph({
       name: 'assistant',
@@ -130,6 +172,32 @@ describe('GraphExecutor', () => {
 
     await expect(executeAgentGraph(graph)).rejects.toThrow(
       /assistant\/tools cannot resolve tool lookup/,
+    );
+  });
+
+  it('fails tools nodes when an allow-list references an unknown tool', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: () => ({
+              type: 'assistant',
+              content: '',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            }),
+          },
+        },
+        { id: 'tools', type: 'tools', data: { tools: ['lookup'] } },
+      ],
+    });
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      /assistant\/tools allows unknown tool lookup/,
     );
   });
 

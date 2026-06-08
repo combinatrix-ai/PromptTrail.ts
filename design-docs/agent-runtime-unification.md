@@ -48,10 +48,11 @@ const assistant = Agent.create('assistant')
   .turn('reply', (turn) =>
     turn
       .inbox('inbound')
+      .assistant('model', Source.llm().openai({ api: 'responses' }))
       .repeat('tool-loop', ({ session }) => session.hasToolCalls(), (loop) =>
         loop
-          .assistant('model', Source.llm().openai({ api: 'responses' }))
-          .tools('tools'),
+          .tools('tools')
+          .assistant('model', Source.llm().openai({ api: 'responses' })),
       )
       .awaitInput('next'),
   );
@@ -131,10 +132,11 @@ const agent = Agent.create('main')
   .turn('main', (turn) =>
     turn
       .inbox('inbound')
+      .assistant('reply', Source.llm().openai())
       .repeat('tool-loop', ({ session }) => session.hasToolCalls(), (loop) =>
         loop
-          .assistant('reply', Source.llm().openai())
-          .tools('tools'),
+          .tools('tools')
+          .assistant('reply', Source.llm().openai()),
       )
       .awaitInput('next'),
   );
@@ -154,9 +156,10 @@ The current `steer` name should not be final. `inbox` is clearer because the
 node consumes runtime inbox entries. If a non-consuming peek is needed later, it
 should be named `peekInbox`.
 
-`repeat(...)` is nested instead of "repeat the previous block" so replay
-coordinates are explicit and authors can see exactly which nodes loop. The
-common model/tool loop is `repeat(..., loop => loop.assistant(...).tools(...))`.
+`repeat(...)` is a pre-condition loop and is nested instead of "repeat the
+previous block" so replay coordinates are explicit and authors can see exactly
+which nodes loop. The common model/tool loop is one initial `assistant(...)`
+followed by `repeat(..., loop => loop.tools(...).assistant(...))`.
 
 Assistant nodes produce one model response. Tool execution belongs to the
 `tools(...)` node. Provider adapters and `Source.llm()` must not run an

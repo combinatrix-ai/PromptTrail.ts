@@ -263,9 +263,13 @@ function resolveGraphTools(
       if (typeof name !== 'string') {
         throw new Error(`Graph node ${nodePath} has invalid tools list.`);
       }
-      if (graphTools[name]) {
-        tools[name] = graphTools[name];
+      const tool = graphTools[name];
+      if (!tool) {
+        throw new Error(
+          `Graph node ${nodePath} allows unknown tool ${name}.`,
+        );
       }
+      tools[name] = tool;
     }
     return tools;
   }

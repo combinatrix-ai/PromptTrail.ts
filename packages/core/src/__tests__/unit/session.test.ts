@@ -84,6 +84,34 @@ describe('Session', () => {
     expect(userMessages[1].content).toBe('User message 2');
   });
 
+  it('should detect pending assistant tool calls on the latest message', () => {
+    const session = createSession()
+      .addMessage({
+        type: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+        ],
+      })
+      .addMessage({
+        type: 'tool_result',
+        content: 'done',
+        attrs: { toolCallId: 'call-1' },
+      });
+
+    expect(createSession().hasToolCalls()).toBe(false);
+    expect(
+      createSession().addMessage({
+        type: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+        ],
+      }).hasToolCalls(),
+    ).toBe(true);
+    expect(session.hasToolCalls()).toBe(false);
+  });
+
   it('should validate session state', () => {
     const validSession = createSession({
       messages: [

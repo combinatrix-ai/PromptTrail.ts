@@ -124,6 +124,14 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   }
 
   /**
+   * Returns true when the latest message is an assistant tool-call request.
+   */
+  hasToolCalls(): boolean {
+    const message = this.getLastMessage();
+    return message?.type === 'assistant' && (message.toolCalls?.length ?? 0) > 0;
+  }
+
+  /**
    * Get all messages of a specific type
    */
   getMessagesByType<U extends Message<TAttrs>['type']>(
