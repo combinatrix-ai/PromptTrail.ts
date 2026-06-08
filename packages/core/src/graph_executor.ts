@@ -44,6 +44,12 @@ export interface GraphExecutionOptions<
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
   strictObservers?: boolean;
   eventScopeId?: string;
+  nextEventSeq?: () => number;
+  skipNode?: (
+    node: AgentGraphNode,
+    nodePath: string,
+    session: Session<TVars, TAttrs>,
+  ) => boolean;
 }
 
 export class GraphExecutionSuspended extends Error {
@@ -72,6 +78,7 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   runtime: ExecutionRuntimeState<TVars, TAttrs>;
+  skipNode?: GraphExecutionOptions<TVars, TAttrs>['skipNode'];
   activeGoal?: ActiveGoalExecution;
 }
 
@@ -111,7 +118,7 @@ export async function executeAgentGraph<
   const eventScopeId =
     options.eventScopeId ?? createGraphExecutionEventScopeId();
   let eventSeq = 0;
-  const nextEventSeq = () => eventSeq++;
+  const nextEventSeq = options.nextEventSeq ?? (() => eventSeq++);
   const emitEvent = (event: ExecutionEvent) =>
     observerBus.emit(event, {
       ...options.context,
@@ -134,6 +141,7 @@ export async function executeAgentGraph<
       eventScopeId,
       nextEventSeq,
     }),
+    skipNode: options.skipNode,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -263,6 +271,9 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   throwIfGraphAborted(state);
+  if (state.skipNode?.(node, nodePath, state.session)) {
+    return;
+  }
   switch (node.type) {
     case 'system':
       addMessageFromNode(state, node, 'system');

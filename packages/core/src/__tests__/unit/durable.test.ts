@@ -2496,10 +2496,9 @@ describe('durable agent runtime', () => {
 
   it('can run graph Agents through PromptTrail.app ephemerally', async () => {
     const events: string[] = [];
-    const assistant = Agent.create('graphAssistant')
-      .turn('main', (turn) =>
-        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
-      );
+    const assistant = Agent.create('graphAssistant').turn('main', (turn) =>
+      turn.inbox('inbound').assistant('reply', Source.literal('ok')),
+    );
     const app = PromptTrail.app({
       agents: { assistant },
       observers: [
@@ -2531,19 +2530,39 @@ describe('durable agent runtime', () => {
     expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
   });
 
-  it('rejects durable app runs for graph Agents until graph journaling exists', async () => {
+  it('stores durable app runs for graph Agents', async () => {
+    const store = memoryStore();
+    const events: string[] = [];
     const assistant = Agent.create('graphAssistant').assistant(
       'reply',
       Source.literal('ok'),
     );
-    const app = PromptTrail.app({ agents: { assistant } });
+    const app = PromptTrail.app({
+      store,
+      agents: { assistant },
+      observers: [
+        {
+          handle(event) {
+            events.push(`${event.seq}:${event.type}:${event.source}`);
+          },
+        },
+      ],
+    });
 
-    await expect(
-      app.run({
-        agent: 'assistant',
-        durable: true,
-      }),
-    ).rejects.toThrow(/durable graph Agent runs yet/);
+    const result = await app.run({
+      agent: 'assistant',
+      durable: true,
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.runId).toBe('graphAssistant-1');
+    expect(result.session.getLastMessage()?.content).toBe('ok');
+    expect(store.get(result.runId)).toMatchObject({
+      status: 'done',
+      graphCursor: 0,
+    });
+    expect(app.journal(result.runId)).toEqual([]);
+    expect(events).toEqual(['0:run.started:graph', '1:run.completed:graph']);
   });
 
   it('returns suspended graph Agent app runs with the current session', async () => {
@@ -2579,6 +2598,75 @@ describe('durable agent runtime', () => {
       '0:run.started:',
       '1:run.suspended:graphAssistant/collect/attempts/interaction',
     ]);
+  });
+
+  it('does not duplicate graph goal prompts when resuming durable app runs', async () => {
+    const assistant = Agent.create('graphAssistant').goal(
+      'collect',
+      'Collect input',
+      {
+        interaction: 'required',
+        model: Source.literal('question?'),
+      },
+    );
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: { assistant },
+    });
+
+    const first = await app.run({
+      agent: 'assistant',
+      runId: 'run-graph-goal',
+      durable: true,
+    });
+    const second = await app.resume('run-graph-goal');
+
+    expect(first.status).toBe('suspended');
+    expect(second.status).toBe('suspended');
+    expect(
+      second.session.messages.filter(
+        (message) => message.content === 'Collect input',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('keeps later graph goal prompts when resuming durable app runs', async () => {
+    const assistant = Agent.create('graphAssistant')
+      .goal('first', 'First input', {
+        interaction: 'required',
+        model: Source.literal('first?'),
+      })
+      .goal('second', 'Second input', {
+        interaction: 'required',
+        model: Source.literal('second?'),
+      });
+    const app = PromptTrail.app({
+      store: memoryStore(),
+      agents: { assistant },
+    });
+
+    const first = await app.run({
+      agent: 'assistant',
+      runId: 'run-graph-multi-goal',
+      durable: true,
+    });
+    const second = await app.send({
+      runId: 'run-graph-multi-goal',
+      input: 'answer',
+    });
+
+    expect(first.status).toBe('suspended');
+    expect(second.status).toBe('suspended');
+    expect(
+      second.session.messages.filter(
+        (message) => message.content === 'First input',
+      ),
+    ).toHaveLength(1);
+    expect(
+      second.session.messages.filter(
+        (message) => message.content === 'Second input',
+      ),
+    ).toHaveLength(1);
   });
 
   it('uses app durable defaults for direct runs unless explicitly disabled', async () => {

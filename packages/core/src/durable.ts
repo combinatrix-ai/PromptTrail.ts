@@ -54,9 +54,11 @@ import {
 } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 import {
+  executeAgentGraph,
   GraphExecutionSuspended,
   type GraphInboundInput,
 } from './graph_executor';
+import type { AgentGraphNode } from './graph';
 import type { Agent as GraphAgent } from './templates/agent';
 
 export type InboundKind = 'user' | 'system' | 'control';
@@ -2134,7 +2136,7 @@ function assertPrepareModelInputDidNotPersistSession(
 }
 
 export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
-  agent: DurableAgent<TVars, TAttrs>;
+  agent: PromptTrailRegisteredAgent<TVars, TAttrs>;
   agentName: string;
   initial: Session<TVars, TAttrs>;
   status: 'open' | 'done';
@@ -2143,6 +2145,8 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   events?: ExecutionEvent[];
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
+  graphCursor?: number;
+  graphSuspendedAt?: string;
   eventSeq?: number;
   context?: Record<string, unknown>;
 }
@@ -2585,6 +2589,14 @@ export class PromptTrailApp {
     if (run.status === 'done' && run.result) {
       return { status: 'done', runId, session: run.result };
     }
+    if (isGraphAgent(run.agent)) {
+      return this.resumeGraphAgentRun(
+        runId,
+        run as StoredRun<TVars, TAttrs> & {
+          agent: GraphAgent<TVars, TAttrs>;
+        },
+      );
+    }
 
     const state: DurableExecutionState<TVars, TAttrs> = {
       runId,
@@ -2615,7 +2627,8 @@ export class PromptTrailApp {
       sessionVersion: state.transitionVersion,
     });
     try {
-      const session = await run.agent.execute(state);
+      const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
+      const session = await durableAgent.execute(state);
       run.status = 'done';
       run.result = session;
       this.materializeAssistantDeliveriesForRun(runId, run);
@@ -2879,9 +2892,26 @@ export class PromptTrailApp {
     const graphAgent = this.resolveGraphAgent(options.agent);
     if (graphAgent) {
       if (durable) {
-        throw new Error(
-          'PromptTrail.app does not support durable graph Agent runs yet.',
-        );
+        const graph = graphAgent.toGraph();
+        const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
+        const run: StoredRun<TVars, TAttrs> = {
+          agent: graphAgent,
+          agentName: graph.name,
+          initial: options.session ?? Session.create<TVars, TAttrs>(),
+          status: 'open',
+          journal: { results: new Map(), sequence: [] },
+          events: [],
+          outbox: [],
+          inbox: [],
+          graphCursor: 0,
+          eventSeq: 0,
+          context: cloneDurableRuntimeValue(options.context),
+        };
+        this.store.set(runId, run);
+        if (options.input !== undefined) {
+          this.append(runId, normalizeInbound(options.input));
+        }
+        return this.resume<TVars, TAttrs>(runId);
       }
       return this.executeGraphAgentRun(graphAgent, options);
     }
@@ -3047,6 +3077,92 @@ export class PromptTrailApp {
     }
   }
 
+  private async resumeGraphAgentRun<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(
+    runId: string,
+    run: StoredRun<TVars, TAttrs> & { agent: GraphAgent<TVars, TAttrs> },
+  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    const graph = run.agent.toGraph();
+    const cursor = run.graphCursor ?? 0;
+    const isContinuation = run.result !== undefined;
+    const skipNodePaths = isContinuation
+      ? collectGraphContinuationSkipNodes(
+          graph.nodes,
+          graph.name,
+          run.graphSuspendedAt,
+        )
+      : undefined;
+    const inbox = run.inbox
+      .slice(cursor)
+      .map((input) => graphInboundFromStoredInbound<TAttrs>(input));
+    run.graphCursor = run.inbox.length;
+    this.persistRun(runId, run);
+
+    try {
+      const session = await executeAgentGraph<TVars, TAttrs>(
+        {
+          ...graph,
+          middleware: [
+            ...graph.middleware,
+            ...(this.middleware as readonly MiddlewareDefinition<
+              TVars,
+              TAttrs
+            >[]),
+          ],
+          hooks: [
+            ...graph.hooks,
+            ...(this.hooks as readonly HookDefinition<TVars, TAttrs>[]),
+          ],
+        },
+        {
+          session: run.result ?? run.initial,
+          input: inbox,
+          context: cloneDurableRuntimeValue(run.context),
+          eventScopeId: runId,
+          nextEventSeq: () => this.nextRunEventSeq(runId, run),
+          observerDeliveryBindings: this.observerDeliveryBindingOptions,
+          strictObservers: this.strictObservers,
+          skipNode: skipNodePaths
+            ? (_node, nodePath) => skipNodePaths.has(nodePath)
+            : undefined,
+          observers: [
+            async (event) => {
+              await this.emitObservers(run, event);
+              this.persistRun(runId, run);
+            },
+          ],
+        },
+      );
+      run.status = 'done';
+      run.result = session;
+      run.graphSuspendedAt = undefined;
+      this.materializeAssistantDeliveriesForRun(runId, run);
+      this.persistRun(runId, run);
+      return { status: 'done', runId, session };
+    } catch (error) {
+      if (error instanceof GraphExecutionSuspended) {
+        const session =
+          (error.session as Session<TVars, TAttrs> | undefined) ??
+          run.result ??
+          run.initial;
+        run.result = session;
+        run.graphSuspendedAt = error.nodePath;
+        this.persistRun(runId, run);
+        return {
+          status: 'suspended',
+          runId,
+          awaiting: error.nodePath,
+          session,
+        };
+      }
+      run.graphCursor = cursor;
+      this.persistRun(runId, run);
+      throw error;
+    }
+  }
+
   private async emitRunEvent<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
     runId: string,
@@ -3073,8 +3189,9 @@ export class PromptTrailApp {
   private middlewareForRun<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
   ): readonly MiddlewareDefinition<TVars, TAttrs>[] {
+    const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
     return [
-      ...run.agent.runtimeMiddleware(),
+      ...durableAgent.runtimeMiddleware(),
       ...(this.middleware as readonly MiddlewareDefinition<TVars, TAttrs>[]),
     ];
   }
@@ -3082,8 +3199,9 @@ export class PromptTrailApp {
   private hooksForRun<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
   ): readonly HookDefinition<TVars, TAttrs>[] {
+    const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
     return [
-      ...run.agent.runtimeHooks(),
+      ...durableAgent.runtimeHooks(),
       ...(this.hooks as readonly HookDefinition<TVars, TAttrs>[]),
     ];
   }
@@ -3114,11 +3232,15 @@ export class PromptTrailApp {
     for (const bus of this.observerBuses) {
       await bus.emit(event, context);
     }
-    const observers = run.agent.runtimeObservers();
+    if (isGraphAgent(run.agent)) {
+      return;
+    }
+    const agent = run.agent as DurableAgent<TVars, TAttrs>;
+    const observers = agent.runtimeObservers();
     if (observers.length === 0) {
       return;
     }
-    await this.observerBusForAgent(run.agent, observers).emit(event, context);
+    await this.observerBusForAgent(agent, observers).emit(event, context);
   }
 
   private observerBusForAgent(
@@ -3159,7 +3281,9 @@ export class PromptTrailApp {
     run.inbox.push({ ...message, offset: run.inbox.length });
     if (run.status === 'done') {
       run.status = 'open';
-      run.result = undefined;
+      if (!isGraphAgent(run.agent)) {
+        run.result = undefined;
+      }
     }
     this.persistRun(runId, run);
   }
@@ -3375,6 +3499,78 @@ function graphInboundFromAppInput<TAttrs extends Attrs>(
     content: input.content,
     attrs: input.attrs as TAttrs | undefined,
   };
+}
+
+function graphInboundFromStoredInbound<TAttrs extends Attrs>(
+  input: Inbound,
+): GraphInboundInput<TAttrs> {
+  return {
+    kind: input.kind,
+    content: input.content,
+    attrs: input.attrs as TAttrs | undefined,
+  };
+}
+
+function skipGraphContinuationBootstrapNode(node: {
+  type: string;
+  data?: unknown;
+}): boolean {
+  return node.type === 'system' || isStaticGraphUserNode(node);
+}
+
+function collectGraphContinuationSkipNodes(
+  nodes: readonly AgentGraphNode[],
+  graphName: string,
+  suspendedAt?: string,
+): ReadonlySet<string> {
+  const skipNodePaths = new Set<string>();
+  let reachedContinuationEntry = false;
+
+  const visit = (
+    children: readonly AgentGraphNode[],
+    parentPath: string,
+  ): void => {
+    for (const child of children) {
+      if (reachedContinuationEntry) {
+        return;
+      }
+      const nodePath = `${parentPath}/${child.id}`;
+      if (
+        (suspendedAt && nodePath === suspendedAt) ||
+        (!suspendedAt && isGraphInboundConsumerNode(child))
+      ) {
+        reachedContinuationEntry = true;
+        return;
+      }
+      if (skipGraphContinuationBootstrapNode(child)) {
+        skipNodePaths.add(nodePath);
+      }
+      visit(child.children ?? [], nodePath);
+    }
+  };
+
+  visit(nodes, graphName);
+  return skipNodePaths;
+}
+
+function isGraphInboundConsumerNode(node: AgentGraphNode): boolean {
+  return (
+    node.type === 'inbox' ||
+    node.type === 'awaitInput' ||
+    (node.type === 'user' && !isStaticGraphUserNode(node))
+  );
+}
+
+function isStaticGraphUserNode(node: {
+  type: string;
+  data?: unknown;
+}): boolean {
+  return (
+    node.type === 'user' &&
+    typeof node.data === 'object' &&
+    node.data !== null &&
+    ('input' in node.data || 'content' in node.data)
+  );
 }
 
 function runEventIdempotencyKey(

@@ -596,11 +596,21 @@ describe('RuntimeServer', () => {
     );
   });
 
-  it('keeps runtime bundle Agent graph runs ephemeral-only for now', async () => {
-    const main = Agent.create('main').assistant('reply', () => 'reply');
+  it('runs runtime bundle Agent graph runs durably', async () => {
+    const store = memoryStore();
+    const main = Agent.create('main')
+      .system('system', 'SYS')
+      .user('inbound')
+      .assistant('reply', (session) => ({
+        content: `reply:${session.getLastMessage()?.content ?? ''}`,
+      }));
     const bundle = PromptTrail.bundle({
       name: 'durable-graph-runtime',
       agents: { main },
+      defaults: {
+        durable: true,
+        delivery: discord.replyToOriginThread(),
+      },
       bindings: [
         bind(discord.messages())
           .toAgent('main')
@@ -608,29 +618,51 @@ describe('RuntimeServer', () => {
       ],
     });
     const app = PromptTrail.app({
+      store,
       agents: bundle.agents,
     });
 
-    await expect(
-      dispatchRuntimeBindingEvent({
-        app,
-        binding: bundle.bindings[0]!,
-        event: {
-          source: 'discord',
-          guild: 'workroom',
-          channel: 'general',
-          channelId: 'C_general',
-          author: 'alice',
-          authorId: 'U_alice',
-          authorBot: false,
-          content: 'hello',
-        },
-        defaults: mergeBindingDefaults(
-          bundle.defaults,
-          bundle.bindings[0]!.defaults,
-        ),
-      }),
-    ).rejects.toThrow(/does not support durable graph Agent runs yet/);
+    const event = {
+      source: 'discord' as const,
+      guild: 'workroom',
+      channel: 'general',
+      channelId: 'C_general',
+      author: 'alice',
+      authorId: 'U_alice',
+      authorBot: false,
+      content: 'hello',
+    };
+    const defaults = mergeBindingDefaults(
+      bundle.defaults,
+      bundle.bindings[0]!.defaults,
+    );
+    const first = await dispatchRuntimeBindingEvent({
+      app,
+      binding: bundle.bindings[0]!,
+      event,
+      defaults,
+    });
+    const second = await dispatchRuntimeBindingEvent({
+      app,
+      binding: bundle.bindings[0]!,
+      event: { ...event, content: 'again' },
+      defaults,
+    });
+
+    expect(
+      first.result.session.messages.map((message) => message.content),
+    ).toEqual(['SYS', 'hello', 'reply:hello']);
+    expect(
+      second.result.session.messages.map((message) => message.content),
+    ).toEqual(['SYS', 'hello', 'reply:hello', 'again', 'reply:again']);
+
+    const run = store.get('discord:graph')!;
+    expect(run).toMatchObject({
+      status: 'done',
+      graphCursor: 2,
+    });
+    expect(run.inbox).toHaveLength(2);
+    expect(app.assistantDeliveryOutbox('discord:graph')).toHaveLength(2);
   });
 
   it('accepts Agent instances in runtime bindings', () => {
