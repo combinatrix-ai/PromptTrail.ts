@@ -30,7 +30,7 @@ describe('GenerateMessages template', () => {
         Message.assistant(`Saw ${session.messages.length} message`),
       ]);
 
-    const session = await agent.execute(Session.create());
+    const session = await agent.execute({ session: Session.create() });
 
     expect(session.getLastMessage()?.content).toBe('Saw 1 message');
   });

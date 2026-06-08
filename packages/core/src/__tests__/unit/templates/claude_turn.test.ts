@@ -50,7 +50,7 @@ describe('ClaudeTurn template', () => {
         model: 'claude-haiku-4-5',
         allowedTools: ['Read'],
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
     const lastMessage = session.getLastMessage();
 
     expect(client.queries).toEqual([
@@ -96,7 +96,7 @@ describe('ClaudeTurn template', () => {
     const session = await Agent.create()
       .user('Continue')
       .claudeTurn({ client, retainMessages: false, retain: 'none' })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(session.messages).toHaveLength(1);
     expect(session.getVar('claudeAgent' as never)).toMatchObject({
@@ -116,10 +116,13 @@ describe('ClaudeTurn template', () => {
         input: (session, context) =>
           `${context?.channel}:${session.getLastMessage()?.content}`,
       })
-      .execute(
-        Session.create().addMessage({ type: 'user', content: 'hello' }),
-        { context: { channel: 'claw-test' } },
-      );
+      .execute({
+        session: Session.create().addMessage({
+          type: 'user',
+          content: 'hello',
+        }),
+        context: { channel: 'claw-test' },
+      });
 
     expect(client.queries[0].prompt).toBe('claw-test:hello');
     expect(client.queries[0].options.resume).toBe('session-claw-test');
@@ -141,7 +144,7 @@ describe('ClaudeTurn template', () => {
         client,
         input: (session) => String(session.getVar('injected' as never)),
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.queries[0].prompt).toBe('from-before-model');
   });
@@ -162,7 +165,7 @@ describe('ClaudeTurn template', () => {
         }),
       )
       .claudeTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(session.getLastMessage()).toMatchObject({
       type: 'assistant',
@@ -197,7 +200,7 @@ describe('ClaudeTurn template', () => {
         }),
       )
       .claudeTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.queries).toHaveLength(0);
     expect(events).toEqual([]);
@@ -234,7 +237,7 @@ describe('ClaudeTurn template', () => {
         client,
         input: (session) => String(session.getVar('transient' as never)),
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.queries[0].prompt).toBe('claude');
     expect(session.getVarsObject()).toEqual({});
@@ -254,7 +257,7 @@ describe('ClaudeTurn template', () => {
           }),
         )
         .claudeTurn({ client })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow(
       'ClaudeTurn prepareModelInput cannot return persistent session patches.',
     );
@@ -275,7 +278,7 @@ describe('ClaudeTurn template', () => {
       })
       .user('Review this')
       .claudeTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(events).toHaveLength(2);
     expect(events[0]).toMatch(
@@ -301,7 +304,7 @@ describe('ClaudeTurn template', () => {
         })
         .user('Review this')
         .claudeTurn({ client })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow('claude unavailable');
 
     expect(events).toHaveLength(2);
@@ -318,17 +321,17 @@ describe('ClaudeTurn template', () => {
     const originalSession = await Agent.create()
       .user('Original')
       .claudeTurn({ client: originalClient })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
     const client = new FakeClaudeAgentClient();
 
     await Agent.create()
       .claudeTurn({ client, sessionId: 'auto' })
-      .execute(
-        originalSession.addMessage({
+      .execute({
+        session: originalSession.addMessage({
           type: 'user',
           content: 'Continue',
         }),
-      );
+      });
 
     expect(client.queries[0]).toMatchObject({
       prompt: 'Continue',
@@ -364,7 +367,7 @@ describe('ClaudeTurn template', () => {
             return { type: 'deny', reason: 'no external servers' };
           },
         })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow('Capability "docs" approval denied: no external servers');
 
     expect(client.queries).toHaveLength(0);
@@ -405,7 +408,7 @@ describe('ClaudeTurn template', () => {
             return { type: 'deny', reason: 'no shell' };
           },
         })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow('Capability "Bash" approval denied: no shell');
 
     expect(client.queries).toHaveLength(0);
@@ -439,7 +442,7 @@ describe('ClaudeTurn template', () => {
           ],
           approvalHandler: async () => ({ type: 'approve' }),
         })
-        .execute(Session.create());
+        .execute({ session: Session.create() });
 
       expect(client.queries[0].options.skills).toEqual(['review']);
     } finally {

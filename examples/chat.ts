@@ -24,7 +24,7 @@ async function main() {
 
   // Execute the chat agent
   console.log('\nStarting chat with gpt-5.4-nano (type "exit" to end)...\n');
-  await chatAgent.execute(session);
+  await chatAgent.execute({ session });
   console.log('\nChat ended. Goodbye!\n');
 }
 

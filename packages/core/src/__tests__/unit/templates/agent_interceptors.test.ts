@@ -312,7 +312,7 @@ describe('Agent interceptors', () => {
         },
       })
       .user('hello')
-      .execute(undefined, {
+      .execute({
         observerDeliveryBindings: {
           deliveryBindingStore: {
             claim(idempotencyKey) {
@@ -346,9 +346,9 @@ describe('Agent interceptors', () => {
       })
       .user('hello');
 
-    await expect(
-      agent.execute(undefined, { strictObservers: true }),
-    ).rejects.toThrow('observer broke');
+    await expect(agent.execute({ strictObservers: true })).rejects.toThrow(
+      'observer broke',
+    );
   });
 
   it('threads direct execution context into middleware', async () => {
@@ -366,7 +366,7 @@ describe('Agent interceptors', () => {
         }),
       )
       .assistant('reply')
-      .execute(undefined, { context: { channel: 'claw-test' } });
+      .execute({ context: { channel: 'claw-test' } });
 
     expect(session.getVarsObject()).toEqual({ channel: 'claw-test' });
   });
@@ -389,7 +389,7 @@ describe('Agent interceptors', () => {
           )
           .assistant('reply'),
       )
-      .execute(undefined, { context: { userId: 'U1' } });
+      .execute({ context: { userId: 'U1' } });
 
     expect(session.getVarsObject()).toEqual({ userId: 'U1' });
   });
@@ -408,10 +408,10 @@ describe('Agent interceptors', () => {
       })
       .assistant(source);
 
-    const first = await agent.execute(undefined, {
+    const first = await agent.execute({
       durable: { runId: 'direct-agent-run', store },
     });
-    const second = await agent.execute(undefined, {
+    const second = await agent.execute({
       durable: { runId: 'direct-agent-run', store },
     });
 
@@ -498,7 +498,7 @@ describe('Agent interceptors', () => {
       .assistant(source);
 
     await agent.execute();
-    const ephemeral = await agent.execute(undefined, { durable: false });
+    const ephemeral = await agent.execute({ durable: false });
 
     expect(ephemeral.getLastMessage()?.content).toBe('override:2');
     expect(calls).toBe(2);

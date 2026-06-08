@@ -152,7 +152,6 @@ export class CodingAgent {
     const agent = Agent.create()
       .add(new System(systemPrompt))
       .conditional(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
         // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
         (agent) => agent.user(initialPrompt as string).assistant(this.llm),
@@ -170,7 +169,7 @@ export class CodingAgent {
       );
 
     // Execute the interactive template
-    await agent.execute(session);
+    await agent.execute({ session });
     console.log('\nCoding agent session ended. Goodbye!\n');
   }
 

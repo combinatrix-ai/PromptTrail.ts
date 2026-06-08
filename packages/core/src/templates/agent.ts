@@ -237,9 +237,7 @@ export class AgentTurnGraphBuilder<
  *   .loop(agent => agent.user('Input'), condition)
  *   .subroutine(agent => agent.user('Sub'));
  */
-export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
-  implements Template<TM, TC>, Fluent<TM, TC>
-{
+export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   private constructor(
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
     private readonly graphName?: string,
@@ -955,18 +953,38 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
 
   /** -------------------------------------------------- */
 
-  build() {
-    return this.hasInterceptors() ? this : this.root;
+  build(): Template<TM, TC> {
+    return this.hasInterceptors() ? this.asTemplate() : this.root;
   }
 
   async execute(
     options?: AgentExecuteOptions<TC, TM>,
   ): Promise<Session<TC, TM>>;
   async execute(
-    session?: Session<TC, TM> | undefined,
-    runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
-  ): Promise<Session<TC, TM>>;
-  async execute(
+    options?: AgentExecuteOptions<TC, TM>,
+  ): Promise<Session<TC, TM>> {
+    if (arguments.length > 1 || options instanceof Session) {
+      throw new Error(
+        'Agent.execute takes a single options object. Use execute({ session, ...options }) instead of positional arguments.',
+      );
+    }
+    return this.executeInternal(options);
+  }
+
+  private asTemplate(): Template<TM, TC> {
+    return {
+      execute: (session, runtime) => this.executeTemplate(session, runtime),
+    };
+  }
+
+  private executeTemplate(
+    session?: Session<TC, TM>,
+    runtime?: ExecutionRuntimeState<TC, TM>,
+  ): Promise<Session<TC, TM>> {
+    return this.executeInternal(session, runtime);
+  }
+
+  private async executeInternal(
     sessionOrOptions?:
       | Session<TC, TM>
       | AgentExecuteOptions<TC, TM>
@@ -1228,7 +1246,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
     const durableAgent = createDurableAgent<TC, TM>('direct-agent').patch(
       'agent',
       async (current) => ({
-        session: await this.execute(current, {
+        session: await this.executeInternal(current, {
           context: executionOptions?.context,
           eventScopeId: durableOptions.runId,
           observers: executionOptions?.observers,

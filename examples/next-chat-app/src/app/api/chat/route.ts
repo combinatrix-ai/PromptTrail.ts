@@ -34,8 +34,7 @@ export async function POST(req: Request) {
     );
 
     console.log('[Chat API] Received codeContext:', codeContext); // Log received context
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ptSession = (await agent.execute(ptSession as any)) as any;
+    ptSession = (await agent.execute({ session: ptSession as any })) as any;
 
     if (ptSession.messages.length > 0) {
       console.log(

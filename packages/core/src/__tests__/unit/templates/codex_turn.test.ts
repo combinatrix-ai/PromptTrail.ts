@@ -76,7 +76,7 @@ describe('CodexTurn template', () => {
       sandboxPolicy: 'workspace-write',
     });
 
-    const session = await agent.execute(Session.create());
+    const session = await agent.execute({ session: Session.create() });
     const lastMessage = session.getLastMessage();
 
     expect(client.threadStarts).toEqual([
@@ -118,7 +118,7 @@ describe('CodexTurn template', () => {
         retainMessages: false,
       });
 
-    const session = await agent.execute(Session.create());
+    const session = await agent.execute({ session: Session.create() });
 
     expect(client.threadStarts).toHaveLength(0);
     expect(client.turnStarts[0]).toMatchObject({
@@ -141,10 +141,13 @@ describe('CodexTurn template', () => {
         input: (session, context) =>
           `${context?.channel}:${session.getLastMessage()?.content}`,
       })
-      .execute(
-        Session.create().addMessage({ type: 'user', content: 'hello' }),
-        { context: { channel: 'claw-test' } },
-      );
+      .execute({
+        session: Session.create().addMessage({
+          type: 'user',
+          content: 'hello',
+        }),
+        context: { channel: 'claw-test' },
+      });
 
     expect(client.threadStarts).toHaveLength(0);
     expect(client.turnStarts[0]).toMatchObject({
@@ -169,7 +172,7 @@ describe('CodexTurn template', () => {
         client,
         input: (session) => String(session.getVar('injected' as never)),
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.turnStarts[0]).toMatchObject({
       input: [{ type: 'text', text: 'from-before-model' }],
@@ -192,7 +195,7 @@ describe('CodexTurn template', () => {
         }),
       )
       .codexTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(session.getLastMessage()).toMatchObject({
       type: 'assistant',
@@ -225,7 +228,7 @@ describe('CodexTurn template', () => {
         }),
       )
       .codexTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.threadStarts).toHaveLength(0);
     expect(client.turnStarts).toHaveLength(0);
@@ -263,7 +266,7 @@ describe('CodexTurn template', () => {
         client,
         input: (session) => String(session.getVar('transient' as never)),
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.turnStarts[0]).toMatchObject({
       input: [{ type: 'text', text: 'codex' }],
@@ -285,7 +288,7 @@ describe('CodexTurn template', () => {
           }),
         )
         .codexTurn({ client })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow(
       'CodexTurn prepareModelInput cannot return persistent session patches.',
     );
@@ -306,7 +309,7 @@ describe('CodexTurn template', () => {
       })
       .user('Implement this')
       .codexTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(events).toHaveLength(2);
     expect(events[0]).toMatch(
@@ -332,7 +335,7 @@ describe('CodexTurn template', () => {
         })
         .user('Implement this')
         .codexTurn({ client })
-        .execute(Session.create()),
+        .execute({ session: Session.create() }),
     ).rejects.toThrow('codex unavailable');
 
     expect(events).toHaveLength(2);
@@ -355,7 +358,7 @@ describe('CodexTurn template', () => {
       .addMessage({ type: 'user', content: 'Continue' });
     const session = await Agent.create()
       .codexTurn({ client, threadId: 'auto' })
-      .execute(initialSession);
+      .execute({ session: initialSession });
 
     expect(client.threadStarts).toHaveLength(0);
     expect(client.turnStarts[0]).toMatchObject({
@@ -392,7 +395,7 @@ describe('CodexTurn template', () => {
         },
       });
 
-    await expect(agent.execute(Session.create())).rejects.toThrow(
+    await expect(agent.execute({ session: Session.create() })).rejects.toThrow(
       'Capability "docs" approval denied: no external servers',
     );
 
@@ -436,7 +439,7 @@ describe('CodexTurn template', () => {
         },
       });
 
-    await expect(agent.execute(Session.create())).rejects.toThrow(
+    await expect(agent.execute({ session: Session.create() })).rejects.toThrow(
       'Capability "shell" approval denied: shell disabled',
     );
 
@@ -459,7 +462,7 @@ describe('CodexTurn template', () => {
     const originalSession = await Agent.create()
       .user('Original')
       .codexTurn({ client: originalClient })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
     const previousAssistant = originalSession.getLastMessage();
     const client = new FakeCodexClient();
     const divergentSession = Session.create()
@@ -469,7 +472,7 @@ describe('CodexTurn template', () => {
 
     await Agent.create()
       .codexTurn({ client, threadId: 'auto' })
-      .execute(divergentSession);
+      .execute({ session: divergentSession });
 
     expect(client.threadStarts).toHaveLength(1);
     expect(client.turnStarts[0]).toMatchObject({
@@ -483,7 +486,7 @@ describe('CodexTurn template', () => {
     const session = await Agent.create()
       .user('Summarize')
       .codexTurn({ client })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     const codex = session.getLastMessage()?.attrs?.codex as any;
 
@@ -521,7 +524,7 @@ describe('CodexTurn template', () => {
     const session = await Agent.create()
       .user('Do not retain runtime artifacts')
       .codexTurn({ client, retain: 'none' })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     const codex = session.getLastMessage()?.attrs?.codex as any;
 
@@ -555,7 +558,7 @@ describe('CodexTurn template', () => {
         client,
         capabilities: [lookupTool],
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.threadStarts[0].dynamicTools).toEqual([
       {
@@ -589,7 +592,7 @@ describe('CodexTurn template', () => {
           },
         ],
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.turnStarts[0].input).toEqual([
       {
@@ -630,7 +633,7 @@ describe('CodexTurn template', () => {
           },
         ],
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.turnStarts[0].input).toEqual([
       {
@@ -666,7 +669,7 @@ describe('CodexTurn template', () => {
           },
         ],
       })
-      .execute(Session.create());
+      .execute({ session: Session.create() });
 
     expect(client.threadStarts[0].mcpServers).toEqual({
       docs: {

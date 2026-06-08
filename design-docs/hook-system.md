@@ -72,8 +72,8 @@ Short version:
 
 ## Opt-in Durability Grammar
 
-Durability is opt-in. Existing `Agent.execute(session)` remains ephemeral and
-does not require deterministic code.
+Durability is opt-in. Existing `Agent.execute({ session })` remains ephemeral
+and does not require deterministic code.
 
 PromptTrail should expose three levels of opt-in:
 
@@ -109,7 +109,8 @@ Used when a developer wants one agent execution to be journaled even outside a
 server runtime.
 
 ```ts
-await agent.execute(session, {
+await agent.execute({
+  session,
   durable: {
     runId: 'discord:guild:G1:thread:T1',
     store,
@@ -952,7 +953,8 @@ const agent = Agent.create()
   .system('You are helpful')
   .assistant(Source.llm({ model: 'openai:gpt-4o-mini' }));
 
-await agent.execute(session, {
+await agent.execute({
+  session,
   context: { userId: 'U1' },
 });
 ```

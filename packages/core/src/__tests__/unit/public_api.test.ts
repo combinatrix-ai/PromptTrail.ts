@@ -137,6 +137,18 @@ describe('public API surface', () => {
     ]);
   });
 
+  it('rejects positional Agent.execute arguments at runtime', async () => {
+    const agent = prompttrail.Agent.create().user('hello');
+
+    await expect(
+      (
+        agent.execute as unknown as (
+          session: prompttrail.Session,
+        ) => Promise<prompttrail.Session>
+      )(prompttrail.Session.create()),
+    ).rejects.toThrow(/single options object/);
+  });
+
   it('exports final agent graph authoring helpers', () => {
     const options: AgentGoalOptions = {
       interaction: 'required',
