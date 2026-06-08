@@ -20,8 +20,13 @@ export { Transform } from './primitives/transform';
 export { User } from './primitives/user';
 
 // Export Agent (Template Builder)
-export { Agent } from './agent';
-export type { AgentDirectDurableOptions, AgentExecutionOptions } from './agent';
+export { Agent, AgentTurnGraphBuilder } from './agent';
+export type {
+  AgentDirectDurableOptions,
+  AgentExecutionOptions,
+  AgentGoalOptions,
+  AgentGoalSatisfactionContext,
+} from './agent';
 
 // Export Scenario API
 export {

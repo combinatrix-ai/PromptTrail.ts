@@ -223,7 +223,8 @@ Goal semantics:
 - `durability: 'replayable'` passes `ctx.durable` to `isSatisfied`; external
   work must use `ctx.durable.activity`.
 - Interactive goals use `awaitInput` internally. The suspend step id is derived
-  from the goal id, for example `research-topic/interaction/input`.
+  from the goal subgraph path, for example
+  `research-topic/attempts/interaction`.
 
 There is no final `Scenario` export.
 

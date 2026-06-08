@@ -857,12 +857,6 @@ function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(
   );
 }
 
-function isExecutableAssistantInput(
-  value: unknown,
-): value is string | Source<ModelOutput> | Source<string> {
-  return typeof value === 'string' || value instanceof Source;
-}
-
 function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
   id: string,
   goal: string,

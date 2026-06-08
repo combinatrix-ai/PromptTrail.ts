@@ -3,6 +3,7 @@ import * as prompttrail from '../../index';
 import type {
   AgentDirectDurableOptions,
   AgentExecutionOptions,
+  AgentGoalOptions,
   DurableTool,
   ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
@@ -118,6 +119,17 @@ describe('public API surface', () => {
     );
 
     expect(session.getLastMessage()?.content).toBe('hello');
+  });
+
+  it('exports final agent graph authoring helpers', () => {
+    const options: AgentGoalOptions = {
+      interaction: 'required',
+      maxAttempts: 2,
+      isSatisfied: ({ attempt }) => attempt > 0,
+    };
+
+    expect(prompttrail).toHaveProperty('AgentTurnGraphBuilder');
+    expect(options.interaction).toBe('required');
   });
 
   it('types observer delivery binding helpers', async () => {
