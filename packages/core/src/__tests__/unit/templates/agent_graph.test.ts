@@ -290,4 +290,21 @@ describe('Agent graph authoring', () => {
       graphStarted().sequence((step) => step.assistant('legacy')),
     ).toThrow(/Graph Agent\.sequence/);
   });
+
+  it('rejects mixing legacy leaf methods after graph authoring starts', () => {
+    const graphStarted = () => Agent.create().assistant('reply', () => 'ok');
+
+    expect(() => graphStarted().system('legacy')).toThrow(/Graph Agent\.system/);
+    expect(() => graphStarted().user('legacy')).toThrow(/Graph Agent\.user/);
+    expect(() => graphStarted().assistant()).toThrow(/Graph Agent\.assistant/);
+    expect(() => graphStarted().messages(() => [])).toThrow(
+      /Graph Agent\.messages/,
+    );
+    expect(() => graphStarted().transform((session) => session)).toThrow(
+      /Graph Agent\.transform/,
+    );
+    expect(() => graphStarted().add(Agent.create().build())).toThrow(
+      /Graph Agent\.add/,
+    );
+  });
 });

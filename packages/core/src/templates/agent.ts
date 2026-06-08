@@ -326,6 +326,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   /** fluent helpers -------------------------------------------------- */
 
   add(t: Template<TM, TC>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error(
+        'Graph Agent.add does not support legacy templates after graph authoring starts.',
+      );
+    }
     this.root.add(t);
     return this;
   }
@@ -399,6 +404,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         type: 'system',
         data: { content },
       });
+      return this;
+    }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.system requires system(id, content).');
     }
     this.root.add(new System(resolvedContent));
     return this;
@@ -427,8 +436,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         type: 'user',
         data: { input: contentOrSource },
       });
-      this.root.add(new User(contentOrSource));
       return this;
+    }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.user requires user(id, contentOrSource).');
     }
     this.root.add(new User(idOrContentOrSource));
     return this;
@@ -465,6 +476,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
         }),
       });
       return this;
+    }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error(
+        'Graph Agent.assistant requires assistant(id, sourceOrHandler).',
+      );
     }
     this.root.add(
       new Assistant(
@@ -509,6 +525,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   transform(transform: (s: Session<TC, TM>) => Session<TC, TM>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.transform requires patch(id, handler).');
+    }
     this.root.add(new Transform(transform));
     return this;
   }
@@ -536,6 +555,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
       });
       return this;
     }
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.messages requires messages(id, handler).');
+    }
     this.root.add(
       new GenerateMessages(idOrGenerateMessages as GenerateMessagesFn<TM, TC>),
     );
@@ -558,21 +580,33 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs>
   }
 
   codexTurn(options: CodexTurnOptions<TM, TC>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.codexTurn is not executable yet.');
+    }
     this.root.add(new CodexTurn(options));
     return this;
   }
 
   claudeTurn(options: ClaudeTurnOptions<TM, TC>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.claudeTurn is not executable yet.');
+    }
     this.root.add(new ClaudeTurn(options));
     return this;
   }
 
   parallel(template: Parallel<TM, TC>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.parallel is not executable yet.');
+    }
     this.root.add(template);
     return this;
   }
 
   structured(template: Structured<TM, TC>) {
+    if (this.isGraphAuthoringMode()) {
+      throw new Error('Graph Agent.structured is not executable yet.');
+    }
     this.root.add(template);
     return this;
   }
