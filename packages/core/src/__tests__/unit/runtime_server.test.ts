@@ -388,6 +388,46 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('compiles app bindings into runtime bundles', async () => {
+    const main = Agent.create('main')
+      .user('inbound')
+      .assistant('reply', (session) => ({
+        content: `reply:${session.getLastMessage()?.content ?? ''}`,
+      }));
+    const app = PromptTrail.app({
+      name: 'graph-runtime-app',
+      defaults: { durable: false },
+    }).bind(discord.messages(), (binding) => {
+      binding.to(main).conversation(() => 'discord:graph');
+    });
+    const bundle = app.bundle();
+    const result = await dispatchRuntimeBindingEvent({
+      app,
+      binding: bundle.bindings[0]!,
+      event: {
+        source: 'discord',
+        guild: 'workroom',
+        channel: 'general',
+        channelId: 'C_general',
+        author: 'alice',
+        authorId: 'U_alice',
+        authorBot: false,
+        content: 'hello',
+      },
+      defaults: mergeBindingDefaults(
+        bundle.defaults,
+        bundle.bindings[0]!.defaults,
+      ),
+    });
+
+    expect(bundle.name).toBe('graph-runtime-app');
+    expect(bundle.agents.main).toBe(main);
+    expect(bundle.bindings[0]!.agent).toBe('main');
+    expect(
+      result.result.session.messages.map((message) => message.content),
+    ).toEqual(['hello', 'reply:hello']);
+  });
+
   it('registers named Agent instances directly on apps', async () => {
     const main = Agent.create('main')
       .user('inbound')

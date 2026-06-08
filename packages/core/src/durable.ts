@@ -30,7 +30,17 @@ import {
   type RunExecutionPhaseResult,
 } from './interceptors';
 import { assistantDeliveryKey } from './runtime_delivery_keys';
-import { bundle, type DeliveryTarget } from './runtime_bindings';
+import {
+  bind as createRuntimeBindingBuilder,
+  bundle as createRuntimeBundle,
+  type BindingDefaults,
+  type DeliveryTarget,
+  type RuntimeBinding,
+  type RuntimeBindingEvent,
+  type RuntimeBindingLike,
+  type RuntimeBundle,
+  type RuntimeSource,
+} from './runtime_bindings';
 import { server } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 import {
@@ -2207,6 +2217,7 @@ export class MemoryRunStore implements DurableRunStore {
 }
 
 export interface PromptTrailAppOptions {
+  name?: string;
   store?: DurableRunStore;
   /**
    * App-level durable defaults. This configures the runtime's store and the
@@ -2217,6 +2228,7 @@ export interface PromptTrailAppOptions {
     store?: DurableRunStore;
     defaultDurable?: boolean;
   };
+  defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
   sources?: Record<string, EventSource>;
   middleware?: readonly MiddlewareDefinition<any, any>[];
@@ -2227,10 +2239,13 @@ export interface PromptTrailAppOptions {
 }
 
 export class PromptTrailApp {
+  private readonly name: string;
   private readonly store: DurableRunStore;
   private readonly agents = new Map<string, DurableAgent<any, any>>();
   private readonly graphAgents = new Map<string, GraphAgent<any, any>>();
   private readonly sources = new Map<string, EventSource>();
+  private readonly runtimeBindings: RuntimeBinding<RuntimeBindingEvent>[] = [];
+  private readonly runtimeDefaults: BindingDefaults;
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
   private readonly observerBus: ObserverBus;
@@ -2246,9 +2261,12 @@ export class PromptTrailApp {
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
+    this.name = options.name ?? 'app';
     this.store =
       options.durable?.store ?? options.store ?? new MemoryRunStore();
-    this.defaultDurable = options.durable?.defaultDurable ?? false;
+    this.runtimeDefaults = options.defaults ?? {};
+    this.defaultDurable =
+      options.durable?.defaultDurable ?? options.defaults?.durable ?? false;
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
     this.strictObservers = options.strictObservers;
@@ -2299,6 +2317,35 @@ export class PromptTrailApp {
   source(name: string, source: EventSource): this {
     this.sources.set(name, source);
     return this;
+  }
+
+  bind<TEvent extends RuntimeBindingEvent>(
+    source: RuntimeSource<TEvent>,
+    configure: (
+      binding: ReturnType<typeof createRuntimeBindingBuilder<TEvent>>,
+    ) => RuntimeBindingLike<TEvent> | void,
+  ): this {
+    const builder = createRuntimeBindingBuilder(source);
+    const bindingLike = configure(builder) ?? builder;
+    const compiled = createRuntimeBundle({
+      name: this.name,
+      agents: this.registeredAgents(),
+      bindings: [bindingLike],
+    });
+    for (const [name, registeredAgent] of Object.entries(compiled.agents)) {
+      this.agent(name, registeredAgent);
+    }
+    this.runtimeBindings.push(...compiled.bindings);
+    return this;
+  }
+
+  bundle(name = this.name): RuntimeBundle {
+    return createRuntimeBundle({
+      name,
+      agents: this.registeredAgents(),
+      defaults: this.runtimeDefaults,
+      bindings: this.runtimeBindings,
+    });
   }
 
   observe(observer: ObserverLike): this {
@@ -2937,6 +2984,13 @@ export class PromptTrailApp {
     return bus;
   }
 
+  private registeredAgents(): Record<string, PromptTrailRegisteredAgent> {
+    return {
+      ...Object.fromEntries(this.agents.entries()),
+      ...Object.fromEntries(this.graphAgents.entries()),
+    };
+  }
+
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
     runId: string,
     run: StoredRun<TVars, TAttrs>,
@@ -3211,6 +3265,6 @@ export function manualSource(): EventSource & {
 
 export const PromptTrail = {
   app,
-  bundle,
+  bundle: createRuntimeBundle,
   server,
 };
