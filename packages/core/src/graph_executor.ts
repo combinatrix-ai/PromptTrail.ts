@@ -1,6 +1,10 @@
 import type { CallToolResult } from './capabilities';
 import type { AgentGraph, AgentGraphNode } from './graph';
 import {
+  createExecutionRuntimeState,
+  type ExecutionRuntimeState,
+} from './interceptors';
+import {
   Message,
   type AssistantMessage,
   type Message as PromptTrailMessage,
@@ -49,10 +53,12 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   maxLoopIterations: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
+  runtime: ExecutionRuntimeState<TVars, TAttrs>;
   activeGoal?: ActiveGoalExecution;
 }
 
 type GraphNodeData = Record<string, unknown>;
+type ConsumedInboxKind = 'user' | 'system' | 'control' | false;
 
 interface ActiveGoalExecution {
   goal: string;
@@ -81,6 +87,10 @@ export async function executeAgentGraph<
     maxLoopIterations: options.maxLoopIterations ?? 10,
     context: options.context,
     signal: options.signal,
+    runtime: createExecutionRuntimeState<TVars, TAttrs>({
+      context: options.context,
+      signal: options.signal,
+    }),
   };
 
   for (const node of graph.nodes) {
@@ -126,12 +136,14 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeToolsNode(node, nodePath, state);
       return;
     case 'awaitInput':
-      if (consumeInbox(state)) {
-        if (state.activeGoal) {
+      {
+        const consumedKind = consumeInbox(state);
+        if (state.activeGoal && consumedKind === 'user') {
           state.activeGoal.interacted = true;
         }
-      } else if (graphNodeData(node).required !== false) {
-        throw new GraphExecutionSuspended(nodePath, undefined, state.session);
+        if (!consumedKind && graphNodeData(node).required !== false) {
+          throw new GraphExecutionSuspended(nodePath, undefined, state.session);
+        }
       }
       return;
     case 'patch':
@@ -227,11 +239,15 @@ async function executeGoalAttemptsNode<TVars extends Vars, TAttrs extends Attrs>
   }
 
   while (!goal.satisfied && !goal.stopped) {
-    if (goal.attempt >= goal.maxAttempts) {
-      handleUnsatisfiedGoal(goal, nodePath, 'exceeded max attempts');
-      return;
+    const countsAsAttempt =
+      goal.interaction !== 'required' || goal.interacted;
+    if (countsAsAttempt) {
+      if (goal.attempt >= goal.maxAttempts) {
+        handleUnsatisfiedGoal(goal, nodePath, 'exceeded max attempts');
+        return;
+      }
+      goal.attempt += 1;
     }
-    goal.attempt += 1;
     for (const child of node.children ?? []) {
       await executeGraphNode(child, `${nodePath}/${child.id}`, state);
       if (goal.satisfied || goal.stopped) {
@@ -252,7 +268,12 @@ async function executeUserNode<TVars extends Vars, TAttrs extends Attrs>(
     consumeInbox(state);
     return;
   }
-  const content = await resolveGraphContent(input, nodePath, state.session);
+  const content = await resolveGraphContent(
+    input,
+    nodePath,
+    state.session,
+    state.runtime,
+  );
   state.session = state.session.addMessage(
     Message.user(typeof content === 'string' ? content : content.content),
   );
@@ -276,7 +297,12 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
           context: state.context,
           signal: state.signal,
         })
-      : await resolveGraphContent(input, nodePath, state.session);
+      : await resolveGraphContent(
+          input,
+          nodePath,
+          state.session,
+          state.runtime,
+        );
   state.session = state.session.addMessage(
     normalizeAssistantResult(result, nodePath),
   );
@@ -489,33 +515,36 @@ function addMessageFromNode<TVars extends Vars, TAttrs extends Attrs>(
 
 function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
-): boolean {
-  const inbound = state.inbox[state.cursor++];
+): ConsumedInboxKind {
+  const inbound = state.inbox[state.cursor];
   if (!inbound) {
     return false;
   }
+  state.cursor += 1;
+  const kind = inbound.kind ?? 'user';
   if (inbound.kind === 'system') {
     state.session = state.session.addMessage(
       Message.system(inbound.content, inbound.attrs),
     );
-    return true;
+    return kind;
   }
   if (inbound.kind === 'control') {
-    return true;
+    return kind;
   }
   state.session = state.session.addMessage(
     Message.user(inbound.content, inbound.attrs),
   );
-  return true;
+  return kind;
 }
 
 async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
   input: unknown,
   nodePath: string,
   session: Session<TVars, TAttrs>,
+  runtime: ExecutionRuntimeState<TVars, TAttrs>,
 ): Promise<string | ModelOutput> {
   if (input instanceof Source) {
-    return input.getContent(session);
+    return input.getContent(session, runtime);
   }
   if (typeof input === 'string') {
     return input;

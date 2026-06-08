@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createAgentGraphManifest } from '../../../graph';
+import type { ExecutionRuntimeState } from '../../../interceptors';
+import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 import { Tool } from '../../../tool';
@@ -132,6 +134,30 @@ describe('Agent graph authoring', () => {
       });
 
     expect(session.getLastMessage()?.content).toBe('ok');
+  });
+
+  it('passes context and signal to graph Source inputs', async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const source = new (class extends Source<string> {
+      async getContent(
+        _session: Session,
+        runtime?: ExecutionRuntimeState,
+      ): Promise<string> {
+        seenSignal = runtime?.signal;
+        return String(runtime?.context?.channel);
+      }
+    })();
+
+    const session = await Agent.create('assistant')
+      .assistant('reply', source)
+      .execute({
+        context: { channel: 'docs' },
+        signal: controller.signal,
+      });
+
+    expect(seenSignal).toBe(controller.signal);
+    expect(session.getLastMessage()?.content).toBe('docs');
   });
 
   it('aborts graph execution before running nodes', async () => {

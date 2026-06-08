@@ -2768,19 +2768,30 @@ export class PromptTrailApp {
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const graph = graphAgent.toGraph();
     const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
-    await this.observerBus.emit(
-      {
-        id: `${runId}:run:0:run.started`,
-        type: 'run.started',
-        at: new Date().toISOString(),
-        runId,
-        seq: 0,
-        phase: 'agent',
-        idempotencyKey: runEventIdempotencyKey(runId, 0, 'run.started'),
-        sessionVersion: 0,
-      },
-      observerContextFromRunContext(options.context),
-    );
+    let eventSeq = 0;
+    const emitGraphRunEvent = async (
+      type: 'run.started' | 'run.completed' | 'run.suspended' | 'error',
+      event: Partial<ExecutionEvent> = {},
+    ) => {
+      const seq = eventSeq++;
+      await this.observerBus.emit(
+        {
+          id: `${runId}:${seq}:${type}`,
+          type,
+          at: new Date().toISOString(),
+          seq,
+          conversationId: runId,
+          runId,
+          replay: 'live',
+          source: 'app',
+          ...event,
+          idempotencyKey:
+            event.idempotencyKey ?? runEventIdempotencyKey(runId, seq, type),
+        },
+        observerContextFromRunContext(options.context),
+      );
+    };
+    await emitGraphRunEvent('run.started', { sessionVersion: 0 });
     try {
       const session = await graphAgent.execute({
         session: options.session,
@@ -2790,46 +2801,31 @@ export class PromptTrailApp {
             : graphInboundFromAppInput(options.input),
         context: options.context,
       });
-      await this.observerBus.emit(
-        {
-          id: `${runId}:run:1:run.completed`,
-          type: 'run.completed',
-          at: new Date().toISOString(),
-          runId,
-          seq: 1,
-          phase: 'agent',
-          idempotencyKey: runEventIdempotencyKey(runId, 1, 'run.completed'),
-          sessionVersion: session.messages.length,
-        },
-        observerContextFromRunContext(options.context),
-      );
+      await emitGraphRunEvent('run.completed', {
+        sessionVersion: session.messages.length,
+      });
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof GraphExecutionSuspended) {
+        const session =
+          (error.session as Session<TVars, TAttrs> | undefined) ??
+          options.session ??
+          Session.create<TVars, TAttrs>();
+        await emitGraphRunEvent('run.suspended', {
+          stepId: error.nodePath,
+          sessionVersion: session.messages.length,
+        });
         return {
           status: 'suspended',
           runId,
           awaiting: error.nodePath,
-          session:
-            (error.session as Session<TVars, TAttrs> | undefined) ??
-            options.session ??
-            Session.create<TVars, TAttrs>(),
+          session,
         };
       }
-      await this.observerBus.emit(
-        {
-          id: `${runId}:run:1:error`,
-          type: 'error',
-          at: new Date().toISOString(),
-          runId,
-          seq: 1,
-          phase: 'agent',
-          idempotencyKey: runEventIdempotencyKey(runId, 1, 'error'),
-          sessionVersion: 0,
-          raw: { error },
-        },
-        observerContextFromRunContext(options.context),
-      );
+      await emitGraphRunEvent('error', {
+        sessionVersion: 0,
+        raw: { error },
+      });
       throw error;
     }
   }

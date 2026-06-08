@@ -325,6 +325,49 @@ describe('GraphExecutor', () => {
     ]);
   });
 
+  it('does not satisfy required interactive goals with control input', async () => {
+    const graph = Agent.create('research')
+      .goal('collectQuestion', 'Get the user question', {
+        interaction: 'required',
+        model: Source.literal('question?'),
+      })
+      .toGraph();
+
+    await expect(
+      executeAgentGraph(graph, {
+        input: { kind: 'control', content: 'internal signal' },
+      }),
+    ).rejects.toMatchObject({
+      nodePath: 'research/collectQuestion/attempts/interaction',
+    });
+  });
+
+  it('does not count required interaction prompts against maxAttempts', async () => {
+    const graph = Agent.create('research')
+      .goal('collectQuestion', 'Get the user question', {
+        interaction: 'required',
+        maxAttempts: 1,
+        model: ({ messages }) =>
+          messages.some((message) => message.content === 'What is TypeScript?')
+            ? 'done'
+            : 'question?',
+        isSatisfied: ({ attempt, session }) =>
+          attempt === 1 && session.getLastMessage()?.content === 'done',
+      })
+      .toGraph();
+
+    const session = await executeAgentGraph(graph, {
+      input: 'What is TypeScript?',
+    });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Get the user question',
+      'question?',
+      'What is TypeScript?',
+      'done',
+    ]);
+  });
+
   it('fails retrying goals after maxAttempts is exhausted', async () => {
     const graph = Agent.create('research')
       .goal('researchTopic', 'Research the topic', {

@@ -2495,11 +2495,23 @@ describe('durable agent runtime', () => {
   });
 
   it('can run graph Agents through PromptTrail.app ephemerally', async () => {
+    const events: string[] = [];
     const assistant = Agent.create('graphAssistant')
       .turn('main', (turn) =>
         turn.inbox('inbound').assistant('reply', Source.literal('ok')),
       );
-    const app = PromptTrail.app({ agents: { assistant } });
+    const app = PromptTrail.app({
+      agents: { assistant },
+      observers: [
+        {
+          handle(event) {
+            events.push(
+              `${event.seq}:${event.type}:${event.conversationId}:${event.source}`,
+            );
+          },
+        },
+      ],
+    });
 
     const result = await app.run({
       agent: 'assistant',
@@ -2511,6 +2523,10 @@ describe('durable agent runtime', () => {
     expect(result.session.messages.map((message) => message.content)).toEqual([
       'hello',
       'ok',
+    ]);
+    expect(events).toEqual([
+      '0:run.started:graphAssistant-1:app',
+      '1:run.completed:graphAssistant-1:app',
     ]);
     expect(() => app.journal(result.runId)).toThrow('Unknown durable run');
   });
@@ -2531,11 +2547,25 @@ describe('durable agent runtime', () => {
   });
 
   it('returns suspended graph Agent app runs with the current session', async () => {
-    const assistant = Agent.create('graphAssistant').goal('collect', 'Collect input', {
-      interaction: 'required',
-      model: Source.literal('question?'),
+    const events: string[] = [];
+    const assistant = Agent.create('graphAssistant').goal(
+      'collect',
+      'Collect input',
+      {
+        interaction: 'required',
+        model: Source.literal('question?'),
+      },
+    );
+    const app = PromptTrail.app({
+      agents: { assistant },
+      observers: [
+        {
+          handle(event) {
+            events.push(`${event.seq}:${event.type}:${event.stepId ?? ''}`);
+          },
+        },
+      ],
     });
-    const app = PromptTrail.app({ agents: { assistant } });
 
     const result = await app.run({ agent: 'assistant' });
 
@@ -2544,6 +2574,10 @@ describe('durable agent runtime', () => {
     expect(result.session.messages.map((message) => message.content)).toEqual([
       'Collect input',
       'question?',
+    ]);
+    expect(events).toEqual([
+      '0:run.started:',
+      '1:run.suspended:graphAssistant/collect/attempts/interaction',
     ]);
   });
 
