@@ -329,11 +329,10 @@ describe('RuntimeServer', () => {
       }));
     const bundle = PromptTrail.bundle({
       name: 'graph-runtime',
-      agents: { main },
       defaults: { durable: false },
       bindings: [
         bind(discord.messages())
-          .toAgent('main')
+          .to(main)
           .conversation(() => 'discord:graph'),
       ],
     });
@@ -364,6 +363,29 @@ describe('RuntimeServer', () => {
     expect(result.result.session.messages.map((message) => message.content)).toEqual(
       ['hello', 'reply:hello'],
     );
+  });
+
+  it('registers Agent instances from runtime bindings into bundles', () => {
+    const main = Agent.create('main').assistant('reply', () => 'reply');
+    const durable = agent('durable');
+    const bundle = PromptTrail.bundle({
+      name: 'binding-agent-registration',
+      bindings: [
+        bind(discord.messages())
+          .to(main)
+          .conversation(() => 'discord:graph'),
+        bind(discord.messages())
+          .to(durable)
+          .conversation(() => 'discord:durable'),
+      ],
+    });
+
+    expect(bundle.agents.main).toBe(main);
+    expect(bundle.agents.durable).toBe(durable);
+    expect(bundle.bindings.map((binding) => binding.agent)).toEqual([
+      'main',
+      'durable',
+    ]);
   });
 
   it('keeps runtime bundle Agent graph runs ephemeral-only for now', async () => {

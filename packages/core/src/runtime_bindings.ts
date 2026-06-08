@@ -125,6 +125,7 @@ export interface RuntimeBundleOptions {
 export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
   private filters: RuntimeFilter<TEvent>[] = [];
   private agentName?: string;
+  private agentRef?: RuntimeAgentRef;
   private conversationResolver?: ConversationResolver<TEvent>;
   private inputResolver?: InputResolver<TEvent>;
   private bindingDefaults: BindingDefaults = {};
@@ -139,6 +140,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
 
   to(agent: RuntimeAgentRef): this {
     this.agentName = resolveRuntimeAgentName(agent);
+    this.agentRef = agent;
     return this;
   }
 
@@ -164,6 +166,16 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
   name(name: string): this {
     this.bindingName = name;
     return this;
+  }
+
+  agentRegistration():
+    | { name: string; agent: PromptTrailRegisteredAgent }
+    | undefined {
+    const agentRef = this.agentRef;
+    if (!this.agentName || !agentRef || typeof agentRef === 'string') {
+      return undefined;
+    }
+    return { name: this.agentName, agent: agentRef };
   }
 
   build(): RuntimeBinding<TEvent> {
@@ -280,13 +292,23 @@ export const cron = {
 };
 
 export function bundle(options: RuntimeBundleOptions): RuntimeBundle {
+  const agents = { ...(options.agents ?? {}) };
+  const bindings = (options.bindings ?? []).map((bindingLike) => {
+    if (!isBindingBuilder(bindingLike)) {
+      return bindingLike;
+    }
+    const registration = bindingLike.agentRegistration();
+    if (registration && !agents[registration.name]) {
+      agents[registration.name] = registration.agent;
+    }
+    return bindingLike.build();
+  });
+
   return {
     name: options.name,
-    agents: options.agents ?? {},
+    agents,
     defaults: options.defaults ?? {},
-    bindings: (options.bindings ?? []).map((bindingLike) =>
-      isBindingBuilder(bindingLike) ? bindingLike.build() : bindingLike,
-    ),
+    bindings,
   };
 }
 
