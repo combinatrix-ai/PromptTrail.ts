@@ -18,7 +18,7 @@ export type Tool<TParams = any, TResult = any> = PromptTrailTool<
 
 export namespace Tool {
   export function create<TParams, TResult>(config: {
-    name: string;
+    name?: string;
     description: string;
     inputSchema: z.ZodType<TParams>;
     execute: (

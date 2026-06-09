@@ -53,6 +53,18 @@ describe('Tool namespace', () => {
         count: 2,
       });
     });
+
+    it('allows agent registration to supply the public tool name', () => {
+      const testTool = Tool.create({
+        description: 'Read data',
+        inputSchema: z.object({ id: z.string() }),
+        activity: { kind: 'external-read' },
+        execute: ({ id }) => ({ id }),
+      });
+
+      expect(testTool.name).toBe('tool');
+      expect(testTool.metadata?.activity).toEqual({ kind: 'external-read' });
+    });
   });
 
   describe('CallToolResult mapping', () => {
