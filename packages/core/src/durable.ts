@@ -3146,6 +3146,27 @@ export class PromptTrailApp {
           context: cloneDurableRuntimeValue(run.context),
           eventScopeId: runId,
           nextEventSeq: () => this.nextRunEventSeq(runId, run),
+          durableToolExecution: ({ nodePath, toolCall, session }, execute) => {
+            const graphDurableState = this.createGraphDurableExecutionState(
+              runId,
+              run,
+              session,
+            );
+            const stepId = `${nodePath}/${toolCall.id}`;
+            return runDurableCompositeJournal(
+              graphDurableState,
+              stepId,
+              (nestedStepIds) =>
+                execute(
+                  createDurableToolBoundary(
+                    graphDurableState,
+                    stepId,
+                    toolCall,
+                    nestedStepIds,
+                  ),
+                ),
+            );
+          },
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           strictObservers: this.strictObservers,
           resumeFromNode: run.graphSuspendedAt,
@@ -3192,6 +3213,40 @@ export class PromptTrailApp {
       this.persistRun(runId, run);
       throw error;
     }
+  }
+
+  private createGraphDurableExecutionState<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(
+    runId: string,
+    run: StoredRun<TVars, TAttrs>,
+    session: Session<TVars, TAttrs>,
+  ): DurableExecutionState<TVars, TAttrs> {
+    return {
+      runId,
+      session,
+      journal: run.journal,
+      inbox: run.inbox,
+      cursor: run.graphCursor ?? run.inbox.length,
+      sequencePosition: run.journal.sequence.length,
+      transitionVersion: session.messages.length,
+      middleware: [],
+      hooks: [],
+      middlewareState: {},
+      context: cloneDurableRuntimeValue(run.context),
+      emitEvent: async (event) => {
+        await this.emitObservers(run, event);
+        this.persistRun(runId, run);
+      },
+      nextEventSeq: () => this.nextRunEventSeq(runId, run),
+      persist: () => this.persistRun(runId, run),
+      commitSession: (committedSession) => {
+        run.result = committedSession;
+        this.materializeAssistantDeliveriesForRun(runId, run);
+        this.persistRun(runId, run);
+      },
+    };
   }
 
   private assertGraphRunManifest<

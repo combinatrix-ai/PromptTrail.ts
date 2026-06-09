@@ -531,7 +531,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       this.graphNodes.push({
         id: idOrTransform,
         type: 'transform',
-        data: { template: new Transform(maybeTransform) },
+        data: { handler: maybeTransform },
       });
       return this;
     }

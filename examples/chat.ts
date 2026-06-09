@@ -1,21 +1,18 @@
 import { Agent, Session, Source } from '@prompttrail/core';
 
 async function main() {
-  // Create the main conversation flow using the quick ephemeral API.
-  const chatAgent = Agent.quick()
+  const chatAgent = Agent.create('chat')
     .system(
+      'system',
       'You are a helpful AI assistant. Be concise and friendly in your responses.',
     )
-    // Function-based loop body
     .loop(
+      'chatLoop',
       (agent) =>
         agent
-          // User message from CLI with custom prompt
-          .user(Source.cli('Your message (type "exit" to end): '))
-          // Assistant message using the default model
-          .assistant(),
-      // Loop condition: continue until user types "exit"
-      (session) => {
+          .user('input', Source.cli('Your message (type "exit" to end): '))
+          .assistant('reply', Source.llm()),
+      ({ session }) => {
         const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
         return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
       },

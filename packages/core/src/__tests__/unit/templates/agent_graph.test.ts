@@ -553,6 +553,54 @@ describe('Agent graph authoring', () => {
     );
   });
 
+  it('journals graph durable tool activity and nested durable effects', async () => {
+    const store = memoryStore();
+    let memoCalls = 0;
+    let toolCalls = 0;
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      activity: { kind: 'external-read' },
+      execute: async ({ id }, context) => {
+        toolCalls++;
+        const memo = await context.durable?.memo('stable-value', () => {
+          memoCalls++;
+          return `memo:${id}:${memoCalls}`;
+        });
+        return `${memo}:${context.activity?.kind ?? 'none'}`;
+      },
+    });
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .turn('main', (turn) =>
+        turn
+          .assistant('reply', () => ({
+            content: 'need lookup',
+            toolCalls: [
+              { id: 'call-1', name: 'lookup', arguments: { id: 'one' } },
+            ],
+          }))
+          .tools('tools'),
+      )
+      .durable({ store, runId: 'direct-graph-tool-effects' });
+
+    const session = await agent.execute();
+    const run = store.get('direct-graph-tool-effects');
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'need lookup',
+      'memo:one:1:external-read',
+    ]);
+    expect(toolCalls).toBe(1);
+    expect(memoCalls).toBe(1);
+    expect(run?.journal.sequence).toEqual([
+      'assistant/main/tools/call-1/tool/lookup/memo/stable-value',
+      'assistant/main/tools/call-1/tool/lookup/activity/lookup',
+      'assistant/main/tools/call-1',
+    ]);
+  });
+
   it('resumes direct durable graph agents from suspended input nodes', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
@@ -625,6 +673,56 @@ describe('Agent graph authoring', () => {
       'done:1',
     ]);
     expect(resumed.getVar('count')).toBe(1);
+  });
+
+  it('clears graph resume targets after consuming resumed input in nested loops', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .turn('main', (turn) =>
+        turn.inbox('first').repeat(
+          'outer',
+          ({ session }) => ((session.getVar('count') as number) ?? 0) < 2,
+          (outer) =>
+            outer
+              .patch('count', (session) =>
+                session.withVar(
+                  'count',
+                  ((session.getVar('count') as number) ?? 0) + 1,
+                ),
+              )
+              .repeat(
+                'inner',
+                ({ session }) => session.getVar('needInput') !== false,
+                (inner) =>
+                  inner
+                    .awaitInput('next')
+                    .patch('inputDone', (session) =>
+                      session.withVar('needInput', false),
+                    ),
+              )
+              .assistant(
+                'reply',
+                (session) => `outer:${String(session.getVar('count'))}`,
+              ),
+        ),
+      )
+      .durable({ store, runId: 'direct-nested-loop-resume' });
+
+    const suspended = await agent.execute({ input: 'hello' });
+    const resumed = await agent.execute({ input: 'again' });
+
+    expect(suspended.messages.map((message) => message.content)).toEqual([
+      'hello',
+    ]);
+    expect(suspended.getVar('count')).toBe(1);
+    expect(resumed.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'outer:1',
+      'outer:2',
+    ]);
+    expect(resumed.getVar('count')).toBe(2);
+    expect(resumed.getVar('needInput')).toBe(false);
   });
 
   it('fails direct durable graph resume when the graph manifest changes', async () => {

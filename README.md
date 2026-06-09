@@ -19,12 +19,12 @@ npm install github:combinatrix-ai/PromptTrail.ts
 ### 30-Second Example
 
 ```typescript
-import { Agent } from '@prompttrail/core';
+import { Agent, Source } from '@prompttrail/core';
 
-const chat = Agent.quick()
-  .system("You're a helpful assistant.")
-  .user("What's TypeScript?")
-  .assistant(); // Uses OpenAI GPT-5.4 nano via the Responses API by default
+const chat = Agent.create('chat')
+  .system('system', "You're a helpful assistant.")
+  .user('question', "What's TypeScript?")
+  .assistant('reply', Source.llm()); // Uses OpenAI GPT-5.4 nano via the Responses API by default
 
 const session = await chat.execute();
 console.log(session.getLastMessage()?.content);
@@ -38,18 +38,23 @@ for durable runs.
 ### Interactive Chat Loop
 
 ```typescript
-import { Agent } from '@prompttrail/core';
+import { Agent, Source } from '@prompttrail/core';
 
-const agent = Agent.quick()
-  .system('You are a helpful assistant.')
-  .loopForever(
+const agent = Agent.create('chat')
+  .system('system', 'You are a helpful assistant.')
+  .loop(
+    'chatLoop',
     (l) =>
       l
-        .user() // CLI input from user
-        .assistant(), // LLM response
+        .user('input', Source.cli()) // CLI input from user
+        .assistant('reply', Source.llm()), // LLM response
+    ({ session }) => {
+      const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
+      return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
+    },
   );
 
-await agent.execute(); // Runs forever until user exits
+await agent.execute();
 ```
 
 ### Customizing the LLM
@@ -57,10 +62,11 @@ await agent.execute(); // Runs forever until user exits
 ```typescript
 import { Agent, Source } from '@prompttrail/core';
 
-const agent = Agent.quick()
-  .system('You are a creative writer.')
-  .user('Write a haiku about TypeScript.')
+const agent = Agent.create('writer')
+  .system('system', 'You are a creative writer.')
+  .user('prompt', 'Write a haiku about TypeScript.')
   .assistant(
+    'reply',
     Source.llm()
       .openai()
       .model('gpt-5.4-nano')
@@ -97,10 +103,10 @@ const session = Session.create({
 });
 
 // Use variables in templates with ${variable} syntax
-const agent = Agent.quick()
-  .system('Help ${userName} learn ${language}')
-  .user('Explain generics')
-  .assistant();
+const agent = Agent.create('tutor')
+  .system('system', 'Help ${userName} learn ${language}')
+  .user('prompt', 'Explain generics')
+  .assistant('reply', Source.llm());
 
 await agent.execute({ session });
 ```
@@ -111,13 +117,13 @@ await agent.execute({ session });
 import { Source } from '@prompttrail/core';
 
 // Different content sources
-.user(Source.literal('Fixed text'))      // Static content
-.user(Source.cli())                      // User input from terminal
-.user(Source.random(['A', 'B', 'C']))    // Random selection
-.user(Source.callback(session => '...')) // Custom logic
+.user('fixed', Source.literal('Fixed text'))       // Static content
+.user('cli', Source.cli())                         // User input from terminal
+.user('random', Source.random(['A', 'B', 'C']))    // Random selection
+.user('custom', Source.callback(session => '...')) // Custom logic
 
-.assistant(Source.llm())                 // LLM generation (default)
-.assistant(Source.cli())                 // Manual assistant input
+.assistant('model', Source.llm())                  // LLM generation
+.assistant('manual', Source.cli())                 // Manual assistant input
 ```
 
 ### Generating Multiple Messages
@@ -125,9 +131,9 @@ import { Source } from '@prompttrail/core';
 ```typescript
 import { Agent, Message } from '@prompttrail/core';
 
-const agent = Agent.quick()
-  .user('Summarize the external workflow')
-  .messages(async (session) => [
+const agent = Agent.create('summarizer')
+  .user('prompt', 'Summarize the external workflow')
+  .messages('summary', async (session) => [
     Message.assistant(`Processed ${session.messages.length} messages`),
   ]);
 ```
@@ -140,9 +146,9 @@ back into the PromptTrail session while preserving Codex metadata in message
 attributes.
 
 ```typescript
-const agent = Agent.quick()
-  .user('Inspect this repository and suggest the next edit')
-  .codexTurn({
+const agent = Agent.create('repo-review')
+  .user('prompt', 'Inspect this repository and suggest the next edit')
+  .codexTurn('codex', {
     transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
     cwd: process.cwd(),
     sandboxPolicy: { type: 'readOnly' },

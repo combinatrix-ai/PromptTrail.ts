@@ -16,6 +16,7 @@ import type {
 } from '../../index';
 // @ts-expect-error graph executor types are not package-root APIs.
 import type { GraphExecutionOptions } from '../../index';
+type _GraphExecutionOptionsHidden = GraphExecutionOptions;
 
 describe('public API surface', () => {
   it('does not re-export ai-sdk tool helpers from core', () => {

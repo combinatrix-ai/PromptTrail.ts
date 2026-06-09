@@ -11,6 +11,7 @@ import {
   createExecutionRuntimeState,
   runRuntimeExecutionPhase,
   runRuntimeMiddlewareWrapper,
+  type ExecutionDurableBoundary,
   type ExecutionRuntimeState,
 } from './interceptors';
 import {
@@ -51,6 +52,23 @@ export interface GraphExecutionOptions<
     session: Session<TVars, TAttrs>,
   ) => boolean;
   resumeFromNode?: string;
+  durableToolBoundary?: (
+    context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
+  ) => ExecutionDurableBoundary | undefined;
+  durableToolExecution?: <T>(
+    context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
+    execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
+  ) => Promise<T>;
+}
+
+export interface GraphToolDurableBoundaryContext<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  nodePath: string;
+  toolCall: { id: string; name: string; arguments: Record<string, unknown> };
+  session: Session<TVars, TAttrs>;
+  tool: PromptTrailTool<unknown, unknown>;
 }
 
 export class GraphExecutionSuspended extends Error {
@@ -81,6 +99,14 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   runtime: ExecutionRuntimeState<TVars, TAttrs>;
   skipNode?: GraphExecutionOptions<TVars, TAttrs>['skipNode'];
   resumeFromNode?: string;
+  durableToolBoundary?: GraphExecutionOptions<
+    TVars,
+    TAttrs
+  >['durableToolBoundary'];
+  durableToolExecution?: GraphExecutionOptions<
+    TVars,
+    TAttrs
+  >['durableToolExecution'];
   activeGoal?: ActiveGoalExecution;
 }
 
@@ -141,6 +167,8 @@ export async function executeAgentGraph<
     }),
     skipNode: options.skipNode,
     resumeFromNode: options.resumeFromNode,
+    durableToolBoundary: options.durableToolBoundary,
+    durableToolExecution: options.durableToolExecution,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -324,6 +352,9 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
         if (state.activeGoal && consumedKind === 'user') {
           state.activeGoal.interacted = true;
         }
+        if (consumedKind && nodePath === state.resumeFromNode) {
+          state.resumeFromNode = undefined;
+        }
         if (!consumedKind && graphNodeData(node).required !== false) {
           throw new GraphExecutionSuspended(nodePath, undefined, state.session);
         }
@@ -339,8 +370,10 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'codexTurn':
     case 'claudeTurn':
     case 'parallel':
-    case 'transform':
       await executeTemplateNode(node, nodePath, state);
+      return;
+    case 'transform':
+      await executeTransformNode(node, nodePath, state);
       return;
   }
 }
@@ -589,6 +622,21 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
+async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const data = graphNodeData(node);
+  const handler = data.handler;
+  if (typeof handler === 'function') {
+    const result = await handler(state.session);
+    state.session = result as Session<TVars, TAttrs>;
+    return;
+  }
+  await executeTemplateNode(node, nodePath, state);
+}
+
 async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
   nodePath: string,
@@ -801,13 +849,31 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
       session: state.session,
       request: nextCall,
       call: async ({ session, request }) => {
-        const result = await executePromptTrailTool(tool, request.arguments, {
+        const context = {
+          nodePath,
+          toolCall: request,
           session,
-          context: state.context,
-          raw: request,
-          capability: request.name,
-          activity: tool.activity,
-        });
+          tool,
+        };
+        const executeTool = (durable?: ExecutionDurableBoundary) =>
+          executePromptTrailTool(tool, request.arguments, {
+            session,
+            context: state.context,
+            raw: request,
+            capability: request.name,
+            activity: tool.activity,
+            durable:
+              durable ??
+              state.durableToolBoundary?.({
+                nodePath,
+                toolCall: request,
+                session,
+                tool,
+              }),
+          });
+        const result = state.durableToolExecution
+          ? await state.durableToolExecution(context, executeTool)
+          : await executeTool();
         return normalizeToolResultMessage(result, request);
       },
     });

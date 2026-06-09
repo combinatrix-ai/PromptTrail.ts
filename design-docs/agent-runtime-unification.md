@@ -632,9 +632,10 @@ split runtime instead of layering more adapters over it.
   assistant delivery materialization, and graph manifest validation. Full
   journaled model/tool effect replay is still owned by the legacy durable
   services until the remaining durable journal logic is ported. Unified tools
-  already expose `activity` and graph tool calls pass `ctx.activity`, but
-  graph-authored durable runs do not yet journal `ctx.durable.memo(...)` or
-  nested `ctx.durable.activity(...)` calls from tool bodies.
+  already expose `activity`, graph tool calls pass `ctx.activity`, and
+  graph-authored durable runs journal `ctx.durable.memo(...)` and nested
+  `ctx.durable.activity(...)` calls from tool bodies through the graph tool
+  composite step.
 - Preserve durable concepts:
   - run store
   - inbox cursor
