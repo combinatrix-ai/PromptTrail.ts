@@ -2,8 +2,7 @@
  * Gradual Typing API Demo
  *
  * This example demonstrates the new gradual typing API for Session creation.
- * It shows how to specify types explicitly when needed while maintaining
- * backward compatibility with existing code.
+ * It shows how to specify types explicitly when inference is not enough.
  */
 
 import { Session } from '../packages/core/src/index';
@@ -28,8 +27,8 @@ type MessageMetadata = {
 async function main() {
   console.log('🎯 PromptTrail Gradual Typing API Demo\n');
 
-  // 1. Existing API (unchanged - backward compatible)
-  console.log('1. Existing API (unchanged):');
+  // 1. Inferred vars from create()
+  console.log('1. Inferred vars from create():');
   const session1 = Session.create({ vars: { name: 'Alice', age: 30 } });
   console.log(
     `   User: ${session1.getVar('name')}, Age: ${session1.getVar('age')}\n`,
@@ -146,7 +145,7 @@ async function main() {
 
   console.log('✅ All examples completed successfully!');
   console.log('\n📝 Key Benefits:');
-  console.log('   • Backward compatible - existing code unchanged');
+  console.log('   • Inference first - values define vars when possible');
   console.log(
     '   • Explicit typing - withVarsType vs withAttrsType (no confusion)',
   );
