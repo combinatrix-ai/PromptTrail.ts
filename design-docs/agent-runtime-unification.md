@@ -53,7 +53,9 @@ use. `codexTurn(...)` and `claudeTurn(...)` are `Agent` fluent methods; the
 are not package-root exports. Graph structure and manifest helpers may be root
 exports, but graph executor internals such as `executeAgentGraph`,
 `GraphExecutionOptions`, and `GraphExecutionSuspended` stay behind the
-`graph_executor` submodule for internal and advanced runtime use.
+`graph_executor` submodule for internal and advanced runtime use. Any submodule
+named here must also be a real package export; hiding a symbol from the root
+must not make the advanced import path unavailable in built packages.
 
 ```ts
 const assistant = Agent.create('assistant')

@@ -8,6 +8,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs"
+    },
+    "./templates": {
+      "types": "./dist/templates/index.d.ts",
+      "import": "./dist/templates/index.mjs"
+    },
+    "./graph_executor": {
+      "types": "./dist/graph_executor.d.ts",
+      "import": "./dist/graph_executor.mjs"
     }
   },
   "files": [
