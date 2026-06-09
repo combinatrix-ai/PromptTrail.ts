@@ -33,18 +33,7 @@ export namespace Tool {
   export function create<TParams, TResult>(config: {
     name?: string;
     description: string;
-    parameters: z.ZodType<TParams>;
-    execute: (input: TParams) => Promise<TResult> | TResult;
-    approval?: ApprovalPolicy;
-    cache?: CacheHint;
-    activity?: ExecutionDurableActivityOptions;
-    metadata?: Record<string, unknown>;
-  }): PromptTrailTool<TParams, TResult>;
-  export function create<TParams, TResult>(config: {
-    name?: string;
-    description: string;
     inputSchema?: z.ZodType<TParams>;
-    parameters?: z.ZodType<TParams>;
     execute:
       | ((
           input: TParams,
@@ -56,7 +45,7 @@ export namespace Tool {
     activity?: ExecutionDurableActivityOptions;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
-    const inputSchema = config.inputSchema ?? config.parameters;
+    const inputSchema = config.inputSchema;
     if (!inputSchema) {
       throw new Error('Tool.create requires inputSchema.');
     }

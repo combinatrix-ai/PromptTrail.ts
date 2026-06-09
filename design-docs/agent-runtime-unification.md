@@ -124,8 +124,10 @@ Tool `activity` is the default durable classification for the tool call. Tool
 bodies may still use `ctx.durable.memo(...)` and `ctx.durable.activity(...)`
 for nested effect boundaries. External writes require an idempotency key.
 
-Current implementation: `Tool.create({ activity })` stores the activity as a
-first-class `PromptTrailTool.activity` field and also mirrors it in metadata for
+Current implementation: `Tool.create(...)` accepts `inputSchema` as the only
+schema key; the old `parameters` compatibility alias is intentionally rejected.
+`Tool.create({ activity })` stores the activity as a first-class
+`PromptTrailTool.activity` field and also mirrors it in metadata for
 introspection. `executePromptTrailTool(...)` passes `ctx.activity` into tool
 bodies and wraps execution in `ctx.durable.activity(tool.name, activity, ...)`
 when the caller supplies a durable boundary. Graph tool nodes pass agent/app

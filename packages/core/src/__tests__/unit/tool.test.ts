@@ -35,14 +35,28 @@ describe('Tool namespace', () => {
       ).resolves.toEqual({ output: 'upper:HELLO' });
     });
 
-    it('accepts the old parameters key while returning a native tool', () => {
+    it('rejects the old parameters key', () => {
+      expect(() =>
+        Tool.create({
+          name: 'echo',
+          description: 'Test execution',
+          parameters: z.object({
+            message: z.string(),
+            count: z.number(),
+          }),
+          execute: ({ message, count }: { message: string; count: number }) => ({
+            message,
+            count,
+          }),
+        } as never),
+      ).toThrow('Tool.create requires inputSchema.');
+    });
+
+    it('creates tools with inputSchema only', () => {
       const testTool = Tool.create({
         name: 'echo',
         description: 'Test execution',
-        parameters: z.object({
-          message: z.string(),
-          count: z.number(),
-        }),
+        inputSchema: z.object({ message: z.string(), count: z.number() }),
         execute: ({ message, count }) => ({ message, count }),
       });
 

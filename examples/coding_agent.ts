@@ -22,7 +22,7 @@ const execAsync = promisify(exec);
 // Define shell command tool
 const shellCommandTool = Tool.create({
   description: 'Execute a shell command',
-  parameters: z.object({
+  inputSchema: z.object({
     command: z.string().describe('Shell command to execute'),
   }),
   execute: async (input) => {
@@ -40,7 +40,7 @@ const shellCommandTool = Tool.create({
 // Define file reading tool
 const readFileTool = Tool.create({
   description: 'Read content from a file',
-  parameters: z.object({
+  inputSchema: z.object({
     path: z.string().describe('Path to the file to read'),
   }),
   execute: async (input) => {
@@ -62,7 +62,7 @@ const readFileTool = Tool.create({
 // Define file writing tool
 const writeFileTool = Tool.create({
   description: 'Write content to a file',
-  parameters: z.object({
+  inputSchema: z.object({
     path: z.string().describe('Path to write the file'),
     content: z.string().describe('Content to write to the file'),
   }),

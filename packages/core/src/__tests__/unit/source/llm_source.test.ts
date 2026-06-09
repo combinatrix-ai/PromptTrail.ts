@@ -88,7 +88,7 @@ describe('LlmSource', () => {
       const lookup = Tool.create({
         name: 'lookup',
         description: 'Lookup docs',
-        parameters: z.object({ query: z.string() }),
+        inputSchema: z.object({ query: z.string() }),
         execute: () => ({ value: 'docs' }),
       });
       const source = Source.llm().withTool('lookup', lookup);

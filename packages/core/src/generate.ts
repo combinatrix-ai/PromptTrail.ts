@@ -409,7 +409,7 @@ export async function generateWithSchema<
         [functionName]: Tool.create({
           name: functionName,
           description: 'Generate structured output according to schema',
-          parameters: schemaOptions.schema,
+          inputSchema: schemaOptions.schema,
           execute: (input) => input,
         }),
       },

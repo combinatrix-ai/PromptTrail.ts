@@ -144,7 +144,7 @@ describe('assertNativeStreamingToolLoopSupported', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: ({ query }) => ({ query }),
     });
 
@@ -166,7 +166,7 @@ describe('assertNativeStreamingToolLoopSupported', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: ({ query }) => ({ query }),
     });
 
@@ -191,7 +191,7 @@ describe('streamPromptTrailToolLoop', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: ({ query }, context) => {
         toolContexts.push(context.context);
         return { value: `result:${query}` };
@@ -280,7 +280,7 @@ describe('streamPromptTrailToolLoop', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: ({ query }, context) => {
         toolContexts.push(context.context);
         return { value: `result:${query}` };
@@ -395,7 +395,7 @@ describe('streamPromptTrailToolLoop', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: () => {
         executed = true;
         return { value: 'should not run' };
@@ -499,7 +499,7 @@ describe('streamPromptTrailToolLoop', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: () => ({ value: 'result' }),
     });
     const events: string[] = [];
@@ -571,7 +571,7 @@ describe('streamPromptTrailToolLoop', () => {
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Lookup docs',
-      parameters: z.object({ query: z.string() }),
+      inputSchema: z.object({ query: z.string() }),
       execute: () => {
         throw new Error('lookup unavailable');
       },
