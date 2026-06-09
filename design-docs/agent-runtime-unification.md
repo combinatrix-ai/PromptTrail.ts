@@ -41,6 +41,15 @@ ordinary authoring API.
 Agents are named. The name is required because app bindings, run metadata,
 events, graph versions, and generated ids need a stable root.
 
+The package root exports the final authoring surface only. It must not
+wildcard-export the low-level template implementation module. Public root
+exports include `Agent`, graph helper types, and the final helper templates
+such as `Parallel` and `Structured`; implementation primitives such as
+`System`, `User`, `Assistant`, `Sequence`, `Loop`, `Subroutine`,
+`Conditional`, `Transform`, `GenerateMessages`, `TemplateBase`, and
+`Composite` stay behind the `templates` submodule for internal and advanced
+use.
+
 ```ts
 const assistant = Agent.create('assistant')
   .system('identity', 'You are a concise project assistant.')

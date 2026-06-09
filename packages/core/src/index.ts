@@ -57,7 +57,25 @@ export type {
   StoredRun,
   ToolCall,
 } from './durable';
-export * from './templates';
+export {
+  Agent,
+  AgentTurnGraphBuilder,
+  ClaudeTurn,
+  CodexTurn,
+  Parallel,
+  Structured,
+} from './templates';
+export type {
+  AgentDirectDurableOptions,
+  AgentExecuteOptions,
+  AgentExecutionOptions,
+  AgentGoalOptions,
+  AgentGoalSatisfactionContext,
+  AggregationStrategy,
+  BuiltInStrategy,
+  ScoringFunction,
+  Strategy,
+} from './templates';
 export * from './templates/primitives/structured';
 export * from './tool';
 export * from './utils';

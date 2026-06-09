@@ -157,6 +157,20 @@ describe('public API surface', () => {
     expect(options.interaction).toBe('required');
   });
 
+  it('does not expose low-level template authoring classes from the package root', () => {
+    expect(prompttrail).not.toHaveProperty('TemplateBase');
+    expect(prompttrail).not.toHaveProperty('Composite');
+    expect(prompttrail).not.toHaveProperty('System');
+    expect(prompttrail).not.toHaveProperty('User');
+    expect(prompttrail).not.toHaveProperty('Assistant');
+    expect(prompttrail).not.toHaveProperty('Sequence');
+    expect(prompttrail).not.toHaveProperty('Loop');
+    expect(prompttrail).not.toHaveProperty('Subroutine');
+    expect(prompttrail).not.toHaveProperty('Conditional');
+    expect(prompttrail).not.toHaveProperty('Transform');
+    expect(prompttrail).not.toHaveProperty('GenerateMessages');
+  });
+
   it('does not expose Scenario as a public authoring API', () => {
     expect(prompttrail).not.toHaveProperty('Scenario');
     expect(prompttrail).not.toHaveProperty('Scenarios');
