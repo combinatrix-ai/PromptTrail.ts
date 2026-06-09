@@ -45,6 +45,20 @@ export class CodexTurn<
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
+    return this.executeTurn(session, runtime);
+  }
+
+  /**
+   * Execute the Codex turn without routing through the template adapter
+   * entrypoint. GraphExecutor uses this to keep codexTurn graph nodes out of
+   * the generic template fallback while sharing the same provider semantics.
+   *
+   * @internal
+   */
+  async executeTurn(
+    session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     let currentSession = this.ensureSession(session);
     if (runtime) {
       const beforeModel = await runRuntimeExecutionPhase(runtime, {

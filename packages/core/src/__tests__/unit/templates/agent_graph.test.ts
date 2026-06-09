@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type {
+  ClaudeAgentClient,
+  ClaudeAgentQueryParams,
+} from '../../../claude_agent';
+import type {
+  CodexAppServerClient,
+  CodexSkillListResult,
+  CodexThreadStartParams,
+  CodexThreadStartResult,
+  CodexTurnStartParams,
+} from '../../../codex_app_server';
 import { memoryStore } from '../../../durable';
 import {
   AgentGraphVersionError,
   createAgentGraphManifest,
 } from '../../../graph';
-import { GraphExecutionSuspended } from '../../../graph_executor';
+import {
+  executeAgentGraph,
+  GraphExecutionSuspended,
+} from '../../../graph_executor';
 import {
   Hook,
   Middleware,
@@ -16,6 +30,47 @@ import { Session } from '../../../session';
 import { type ModelOutput, Source } from '../../../source';
 import { Agent, Parallel, Structured } from '../../../templates';
 import { Tool } from '../../../tool';
+
+class GraphFakeCodexClient implements CodexAppServerClient {
+  threadStarts: CodexThreadStartParams[] = [];
+  turnStarts: CodexTurnStartParams[] = [];
+
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return { skills: [] };
+  }
+
+  async startThread(
+    params: CodexThreadStartParams,
+  ): Promise<CodexThreadStartResult> {
+    this.threadStarts.push(params);
+    return { threadId: 'thread-graph' };
+  }
+
+  async startTurn(params: CodexTurnStartParams) {
+    this.turnStarts.push(params);
+    return {
+      threadId: params.threadId,
+      turnId: 'turn-graph',
+      status: 'completed',
+      finalAnswer: 'Codex graph result',
+    };
+  }
+}
+
+class GraphFakeClaudeAgentClient implements ClaudeAgentClient {
+  queries: ClaudeAgentQueryParams[] = [];
+
+  async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
+    this.queries.push(params);
+    yield {
+      type: 'result',
+      id: 'result-graph',
+      status: 'completed',
+      session_id: 'session-graph',
+      result: 'Claude graph result',
+    };
+  }
+}
 
 describe('Agent graph authoring', () => {
   it('builds a named agent graph with explicit node ids', () => {
@@ -628,6 +683,43 @@ describe('Agent graph authoring', () => {
       ['assistant/codex', 'codexTurn'],
       ['assistant/claude', 'claudeTurn'],
     ]);
+  });
+
+  it('executes graph Codex and Claude turn nodes without template adapter entrypoints', async () => {
+    const codexClient = new GraphFakeCodexClient();
+    const claudeClient = new GraphFakeClaudeAgentClient();
+    const graph = Agent.create('assistant')
+      .user('prompt', 'Review this')
+      .codexTurn('codex', { client: codexClient })
+      .claudeTurn('claude', { client: claudeClient })
+      .toGraph('v1');
+
+    for (const node of graph.nodes) {
+      if (node.type === 'codexTurn' || node.type === 'claudeTurn') {
+        const template = (node.data as { template?: { execute?: unknown } })
+          .template;
+        if (template) {
+          template.execute = async () => {
+            throw new Error('turn template adapter should not execute');
+          };
+        }
+      }
+    }
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Review this',
+      'Codex graph result',
+      'Claude graph result',
+    ]);
+    expect(codexClient.turnStarts[0]).toMatchObject({
+      threadId: 'thread-graph',
+      input: [{ type: 'text', text: 'Review this' }],
+    });
+    expect(claudeClient.queries[0]).toMatchObject({
+      prompt: 'Codex graph result',
+    });
   });
 
   it('requires explicit ids for named graph messages and patch nodes', () => {

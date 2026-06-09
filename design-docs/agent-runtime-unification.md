@@ -625,7 +625,8 @@ split runtime instead of layering more adapters over it.
   execute through `GraphExecutor` without routing through the template adapter
   entrypoint. They share source execution and aggregation helpers with the
   legacy templates to keep observable message semantics aligned. `codexTurn`
-  and `claudeTurn` are still graph nodes backed by template adapter execution.
+  and `claudeTurn` graph nodes also bypass the generic template adapter
+  entrypoint by calling shared turn execution helpers from `GraphExecutor`.
 
 ### Phase 3: Port Durable Executor to GraphExecutor
 

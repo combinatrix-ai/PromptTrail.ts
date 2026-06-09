@@ -23,6 +23,8 @@ import { Session, type Attrs, type Vars } from './session';
 import { type ModelOutput, Source } from './source';
 import { Parallel } from './templates/composite/parallel';
 import type { Template } from './templates/base';
+import { ClaudeTurn } from './templates/primitives/claude_turn';
+import { CodexTurn } from './templates/primitives/codex_turn';
 import { executeRuntimeModelCall } from './templates/primitives/model_runtime';
 import { Structured } from './templates/primitives/structured';
 import {
@@ -372,8 +374,10 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeStructuredNode(node, nodePath, state);
       return;
     case 'codexTurn':
+      await executeCodexTurnNode(node, nodePath, state);
+      return;
     case 'claudeTurn':
-      await executeTemplateNode(node, nodePath, state);
+      await executeClaudeTurnNode(node, nodePath, state);
       return;
     case 'parallel':
       await executeParallelNode(node, nodePath, state);
@@ -684,6 +688,30 @@ async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
     }
   }
   state.session = template.aggregateResults(results, state.session);
+}
+
+async function executeCodexTurnNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const template = graphNodeData(node).template;
+  if (!(template instanceof CodexTurn)) {
+    throw new Error(`Graph node ${nodePath} requires a CodexTurn template.`);
+  }
+  state.session = await template.executeTurn(state.session, state.runtime);
+}
+
+async function executeClaudeTurnNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const template = graphNodeData(node).template;
+  if (!(template instanceof ClaudeTurn)) {
+    throw new Error(`Graph node ${nodePath} requires a ClaudeTurn template.`);
+  }
+  state.session = await template.executeTurn(state.session, state.runtime);
 }
 
 async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(
