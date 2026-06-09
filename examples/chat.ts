@@ -1,23 +1,25 @@
 import { Agent, Session, Source } from '../packages/core/src/index';
 
 async function main() {
-  // Create the main conversation flow using the new function-based API
-  const chatAgent = Agent.system(
-    'You are a helpful AI assistant. Be concise and friendly in your responses.',
-  ).loop(
+  // Create the main conversation flow using the quick ephemeral API.
+  const chatAgent = Agent.quick()
+    .system(
+      'You are a helpful AI assistant. Be concise and friendly in your responses.',
+    )
     // Function-based loop body
-    (agent) =>
-      agent
-        // User message from CLI with custom prompt
-        .user(Source.cli('Your message (type "exit" to end): '))
-        // Assistant message using the default model
-        .assistant(),
-    // Loop condition: continue until user types "exit"
-    (session) => {
-      const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
-      return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
-    },
-  );
+    .loop(
+      (agent) =>
+        agent
+          // User message from CLI with custom prompt
+          .user(Source.cli('Your message (type "exit" to end): '))
+          // Assistant message using the default model
+          .assistant(),
+      // Loop condition: continue until user types "exit"
+      (session) => {
+        const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
+        return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
+      },
+    );
 
   // Create an initial session, enabling 'print' to log messages to the console
   const session = Session.debug();

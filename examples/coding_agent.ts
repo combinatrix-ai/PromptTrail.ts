@@ -6,13 +6,7 @@
  */
 
 // Import PromptTrail core components
-import {
-  Agent,
-  CLISource,
-  Session,
-  Source,
-  System,
-} from '../packages/core/src/index';
+import { Agent, CLISource, Session, Source } from '../packages/core/src/index';
 
 // Import Tool namespace from PromptTrail
 import { z } from 'zod';
@@ -149,8 +143,8 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = Agent.create()
-      .add(new System(systemPrompt))
+    const agent = Agent.quick()
+      .system(systemPrompt)
       .conditional(
         (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
         // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
