@@ -179,7 +179,7 @@ export function createAgentGraphManifest(
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, tool]) => ({
       name,
-      activity: toManifestValue(tool.metadata?.activity),
+      activity: toManifestValue(tool.activity ?? tool.metadata?.activity),
     }));
   const handlers: AgentGraphManifestHandler[] = [
     ...graph.middleware.map((middleware, order) => ({

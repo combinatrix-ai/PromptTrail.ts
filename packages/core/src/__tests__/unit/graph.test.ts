@@ -8,6 +8,7 @@ import {
   type AgentGraph,
 } from '../../graph';
 import { Source } from '../../source';
+import type { PromptTrailTool } from '../../tool';
 
 describe('AgentGraph', () => {
   it('creates a durable/app graph manifest with stable node paths', () => {
@@ -66,6 +67,34 @@ describe('AgentGraph', () => {
     expect(createAgentGraphManifest(left).hash).toBe(
       createAgentGraphManifest(right).hash,
     );
+  });
+
+  it('includes first-class tool activity in graph manifests', () => {
+    const tool = (kind: 'external-read' | 'pure-call'): PromptTrailTool => ({
+      kind: 'tool',
+      name: 'lookup',
+      description: 'Lookup',
+      inputSchema: z.object({ id: z.string() }),
+      activity: { kind },
+      execute: ({ id }) => ({ id }),
+    });
+    const readGraph = createAgentGraph({
+      name: 'tools',
+      nodes: [{ id: 'reply', type: 'assistant' }],
+      tools: { lookup: tool('external-read') },
+    });
+    const pureGraph = createAgentGraph({
+      name: 'tools',
+      nodes: [{ id: 'reply', type: 'assistant' }],
+      tools: { lookup: tool('pure-call') },
+    });
+
+    const manifest = createAgentGraphManifest(readGraph);
+
+    expect(manifest.tools).toEqual([
+      { name: 'lookup', activity: { kind: 'external-read' } },
+    ]);
+    expect(manifest.hash).not.toBe(createAgentGraphManifest(pureGraph).hash);
   });
 
   it('does not treat shared manifest references as circular values', () => {
