@@ -2581,7 +2581,11 @@ export class PromptTrailApp {
     if (options.context) {
       existing.context = cloneDurableRuntimeValue(options.context);
     }
-    if (isGraphAgent(existing.agent) && existing.status === 'done') {
+    if (
+      isGraphAgent(existing.agent) &&
+      existing.status === 'done' &&
+      !graphHasInboundConsumer(existing.agent.toGraph().nodes)
+    ) {
       throw new Error(
         `Cannot send input to completed graph run: ${options.runId}. Start a new run or include an inbound consumer before completion.`,
       );
@@ -2597,7 +2601,12 @@ export class PromptTrailApp {
     if (isGraphAgent(run.agent)) {
       this.assertGraphRunManifest(runId, run);
     }
-    if (run.status === 'done' && run.result) {
+    if (
+      run.status === 'done' &&
+      run.result &&
+      (!isGraphAgent(run.agent) ||
+        run.inbox.length <= (run.graphCursor ?? run.inbox.length))
+    ) {
       return { status: 'done', runId, session: run.result };
     }
     if (isGraphAgent(run.agent)) {
@@ -3561,6 +3570,14 @@ function isGraphInboundConsumerNode(node: AgentGraphNode): boolean {
     node.type === 'inbox' ||
     node.type === 'awaitInput' ||
     (node.type === 'user' && !isStaticGraphUserNode(node))
+  );
+}
+
+function graphHasInboundConsumer(nodes: readonly AgentGraphNode[]): boolean {
+  return nodes.some(
+    (node) =>
+      isGraphInboundConsumerNode(node) ||
+      graphHasInboundConsumer(node.children ?? []),
   );
 }
 
