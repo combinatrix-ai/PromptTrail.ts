@@ -621,6 +621,11 @@ split runtime instead of layering more adapters over it.
   owns tool execution.
 - Unify `DurableTool` and `Tool` into one public tool type with durable
   activity metadata.
+- Current implementation note: `structured` and `parallel` graph nodes now
+  execute through `GraphExecutor` without routing through the template adapter
+  entrypoint. They share source execution and aggregation helpers with the
+  legacy templates to keep observable message semantics aligned. `codexTurn`
+  and `claudeTurn` are still graph nodes backed by template adapter execution.
 
 ### Phase 3: Port Durable Executor to GraphExecutor
 

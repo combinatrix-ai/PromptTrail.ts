@@ -272,6 +272,35 @@ describe('Parallel Template', () => {
       );
     });
 
+    it('should not select failed branches with best strategy', async () => {
+      const failingSource = {
+        getContent: vi.fn().mockRejectedValue(new Error('Source failed')),
+      };
+      const successfulSource = {
+        getContent: vi.fn().mockResolvedValue({
+          content: 'Successful branch',
+          metadata: {},
+        }),
+      };
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const parallel = new Parallel()
+        .addSource(failingSource)
+        .addSource(successfulSource)
+        .setAggregationFunction(
+          (session) =>
+            session.messages[session.messages.length - 1].content.length,
+        )
+        .setStrategy('best');
+
+      const result = await parallel.execute(Session.create());
+
+      expect(result.messages.map((message) => message.content)).toEqual([
+        'Successful branch',
+      ]);
+      warnSpy.mockRestore();
+    });
+
     it('should throw error when using best strategy without scoring function', async () => {
       const parallel = new Parallel()
         .addSource(mockLlmSource1)

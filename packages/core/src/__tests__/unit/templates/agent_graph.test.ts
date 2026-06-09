@@ -489,6 +489,35 @@ describe('Agent graph authoring', () => {
         };
       }
     })();
+    const structured = Structured.withSource(
+      structuredSource,
+      z.object({ ok: z.boolean() }),
+    );
+    structured.execute = async () => {
+      throw new Error('structured template adapter should not execute');
+    };
+    const parallelSource = {
+      getContent: async (session: Session): Promise<ModelOutput> => {
+        calls.push(
+          `parallelSource:${session.messages.length}:${String(
+            session.getVar('beforeModel'),
+          )}`,
+        );
+        return {
+          content: 'parallel reply',
+          metadata: { branch: 'parallel' },
+          structuredOutput: { parallel: true },
+          toolCalls: [{ id: 'p1', name: 'noop', arguments: {} }],
+        };
+      },
+    };
+    const parallel = new Parallel().addSource(
+      parallelSource as Parameters<Parallel['addSource']>[0],
+    );
+    parallel.execute = async () => {
+      throw new Error('parallel template adapter should not execute');
+    };
+
     const agent = Agent.create('assistant')
       .use(
         Middleware.create({
@@ -503,10 +532,11 @@ describe('Agent graph authoring', () => {
           },
           afterModel: ({ result }) => {
             calls.push('afterModel');
+            const output = result as ModelOutput;
             return {
               result: {
-                ...(result as ModelOutput),
-                content: 'structured reply afterModel',
+                ...output,
+                content: `${output.content} afterModel`,
               },
             };
           },
@@ -515,11 +545,8 @@ describe('Agent graph authoring', () => {
       .observe((event) => {
         events.push(event.type);
       })
-      .structured(
-        'structuredReply',
-        Structured.withSource(structuredSource, z.object({ ok: z.boolean() })),
-      )
-      .parallel('emptyParallel', new Parallel());
+      .structured('structuredReply', structured)
+      .parallel('parallelReply', parallel);
 
     const graph = agent.toGraph('v1');
     const manifest = createAgentGraphManifest(graph);
@@ -527,21 +554,50 @@ describe('Agent graph authoring', () => {
 
     expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
       ['assistant/structuredReply', 'structured'],
-      ['assistant/emptyParallel', 'parallel'],
+      ['assistant/parallelReply', 'parallel'],
     ]);
-    expect(session.getLastMessage()).toMatchObject({
+    expect(session.messages.at(-2)).toMatchObject({
       type: 'assistant',
       content: 'structured reply afterModel',
       structuredContent: { ok: true },
+    });
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'parallel reply afterModel',
+      attrs: { branch: 'parallel' },
+      structuredContent: { parallel: true },
+      toolCalls: [{ id: 'p1', name: 'noop', arguments: {} }],
     });
     expect(calls).toEqual([
       'beforeModel:undefined',
       'wrapModelCall',
       'source:true',
       'afterModel',
+      'beforeModel:undefined',
+      'wrapModelCall',
+      'parallelSource:1:true',
+      'afterModel',
     ]);
     expect(events).toContain('model.started');
     expect(events).toContain('model.completed');
+  });
+
+  it('executes empty graph parallel nodes as no-ops without template adapter', async () => {
+    const parallel = new Parallel();
+    parallel.execute = async () => {
+      throw new Error('parallel template adapter should not execute');
+    };
+    const agent = Agent.create('assistant')
+      .assistant('before', 'before')
+      .parallel('emptyParallel', parallel)
+      .assistant('after', 'after');
+
+    const session = await agent.execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'before',
+      'after',
+    ]);
   });
 
   it('executes graph transform template nodes', async () => {

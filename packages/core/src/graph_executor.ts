@@ -21,8 +21,10 @@ import {
 } from './message';
 import { Session, type Attrs, type Vars } from './session';
 import { type ModelOutput, Source } from './source';
+import { Parallel } from './templates/composite/parallel';
 import type { Template } from './templates/base';
 import { executeRuntimeModelCall } from './templates/primitives/model_runtime';
+import { Structured } from './templates/primitives/structured';
 import {
   executePromptTrailTool,
   isPromptTrailTool,
@@ -367,10 +369,14 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       await executeMessagesNode(node, nodePath, state);
       return;
     case 'structured':
+      await executeStructuredNode(node, nodePath, state);
+      return;
     case 'codexTurn':
     case 'claudeTurn':
-    case 'parallel':
       await executeTemplateNode(node, nodePath, state);
+      return;
+    case 'parallel':
+      await executeParallelNode(node, nodePath, state);
       return;
     case 'transform':
       await executeTransformNode(node, nodePath, state);
@@ -635,6 +641,49 @@ async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
     return;
   }
   await executeTemplateNode(node, nodePath, state);
+}
+
+async function executeStructuredNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const template = graphNodeData(node).template;
+  if (!(template instanceof Structured)) {
+    throw new Error(`Graph node ${nodePath} requires a Structured template.`);
+  }
+  state.session = await template.executeSource(state.session, state.runtime);
+}
+
+async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const template = graphNodeData(node).template;
+  if (!(template instanceof Parallel)) {
+    throw new Error(`Graph node ${nodePath} requires a Parallel template.`);
+  }
+  const sources = template.getSources();
+  if (sources.length === 0) {
+    return;
+  }
+
+  const results: Session<TVars, TAttrs>[] = [];
+  // Runtime middleware state is ordered and mutable; keep runtime-backed source
+  // calls sequential so phase/version updates cannot race.
+  for (const config of sources) {
+    for (let i = 0; i < config.repetitions; i++) {
+      results.push(
+        await template.executeSource(
+          config.source,
+          state.session,
+          state.runtime,
+        ),
+      );
+    }
+  }
+  state.session = template.aggregateResults(results, state.session);
 }
 
 async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(

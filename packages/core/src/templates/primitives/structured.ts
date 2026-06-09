@@ -90,6 +90,19 @@ export class Structured<
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
+    return this.executeSource(session, runtime);
+  }
+
+  /**
+   * Execute the configured structured source without routing through the
+   * template adapter entrypoint.
+   *
+   * @internal
+   */
+  async executeSource(
+    session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     let validSession = this.ensureSession(session);
 
     if (!this.source) {
@@ -110,8 +123,12 @@ export class Structured<
       return validSession.addMessage({
         type: 'assistant',
         content: output.result.content,
-        toolCalls: output.result.toolCalls,
-        structuredContent: output.result.structuredOutput,
+        ...(output.result.toolCalls
+          ? { toolCalls: output.result.toolCalls }
+          : {}),
+        ...(output.result.structuredOutput !== undefined
+          ? { structuredContent: output.result.structuredOutput }
+          : {}),
         attrs: (output.result.metadata as TAttrs) ?? ({} as TAttrs),
       });
     } catch (error) {

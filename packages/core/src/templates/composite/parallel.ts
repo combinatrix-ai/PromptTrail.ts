@@ -223,11 +223,15 @@ export class Parallel<
   }
 
   /**
-   * Execute a single source with the given session.
+   * Execute one configured source and append its assistant message.
    *
-   * @private
+   * This is shared by the template adapter and graph-native executor; keep the
+   * per-source message semantics aligned between both paths. The graph executor
+   * may still serialize source calls to preserve runtime middleware ordering.
+   *
+   * @internal
    */
-  private async executeSource(
+  async executeSource(
     source: LlmSource,
     session: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
@@ -243,7 +247,13 @@ export class Parallel<
       return output.session.addMessage({
         type: 'assistant',
         content: output.result.content,
-        attrs: output.result.metadata as TAttrs,
+        ...(output.result.toolCalls
+          ? { toolCalls: output.result.toolCalls }
+          : {}),
+        ...(output.result.structuredOutput !== undefined
+          ? { structuredContent: output.result.structuredOutput }
+          : {}),
+        attrs: (output.result.metadata as TAttrs) ?? ({} as TAttrs),
       });
     } catch (error) {
       console.warn(`Parallel source execution failed:`, error);
@@ -253,11 +263,13 @@ export class Parallel<
   }
 
   /**
-   * Aggregate multiple session results according to the configured strategy.
+   * Aggregate branch sessions using the configured strategy.
    *
-   * @private
+   * This is shared by the template adapter and graph-native executor.
+   *
+   * @internal
    */
-  private aggregateResults(
+  aggregateResults(
     results: Session<TVars, TAttrs>[],
     originalSession: Session<TVars, TAttrs>,
   ): Session<TVars, TAttrs> {
@@ -320,7 +332,7 @@ export class Parallel<
    */
   private aggregateBest(
     results: Session<TVars, TAttrs>[],
-    _originalSession: Session<TVars, TAttrs>,
+    originalSession: Session<TVars, TAttrs>,
   ): Session<TVars, TAttrs> {
     if (!this.scoringFunction) {
       throw new Error(
@@ -329,14 +341,21 @@ export class Parallel<
       );
     }
 
-    let bestSession = results[0];
+    const successfulResults = results.filter(
+      (result) => result !== originalSession,
+    );
+    if (successfulResults.length === 0) {
+      return originalSession;
+    }
+
+    let bestSession = successfulResults[0];
     let bestScore = this.scoringFunction(bestSession);
 
-    for (let i = 1; i < results.length; i++) {
-      const currentScore = this.scoringFunction(results[i]);
+    for (let i = 1; i < successfulResults.length; i++) {
+      const currentScore = this.scoringFunction(successfulResults[i]);
       if (currentScore > bestScore) {
         bestScore = currentScore;
-        bestSession = results[i];
+        bestSession = successfulResults[i];
       }
     }
 
