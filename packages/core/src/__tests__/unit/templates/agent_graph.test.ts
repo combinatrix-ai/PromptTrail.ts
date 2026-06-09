@@ -126,6 +126,41 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
+  it('materializes direct graph input when no node consumes the inbox', async () => {
+    const session = await Agent.create('assistant')
+      .assistant(
+        'reply',
+        (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
+      )
+      .execute({ input: 'hello' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'reply:hello',
+    ]);
+  });
+
+  it('materializes direct durable graph input without requiring inbox nodes', async () => {
+    const store = memoryStore();
+    const session = await Agent.create('assistant')
+      .assistant(
+        'reply',
+        (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
+      )
+      .execute({
+        durable: true,
+        store,
+        runId: 'direct-no-inbox',
+        input: 'hello',
+      });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'reply:hello',
+    ]);
+    expect(store.get('direct-no-inbox')?.inbox).toEqual([]);
+  });
+
   it('emits graph execution observer events', async () => {
     const builderEvents: string[] = [];
     const callEvents: string[] = [];

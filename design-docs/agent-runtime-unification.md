@@ -278,7 +278,10 @@ Implementation note: direct `Agent.execute({ durable: true })` has no app-level
 default store, so it must receive `store` either in the execute options or via
 `agent.durable({ store })`. Direct durable graph execution accepts one inbound
 input per call; follow-up input is appended by executing the same named agent
-again with the same `runId` and store.
+again with the same `runId` and store. For direct graph execution only, `input`
+is materialized into the initial session when the graph has no `inbox`,
+`awaitInput`, or dynamic `user` node; graphs with explicit inbound consumers keep
+`input` in the runtime inbox.
 
 ### App Runtime
 

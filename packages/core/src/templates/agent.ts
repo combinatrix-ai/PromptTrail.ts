@@ -996,10 +996,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
   ): Promise<Session<TC, TM>> {
     if (this.graphNodes.length > 0) {
-      const options =
+      const rawOptions =
         sessionOrOptions instanceof Session
           ? { session: sessionOrOptions }
           : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
+      const options = this.materializeDirectGraphInput(rawOptions);
       this.assertGraphExecutionSupported(options);
       const durableOptions = this.resolveDirectDurableOptions(options);
       if (durableOptions) {
@@ -1323,6 +1324,22 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return result.session;
   }
 
+  private materializeDirectGraphInput(
+    options: AgentExecuteOptions<TC, TM> | undefined,
+  ): AgentExecuteOptions<TC, TM> | undefined {
+    if (
+      options?.input === undefined ||
+      graphHasInboundConsumer(this.graphNodes)
+    ) {
+      return options;
+    }
+    return {
+      ...options,
+      session: addDirectExecuteInput(options.session, options.input),
+      input: undefined,
+    };
+  }
+
   private legacySystem(content: string): this {
     this.root.add(new System(content));
     return this;
@@ -1480,6 +1497,29 @@ function compactGraphChildren(
 ): AgentGraphNode[] {
   return children.filter(
     (child): child is AgentGraphNode => child !== undefined,
+  );
+}
+
+function graphHasInboundConsumer(nodes: readonly AgentGraphNode[]): boolean {
+  return nodes.some(
+    (node) =>
+      isGraphInboundConsumerNode(node) ||
+      graphHasInboundConsumer(node.children ?? []),
+  );
+}
+
+function isGraphInboundConsumerNode(node: AgentGraphNode): boolean {
+  if (node.type === 'inbox' || node.type === 'awaitInput') {
+    return true;
+  }
+  return node.type === 'user' && !isStaticGraphUserNode(node);
+}
+
+function isStaticGraphUserNode(node: AgentGraphNode): boolean {
+  return (
+    typeof node.data === 'object' &&
+    node.data !== null &&
+    ('input' in node.data || 'content' in node.data)
   );
 }
 
