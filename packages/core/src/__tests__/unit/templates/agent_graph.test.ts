@@ -182,7 +182,14 @@ describe('Agent graph authoring', () => {
 
   it('rejects follow-up input for completed direct durable graph runs', async () => {
     const store = memoryStore();
-    const agent = Agent.create('assistant').assistant('reply', 'done');
+    const agent = Agent.create('assistant')
+      .patch('countRun', (session) =>
+        session.withVar(
+          'runCount',
+          ((session.getVar('runCount') as number) ?? 0) + 1,
+        ),
+      )
+      .assistant('reply', 'done');
 
     await agent.execute({
       durable: true,
@@ -202,6 +209,53 @@ describe('Agent graph authoring', () => {
     expect(store.get('direct-completed')?.inbox).toEqual([
       { offset: 0, kind: 'user', content: 'hello' },
     ]);
+    expect(store.get('direct-completed')?.result?.getVar('runCount')).toBe(1);
+  });
+
+  it('continues completed graph runs without replaying pre-inbox leaf nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .assistant('prelude', 'ready')
+      .turn('main', (turn) =>
+        turn
+          .inbox('input')
+          .patch('countInput', (session) =>
+            session.withVar(
+              'inputCount',
+              ((session.getVar('inputCount') as number) ?? 0) + 1,
+            ),
+          )
+          .assistant('reply', (session) => {
+            return `reply:${session.getLastMessage()?.content ?? 'none'}`;
+          }),
+      );
+
+    const first = await agent.execute({
+      durable: true,
+      store,
+      runId: 'direct-completed-continuation',
+      input: 'hello',
+    });
+    const second = await agent.execute({
+      durable: true,
+      store,
+      runId: 'direct-completed-continuation',
+      input: 'again',
+    });
+
+    expect(first.messages.map((message) => message.content)).toEqual([
+      'ready',
+      'hello',
+      'reply:hello',
+    ]);
+    expect(second.messages.map((message) => message.content)).toEqual([
+      'ready',
+      'hello',
+      'reply:hello',
+      'again',
+      'reply:again',
+    ]);
+    expect(second.getVar('inputCount')).toBe(2);
   });
 
   it('emits graph execution observer events', async () => {

@@ -3611,7 +3611,7 @@ function collectGraphContinuationSkipNodes(
       }
       if (
         skipGraphContinuationBootstrapNode(child) ||
-        (suspendedAt && (child.children ?? []).length === 0)
+        (child.children ?? []).length === 0
       ) {
         skipNodePaths.add(nodePath);
       }
