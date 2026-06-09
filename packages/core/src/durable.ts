@@ -2581,6 +2581,11 @@ export class PromptTrailApp {
     if (options.context) {
       existing.context = cloneDurableRuntimeValue(options.context);
     }
+    if (isGraphAgent(existing.agent) && existing.status === 'done') {
+      throw new Error(
+        `Cannot send input to completed graph run: ${options.runId}. Start a new run or include an inbound consumer before completion.`,
+      );
+    }
     this.append(options.runId, normalizeInbound(options.input));
     return this.resume<TVars, TAttrs>(options.runId);
   }

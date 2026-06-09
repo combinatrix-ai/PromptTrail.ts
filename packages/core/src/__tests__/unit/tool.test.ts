@@ -44,7 +44,13 @@ describe('Tool namespace', () => {
             message: z.string(),
             count: z.number(),
           }),
-          execute: ({ message, count }: { message: string; count: number }) => ({
+          execute: ({
+            message,
+            count,
+          }: {
+            message: string;
+            count: number;
+          }) => ({
             message,
             count,
           }),
@@ -139,6 +145,38 @@ describe('Tool namespace', () => {
         content: [{ type: 'json', json: { value: 'x' } }],
         structuredContent: { value: 'x' },
       });
+    });
+
+    it('uses the invoked capability name for approval and execution', async () => {
+      const seen: string[] = [];
+      const registeredTool = Tool.create({
+        name: 'intrinsic',
+        description: 'Registered under another key',
+        inputSchema: z.object({ value: z.string() }),
+        approval: async (request) => {
+          seen.push(`approval:${request.capability}`);
+          return { type: 'approve' };
+        },
+        execute: ({ value }, context) => {
+          seen.push(`execute:${context.capability}`);
+          return { value };
+        },
+      });
+
+      await expect(
+        executePromptTrailTool(
+          registeredTool,
+          { value: 'x' },
+          { provider: 'openai', capability: 'registeredName' },
+        ),
+      ).resolves.toEqual({
+        content: [{ type: 'json', json: { value: 'x' } }],
+        structuredContent: { value: 'x' },
+      });
+      expect(seen).toEqual([
+        'approval:registeredName',
+        'execute:registeredName',
+      ]);
     });
 
     it('returns tool errors when approval is denied', async () => {
@@ -236,6 +274,44 @@ describe('Tool namespace', () => {
         content: [{ type: 'json', json: { id: '1' } }],
         structuredContent: { id: '1' },
       });
+      expect(events).toEqual(['lookup:external-read']);
+    });
+
+    it('uses the invoked capability name for durable activity boundaries', async () => {
+      const events: string[] = [];
+      const durableTool = Tool.create({
+        description: 'Lookup',
+        inputSchema: z.object({ id: z.string() }),
+        activity: { kind: 'external-read' },
+        execute: ({ id }, context) => {
+          expect(context.capability).toBe('lookup');
+          return { id };
+        },
+      });
+
+      await executePromptTrailTool(
+        durableTool,
+        { id: '1' },
+        {
+          capability: 'lookup',
+          durable: {
+            async memo(_name, fn) {
+              return fn();
+            },
+            async now() {
+              return 0;
+            },
+            async randomId() {
+              return 'id';
+            },
+            async activity(name, options, fn) {
+              events.push(`${name}:${options.kind}`);
+              return fn();
+            },
+          },
+        },
+      );
+
       expect(events).toEqual(['lookup:external-read']);
     });
   });

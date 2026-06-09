@@ -91,7 +91,11 @@ export async function executePromptTrailTool<TInput, TResult>(
 ): Promise<CallToolResult> {
   try {
     const parsedInput = tool.inputSchema.parse(input);
-    const approval = await resolveToolApproval(tool, parsedInput, context);
+    const executionName = context.capability ?? tool.name;
+    const approval = await resolveToolApproval(tool, parsedInput, {
+      ...context,
+      capability: executionName,
+    });
     if (approval.type !== 'approve') {
       return {
         content: [
@@ -109,13 +113,13 @@ export async function executePromptTrailTool<TInput, TResult>(
 
     const executionContext = {
       ...context,
-      capability: tool.name,
+      capability: executionName,
       activity: tool.activity ?? context.activity,
     };
     const result =
       executionContext.durable && executionContext.activity
         ? await executionContext.durable.activity(
-            tool.name,
+            executionName,
             executionContext.activity,
             () => tool.execute(parsedInput, executionContext),
           )
@@ -154,7 +158,7 @@ export async function resolveToolApproval<TInput>(
     {
       provider: normalizeApprovalProvider(context.provider),
       action: 'tool.execute',
-      capability: tool.name,
+      capability: context.capability ?? tool.name,
       input,
       risk: 'external',
       raw: context.raw,

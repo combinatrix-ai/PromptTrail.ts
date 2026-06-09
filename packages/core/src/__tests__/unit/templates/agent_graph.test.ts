@@ -180,6 +180,30 @@ describe('Agent graph authoring', () => {
     expect(store.get('direct-no-inbox')?.graphCursor).toBe(1);
   });
 
+  it('rejects follow-up input for completed direct durable graph runs', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant').assistant('reply', 'done');
+
+    await agent.execute({
+      durable: true,
+      store,
+      runId: 'direct-completed',
+      input: 'hello',
+    });
+
+    await expect(
+      agent.execute({
+        durable: true,
+        store,
+        runId: 'direct-completed',
+        input: 'again',
+      }),
+    ).rejects.toThrow(/Cannot send input to completed graph run/);
+    expect(store.get('direct-completed')?.inbox).toEqual([
+      { offset: 0, kind: 'user', content: 'hello' },
+    ]);
+  });
+
   it('emits graph execution observer events', async () => {
     const builderEvents: string[] = [];
     const callEvents: string[] = [];
