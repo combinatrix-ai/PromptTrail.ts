@@ -219,7 +219,7 @@ describe('ContentPart provider serializers', () => {
       provider: 'google',
       fileId: 'files/gemini-123',
       filename: 'report.pdf',
-      uploadedAt: '2026-06-06T00:00:00.000Z',
+      uploadedAt: '2030-06-06T00:00:00.000Z',
     });
 
     expect(part).toEqual({
@@ -231,19 +231,19 @@ describe('ContentPart provider serializers', () => {
         type: 'providerFile',
         provider: 'google',
         fileId: 'files/gemini-123',
-        uploadedAt: '2026-06-06T00:00:00.000Z',
-        expiresAt: '2026-06-08T00:00:00.000Z',
+        uploadedAt: '2030-06-06T00:00:00.000Z',
+        expiresAt: '2030-06-08T00:00:00.000Z',
         cleanup: 'caller',
       },
     });
     expect(
       isProviderFileReferenceExpired(
         part,
-        new Date('2026-06-07T23:59:59.999Z'),
+        new Date('2030-06-07T23:59:59.999Z'),
       ),
     ).toBe(false);
     expect(
-      isProviderFileReferenceExpired(part, new Date('2026-06-08T00:00:00Z')),
+      isProviderFileReferenceExpired(part, new Date('2030-06-08T00:00:00Z')),
     ).toBe(true);
     expect(contentPartsToGeminiParts([part])).toEqual([
       {
