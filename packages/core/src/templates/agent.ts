@@ -1016,6 +1016,19 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           durableOptions,
         );
       }
+      return executeAgentGraph(this.toLegacyExecutionGraph(), {
+        session,
+        context: executionOptions?.context,
+        signal: executionOptions?.signal,
+        observers: executionOptions?.observers,
+        observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
+        strictObservers: executionOptions?.strictObservers,
+        eventScopeId:
+          (executionOptions as AgentExecutionInternalOptions | undefined)
+            ?.eventScopeId ?? createDirectAgentEventScopeId(),
+        runEventSource: 'agent',
+        unsupportedCommandLabel: 'Agent.execute',
+      });
     }
     const eventScopeId =
       parentRuntime?.eventScopeId ??
@@ -1223,6 +1236,25 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       executionOptions?.runId ??
       this.ensureDirectDurableRunId();
     return { runId, store };
+  }
+
+  private toLegacyExecutionGraph(): AgentGraph {
+    return {
+      name: 'direct-agent',
+      version: 'legacy-template',
+      nodes: [
+        {
+          id: 'root',
+          type: 'template',
+          data: { template: this.root },
+        },
+      ],
+      edges: [],
+      tools: this.graphTools,
+      middleware: this.middleware,
+      hooks: this.hooks,
+      observers: this.observers,
+    };
   }
 
   private ensureDirectDurableRunId(): string {

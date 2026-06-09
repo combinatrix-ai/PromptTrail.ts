@@ -23,7 +23,8 @@ export type AgentGraphNodeType =
   | 'structured'
   | 'transform'
   | 'codexTurn'
-  | 'claudeTurn';
+  | 'claudeTurn'
+  | 'template';
 
 export interface AgentGraphNode {
   id: string;

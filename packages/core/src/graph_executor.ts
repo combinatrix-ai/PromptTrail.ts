@@ -63,6 +63,8 @@ export interface GraphExecutionOptions<
     context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
     execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
   ) => Promise<T>;
+  runEventSource?: ExecutionEvent['source'];
+  unsupportedCommandLabel?: string;
 }
 
 export interface GraphToolDurableBoundaryContext<
@@ -111,6 +113,8 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
     TVars,
     TAttrs
   >['durableToolExecution'];
+  runEventSource: ExecutionEvent['source'];
+  unsupportedCommandLabel?: string;
   activeGoal?: ActiveGoalExecution;
 }
 
@@ -173,6 +177,8 @@ export async function executeAgentGraph<
     resumeFromNode: options.resumeFromNode,
     durableToolBoundary: options.durableToolBoundary,
     durableToolExecution: options.durableToolExecution,
+    runEventSource: options.runEventSource ?? 'graph',
+    unsupportedCommandLabel: options.unsupportedCommandLabel,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -191,7 +197,11 @@ export async function executeAgentGraph<
         });
         return state.session;
       }
-      throwUnsupportedGraphCommand(before.command, 'beforeAgent');
+      throwUnsupportedGraphCommandForState(
+        state,
+        before.command,
+        'beforeAgent',
+      );
     }
 
     const materializeInboxWithoutConsumer =
@@ -224,7 +234,7 @@ export async function executeAgentGraph<
         });
         return state.session;
       }
-      throwUnsupportedGraphCommand(after.command, 'afterAgent');
+      throwUnsupportedGraphCommandForState(state, after.command, 'afterAgent');
     }
 
     await emitGraphRunEvent('run.completed', state, {
@@ -263,7 +273,7 @@ async function emitGraphRunEvent<TVars extends Vars, TAttrs extends Attrs>(
     at: new Date().toISOString(),
     seq,
     replay: 'live',
-    source: 'graph',
+    source: state.runEventSource,
     ...event,
     idempotencyKey:
       event.idempotencyKey ??
@@ -298,6 +308,22 @@ function throwUnsupportedGraphCommand(
   throw new Error(
     `GraphExecutor does not support execution command ${command.type} in ${phase} yet.`,
   );
+}
+
+function throwUnsupportedGraphCommandForState<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  state: GraphExecutionState<TVars, TAttrs>,
+  command: ResolvedExecutionCommand,
+  phase: string,
+): never {
+  if (state.unsupportedCommandLabel) {
+    throw new Error(
+      `${state.unsupportedCommandLabel} does not support execution command ${command.type} yet.`,
+    );
+  }
+  throwUnsupportedGraphCommand(command, phase);
 }
 
 function assertGraphPhaseCommandSupported(
@@ -378,6 +404,9 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
       return;
     case 'claudeTurn':
       await executeClaudeTurnNode(node, nodePath, state);
+      return;
+    case 'template':
+      await executeTemplateNode(node, nodePath, state);
       return;
     case 'parallel':
       await executeParallelNode(node, nodePath, state);

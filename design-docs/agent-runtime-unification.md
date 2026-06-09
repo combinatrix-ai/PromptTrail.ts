@@ -662,6 +662,11 @@ split runtime instead of layering more adapters over it.
 - Implement `turn` nodes with `inbox/repeat/assistant/tools/awaitInput`.
 - Implement `goal` nodes by compiling to a stable subgraph.
 - Implement `loop/conditional/subroutine` as graph control nodes.
+- Current implementation note: non-durable top-level legacy `Agent.quick()`
+  execution now enters `GraphExecutor` through a legacy `template` node that
+  preserves existing template lifecycle semantics. Durable legacy execution and
+  nested template execution still use the legacy template path until their
+  journal/runtime semantics are ported.
 - Remove template-only execution paths.
 
 ### Phase 5: Rebuild App API
