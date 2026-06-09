@@ -1,4 +1,4 @@
-import { Agent, Session, Source } from '../packages/core/src/index';
+import { Agent, Session, Source } from '@prompttrail/core';
 
 async function main() {
   // Create the main conversation flow using the quick ephemeral API.

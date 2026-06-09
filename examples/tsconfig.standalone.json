@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@prompttrail/core": ["../packages/core/dist/index.d.ts"]
+    }
+  },
+  "include": ["./*.ts"],
+  "exclude": ["node_modules", "dist", "next-chat-app", "react-chat"]
+}

@@ -6,11 +6,10 @@
  */
 
 // Import PromptTrail core components
-import { Agent, CLISource, Session, Source } from '../packages/core/src/index';
+import { Agent, CLISource, Session, Source, Tool } from '@prompttrail/core';
 
 // Import Tool namespace from PromptTrail
 import { z } from 'zod';
-import { Tool } from '../packages/core/src/index';
 
 // Node.js modules for file and command operations
 import { exec } from 'child_process';
@@ -91,7 +90,7 @@ type ToolsMap = Record<string, Tool>;
  */
 export class CodingAgent {
   private tools: ToolsMap;
-  private llm: Source;
+  private llm: ReturnType<typeof Source.llm>;
 
   constructor(config: {
     provider: 'openai' | 'anthropic';

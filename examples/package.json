@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
+    "typecheck": "tsc -p tsconfig.standalone.json",
     "start": "tsx coding_agent.ts",
     "chat": "tsx chat.ts"
   },

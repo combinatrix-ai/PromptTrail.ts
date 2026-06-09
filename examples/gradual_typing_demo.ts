@@ -5,7 +5,7 @@
  * It shows how to specify types explicitly when inference is not enough.
  */
 
-import { Session } from '../packages/core/src/index';
+import { Session } from '@prompttrail/core';
 
 // Define some types for our demo
 type UserContext = {

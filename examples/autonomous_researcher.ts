@@ -1,4 +1,4 @@
-import { Agent, Source, Tool } from '@prompttrail/core';
+import { Agent, Tool } from '@prompttrail/core';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
@@ -52,9 +52,7 @@ export function createAutonomousResearcher() {
     .goal('researchTopic', 'Gather enough evidence to answer the question.', {
       maxAttempts: 6,
       tools: ['searchDocumentation', 'inspectCode'],
-      model: Source.literal(
-        'Use the registered research tools, then assess coverage.',
-      ),
+      model: () => 'Use the registered research tools, then assess coverage.',
       isSatisfied: ({ session }) =>
         session.getMessagesByType('tool_result').length >= 2,
     })
