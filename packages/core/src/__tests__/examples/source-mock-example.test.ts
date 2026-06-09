@@ -11,7 +11,7 @@ describe('Source.llm().mock() examples', () => {
     });
 
     // Use it in an Agent
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .system('You are a helpful assistant')
       .assistant(mockSource);
 
@@ -33,7 +33,7 @@ describe('Source.llm().mock() examples', () => {
     // The configuration is available for assertions
     const lastCall = mockSource.getCallHistory()[0];
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.quick().assistant(mockSource);
     const session = await agent.execute();
 
     // After execution, we can check what configuration was used
@@ -52,7 +52,7 @@ describe('Source.llm().mock() examples', () => {
         { content: 'Third response' },
       );
 
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .assistant(mockSource)
       .assistant(mockSource)
       .assistant(mockSource)
@@ -82,7 +82,7 @@ describe('Source.llm().mock() examples', () => {
         };
       });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.quick().assistant(mockSource);
 
     const session = await agent.execute({
       session: Session.withVars({ userName: 'Alice' }),
@@ -113,7 +113,7 @@ describe('Source.llm().mock() examples', () => {
         ],
       });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.quick().assistant(mockSource);
     const session = await agent.execute();
 
     const lastMessage = session.messages[0];
@@ -128,7 +128,7 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Valid response text' });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.quick().assistant(mockSource);
     const session = await agent.execute();
 
     // The response passes validation
@@ -141,7 +141,7 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Too short' });
 
-    const invalidAgent = Agent.create().assistant(invalidMock);
+    const invalidAgent = Agent.quick().assistant(invalidMock);
 
     // This should throw because content is too short
     await expect(invalidAgent.execute()).rejects.toThrow();

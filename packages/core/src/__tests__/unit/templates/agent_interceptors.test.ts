@@ -9,7 +9,7 @@ import { memoryStore } from '../../../durable';
 
 describe('Agent interceptors', () => {
   it('runs beforeAgent and afterAgent middleware and hooks', async () => {
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .use(
         Middleware.create({
           name: 'middleware',
@@ -61,7 +61,7 @@ describe('Agent interceptors', () => {
   });
 
   it('runs onRunStart and onRunEnd hook aliases', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .hook(
         Hook.create({
           name: 'runLifecycle',
@@ -87,7 +87,7 @@ describe('Agent interceptors', () => {
   });
 
   it('runs beforeTemplate and afterTemplate hooks around child templates', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .hook(
         Hook.create({
           name: 'templateLifecycle',
@@ -136,7 +136,7 @@ describe('Agent interceptors', () => {
   });
 
   it('halts remaining child templates from template lifecycle hooks', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .hook(
         Hook.create({
           name: 'templateControl',
@@ -157,7 +157,7 @@ describe('Agent interceptors', () => {
   });
 
   it('applies subroutine squash after template lifecycle halt', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .hook(
         Hook.create({
           name: 'subroutineLifecycle',
@@ -208,7 +208,7 @@ describe('Agent interceptors', () => {
 
   it('rejects ambiguous raw hook definitions during execution', async () => {
     await expect(
-      Agent.create()
+      Agent.quick()
         .hook({
           name: 'rawAmbiguousStart',
           onRunStart: () => undefined,
@@ -224,7 +224,7 @@ describe('Agent interceptors', () => {
   it('emits direct execution observer events', async () => {
     const events: string[] = [];
     const eventKeys: string[] = [];
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         eventKeys.push(String(event.idempotencyKey));
         events.push(
@@ -249,7 +249,7 @@ describe('Agent interceptors', () => {
 
   it('accepts per-call observers in direct execution options', async () => {
     const events: string[] = [];
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .user('hello')
       .execute({
         observers: [
@@ -266,7 +266,7 @@ describe('Agent interceptors', () => {
   it('merges builder and per-call observers in direct execution', async () => {
     const builderEvents: string[] = [];
     const callEvents: string[] = [];
-    await Agent.create()
+    await Agent.quick()
       .observe((event) => {
         builderEvents.push(event.type);
       })
@@ -285,7 +285,7 @@ describe('Agent interceptors', () => {
 
   it('scopes direct execution observer event keys per execute call', async () => {
     const keys: string[] = [];
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .observe((event) => {
         keys.push(String(event.idempotencyKey));
       })
@@ -301,7 +301,7 @@ describe('Agent interceptors', () => {
   it('threads observer delivery binding options into direct execution observers', async () => {
     const claimed: string[] = [];
     const completed: string[] = [];
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe({
         name: 'writer',
         async handle(event, context) {
@@ -335,7 +335,7 @@ describe('Agent interceptors', () => {
   });
 
   it('can surface direct execution observer failures in strict mode', async () => {
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .observe({
         name: 'failing',
         handle(event) {
@@ -352,7 +352,7 @@ describe('Agent interceptors', () => {
   });
 
   it('threads direct execution context into middleware', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'context',
@@ -372,7 +372,7 @@ describe('Agent interceptors', () => {
   });
 
   it('threads direct execution context into nested agents', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .sequence((agent) =>
         agent
           .use(
@@ -402,11 +402,11 @@ describe('Agent interceptors', () => {
       calls++;
       return `reply:${calls}`;
     });
-    const agent = Agent.create()
+    const agent = Agent.create('direct-agent-run')
       .observe((event) => {
         eventKeys.push(String(event.idempotencyKey));
       })
-      .assistant(source);
+      .assistant('reply', source);
 
     const first = await agent.execute({
       durable: { runId: 'direct-agent-run', store },
@@ -433,7 +433,10 @@ describe('Agent interceptors', () => {
       calls++;
       return `reply:${calls}`;
     });
-    const agent = Agent.create().assistant(source);
+    const agent = Agent.create('direct-agent-top-level-options').assistant(
+      'reply',
+      source,
+    );
 
     const first = await agent.execute({
       durable: true,
@@ -454,8 +457,8 @@ describe('Agent interceptors', () => {
   it('threads per-call observers through direct durable execution', async () => {
     const store = memoryStore();
     const events: string[] = [];
-    await Agent.create()
-      .user('hello')
+    await Agent.create('direct-agent-durable-call-observers')
+      .user('message', 'hello')
       .execute({
         durable: true,
         runId: 'direct-agent-durable-call-observers',
@@ -477,7 +480,9 @@ describe('Agent interceptors', () => {
       calls++;
       return `fluent:${calls}`;
     });
-    const agent = Agent.create().durable({ store }).assistant(source);
+    const agent = Agent.create('fluent-direct-agent')
+      .durable({ store })
+      .assistant('reply', source);
 
     await agent.execute();
     const replayed = await agent.execute();
@@ -493,9 +498,9 @@ describe('Agent interceptors', () => {
       calls++;
       return `override:${calls}`;
     });
-    const agent = Agent.create()
+    const agent = Agent.create('disabled-fluent-direct-agent')
       .durable({ runId: 'disabled-fluent-direct-agent-run', store })
-      .assistant(source);
+      .assistant('reply', source);
 
     await agent.execute();
     const ephemeral = await agent.execute({ durable: false });
@@ -511,7 +516,7 @@ describe('Agent interceptors', () => {
       phase: string;
       key: string | undefined;
     }> = [];
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         events.push({
           seq: event.seq,
@@ -587,7 +592,7 @@ describe('Agent interceptors', () => {
     const parentEvents: string[] = [];
     const nestedEvents: string[] = [];
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         parentEvents.push(`${event.seq}:${event.type}`);
       })
@@ -611,7 +616,7 @@ describe('Agent interceptors', () => {
   });
 
   it('rejects unsupported direct execution commands', async () => {
-    const agent = Agent.create().hook(
+    const agent = Agent.quick().hook(
       Hook.create({
         name: 'control',
         onBeforeAgent: () => ({
@@ -627,7 +632,7 @@ describe('Agent interceptors', () => {
 
   it('halts direct execution from beforeAgent commands', async () => {
     const events: string[] = [];
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .observe((event) => {
         events.push(`${event.seq}:${event.type}`);
       })
@@ -655,7 +660,7 @@ describe('Agent interceptors', () => {
 
   it('halts direct execution from afterAgent commands', async () => {
     const events: string[] = [];
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .observe((event) => {
         events.push(`${event.seq}:${event.type}`);
       })
@@ -686,7 +691,7 @@ describe('Agent interceptors', () => {
   });
 
   it('applies beforeModel and afterModel middleware around assistant output', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'modelPolicy',
@@ -712,7 +717,7 @@ describe('Agent interceptors', () => {
   });
 
   it('preserves interceptors when nested builders are built', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .sequence((agent) =>
         agent
           .use(
@@ -734,7 +739,7 @@ describe('Agent interceptors', () => {
   });
 
   it('passes parent model middleware into nested assistants', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'parentModelPolicy',
@@ -750,7 +755,7 @@ describe('Agent interceptors', () => {
   });
 
   it('passes parent model middleware into conditional branches', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'conditionalModelPolicy',
@@ -770,7 +775,7 @@ describe('Agent interceptors', () => {
   });
 
   it('passes parent model middleware into conditional else branches', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'conditionalElseModelPolicy',
@@ -796,7 +801,7 @@ describe('Agent interceptors', () => {
       return `saw:${context?.temporary}`;
     });
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'prepare',
@@ -822,7 +827,7 @@ describe('Agent interceptors', () => {
       return `model:${context?.prompt}`;
     });
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'modelWrapper',
@@ -857,7 +862,7 @@ describe('Agent interceptors', () => {
       throw new Error('source should not run');
     });
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         events.push(`${event.seq}:${event.type}`);
       })
@@ -883,7 +888,7 @@ describe('Agent interceptors', () => {
     });
 
     await expect(
-      Agent.create()
+      Agent.quick()
         .observe((event) => {
           events.push(`${event.seq}:${event.type}`);
         })
@@ -905,7 +910,7 @@ describe('Agent interceptors', () => {
       throw new Error('transient model error');
     });
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         events.push(`${event.seq}:${event.type}`);
       })
@@ -940,7 +945,7 @@ describe('Agent interceptors', () => {
       }
     }
 
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'prepareMessage',
@@ -962,7 +967,7 @@ describe('Agent interceptors', () => {
   });
 
   it('persists prepareModelInput middlewareState into later model phases', async () => {
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'prepareState',
@@ -986,7 +991,7 @@ describe('Agent interceptors', () => {
 
   it('rejects unsupported commands from prepareModelInput', async () => {
     await expect(
-      Agent.create()
+      Agent.quick()
         .use(
           Middleware.create({
             name: 'prepareCommand',
@@ -1004,7 +1009,7 @@ describe('Agent interceptors', () => {
 
   it('rejects persistent session patches from prepareModelInput', async () => {
     await expect(
-      Agent.create()
+      Agent.quick()
         .use(
           Middleware.create({
             name: 'badPrepare',
@@ -1024,7 +1029,7 @@ describe('Agent interceptors', () => {
 
   it('rejects persistent message patches from prepareModelInput', async () => {
     await expect(
-      Agent.create()
+      Agent.quick()
         .use(
           Middleware.create({
             name: 'badPrepareMessage',
@@ -1042,7 +1047,7 @@ describe('Agent interceptors', () => {
 
   it('rejects persistent var deletes from prepareModelInput', async () => {
     await expect(
-      Agent.create()
+      Agent.quick()
         .use(
           Middleware.create({
             name: 'badPrepareDelete',

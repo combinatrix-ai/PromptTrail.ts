@@ -24,7 +24,7 @@ describe('Agent Function-Based Templates', () => {
     it('should support loop with builder function', async () => {
       let counter = 0;
 
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('You are a helpful assistant.')
         .user('Start the loop')
         .loop(
@@ -57,7 +57,7 @@ describe('Agent Function-Based Templates', () => {
       let iterations = 0;
 
       // Test loopForever helper
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Forever loop test')
         .loopForever((l) => {
           iterations++;
@@ -67,7 +67,7 @@ describe('Agent Function-Based Templates', () => {
       // Since loopForever creates an infinite loop, we need to test with a condition
       // Let's test a regular loop with true condition
       iterations = 0;
-      const limitedAgent = Agent.create()
+      const limitedAgent = Agent.quick()
         .system('Limited forever loop')
         .loop(
           (l) => l.user('Loop message'),
@@ -86,7 +86,7 @@ describe('Agent Function-Based Templates', () => {
     it('should support boolean loopIf parameter', async () => {
       let counter = 0;
 
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Boolean loop test')
         .loop(
           (l) => {
@@ -101,7 +101,7 @@ describe('Agent Function-Based Templates', () => {
       // Since boolean is evaluated at build time when counter is 0,
       // it will be true and loop forever (or until maxIterations)
       // Let's use a function that returns false immediately
-      const agent2 = Agent.create()
+      const agent2 = Agent.quick()
         .system('Boolean loop test')
         .loop((l) => l.user('Should execute once'), false);
 
@@ -113,7 +113,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Function-based subroutine', () => {
     it('should support subroutine with builder function', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Main conversation')
         .user('Start main')
         .subroutine((s) =>
@@ -137,7 +137,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support subroutine with options', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Main conversation')
         .user('Start main')
         .subroutine(
@@ -166,7 +166,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support custom squash function in subroutine', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Main')
         .subroutine((s) => s.user('Process data').assistant('Result: 42'), {
           squashWith: (parent, sub) => {
@@ -193,7 +193,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Function-based sequence', () => {
     it('should support sequence with builder function', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Main')
         .sequence((s) =>
           s
@@ -220,7 +220,7 @@ describe('Agent Function-Based Templates', () => {
       let outerCounter = 0;
       let innerCounter = 0;
 
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Nested loops')
         .loop(
           (outer) =>
@@ -255,7 +255,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support mixed nested templates', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Mixed nesting')
         .subroutine(
           (sub) =>
@@ -288,7 +288,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Short method names', () => {
     it('should support short method names without add prefix', async () => {
-      const agent = Agent.create()
+      const agent = Agent.quick()
         .system('Test short methods')
         .user('User message')
         .assistant('Assistant response');
@@ -303,7 +303,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should work in function builders with short names', async () => {
-      const agent = Agent.create().loop(
+      const agent = Agent.quick().loop(
         (l) => l.user('Question').assistant(Source.literal('Answer')),
         (s) => s.messages.length < 4, // Stop after 2 iterations
       );
@@ -357,7 +357,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should create empty agent with Agent.create', async () => {
-      const agent = Agent.create().system('Added system').user('Added user');
+      const agent = Agent.quick().system('Added system').user('Added user');
 
       const session = await agent.execute();
 
@@ -368,10 +368,12 @@ describe('Agent Function-Based Templates', () => {
 
   describe('README examples', () => {
     it('should work with the first README example', async () => {
-      const agent = Agent.quick().system('You are a helpful assistant.').loop(
-        (l) => l.user().assistant(), // Use CLI for user input, LLM for assistant
-        true, // Forever loop
-      );
+      const agent = Agent.quick()
+        .system('You are a helpful assistant.')
+        .loop(
+          (l) => l.user().assistant(), // Use CLI for user input, LLM for assistant
+          true, // Forever loop
+        );
 
       // Since we can't actually test CLI input and forever loops,
       // let's test a simplified version

@@ -109,6 +109,10 @@ await Agent.quick()
 execution, but app registration and durable execution must validate that every
 node has a stable authored id.
 
+Current implementation: `Agent.create(name)` requires a stable name at
+construction time. Content-first ephemeral authoring starts from
+`Agent.quick()`.
+
 The old static content-first helpers `Agent.system(...)`, `Agent.user(...)`,
 and `Agent.assistant(...)` are not final public APIs. Content-first scripts
 must start from `Agent.quick()`.
@@ -308,7 +312,9 @@ again with the same `runId` and store. For direct graph execution only, `input`
 is materialized by `GraphExecutor` when the graph has no `inbox`, `awaitInput`,
 or dynamic `user` node. Materialization happens after leading top-level
 `system` nodes so authored system context still precedes user input. Graphs with
-explicit inbound consumers keep `input` in the runtime inbox.
+explicit inbound consumers keep `input` in the runtime inbox. Direct durable
+graph execution threads per-call `observers`, `strictObservers`, and
+`observerDeliveryBindings` into the temporary app runtime used for the run.
 
 ### App Runtime
 

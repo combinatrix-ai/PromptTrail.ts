@@ -5,7 +5,7 @@ import { Session } from '../../../session';
 
 describe('GenerateMessages template', () => {
   it('should append multiple generated messages', async () => {
-    const agent = Agent.create().messages(async () => [
+    const agent = Agent.quick().messages(async () => [
       Message.system('Generated system'),
       Message.assistant('Generated assistant'),
     ]);
@@ -24,7 +24,7 @@ describe('GenerateMessages template', () => {
   });
 
   it('should receive the current session', async () => {
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .user('Question')
       .messages((session) => [
         Message.assistant(`Saw ${session.messages.length} message`),

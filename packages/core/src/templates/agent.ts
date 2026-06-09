@@ -226,7 +226,7 @@ export class AgentTurnGraphBuilder<
  * It is a key component of the template system, enabling the creation
  * of dynamic and interactive conversational experiences.
  * @example
- * const agent = Agent.create()
+ * const agent = Agent.quick()
  *   .system('System message')
  *   .user('User message')
  *   .assistant('Assistant message')
@@ -284,16 +284,15 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
   /** Static factory methods -------------------------------------------------- */
 
-  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(): Agent<
-    TC,
-    TM
-  >;
   static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     name: string,
   ): Agent<TC, TM>;
   static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
     name?: string,
   ) {
+    if (!name) {
+      throw new Error('Agent.create(name) requires a stable agent name.');
+    }
     return new Agent<TC, TM>(new Sequence<TM, TC>(), name);
   }
 
@@ -374,10 +373,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   system(id: string, content: string): this;
   system(idOrContent: string, content?: string) {
     if (this.graphName) {
+      if (content === undefined) {
+        throw new Error('Graph Agent.system requires system(id, content).');
+      }
       this.graphNodes.push({
         id: idOrContent,
         type: 'system',
-        data: content === undefined ? undefined : { content },
+        data: { content },
       });
       return this;
     }
@@ -749,7 +751,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | boolean
       | ((s: Session<TC, TM>) => boolean);
     const maxIterations = loopIfOrMaxIterations as number | undefined;
-    const innerAgent = Agent.create<TC, TM>();
+    const innerAgent = Agent.quick<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
 
@@ -822,12 +824,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       agent: Agent<TC, TM>,
     ) => Agent<TC, TM>;
     const elseBuilderFn = thenOrElseBuilder;
-    const thenAgent = Agent.create<TC, TM>();
+    const thenAgent = Agent.quick<TC, TM>();
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
     let elseTemplate: Template<TM, TC> | undefined;
     if (elseBuilderFn) {
-      const elseAgent = Agent.create<TC, TM>();
+      const elseAgent = Agent.quick<TC, TM>();
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
@@ -880,7 +882,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     const opts = builderOrOptions as
       | ISubroutineTemplateOptions<TM, TC>
       | undefined;
-    const innerAgent = Agent.create<TC, TM>();
+    const innerAgent = Agent.quick<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
@@ -915,7 +917,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       throw new Error('Graph Agent.sequence requires sequence(id, builder).');
     }
     const builderFn = idOrBuilderFn;
-    const innerAgent = Agent.create<TC, TM>();
+    const innerAgent = Agent.quick<TC, TM>();
     const builtAgent = builderFn(innerAgent);
     const sequenceTemplate = builtAgent.build();
 
@@ -1273,6 +1275,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         store: durableOptions.store,
         defaultDurable: true,
       },
+      observers: executionOptions?.observers,
+      strictObservers: executionOptions?.strictObservers,
+      observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
     });
     const input = executionOptions?.input;
     const existing = durableOptions.store.get(durableOptions.runId);

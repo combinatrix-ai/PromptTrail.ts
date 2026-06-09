@@ -9,7 +9,7 @@ describe('Agent', () => {
   // Original functionality tests
 
   it('should support short methods', async () => {
-    const sequence = Agent.create()
+    const sequence = Agent.quick()
       .system('You are a helpful assistant.')
       .user('Hello, who are you?')
       .assistant('I am an AI assistant.');
@@ -27,7 +27,7 @@ describe('Agent', () => {
   });
 
   it('should support conditional method', async () => {
-    const sequence = Agent.create()
+    const sequence = Agent.quick()
       .system('You are a helpful assistant.')
       .user('Hello')
       .conditional(
@@ -46,7 +46,7 @@ describe('Agent', () => {
     expect(messages[2].type).toBe('assistant');
     expect(messages[2].content).toBe('Hello there!');
 
-    const sequence2 = Agent.create()
+    const sequence2 = Agent.quick()
       .system('You are a helpful assistant.')
       .user('Goodbye')
       .conditional(
@@ -63,7 +63,7 @@ describe('Agent', () => {
   it('should support loop method with function builder', async () => {
     let counter = 0;
 
-    const sequence = Agent.create()
+    const sequence = Agent.quick()
       .system('You are a helpful assistant.')
       .user('Start the loop')
       .loop(
@@ -96,7 +96,7 @@ describe('Agent', () => {
   it('should support loop method with function builder (alternative)', async () => {
     let counter = 0;
 
-    const sequence = Agent.create()
+    const sequence = Agent.quick()
       .system('You are a helpful assistant.')
       .user('Start the loop')
       .loop(
@@ -125,11 +125,11 @@ describe('Agent', () => {
   });
 
   it('should support nested linear sequences', async () => {
-    const nestedSequence = Agent.create()
+    const nestedSequence = Agent.quick()
       .user('Nested message 1')
       .user('Nested message 2');
 
-    const mainSequence = Agent.create()
+    const mainSequence = Agent.quick()
       .system('You are a helpful assistant.')
       .add(nestedSequence)
       .user('Final message');
@@ -154,7 +154,7 @@ describe('Agent', () => {
     let innerCounter = 0;
 
     // Define the main sequence containing nested loops
-    const mainSequence = Agent.create()
+    const mainSequence = Agent.quick()
       .system('You are a helpful assistant.')
       .loop(
         (agent) =>

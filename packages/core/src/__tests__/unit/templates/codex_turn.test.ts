@@ -69,7 +69,7 @@ class FailingCodexClient extends FakeCodexClient {
 describe('CodexTurn template', () => {
   it('should start a thread, run a turn, and append the final answer', async () => {
     const client = new FakeCodexClient();
-    const agent = Agent.create().user('Implement this').codexTurn({
+    const agent = Agent.quick().user('Implement this').codexTurn({
       client,
       cwd: '/repo',
       model: 'gpt-5.4-nano',
@@ -109,7 +109,7 @@ describe('CodexTurn template', () => {
 
   it('should reuse an existing thread and allow metadata-only retention', async () => {
     const client = new FakeCodexClient();
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .user('Continue')
       .codexTurn({
         client,
@@ -134,7 +134,7 @@ describe('CodexTurn template', () => {
 
   it('passes direct execution context to input callbacks', async () => {
     const client = new FakeCodexClient();
-    await Agent.create()
+    await Agent.quick()
       .codexTurn({
         client,
         threadId: (_session, context) => `thread-${context?.channel}`,
@@ -159,7 +159,7 @@ describe('CodexTurn template', () => {
   it('applies beforeModel session patches before resolving Codex input', async () => {
     const client = new FakeCodexClient();
 
-    await Agent.create()
+    await Agent.quick()
       .use(
         Middleware.create({
           name: 'codexContext',
@@ -181,7 +181,7 @@ describe('CodexTurn template', () => {
 
   it('applies afterModel result and session patches to Codex turns', async () => {
     const client = new FakeCodexClient();
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'codexResult',
@@ -207,7 +207,7 @@ describe('CodexTurn template', () => {
   it('allows wrapModelCall to short-circuit Codex provider calls', async () => {
     const client = new FakeCodexClient();
     const events: string[] = [];
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .observe((event) => {
         if (event.type.startsWith('model.')) {
           events.push(event.type);
@@ -248,7 +248,7 @@ describe('CodexTurn template', () => {
 
   it('applies prepareModelInput as transient Codex input', async () => {
     const client = new FakeCodexClient();
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .use(
         Middleware.create({
           name: 'codexPrepare',
@@ -278,7 +278,7 @@ describe('CodexTurn template', () => {
     const client = new FakeCodexClient();
 
     await expect(
-      Agent.create()
+      Agent.quick()
         .use(
           Middleware.create({
             name: 'badPrepare',
@@ -299,7 +299,7 @@ describe('CodexTurn template', () => {
     const client = new FakeCodexClient();
     const events: string[] = [];
 
-    await Agent.create()
+    await Agent.quick()
       .observe((event) => {
         if (event.type.startsWith('model.')) {
           events.push(
@@ -325,7 +325,7 @@ describe('CodexTurn template', () => {
     const events: string[] = [];
 
     await expect(
-      Agent.create()
+      Agent.quick()
         .observe((event) => {
           if (event.type.startsWith('model.')) {
             events.push(
@@ -356,7 +356,7 @@ describe('CodexTurn template', () => {
         attrs: { codex: { threadId: 'thread-existing' } },
       })
       .addMessage({ type: 'user', content: 'Continue' });
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .codexTurn({ client, threadId: 'auto' })
       .execute({ session: initialSession });
 
@@ -373,7 +373,7 @@ describe('CodexTurn template', () => {
   it('requires approval before configuring Codex MCP servers', async () => {
     const client = new FakeCodexClient();
     const approvals: unknown[] = [];
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .user('Use docs')
       .codexTurn({
         client,
@@ -419,7 +419,7 @@ describe('CodexTurn template', () => {
   it('requires approval before enabling Codex builtin runtime tools', async () => {
     const client = new FakeCodexClient();
     const approvals: unknown[] = [];
-    const agent = Agent.create()
+    const agent = Agent.quick()
       .user('Run commands')
       .codexTurn({
         client,
@@ -459,7 +459,7 @@ describe('CodexTurn template', () => {
 
   it('should start a new Codex thread when auto binding history diverged', async () => {
     const originalClient = new FakeCodexClient();
-    const originalSession = await Agent.create()
+    const originalSession = await Agent.quick()
       .user('Original')
       .codexTurn({ client: originalClient })
       .execute({ session: Session.create() });
@@ -470,7 +470,7 @@ describe('CodexTurn template', () => {
       .addMessage(previousAssistant!)
       .addMessage({ type: 'user', content: 'Continue' });
 
-    await Agent.create()
+    await Agent.quick()
       .codexTurn({ client, threadId: 'auto' })
       .execute({ session: divergentSession });
 
@@ -483,7 +483,7 @@ describe('CodexTurn template', () => {
 
   it('should summarize retained runtime metadata by default', async () => {
     const client = new FakeCodexClient();
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .user('Summarize')
       .codexTurn({ client })
       .execute({ session: Session.create() });
@@ -521,7 +521,7 @@ describe('CodexTurn template', () => {
 
   it('should retain only binding and status metadata when retain is none', async () => {
     const client = new FakeCodexClient();
-    const session = await Agent.create()
+    const session = await Agent.quick()
       .user('Do not retain runtime artifacts')
       .codexTurn({ client, retain: 'none' })
       .execute({ session: Session.create() });
@@ -552,7 +552,7 @@ describe('CodexTurn template', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    await Agent.create()
+    await Agent.quick()
       .user('Use the tool')
       .codexTurn({
         client,
@@ -579,7 +579,7 @@ describe('CodexTurn template', () => {
   it('should prepend RuntimeSkill input items on Codex turns', async () => {
     const client = new FakeCodexClient();
 
-    await Agent.create()
+    await Agent.quick()
       .user('Review this')
       .codexTurn({
         client,
@@ -622,7 +622,7 @@ describe('CodexTurn template', () => {
       ],
     };
 
-    await Agent.create()
+    await Agent.quick()
       .user('Review this')
       .codexTurn({
         client,
@@ -652,7 +652,7 @@ describe('CodexTurn template', () => {
   it('should pass MCP server capabilities to Codex thread start', async () => {
     const client = new FakeCodexClient();
 
-    await Agent.create()
+    await Agent.quick()
       .user('Use MCP')
       .codexTurn({
         client,

@@ -58,8 +58,20 @@ describe('Agent graph authoring', () => {
   });
 
   it('requires a named agent before graph compilation', () => {
-    expect(() => Agent.create().system('hello').toGraph()).toThrow(
+    expect(() =>
+      (Agent.create as unknown as () => Agent)().system('hello').toGraph(),
+    ).toThrow(/Agent\.create\(name\)/);
+  });
+
+  it('rejects Agent.create without a stable name', () => {
+    expect(() => (Agent.create as unknown as () => Agent)()).toThrow(
       /Agent\.create\(name\)/,
+    );
+  });
+
+  it('requires system graph nodes to include content', () => {
+    expect(() => Agent.create('assistant').system('system')).toThrow(
+      /Graph Agent\.system/,
     );
   });
 
@@ -712,7 +724,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('rejects mixing legacy control-flow after graph authoring starts', () => {
-    const graphStarted = () => Agent.create().assistant('reply', () => 'ok');
+    const graphStarted = () => Agent.quick().assistant('reply', () => 'ok');
 
     expect(() =>
       graphStarted().loop((body) => body.assistant('legacy'), false),
@@ -732,7 +744,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('rejects mixing legacy leaf methods after graph authoring starts', () => {
-    const graphStarted = () => Agent.create().assistant('reply', () => 'ok');
+    const graphStarted = () => Agent.quick().assistant('reply', () => 'ok');
 
     expect(() => graphStarted().system('legacy')).toThrow(
       /Graph Agent\.system/,
@@ -760,7 +772,7 @@ describe('Agent graph authoring', () => {
     expect(() => graphStarted().transform((session) => session)).toThrow(
       /Graph Agent\.transform/,
     );
-    expect(() => graphStarted().add(Agent.create().build())).toThrow(
+    expect(() => graphStarted().add(Agent.quick().build())).toThrow(
       /Graph Agent\.add/,
     );
   });

@@ -209,11 +209,11 @@ describe('If Template', () => {
     const condition = () => true;
 
     // Create complex nested templates for both branches
-    const thenTemplate = Agent.create()
+    const thenTemplate = Agent.quick()
       .system('System message in then branch')
       .user('User message in then branch');
 
-    const elseTemplate = Agent.create()
+    const elseTemplate = Agent.quick()
       .system('System message in else branch')
       .user('User message in else branch');
 
@@ -270,7 +270,7 @@ describe('If Template', () => {
 
     const outerIfTemplate = new Conditional({
       condition: (session) => session.getVar('userRole') === 'admin',
-      thenTemplate: Agent.create()
+      thenTemplate: Agent.quick()
         .user('Admin role detected')
         .add(innerIfTemplate),
       elseTemplate: new User('Not an admin'),
@@ -310,14 +310,14 @@ describe('If Template', () => {
     const condition = () => true;
 
     // Create then template that updates metadata
-    const thenTemplate = Agent.create()
+    const thenTemplate = Agent.quick()
       .user('Setting context in then branch')
       .transform((session) => {
         return session.withVars({ branchTaken: 'then' });
       });
 
     // Create else template that updates metadata differently
-    const elseTemplate = Agent.create()
+    const elseTemplate = Agent.quick()
       .user('Setting context in else branch')
       .transform((session) => {
         return session.withVars({ branchTaken: 'else' });

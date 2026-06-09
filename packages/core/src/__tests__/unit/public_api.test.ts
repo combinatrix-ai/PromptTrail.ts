@@ -126,7 +126,7 @@ describe('public API surface', () => {
   });
 
   it('types direct agent execution input option', async () => {
-    const session = await prompttrail.Agent.create()
+    const session = await prompttrail.Agent.quick()
       .assistant('reply')
       .execute({ input: 'hello from options' });
 
@@ -137,7 +137,7 @@ describe('public API surface', () => {
   });
 
   it('rejects positional Agent.execute arguments at runtime', async () => {
-    const agent = prompttrail.Agent.create().user('hello');
+    const agent = prompttrail.Agent.quick().user('hello');
 
     await expect(
       (
