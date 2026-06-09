@@ -77,7 +77,7 @@ await agent.execute();
 - **🧩 Composable** - Mix and match conversation patterns
 - **🔄 Immutable** - Predictable state management
 - **🔌 Multi-Provider** - OpenAI, Anthropic, Google support
-- **🛠️ Tool Integration** - Function calling via ai-sdk
+- **🛠️ Tool Integration** - Typed function calling with PromptTrail tools
 - **🌊 Streaming** - Real-time response streaming
 - **🛡️ Validation** - Input/output validation with retries
 - **🧪 Structured Output** - Force LLMs to return typed data
@@ -345,12 +345,12 @@ const typedAgent = Agent.quick<UserContext>()
 ### Tool Integration
 
 ```typescript
-import { tool } from 'ai';
+import { Agent, Source, Tool } from '@prompttrail/core';
 import { z } from 'zod';
 
-const weatherTool = tool({
+const weatherTool = Tool.create({
   description: 'Get weather info',
-  parameters: z.object({
+  inputSchema: z.object({
     location: z.string(),
   }),
   execute: async ({ location }) => {
