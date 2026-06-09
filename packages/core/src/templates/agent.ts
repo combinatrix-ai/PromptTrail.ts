@@ -7,11 +7,8 @@ import {
   type DurableRunStore,
 } from '../durable';
 import {
-  ObserverBus,
-  type ExecutionEvent,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
-  type ResolvedExecutionCommand,
 } from '../execution';
 import {
   createAgentGraph,
@@ -26,11 +23,9 @@ import {
 import { Message, type Message as PromptTrailMessage } from '../message';
 import {
   createExecutionRuntimeState,
-  extendExecutionRuntimeState,
   type ExecutionRuntimeState,
   type HookDefinition,
   type MiddlewareDefinition,
-  runRuntimeExecutionPhase,
 } from '../interceptors';
 import { ModelOutput, Source, ValidationOptions } from '../source';
 import type { PromptTrailTool } from '../tool';
@@ -1058,156 +1053,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         : this.root.execute(undefined, runtime);
     }
 
-    const observerBus = new ObserverBus(executionObservers, {
+    return executeAgentGraph(this.toLegacyExecutionGraph(), {
+      session,
+      runtime: parentRuntime,
+      context: executionOptions?.context,
+      signal: executionOptions?.signal,
+      observers: executionOptions?.observers,
+      observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
       strictObservers: executionOptions?.strictObservers,
-      ...executionOptions?.observerDeliveryBindings,
+      eventScopeId,
+      runEventSource: 'agent',
+      unsupportedCommandLabel: 'Agent.execute',
     });
-    let seq = 0;
-    let current = session ?? Session.create<TC, TM>();
-    const runtime =
-      parentRuntime ??
-      createExecutionRuntimeState<TC, TM>({
-        context: executionOptions?.context,
-        emitEvent: (event) => observerBus.emit(event),
-        eventScopeId,
-        nextEventSeq: () => seq++,
-        signal: executionOptions?.signal,
-      });
-    const previousParentEmitEvent = parentRuntime?.emitEvent;
-    // Child agents run sequentially under the current template runtime, so this
-    // temporary fan-out keeps nested observers attached to the shared event seq.
-    if (parentRuntime && executionObservers.length > 0) {
-      parentRuntime.emitEvent = async (event) => {
-        await previousParentEmitEvent?.(event);
-        await observerBus.emit(event);
-      };
-    }
-    const nextSeq = () => runtime.nextEventSeq?.() ?? seq++;
-    const emitEvent = (event: ExecutionEvent) =>
-      runtime.emitEvent?.(event) ?? observerBus.emit(event);
-
-    let eventSeq = nextSeq();
-    await emitEvent({
-      id: `agent:${eventSeq}`,
-      type: 'run.started',
-      at: new Date().toISOString(),
-      seq: eventSeq,
-      replay: 'live',
-      source: 'agent',
-      sessionVersion: current.messages.length,
-      idempotencyKey: directAgentEventIdempotencyKey(
-        eventScopeId,
-        eventSeq,
-        'run.started',
-      ),
-    });
-
-    try {
-      const before = await runRuntimeExecutionPhase(runtime, {
-        phase: 'beforeAgent',
-        session: current,
-        middleware: this.middleware,
-        hooks: this.hooks,
-      });
-      current = before.session;
-      if (before.command.type !== 'none') {
-        return await handleDirectAgentCommand(before.command, current, {
-          emitCompleted: async () => {
-            eventSeq = nextSeq();
-            await emitEvent({
-              id: `agent:${eventSeq}`,
-              type: 'run.completed',
-              at: new Date().toISOString(),
-              seq: eventSeq,
-              replay: 'live',
-              source: 'agent',
-              sessionVersion: current.messages.length,
-              idempotencyKey: directAgentEventIdempotencyKey(
-                eventScopeId,
-                eventSeq,
-                'run.completed',
-              ),
-            });
-          },
-        });
-      }
-
-      const childRuntime = extendExecutionRuntimeState(runtime, {
-        middleware: this.middleware,
-        hooks: this.hooks,
-      });
-      current = await this.root.execute(current, childRuntime);
-      runtime.middlewareState = childRuntime.middlewareState;
-      runtime.version = childRuntime.version;
-
-      const after = await runRuntimeExecutionPhase(runtime, {
-        phase: 'afterAgent',
-        session: current,
-        middleware: this.middleware,
-        hooks: this.hooks,
-      });
-      current = after.session;
-      if (after.command.type !== 'none') {
-        return await handleDirectAgentCommand(after.command, current, {
-          emitCompleted: async () => {
-            eventSeq = nextSeq();
-            await emitEvent({
-              id: `agent:${eventSeq}`,
-              type: 'run.completed',
-              at: new Date().toISOString(),
-              seq: eventSeq,
-              replay: 'live',
-              source: 'agent',
-              sessionVersion: current.messages.length,
-              idempotencyKey: directAgentEventIdempotencyKey(
-                eventScopeId,
-                eventSeq,
-                'run.completed',
-              ),
-            });
-          },
-        });
-      }
-
-      eventSeq = nextSeq();
-      await emitEvent({
-        id: `agent:${eventSeq}`,
-        type: 'run.completed',
-        at: new Date().toISOString(),
-        seq: eventSeq,
-        replay: 'live',
-        source: 'agent',
-        sessionVersion: current.messages.length,
-        idempotencyKey: directAgentEventIdempotencyKey(
-          eventScopeId,
-          eventSeq,
-          'run.completed',
-        ),
-      });
-      return current;
-    } catch (error) {
-      eventSeq = nextSeq();
-      await emitEvent({
-        id: `agent:${eventSeq}`,
-        type: 'run.failed',
-        at: new Date().toISOString(),
-        seq: eventSeq,
-        replay: 'live',
-        source: 'agent',
-        sessionVersion: current.messages.length,
-        idempotencyKey: directAgentEventIdempotencyKey(
-          eventScopeId,
-          eventSeq,
-          'run.failed',
-        ),
-        error,
-      });
-      throw error;
-    } finally {
-      if (parentRuntime && executionObservers.length > 0) {
-        parentRuntime.emitEvent = previousParentEmitEvent;
-      }
-    }
   }
 
   private resolveDirectDurableOptions(
@@ -1356,14 +1213,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     this.root.add(new Assistant(contentOrSource, validatorOrOptions));
     return this;
   }
-}
-
-function directAgentEventIdempotencyKey(
-  eventScopeId: string,
-  seq: number,
-  type: string,
-): string {
-  return `${eventScopeId}:agent:${seq}:${type}`;
 }
 
 export interface AgentExecutionOptions {
@@ -1571,21 +1420,4 @@ function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
       },
     ],
   };
-}
-
-async function handleDirectAgentCommand<TC extends Vars, TM extends Attrs>(
-  command: ResolvedExecutionCommand,
-  session: Session<TC, TM>,
-  options: { emitCompleted: () => Promise<void> },
-): Promise<Session<TC, TM>> {
-  if (command.type === 'none') {
-    return session;
-  }
-  if (command.type === 'halt') {
-    await options.emitCompleted();
-    return session;
-  }
-  throw new Error(
-    `Agent.execute does not support execution command ${command.type} yet.`,
-  );
 }

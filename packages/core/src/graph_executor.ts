@@ -9,10 +9,13 @@ import {
 import type { AgentGraph, AgentGraphNode } from './graph';
 import {
   createExecutionRuntimeState,
+  extendExecutionRuntimeState,
   runRuntimeExecutionPhase,
   runRuntimeMiddlewareWrapper,
   type ExecutionDurableBoundary,
   type ExecutionRuntimeState,
+  type HookDefinition,
+  type MiddlewareDefinition,
 } from './interceptors';
 import {
   Message,
@@ -50,6 +53,7 @@ export interface GraphExecutionOptions<
   strictObservers?: boolean;
   eventScopeId?: string;
   nextEventSeq?: () => number;
+  runtime?: ExecutionRuntimeState<TVars, TAttrs>;
   skipNode?: (
     node: AgentGraphNode,
     nodePath: string,
@@ -148,31 +152,51 @@ export async function executeAgentGraph<
     },
   );
   const eventScopeId =
-    options.eventScopeId ?? createGraphExecutionEventScopeId();
+    options.eventScopeId ??
+    options.runtime?.eventScopeId ??
+    createGraphExecutionEventScopeId();
   let eventSeq = 0;
-  const nextEventSeq = options.nextEventSeq ?? (() => eventSeq++);
+  const nextEventSeq =
+    options.nextEventSeq ?? options.runtime?.nextEventSeq ?? (() => eventSeq++);
+  const context = options.context ?? options.runtime?.context;
+  const signal = options.signal ?? options.runtime?.signal;
   const emitEvent = (event: ExecutionEvent) =>
-    observerBus.emit(event, {
-      ...options.context,
-      signal: options.signal,
-    });
+    Promise.resolve(options.runtime?.emitEvent?.(event)).then(() =>
+      observerBus.emit(event, {
+        ...context,
+        signal,
+      }),
+    );
+  const runtime = options.runtime
+    ? extendExecutionRuntimeState(options.runtime, {
+        middleware: graph.middleware,
+        hooks: graph.hooks,
+      })
+    : createExecutionRuntimeState<TVars, TAttrs>({
+        middleware: graph.middleware,
+        hooks: graph.hooks,
+        context,
+        signal,
+        emitEvent,
+        eventScopeId,
+        nextEventSeq,
+      });
+  if (options.runtime) {
+    runtime.context = context;
+    runtime.signal = signal;
+    runtime.emitEvent = emitEvent;
+    runtime.eventScopeId = eventScopeId;
+    runtime.nextEventSeq = nextEventSeq;
+  }
   const state: GraphExecutionState<TVars, TAttrs> = {
     graph,
     session: options.session ?? Session.create<TVars, TAttrs>(),
     inbox: normalizeGraphInbox<TAttrs>(options.input),
     cursor: 0,
     maxLoopIterations: options.maxLoopIterations ?? 10,
-    context: options.context,
-    signal: options.signal,
-    runtime: createExecutionRuntimeState<TVars, TAttrs>({
-      middleware: graph.middleware,
-      hooks: graph.hooks,
-      context: options.context,
-      signal: options.signal,
-      emitEvent,
-      eventScopeId,
-      nextEventSeq,
-    }),
+    context,
+    signal,
+    runtime,
     skipNode: options.skipNode,
     resumeFromNode: options.resumeFromNode,
     durableToolBoundary: options.durableToolBoundary,
@@ -188,6 +212,11 @@ export async function executeAgentGraph<
     const before = await runRuntimeExecutionPhase(state.runtime, {
       phase: 'beforeAgent',
       session: state.session,
+      middleware: graph.middleware as readonly MiddlewareDefinition<
+        TVars,
+        TAttrs
+      >[],
+      hooks: graph.hooks as readonly HookDefinition<TVars, TAttrs>[],
     });
     state.session = before.session;
     if (before.command.type !== 'none') {
@@ -225,6 +254,11 @@ export async function executeAgentGraph<
     const after = await runRuntimeExecutionPhase(state.runtime, {
       phase: 'afterAgent',
       session: state.session,
+      middleware: graph.middleware as readonly MiddlewareDefinition<
+        TVars,
+        TAttrs
+      >[],
+      hooks: graph.hooks as readonly HookDefinition<TVars, TAttrs>[],
     });
     state.session = after.session;
     if (after.command.type !== 'none') {
@@ -255,6 +289,11 @@ export async function executeAgentGraph<
       error,
     });
     throw error;
+  } finally {
+    if (options.runtime) {
+      options.runtime.middlewareState = state.runtime.middlewareState;
+      options.runtime.version = state.runtime.version;
+    }
   }
 }
 

@@ -664,8 +664,10 @@ split runtime instead of layering more adapters over it.
 - Implement `loop/conditional/subroutine` as graph control nodes.
 - Current implementation note: non-durable top-level legacy `Agent.quick()`
   execution now enters `GraphExecutor` through a legacy `template` node that
-  preserves existing template lifecycle semantics. Durable legacy execution and
-  nested template execution still use the legacy template path until their
+  preserves existing template lifecycle semantics. Nested legacy Agent
+  templates that receive a parent runtime also enter `GraphExecutor` through
+  the same compatibility node while preserving parent event sequencing.
+  Durable legacy execution still uses the legacy template path until its
   journal/runtime semantics are ported.
 - Remove template-only execution paths.
 
