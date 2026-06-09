@@ -48,7 +48,9 @@ such as `Parallel` and `Structured`; implementation primitives such as
 `System`, `User`, `Assistant`, `Sequence`, `Loop`, `Subroutine`,
 `Conditional`, `Transform`, `GenerateMessages`, `TemplateBase`, and
 `Composite` stay behind the `templates` submodule for internal and advanced
-use.
+use. `codexTurn(...)` and `claudeTurn(...)` are `Agent` fluent methods; the
+`CodexTurn` and `ClaudeTurn` classes are low-level template implementations and
+are not package-root exports.
 
 ```ts
 const assistant = Agent.create('assistant')

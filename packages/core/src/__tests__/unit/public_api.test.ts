@@ -171,6 +171,8 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('Conditional');
     expect(prompttrail).not.toHaveProperty('Transform');
     expect(prompttrail).not.toHaveProperty('GenerateMessages');
+    expect(prompttrail).not.toHaveProperty('CodexTurn');
+    expect(prompttrail).not.toHaveProperty('ClaudeTurn');
   });
 
   it('does not expose static content-first Agent factories', () => {
