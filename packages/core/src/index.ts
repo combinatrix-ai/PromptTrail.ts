@@ -33,8 +33,6 @@ export {
   NondeterminismError,
   PromptTrail,
   Suspend,
-  app,
-  manualSource,
   memoryStore,
 } from './durable';
 export type {

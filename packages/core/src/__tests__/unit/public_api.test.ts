@@ -192,6 +192,8 @@ describe('public API surface', () => {
 
   it('does not expose durable agent classes as public authoring APIs', () => {
     expect(prompttrail).not.toHaveProperty('agent');
+    expect(prompttrail).not.toHaveProperty('app');
+    expect(prompttrail).not.toHaveProperty('manualSource');
     expect(prompttrail).not.toHaveProperty('DurableAgent');
     expect(prompttrail).not.toHaveProperty('DurableTurnBuilder');
     expect(prompttrail).not.toHaveProperty('DurableTool');

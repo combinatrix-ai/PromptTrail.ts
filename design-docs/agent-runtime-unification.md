@@ -368,8 +368,11 @@ However, the app should still compile bindings into a structural
 `RuntimeBundle` IR. Tests, mocks, servers, and deployment wiring can consume
 that IR. `PromptTrail.runtimeBundle(...)` remains the explicit low-level IR
 builder for those cases; ordinary app authoring stays on
-`PromptTrail.app(...).bind(...)`. The bundle keeps live agent instances and
-resolver functions, so it is not a JSON serialization boundary.
+`PromptTrail.app(...).bind(...)`. The old root `app(...)` shortcut and
+`manualSource()` helper are not package-root APIs; low-level test/runtime
+utilities may still import them from the durable submodule. The bundle keeps
+live agent instances and resolver functions, so it is not a JSON serialization
+boundary.
 
 ### Sources, Adapters, and Delivery
 
