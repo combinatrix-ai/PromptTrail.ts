@@ -6,6 +6,8 @@ import type {
   AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGoalOptions,
+  ClaudeTurnOptions,
+  CodexTurnOptions,
   ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
   ExecutionEvent,
@@ -166,6 +168,22 @@ describe('public API surface', () => {
     expect(prompttrail).toHaveProperty('createAgentGraphManifest');
     expect(prompttrail).not.toHaveProperty('executeAgentGraph');
     expect(prompttrail).not.toHaveProperty('GraphExecutionSuspended');
+  });
+
+  it('keeps provider turn adapter internals out of the package root', () => {
+    const codexOptions: CodexTurnOptions = {
+      transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
+    };
+    const claudeOptions: ClaudeTurnOptions = {
+      sessionId: 'new',
+    };
+
+    expect(codexOptions.transport?.kind).toBe('websocket');
+    expect(claudeOptions.sessionId).toBe('new');
+    expect(prompttrail).not.toHaveProperty('CodexAppServerHttpClient');
+    expect(prompttrail).not.toHaveProperty('createCodexAppServerHttpClient');
+    expect(prompttrail).not.toHaveProperty('buildClaudeAgentQueryParams');
+    expect(prompttrail).not.toHaveProperty('createDefaultClaudeAgentClient');
   });
 
   it('does not expose low-level template authoring classes from the package root', () => {

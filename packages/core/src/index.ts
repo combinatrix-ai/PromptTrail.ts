@@ -1,8 +1,6 @@
 export * from './anthropic_messages';
 export * from './cache';
 export * from './capabilities';
-export * from './claude_agent';
-export * from './codex_app_server';
 export * from './content_parts';
 export * from './conversation';
 export * from './execution';
@@ -54,6 +52,22 @@ export type {
   StoredRun,
   ToolCall,
 } from './durable';
+export type {
+  ClaudeAgentClient,
+  ClaudeAgentInput,
+  ClaudeAgentSessionId,
+  ClaudeTurnOptions,
+} from './claude_agent';
+export type {
+  CodexAppServerClient,
+  CodexInboundRequest,
+  CodexInboundRequestHandler,
+  CodexThreadId,
+  CodexTurnEvent,
+  CodexTurnInput,
+  CodexTurnOptions,
+  CodexTurnResult,
+} from './codex_app_server';
 export {
   Agent,
   AgentTurnGraphBuilder,

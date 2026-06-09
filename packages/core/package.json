@@ -16,6 +16,14 @@
     "./graph_executor": {
       "types": "./dist/graph_executor.d.ts",
       "import": "./dist/graph_executor.mjs"
+    },
+    "./codex_app_server": {
+      "types": "./dist/codex_app_server.d.ts",
+      "import": "./dist/codex_app_server.mjs"
+    },
+    "./claude_agent": {
+      "types": "./dist/claude_agent.d.ts",
+      "import": "./dist/claude_agent.mjs"
     }
   },
   "files": [

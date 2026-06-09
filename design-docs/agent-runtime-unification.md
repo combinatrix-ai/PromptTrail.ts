@@ -55,7 +55,12 @@ exports, but graph executor internals such as `executeAgentGraph`,
 `GraphExecutionOptions`, and `GraphExecutionSuspended` stay behind the
 `graph_executor` submodule for internal and advanced runtime use. Any submodule
 named here must also be a real package export; hiding a symbol from the root
-must not make the advanced import path unavailable in built packages.
+must not make the advanced import path unavailable in built packages. Provider
+turn options such as `CodexTurnOptions` and `ClaudeTurnOptions` may be root
+types because they are part of the `Agent.codexTurn(...)` and
+`Agent.claudeTurn(...)` authoring surface; provider adapter constructors and
+conversion helpers stay behind `codex_app_server` and `claude_agent`
+submodules.
 
 ```ts
 const assistant = Agent.create('assistant')
