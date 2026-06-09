@@ -50,7 +50,10 @@ such as `Parallel` and `Structured`; implementation primitives such as
 `Composite` stay behind the `templates` submodule for internal and advanced
 use. `codexTurn(...)` and `claudeTurn(...)` are `Agent` fluent methods; the
 `CodexTurn` and `ClaudeTurn` classes are low-level template implementations and
-are not package-root exports.
+are not package-root exports. Graph structure and manifest helpers may be root
+exports, but graph executor internals such as `executeAgentGraph`,
+`GraphExecutionOptions`, and `GraphExecutionSuspended` stay behind the
+`graph_executor` submodule for internal and advanced runtime use.
 
 ```ts
 const assistant = Agent.create('assistant')

@@ -11,6 +11,8 @@ import type {
   ExecutionEvent,
   ObserverDeliveryBindingStore,
 } from '../../index';
+// @ts-expect-error graph executor types are not package-root APIs.
+import type { GraphExecutionOptions } from '../../index';
 
 describe('public API surface', () => {
   it('does not re-export ai-sdk tool helpers from core', () => {
@@ -157,6 +159,13 @@ describe('public API surface', () => {
 
     expect(prompttrail).toHaveProperty('AgentTurnGraphBuilder');
     expect(options.interaction).toBe('required');
+  });
+
+  it('keeps graph execution internals out of the package root', () => {
+    expect(prompttrail).toHaveProperty('createAgentGraph');
+    expect(prompttrail).toHaveProperty('createAgentGraphManifest');
+    expect(prompttrail).not.toHaveProperty('executeAgentGraph');
+    expect(prompttrail).not.toHaveProperty('GraphExecutionSuspended');
   });
 
   it('does not expose low-level template authoring classes from the package root', () => {
