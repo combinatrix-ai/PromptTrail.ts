@@ -12,6 +12,7 @@ import type {
   ExecutionDurableBoundary,
   ExecutionEvent,
   ObserverDeliveryBindingStore,
+  RuntimeAdapter,
 } from '../../index';
 // @ts-expect-error graph executor types are not package-root APIs.
 import type { GraphExecutionOptions } from '../../index';
@@ -184,6 +185,19 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('createCodexAppServerHttpClient');
     expect(prompttrail).not.toHaveProperty('buildClaudeAgentQueryParams');
     expect(prompttrail).not.toHaveProperty('createDefaultClaudeAgentClient');
+  });
+
+  it('keeps runtime host internals out of the package root', () => {
+    const adapter: RuntimeAdapter = { name: 'test-adapter' };
+
+    expect(adapter.name).toBe('test-adapter');
+    expect(prompttrail).not.toHaveProperty('server');
+    expect(prompttrail).not.toHaveProperty('RuntimeServer');
+    expect(prompttrail).not.toHaveProperty('dispatchRuntimeBindingEvent');
+    expect(prompttrail).not.toHaveProperty('AssistantDeliveryTracker');
+    expect(prompttrail).not.toHaveProperty('mockRuntimeFixture');
+    expect(prompttrail).not.toHaveProperty('mockDiscord');
+    expect(prompttrail.PromptTrail).toHaveProperty('server');
   });
 
   it('does not expose low-level template authoring classes from the package root', () => {

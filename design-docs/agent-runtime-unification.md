@@ -60,7 +60,10 @@ turn options such as `CodexTurnOptions` and `ClaudeTurnOptions` may be root
 types because they are part of the `Agent.codexTurn(...)` and
 `Agent.claudeTurn(...)` authoring surface; provider adapter constructors and
 conversion helpers stay behind `codex_app_server` and `claude_agent`
-submodules.
+submodules. Runtime host, dispatch, and mock helpers are also low-level
+submodules; root may expose adapter authoring types needed by
+`PromptTrail.app(...).source(...)`, `.delivery(...)`, `.activity(...)`, and
+`.adapter(...)`, but not direct host/dispatch/mock helper values.
 
 ```ts
 const assistant = Agent.create('assistant')

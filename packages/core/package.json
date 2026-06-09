@@ -24,6 +24,18 @@
     "./claude_agent": {
       "types": "./dist/claude_agent.d.ts",
       "import": "./dist/claude_agent.mjs"
+    },
+    "./runtime_server": {
+      "types": "./dist/runtime_server.d.ts",
+      "import": "./dist/runtime_server.mjs"
+    },
+    "./runtime_dispatch": {
+      "types": "./dist/runtime_dispatch.d.ts",
+      "import": "./dist/runtime_dispatch.mjs"
+    },
+    "./runtime_mocks": {
+      "types": "./dist/runtime_mocks.d.ts",
+      "import": "./dist/runtime_mocks.mjs"
     }
   },
   "files": [

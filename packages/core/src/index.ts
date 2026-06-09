@@ -17,9 +17,6 @@ export * from './replay_pins';
 export * from './runtime';
 export * from './runtime_bindings';
 export * from './runtime_discord';
-export * from './runtime_dispatch';
-export * from './runtime_mocks';
-export * from './runtime_server';
 export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
 export * from './skills';
@@ -68,6 +65,19 @@ export type {
   CodexTurnOptions,
   CodexTurnResult,
 } from './codex_app_server';
+export type {
+  RuntimeActivity,
+  RuntimeActivityContext,
+  RuntimeActivityDriver,
+  RuntimeActivityHandle,
+  RuntimeAdapter,
+  RuntimeDeliveryContext,
+  RuntimeDeliveryDriver,
+  RuntimeServerErrorContext,
+  RuntimeSourceContext,
+  RuntimeSourceDriver,
+  RuntimeSourceEmitOptions,
+} from './runtime_server';
 export {
   Agent,
   AgentTurnGraphBuilder,
