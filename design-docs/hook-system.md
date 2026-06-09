@@ -90,12 +90,13 @@ const app = PromptTrail.app({
   },
 });
 
-PromptTrail.bundle({
+PromptTrail.runtimeBundle({
+  name: 'claw-runtime',
   defaults: {
     durable: true,
   },
   bindings: [
-    bind(discord.messages()).conversation(discord.sessionKey()).agent('claw'),
+    bind(discord.messages()).conversation(discord.sessionKey()).toAgent('claw'),
   ],
 });
 ```

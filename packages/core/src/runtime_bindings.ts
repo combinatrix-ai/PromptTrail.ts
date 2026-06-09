@@ -338,7 +338,7 @@ export const cron = {
   },
 };
 
-export function bundle(options: RuntimeBundleOptions): RuntimeBundle {
+export function runtimeBundle(options: RuntimeBundleOptions): RuntimeBundle {
   const agents = { ...(options.agents ?? {}) };
   const bindings = (options.bindings ?? []).map((bindingLike) => {
     if (!isBindingBuilder(bindingLike)) {

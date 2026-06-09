@@ -55,7 +55,7 @@ const mainAgent = Agent.create()
       .awaitNext(),
   );
 
-const bundle = PromptTrail.bundle({
+const bundle = PromptTrail.runtimeBundle({
   name: 'hermes-like',
 
   agents: {
@@ -188,7 +188,7 @@ Desired scheduled jobs:
 As a config-shaped sketch:
 
 ```ts
-const workroom = PromptTrail.bundle({
+const workroom = PromptTrail.runtimeBundle({
   name: 'workroom-assistant',
 
   agents: {
@@ -275,11 +275,11 @@ const workroom = PromptTrail.bundle({
 });
 ```
 
-The same scenario can also be expressed as a more data-oriented bundle. This is
-useful for config files, generated bundles, or UI editing:
+The same scenario can also be expressed as a more data-oriented runtime bundle.
+This is useful for tests, mocks, generated runtime wiring, or deployment code:
 
 ```ts
-const workroom = PromptTrail.bundle({
+const workroom = PromptTrail.runtimeBundle({
   name: 'workroom-assistant',
 
   agents: { main: mainAgent },
@@ -1045,7 +1045,7 @@ describe('PromptTrail runtime bindings target API', () => {
       agent.user().assistant().deliver().awaitNext(),
     );
 
-  const workroom = PromptTrail.bundle({
+  const workroom = PromptTrail.runtimeBundle({
     name: 'workroom-assistant',
 
     agents: {

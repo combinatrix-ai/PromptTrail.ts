@@ -30,6 +30,11 @@ const session = await chat.execute();
 console.log(session.getLastMessage()?.content);
 ```
 
+`Agent.execute(...)` takes a single options object. Pass initial state, runtime
+context, observers, or graph execution input as
+`execute({ session, context, observers, input, ... })`. Use `PromptTrail.app`
+for durable runs.
+
 ### Interactive Chat Loop
 
 ```typescript
@@ -218,11 +223,61 @@ const researcher = Agent.create('researcher')
 
 Goal authoring compiles into the agent graph and executes through the graph
 runtime with stable retry, tool, satisfaction, and interaction node paths.
+`isSatisfied` is a deterministic session check; external effects belong in
+tools, model calls, or middleware phases.
 
 **Key Differences:**
 
 - **Agent**: Low-level template composition, full control
 - **Agent.goal**: High-level goal tracking on the same Agent graph API
+- **Scenario**: Not a public authoring API; use `Agent.goal(...)`
+
+### App Runtime & Bindings
+
+`PromptTrail.app(...)` owns registered agents, run storage, observers, adapters,
+platform bindings, and runtime defaults such as middleware configured at app
+creation. Durability is a run/app mode, not a separate public `DurableAgent`
+API.
+
+```typescript
+import {
+  Agent,
+  PromptTrail,
+  Source,
+  discord,
+  discordGateway,
+  memoryStore,
+} from '@prompttrail/core';
+
+const support = Agent.create('support')
+  .system('system', 'You are a concise support assistant.')
+  .turn('reply', (turn) =>
+    turn
+      .inbox('inbound')
+      .assistant('model', Source.llm().openai())
+      .tools('tools')
+      .awaitInput('next'),
+  );
+
+const app = PromptTrail.app({ store: memoryStore() })
+  .agent(support)
+  .adapter(discordGateway({ token: process.env.DISCORD_TOKEN }))
+  .bind(discord.messages(), (binding) =>
+    binding
+      .where(discord.notBot())
+      .to(support)
+      .conversation(discord.sessionKey({ threadSessionsPerUser: true }))
+      .durable()
+      .delivery(discord.replyToOriginThread()),
+  );
+
+const bundle = app.bundle('support-runtime'); // structural runtime IR
+```
+
+Use `app.bundle(name?)` or `PromptTrail.runtimeBundle({ name, agents, bindings })` as
+runtime IR for servers, mocks, and deployment wiring. The bundle keeps
+registered agents, handlers, and resolvers as live code; it is not a JSON
+serialization boundary. Ordinary agent authoring stays on `Agent.create(...)`.
 
 ## 🛠️ Advanced Features
 
@@ -489,7 +544,10 @@ const smartResearcher = Agent.create('smartResearcher')
       return toolResults.length >= 3 && hasDetailedAnalysis;
     },
   })
-  .goal('synthesizeFindings', 'Synthesize findings and provide recommendations');
+  .goal(
+    'synthesizeFindings',
+    'Synthesize findings and provide recommendations',
+  );
 
 // Dynamic flow with error handling
 const robustAgent = Agent.create('robustProcessor')

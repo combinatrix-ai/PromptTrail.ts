@@ -4,7 +4,6 @@ import { generateText } from 'ai';
 import {
   PromptTrail,
   agent,
-  bind,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
   discord,
@@ -33,16 +32,16 @@ const mainAgent = agent('main').chat('chat', async (session) => ({
   content: await generateReply(session),
 }));
 
-const bundle = PromptTrail.bundle({
+const runtime = PromptTrail.app({
   name: 'claw-discord',
-  agents: {
-    main: mainAgent,
-  },
+  store: memoryStore(),
   defaults: {
     durable: true,
   },
-  bindings: [
-    bind(discord.messages())
+})
+  .agent('main', mainAgent)
+  .bind(discord.messages(), (binding) =>
+    binding
       .where(discord.notBot())
       .toAgent('main')
       .conversation(
@@ -62,13 +61,8 @@ const bundle = PromptTrail.bundle({
         },
         toolsets: ['discord'],
       }),
-  ],
-});
-
-const runtime = PromptTrail.app({
-  store: memoryStore(),
-  agents: bundle.agents,
-});
+  );
+const bundle = runtime.bundle('claw-discord');
 
 const codexThreadIds = new Map<string, string>();
 

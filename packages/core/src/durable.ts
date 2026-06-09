@@ -33,7 +33,7 @@ import {
 import { assistantDeliveryKey } from './runtime_delivery_keys';
 import {
   bind as createRuntimeBindingBuilder,
-  bundle as createRuntimeBundle,
+  runtimeBundle as createRuntimeBundle,
   type BindingDefaults,
   type DeliveryTarget,
   type RuntimeBinding,
@@ -3569,6 +3569,6 @@ export function manualSource(): EventSource & {
 
 export const PromptTrail = {
   app,
-  bundle: createRuntimeBundle,
+  runtimeBundle: createRuntimeBundle,
   server,
 };

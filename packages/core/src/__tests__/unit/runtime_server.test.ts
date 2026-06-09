@@ -98,7 +98,7 @@ describe('RuntimeServer', () => {
         }),
       ],
     });
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-test',
       agents: { main },
       defaults: { durable: true },
@@ -327,7 +327,7 @@ describe('RuntimeServer', () => {
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'graph-runtime',
       defaults: { durable: false },
       bindings: [
@@ -368,7 +368,7 @@ describe('RuntimeServer', () => {
   it('registers Agent instances from runtime bindings into bundles', () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
     const durable = agent('durable');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'binding-agent-registration',
       bindings: [
         bind(discord.messages())
@@ -604,7 +604,7 @@ describe('RuntimeServer', () => {
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'durable-graph-runtime',
       agents: { main },
       defaults: {
@@ -692,7 +692,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-delivery-seq-test',
       agents: { main },
       defaults: { durable: true },
@@ -787,7 +787,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', () => {
       throw new Error('handler failed');
     });
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-error-delivery-test',
       agents: { main },
       defaults: { durable: false },
@@ -866,7 +866,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getVarsObject().channelPrompt}`,
     }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-context-test',
       agents: { main },
       defaults: {
@@ -979,7 +979,7 @@ describe('RuntimeServer', () => {
         toolCalls: [{ id: 'call-1', name: 'lookup', arguments: {} }],
       }))
       .runTools('tools');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-adapter-observer-test',
       agents: { main },
       defaults: { durable: true },
@@ -1072,7 +1072,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-restart-test',
       agents: { main },
       defaults: { durable: true },
@@ -1191,7 +1191,7 @@ describe('RuntimeServer', () => {
       }
       return `reply:${content}`;
     });
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-lock-test',
       agents: { main },
       defaults: { durable: true },
@@ -1302,7 +1302,7 @@ describe('RuntimeServer', () => {
       }
       return `reply:${content}`;
     });
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-lock-parallel-test',
       agents: { main },
       defaults: { durable: true },
@@ -1394,7 +1394,7 @@ describe('RuntimeServer', () => {
   it('surfaces observer failures when strictObservers is enabled', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const main = agent('main').chat('chat', () => 'reply');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-observer-test',
       agents: { main },
       defaults: { durable: true },
@@ -1471,7 +1471,7 @@ describe('RuntimeServer', () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     let deliveries = 0;
     const main = agent('main').chat('chat', () => 'reply');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-completed-observer-test',
       agents: { main },
       defaults: { durable: true },
@@ -1559,7 +1559,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-materialize-test',
       agents: { main },
       defaults: { durable: true },
@@ -1689,7 +1689,7 @@ describe('RuntimeServer', () => {
     const main = agent('main').chat('chat', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-existing-context-clone-test',
       agents: { main },
       defaults: { durable: true },
@@ -1846,7 +1846,7 @@ describe('RuntimeServer', () => {
     const order: string[] = [];
     const deliveries: string[] = [];
     const main = agent('main').assistant('reply', () => 'stored reply');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-test',
       agents: { main },
       defaults: { durable: true },
@@ -1957,7 +1957,7 @@ describe('RuntimeServer', () => {
   it('retries delivering final deliveries on startup', async () => {
     const deliveries: string[] = [];
     const main = agent('main').assistant('reply', () => 'stored reply');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-delivering-retry-test',
       agents: { main },
       defaults: { durable: true },
@@ -2021,7 +2021,7 @@ describe('RuntimeServer', () => {
   it('stops startup delivery retries for a conversation after the first failure', async () => {
     const order: string[] = [];
     const main = agent('main').assistant('reply', () => 'stored reply');
-    const bundle = PromptTrail.bundle({
+    const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-order-test',
       agents: { main },
       defaults: { durable: true },

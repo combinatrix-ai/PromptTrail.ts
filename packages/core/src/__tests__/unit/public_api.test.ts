@@ -252,4 +252,9 @@ describe('public API surface', () => {
     expect(replayed).toHaveLength(stored.length);
     expect(events.every((event) => event.replay === 'replayed')).toBe(true);
   });
+
+  it('exposes runtime bundle creation as explicit IR API', () => {
+    expect(prompttrail.PromptTrail).not.toHaveProperty('bundle');
+    expect(prompttrail.PromptTrail).toHaveProperty('runtimeBundle');
+  });
 });

@@ -30,9 +30,9 @@ The core decision is:
 | `Observer`   | Receives emitted facts and may perform idempotent presentation/metrics side effects.                                              |
 
 The old `DurableAgent`, `DurableTurnBuilder`, `Scenario`, and
-`MemoryDurableRuntime` concepts are not final public APIs. A serializable
-`RuntimeBundle` can remain as an internal/exportable configuration IR, but it
-should not be the ordinary authoring API.
+`MemoryDurableRuntime` concepts are not final public APIs. `RuntimeBundle` can
+remain as an internal/exportable structural runtime IR, but it should not be the
+ordinary authoring API.
 
 ## Public API
 
@@ -322,11 +322,12 @@ await app.start();
 instance registers it if needed and stores its name in the binding.
 
 The final API should not require a separate `bundle` object for ordinary use.
-However, the app should still compile bindings into a serializable
-`RuntimeBundle` IR. Config UIs, generated configs, tests, and external
-deployment tooling can consume that IR. `PromptTrail.bundle(...)` may be
-removed as the main authoring API, but the bundle shape should remain as a
-round-trippable data model.
+However, the app should still compile bindings into a structural
+`RuntimeBundle` IR. Tests, mocks, servers, and deployment wiring can consume
+that IR. `PromptTrail.runtimeBundle(...)` remains the explicit low-level IR
+builder for those cases; ordinary app authoring stays on
+`PromptTrail.app(...).bind(...)`. The bundle keeps live agent instances and
+resolver functions, so it is not a JSON serialization boundary.
 
 ### Sources, Adapters, and Delivery
 
@@ -535,7 +536,7 @@ split runtime instead of layering more adapters over it.
 - Remove or stop exporting `DurableAgent`, `DurableTurnBuilder`, `Scenario`,
   and `MemoryDurableRuntime`. `DurableAgent` may remain as an internal legacy
   implementation while graph execution becomes authoritative.
-- Define the serializable `RuntimeBundle` IR that app bindings compile to.
+- Define the structural `RuntimeBundle` IR that app bindings compile to.
 
 ### Phase 2: Map Existing Semantics to Graph Nodes
 
@@ -586,8 +587,8 @@ split runtime instead of layering more adapters over it.
 - Make `PromptTrail.app(...)` the primary runtime constructor.
 - Add fluent `.agent(...)`, `.source(...)`, `.delivery(...)`, `.activity(...)`,
   and `.bind(source, builder)` methods.
-- Remove ordinary need for `PromptTrail.bundle(...)` while keeping
-  `RuntimeBundle` as the app's serializable IR.
+- Remove ordinary need for `PromptTrail.runtimeBundle(...)` while keeping
+  `RuntimeBundle` as the app's structural runtime IR.
 - Allow `.to(agentOrName)`.
 - Convert current runtime server adapter pipeline into app internals while
   preserving the internal runtime/server separation.

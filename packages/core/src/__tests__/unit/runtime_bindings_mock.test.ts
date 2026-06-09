@@ -19,7 +19,7 @@ function discordDeliveryTarget(channel: string, thread?: string) {
 
 function workroomFixture() {
   const main = agent('main');
-  const workroom = PromptTrail.bundle({
+  const workroom = PromptTrail.runtimeBundle({
     name: 'workroom-assistant',
     agents: { main },
     defaults: {
@@ -109,7 +109,7 @@ function workroomFixture() {
 
 function mentionGatedFixture() {
   const main = agent('main');
-  const workroom = PromptTrail.bundle({
+  const workroom = PromptTrail.runtimeBundle({
     name: 'mention-gated',
     agents: { main },
     bindings: [
@@ -157,7 +157,7 @@ function mentionGatedFixture() {
 
 function threadPerUserFixture() {
   const main = agent('main');
-  const workroom = PromptTrail.bundle({
+  const workroom = PromptTrail.runtimeBundle({
     name: 'thread-per-user',
     agents: { main },
     bindings: [
@@ -203,7 +203,7 @@ function threadPerUserFixture() {
 
 function channelContextFixture() {
   const main = agent('main');
-  const workroom = PromptTrail.bundle({
+  const workroom = PromptTrail.runtimeBundle({
     name: 'channel-context',
     agents: { main },
     bindings: [

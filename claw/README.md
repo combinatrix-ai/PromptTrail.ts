@@ -1,8 +1,8 @@
 # Claw Discord Bot
 
 Claw is a dogfooding Discord bot for the PromptTrail runtime bindings work. It
-uses the real `PromptTrail.bundle(...)` / `bind(discord.messages())` API and a
-real `discord.js` gateway client.
+uses the real `PromptTrail.app(...).bind(discord.messages(), ...)` API and a real
+`discord.js` gateway client.
 
 ## Setup
 
