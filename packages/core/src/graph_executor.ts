@@ -159,8 +159,22 @@ export async function executeAgentGraph<
       throwUnsupportedGraphCommand(before.command, 'beforeAgent');
     }
 
+    const materializeInboxWithoutConsumer =
+      state.inbox.length > 0 && !graphHasInboundConsumer(graph.nodes);
+    let inboxMaterialized = false;
     for (const node of graph.nodes) {
+      if (
+        materializeInboxWithoutConsumer &&
+        !inboxMaterialized &&
+        node.type !== 'system'
+      ) {
+        materializeRemainingInbox(state);
+        inboxMaterialized = true;
+      }
       await executeGraphNode(node, `${graph.name}/${node.id}`, state);
+    }
+    if (materializeInboxWithoutConsumer && !inboxMaterialized) {
+      materializeRemainingInbox(state);
     }
 
     const after = await runRuntimeExecutionPhase(state.runtime, {
@@ -905,6 +919,37 @@ function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
     Message.user(inbound.content, inbound.attrs),
   );
   return kind;
+}
+
+function materializeRemainingInbox<TVars extends Vars, TAttrs extends Attrs>(
+  state: GraphExecutionState<TVars, TAttrs>,
+): void {
+  while (state.cursor < state.inbox.length) {
+    consumeInbox(state);
+  }
+}
+
+function graphHasInboundConsumer(nodes: readonly AgentGraphNode[]): boolean {
+  return nodes.some(
+    (node) =>
+      isGraphInboundConsumerNode(node) ||
+      graphHasInboundConsumer(node.children ?? []),
+  );
+}
+
+function isGraphInboundConsumerNode(node: AgentGraphNode): boolean {
+  if (node.type === 'inbox' || node.type === 'awaitInput') {
+    return true;
+  }
+  return node.type === 'user' && !isStaticGraphUserNode(node);
+}
+
+function isStaticGraphUserNode(node: AgentGraphNode): boolean {
+  return (
+    typeof node.data === 'object' &&
+    node.data !== null &&
+    ('input' in node.data || 'content' in node.data)
+  );
 }
 
 function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(

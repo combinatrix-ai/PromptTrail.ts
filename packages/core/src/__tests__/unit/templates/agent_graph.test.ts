@@ -128,6 +128,7 @@ describe('Agent graph authoring', () => {
 
   it('materializes direct graph input when no node consumes the inbox', async () => {
     const session = await Agent.create('assistant')
+      .system('system', 'You are concise.')
       .assistant(
         'reply',
         (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
@@ -135,6 +136,7 @@ describe('Agent graph authoring', () => {
       .execute({ input: 'hello' });
 
     expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
       'hello',
       'reply:hello',
     ]);
@@ -143,6 +145,7 @@ describe('Agent graph authoring', () => {
   it('materializes direct durable graph input without requiring inbox nodes', async () => {
     const store = memoryStore();
     const session = await Agent.create('assistant')
+      .system('system', 'You are concise.')
       .assistant(
         'reply',
         (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
@@ -155,10 +158,14 @@ describe('Agent graph authoring', () => {
       });
 
     expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
       'hello',
       'reply:hello',
     ]);
-    expect(store.get('direct-no-inbox')?.inbox).toEqual([]);
+    expect(store.get('direct-no-inbox')?.inbox).toEqual([
+      { offset: 0, kind: 'user', content: 'hello' },
+    ]);
+    expect(store.get('direct-no-inbox')?.graphCursor).toBe(1);
   });
 
   it('emits graph execution observer events', async () => {

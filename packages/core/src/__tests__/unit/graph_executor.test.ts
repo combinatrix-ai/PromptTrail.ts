@@ -90,6 +90,31 @@ describe('GraphExecutor', () => {
     });
   });
 
+  it('materializes unconsumed inbox after leading system nodes', async () => {
+    const graph = createAgentGraph({
+      name: 'assistant',
+      nodes: [
+        { id: 'system', type: 'system', data: { content: 'Be concise.' } },
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: (session: Session) =>
+              `reply:${session.getLastMessage()?.content ?? 'none'}`,
+          },
+        },
+      ],
+    });
+
+    const session = await executeAgentGraph(graph, { input: 'hello' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Be concise.',
+      'hello',
+      'reply:hello',
+    ]);
+  });
+
   it('executes turn repeat blocks with source-backed assistant nodes', async () => {
     let calls = 0;
     const graph = Agent.create('assistant')
