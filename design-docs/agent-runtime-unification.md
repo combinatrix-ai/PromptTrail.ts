@@ -124,6 +124,15 @@ Tool `activity` is the default durable classification for the tool call. Tool
 bodies may still use `ctx.durable.memo(...)` and `ctx.durable.activity(...)`
 for nested effect boundaries. External writes require an idempotency key.
 
+Current implementation: `Tool.create({ activity })` stores the activity as a
+first-class `PromptTrailTool.activity` field and also mirrors it in metadata for
+introspection. `executePromptTrailTool(...)` passes `ctx.activity` into tool
+bodies and wraps execution in `ctx.durable.activity(tool.name, activity, ...)`
+when the caller supplies a durable boundary. Graph tool nodes pass agent/app
+`context` and the tool activity into tool execution. Full graph-durable
+journaling of tool bodies is still covered by the first-implementation scope
+below.
+
 ### Turns
 
 `turn(...)` is the low-level durable control surface. It replaces the old public
@@ -579,7 +588,10 @@ split runtime instead of layering more adapters over it.
   session/result persistence, inbox resume, observer event persistence,
   assistant delivery materialization, and graph manifest validation. Full
   journaled model/tool effect replay is still owned by the legacy durable
-  services until the remaining durable journal logic is ported.
+  services until the remaining durable journal logic is ported. Unified tools
+  already expose `activity` and graph tool calls pass `ctx.activity`, but
+  graph-authored durable runs do not yet journal `ctx.durable.memo(...)` or
+  nested `ctx.durable.activity(...)` calls from tool bodies.
 - Preserve durable concepts:
   - run store
   - inbox cursor

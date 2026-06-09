@@ -224,6 +224,58 @@ describe('GraphExecutor', () => {
     });
   });
 
+  it('threads graph context and activity metadata into tools', async () => {
+    const seen: unknown[] = [];
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      activity: { kind: 'external-read' },
+      execute: ({ id }, context) => {
+        seen.push({
+          id,
+          context: context.context,
+          activity: context.activity,
+          capability: context.capability,
+        });
+        return `value:${id}`;
+      },
+    });
+    const graph = createAgentGraph({
+      name: 'assistant',
+      tools: { lookup },
+      nodes: [
+        {
+          id: 'reply',
+          type: 'assistant',
+          data: {
+            input: () => ({
+              type: 'assistant',
+              content: '',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            }),
+          },
+        },
+        { id: 'tools', type: 'tools' },
+      ],
+    });
+
+    await executeAgentGraph(graph, {
+      context: { runId: 'graph-run' },
+    });
+
+    expect(seen).toEqual([
+      {
+        id: '1',
+        context: { runId: 'graph-run' },
+        activity: { kind: 'external-read' },
+        capability: 'lookup',
+      },
+    ]);
+  });
+
   it('supports pre-condition model/tool loops with Session.hasToolCalls', async () => {
     const lookup = Tool.create({
       name: 'lookup',

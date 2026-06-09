@@ -782,8 +782,10 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
       call: async ({ session, request }) => {
         const result = await executePromptTrailTool(tool, request.arguments, {
           session,
+          context: state.context,
           raw: request,
           capability: request.name,
+          activity: tool.activity,
         });
         return normalizeToolResultMessage(result, request);
       },

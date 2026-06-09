@@ -73,6 +73,7 @@ export namespace Tool {
       execute: async (input, context) => config.execute(input, context),
       approval: config.approval,
       cache: config.cache,
+      activity: config.activity,
       metadata,
     };
   }
@@ -117,10 +118,19 @@ export async function executePromptTrailTool<TInput, TResult>(
       };
     }
 
-    const result = await tool.execute(parsedInput, {
+    const executionContext = {
       ...context,
       capability: tool.name,
-    });
+      activity: tool.activity ?? context.activity,
+    };
+    const result =
+      executionContext.durable && executionContext.activity
+        ? await executionContext.durable.activity(
+            tool.name,
+            executionContext.activity,
+            () => tool.execute(parsedInput, executionContext),
+          )
+        : await tool.execute(parsedInput, executionContext);
     return toolResultToCallToolResult(result);
   } catch (error) {
     return {

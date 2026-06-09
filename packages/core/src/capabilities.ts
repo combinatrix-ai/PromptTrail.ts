@@ -1,5 +1,9 @@
 import type { z } from 'zod';
 import type { CacheHint } from './cache';
+import type {
+  ExecutionDurableActivityOptions,
+  ExecutionDurableBoundary,
+} from './interceptors';
 import type { Session } from './session';
 
 export type ExecutionMode = 'prompttrail' | 'provider' | 'runtime';
@@ -32,6 +36,8 @@ export interface ToolExecutionContext {
   capability?: string;
   raw?: unknown;
   approvalHandler?: ApprovalHandler;
+  activity?: ExecutionDurableActivityOptions;
+  durable?: ExecutionDurableBoundary;
 }
 
 export type CallToolContent =
@@ -55,6 +61,7 @@ export interface PromptTrailTool<TInput = unknown, TResult = unknown> {
   ) => Promise<TResult> | TResult;
   approval?: ApprovalPolicy;
   cache?: CacheHint;
+  activity?: ExecutionDurableActivityOptions;
   metadata?: Record<string, unknown>;
 }
 

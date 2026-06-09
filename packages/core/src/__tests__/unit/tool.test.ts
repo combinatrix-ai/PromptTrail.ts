@@ -63,6 +63,7 @@ describe('Tool namespace', () => {
       });
 
       expect(testTool.name).toBe('tool');
+      expect(testTool.activity).toEqual({ kind: 'external-read' });
       expect(testTool.metadata?.activity).toEqual({ kind: 'external-read' });
     });
   });
@@ -177,6 +178,51 @@ describe('Tool namespace', () => {
         content: [{ type: 'json', json: { value: 'x' } }],
         structuredContent: { value: 'x' },
       });
+    });
+
+    it('wraps tool execution in a supplied durable activity boundary', async () => {
+      const events: string[] = [];
+      const durableTool = Tool.create({
+        name: 'lookup',
+        description: 'Lookup',
+        inputSchema: z.object({ id: z.string() }),
+        activity: { kind: 'external-read', retry: { maxAttempts: 2 } },
+        execute: ({ id }, context) => {
+          expect(context.activity).toEqual({
+            kind: 'external-read',
+            retry: { maxAttempts: 2 },
+          });
+          return { id };
+        },
+      });
+
+      await expect(
+        executePromptTrailTool(
+          durableTool,
+          { id: '1' },
+          {
+            durable: {
+              async memo(_name, fn) {
+                return fn();
+              },
+              async now() {
+                return 0;
+              },
+              async randomId() {
+                return 'id';
+              },
+              async activity(name, options, fn) {
+                events.push(`${name}:${options.kind}`);
+                return fn();
+              },
+            },
+          },
+        ),
+      ).resolves.toEqual({
+        content: [{ type: 'json', json: { id: '1' } }],
+        structuredContent: { id: '1' },
+      });
+      expect(events).toEqual(['lookup:external-read']);
     });
   });
 });
