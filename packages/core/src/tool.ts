@@ -7,6 +7,7 @@ import type {
   PromptTrailTool,
   ToolExecutionContext,
 } from './capabilities';
+import type { ExecutionDurableActivityOptions } from './interceptors';
 
 export type { CallToolResult, PromptTrailTool, ToolExecutionContext };
 
@@ -26,6 +27,7 @@ export namespace Tool {
     ) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
     cache?: CacheHint;
+    activity?: ExecutionDurableActivityOptions;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -35,6 +37,7 @@ export namespace Tool {
     execute: (input: TParams) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
     cache?: CacheHint;
+    activity?: ExecutionDurableActivityOptions;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -50,12 +53,17 @@ export namespace Tool {
       | ((input: TParams) => Promise<TResult> | TResult);
     approval?: ApprovalPolicy;
     cache?: CacheHint;
+    activity?: ExecutionDurableActivityOptions;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
     const inputSchema = config.inputSchema ?? config.parameters;
     if (!inputSchema) {
       throw new Error('Tool.create requires inputSchema.');
     }
+
+    const metadata = config.activity
+      ? { ...config.metadata, activity: config.activity }
+      : config.metadata;
 
     return {
       kind: 'tool',
@@ -65,7 +73,7 @@ export namespace Tool {
       execute: async (input, context) => config.execute(input, context),
       approval: config.approval,
       cache: config.cache,
-      metadata: config.metadata,
+      metadata,
     };
   }
 }

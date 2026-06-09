@@ -84,9 +84,9 @@ describe('Source.llm().mock() examples', () => {
 
     const agent = Agent.create().assistant(mockSource);
 
-    const session = await agent.execute(
-      Session.withVars({ userName: 'Alice' }),
-    );
+    const session = await agent.execute({
+      session: Session.withVars({ userName: 'Alice' }),
+    });
 
     expect(session.messages[0].content).toBe(
       "Hello Alice, I'm using claude-haiku-4-5",

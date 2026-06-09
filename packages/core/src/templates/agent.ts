@@ -4,7 +4,6 @@ import type { ClaudeTurnOptions } from '../claude_agent';
 import {
   agent as createDurableAgent,
   app as createDurableApp,
-  memoryStore,
   type DurableRunStore,
 } from '../durable';
 import {
@@ -269,18 +268,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   private assertGraphExecutionSupported(
     options: AgentGraphExecutionOptions<TC, TM> | undefined,
   ): void {
-    if (this.directDurableOptions) {
-      throw new Error(
-        'Graph Agent.execute does not support durable execution yet.',
-      );
-    }
     const rawOptions = options as Record<string, unknown> | undefined;
-    const unsupportedOption = ['durable', 'runId', 'store'].find(
-      (key) => rawOptions && key in rawOptions,
-    );
+    const unsupportedOption = ['runId', 'store'].find((key) => {
+      if (!rawOptions || !(key in rawOptions)) {
+        return false;
+      }
+      return rawOptions.durable === undefined && !this.directDurableOptions;
+    });
     if (unsupportedOption) {
       throw new Error(
-        `Graph Agent.execute does not support option ${unsupportedOption} yet.`,
+        `Graph Agent.execute option ${unsupportedOption} requires durable execution.`,
       );
     }
   }
@@ -958,14 +955,24 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     options?: AgentExecuteOptions<TC, TM>,
   ): Promise<Session<TC, TM>>;
   async execute(
-    options?: AgentExecuteOptions<TC, TM>,
+    options?: AgentExecuteOptions<TC, TM> | Session<TC, TM>,
+    runtime?: ExecutionRuntimeState<TC, TM>,
   ): Promise<Session<TC, TM>> {
-    if (arguments.length > 1 || options instanceof Session) {
+    if (options instanceof Session && arguments.length === 1) {
       throw new Error(
         'Agent.execute takes a single options object. Use execute({ session, ...options }) instead of positional arguments.',
       );
     }
-    return this.executeInternal(options);
+    if (
+      arguments.length > 1 &&
+      runtime !== undefined &&
+      !isExecutionRuntimeState(runtime)
+    ) {
+      throw new Error(
+        'Agent.execute takes a single options object. Use execute({ session, ...options }) instead of positional arguments.',
+      );
+    }
+    return this.executeInternal(options, runtime);
   }
 
   private asTemplate(): Template<TM, TC> {
@@ -994,6 +1001,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           ? { session: sessionOrOptions }
           : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
       this.assertGraphExecutionSupported(options);
+      const durableOptions = this.resolveDirectDurableOptions(options);
+      if (durableOptions) {
+        return this.executeGraphDirectDurable(options, durableOptions);
+      }
       return executeAgentGraph(this.toGraph(options?.version), options);
     }
     const optionsObject =
@@ -1220,10 +1231,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     }
     const options = authored === true ? {} : authored;
     const store =
-      options.store ??
-      executionOptions?.store ??
-      this.directDurableStore ??
-      (this.directDurableStore = memoryStore());
+      options.store ?? executionOptions?.store ?? this.directDurableStore;
+    if (!store) {
+      throw new Error(
+        'Agent.execute({ durable: true }) requires a durable store. Pass execute({ durable: true, store }) or durable({ store }).',
+      );
+    }
     const runId =
       options.runId ??
       executionOptions?.runId ??
@@ -1266,6 +1279,44 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           agent: durableAgent,
           runId: durableOptions.runId,
           session,
+          durable: true,
+          context: executionOptions?.context,
+        });
+    return result.session;
+  }
+
+  private async executeGraphDirectDurable(
+    executionOptions: AgentExecuteOptions<TC, TM> | undefined,
+    durableOptions: ResolvedAgentDirectDurableOptions,
+  ): Promise<Session<TC, TM>> {
+    const runtime = createDurableApp({
+      durable: {
+        store: durableOptions.store,
+        defaultDurable: true,
+      },
+    });
+    const input = executionOptions?.input;
+    const existing = durableOptions.store.get(durableOptions.runId);
+    if (existing) {
+      existing.agent = this;
+      existing.agentName = this.toGraph(executionOptions?.version).name;
+      durableOptions.store.set(durableOptions.runId, existing);
+    }
+    const result = durableOptions.store.has(durableOptions.runId)
+      ? input === undefined
+        ? await runtime.resume<TC, TM>(durableOptions.runId)
+        : await runtime.send<TC, TM>({
+            runId: durableOptions.runId,
+            input: graphInputForDurableSend(input),
+            durable: true,
+            context: executionOptions?.context,
+          })
+      : await runtime.run<TC, TM>({
+          agent: this,
+          runId: durableOptions.runId,
+          session: executionOptions?.session,
+          input:
+            input === undefined ? undefined : graphInputForDurableSend(input),
           durable: true,
           context: executionOptions?.context,
         });
@@ -1375,6 +1426,33 @@ function normalizeDirectExecuteInput<TAttrs extends Attrs>(
     return [...(input as readonly GraphInboundInput<TAttrs>[])];
   }
   return [input as GraphInboundInput<TAttrs>];
+}
+
+function graphInputForDurableSend<TAttrs extends Attrs>(
+  input:
+    | string
+    | GraphInboundInput<TAttrs>
+    | readonly GraphInboundInput<TAttrs>[],
+):
+  | string
+  | { kind: 'user' | 'system' | 'control'; content: string; attrs?: TAttrs } {
+  if (typeof input === 'string') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    if (input.length !== 1) {
+      throw new Error(
+        'Durable Agent.execute accepts a single input per call. Use resume/send for additional inputs.',
+      );
+    }
+    return graphInputForDurableSend(input[0]);
+  }
+  const inbound = input as GraphInboundInput<TAttrs>;
+  return {
+    kind: inbound.kind ?? 'user',
+    content: inbound.content,
+    attrs: inbound.attrs,
+  };
 }
 
 function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import * as prompttrail from '../../index';
 import type {
   AgentDirectDurableOptions,
   AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGoalOptions,
-  DurableTool,
   ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
   ExecutionEvent,
@@ -41,46 +41,43 @@ describe('public API surface', () => {
     expect(missingKey.kind).toBe('external-write');
   });
 
-  it('types external-write durable tool activities with required idempotency keys', () => {
-    const readTool: DurableTool = {
+  it('types external-write tool activities with required idempotency keys', () => {
+    const readTool = prompttrail.Tool.create({
+      name: 'read',
+      description: 'read',
+      inputSchema: z.object({}),
       activity: { kind: 'external-read' },
       execute: () => 'read',
-    };
-    const writeTool: DurableTool = {
+    });
+    const writeTool = prompttrail.Tool.create({
+      name: 'write',
+      description: 'write',
+      inputSchema: z.object({}),
       activity: {
         kind: 'external-write',
         idempotencyKey: 'write:tool',
         retry: { maxAttempts: 2 },
       },
       execute: () => 'write',
-    };
-    const dynamicWriteTool: DurableTool = {
-      activity: (call) => ({
-        kind: 'external-write',
-        idempotencyKey: `write:${call.id}`,
-      }),
-      execute: () => 'write',
-    };
-    const missingKeyTool: DurableTool = {
+    });
+    const missingKeyTool = prompttrail.Tool.create({
+      name: 'missing',
+      description: 'missing',
+      inputSchema: z.object({}),
       // @ts-expect-error external-write durable tools need idempotency keys.
       activity: { kind: 'external-write' },
       execute: () => 'missing',
-    };
-    const dynamicMissingKeyTool: DurableTool = {
-      // @ts-expect-error dynamic external-write durable tool activities need idempotency keys.
-      activity: () => ({ kind: 'external-write' }),
-      execute: () => 'missing',
-    };
+    });
 
-    expect(readTool.activity).toEqual({ kind: 'external-read' });
-    expect(writeTool.activity).toEqual({
+    expect(readTool.metadata?.activity).toEqual({ kind: 'external-read' });
+    expect(writeTool.metadata?.activity).toEqual({
       kind: 'external-write',
       idempotencyKey: 'write:tool',
       retry: { maxAttempts: 2 },
     });
-    expect(typeof dynamicWriteTool.activity).toBe('function');
-    expect(missingKeyTool.activity).toEqual({ kind: 'external-write' });
-    expect(typeof dynamicMissingKeyTool.activity).toBe('function');
+    expect(missingKeyTool.metadata?.activity).toEqual({
+      kind: 'external-write',
+    });
   });
 
   it('types run lifecycle hook aliases', () => {
@@ -167,8 +164,10 @@ describe('public API surface', () => {
   });
 
   it('does not expose durable agent classes as public authoring APIs', () => {
+    expect(prompttrail).not.toHaveProperty('agent');
     expect(prompttrail).not.toHaveProperty('DurableAgent');
     expect(prompttrail).not.toHaveProperty('DurableTurnBuilder');
+    expect(prompttrail).not.toHaveProperty('DurableTool');
     expect(prompttrail).not.toHaveProperty('MemoryDurableRuntime');
   });
 
@@ -223,9 +222,10 @@ describe('public API surface', () => {
     const events: ExecutionEvent[] = [];
     const app = prompttrail.PromptTrail.app({
       agents: {
-        assistant: prompttrail
-          .agent('assistant')
-          .assistant('reply', () => 'ok'),
+        assistant: prompttrail.Agent.create('assistant').assistant(
+          'reply',
+          () => 'ok',
+        ),
       },
       store: prompttrail.memoryStore(),
     });

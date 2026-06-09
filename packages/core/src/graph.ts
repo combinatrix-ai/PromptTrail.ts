@@ -104,6 +104,19 @@ export class AgentGraphValidationError extends Error {
   }
 }
 
+export class AgentGraphVersionError extends Error {
+  constructor(
+    readonly expectedHash: string,
+    readonly actualHash: string,
+    readonly agentName: string,
+  ) {
+    super(
+      `Agent graph version mismatch for ${agentName}: expected ${expectedHash}, got ${actualHash}.`,
+    );
+    this.name = 'AgentGraphVersionError';
+  }
+}
+
 export function createAgentGraph(input: AgentGraphInput): AgentGraph {
   const graph: AgentGraph = {
     name: input.name,

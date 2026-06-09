@@ -149,11 +149,11 @@ describe('Agent Function-Based Templates', () => {
         )
         .user('Back to main');
 
-      const session = await agent.execute(
-        Session.create({
+      const session = await agent.execute({
+        session: Session.create({
           vars: { mainVar: 'value' },
         }),
-      );
+      });
 
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(3); // Subroutine messages not retained

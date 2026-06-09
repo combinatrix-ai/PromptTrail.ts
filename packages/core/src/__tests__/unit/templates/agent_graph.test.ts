@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { memoryStore } from '../../../durable';
-import { createAgentGraphManifest } from '../../../graph';
+import {
+  AgentGraphVersionError,
+  createAgentGraphManifest,
+} from '../../../graph';
 import { GraphExecutionSuspended } from '../../../graph_executor';
 import {
   Hook,
@@ -81,18 +84,18 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('rejects durable run metadata that graph execution does not support yet', async () => {
+  it('requires a store for direct durable graph execution', async () => {
     const store = memoryStore();
     const graph = Agent.create('assistant').assistant('reply', () => 'ok');
 
     await expect(
       graph.execute({ durable: true, input: 'hello' }),
-    ).rejects.toThrow(/option durable/);
+    ).rejects.toThrow(/requires a durable store/);
     await expect(
       graph.execute({ runId: 'graph-run', input: 'hello' }),
-    ).rejects.toThrow(/option runId/);
+    ).rejects.toThrow(/requires durable execution/);
     await expect(graph.execute({ store, input: 'hello' })).rejects.toThrow(
-      /option store/,
+      /requires durable execution/,
     );
   });
 
@@ -450,14 +453,69 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('does not silently discard unsupported durable graph execution', async () => {
+  it('executes direct durable graph agents through the app runtime', async () => {
+    const store = memoryStore();
     const agent = Agent.create('assistant')
-      .assistant('reply', Source.literal('ok'))
-      .durable();
+      .turn('main', (turn) =>
+        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
+      )
+      .durable({ store, runId: 'direct-graph' });
 
-    await expect(agent.execute({ input: 'hello' })).rejects.toThrow(
-      /durable execution yet/,
+    const session = await agent.execute({ input: 'hello' });
+    const run = store.get('direct-graph');
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+    expect(run?.agentName).toBe('assistant');
+    expect(run?.graphManifest?.name).toBe('assistant');
+    expect(run?.graphManifest?.hash).toBe(
+      createAgentGraphManifest(agent.toGraph()).hash,
     );
+  });
+
+  it('resumes direct durable graph agents from suspended input nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .turn('main', (turn) =>
+        turn
+          .inbox('first')
+          .awaitInput('next')
+          .assistant('reply', (session) => {
+            const last = session.getLastMessage()?.content ?? '';
+            return `reply:${last}`;
+          }),
+      )
+      .durable({ store, runId: 'direct-resume' });
+
+    const suspended = await agent.execute({ input: 'hello' });
+    const resumed = await agent.execute({ input: 'again' });
+
+    expect(suspended.messages.map((message) => message.content)).toEqual([
+      'hello',
+    ]);
+    expect(resumed.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'reply:again',
+    ]);
+  });
+
+  it('fails direct durable graph resume when the graph manifest changes', async () => {
+    const store = memoryStore();
+
+    await Agent.create('assistant')
+      .assistant('reply', Source.literal('ok'))
+      .execute({ durable: true, store, runId: 'graph-version' });
+
+    const changed = Agent.create('assistant')
+      .system('system', 'Changed.')
+      .assistant('reply', Source.literal('ok'));
+
+    await expect(
+      changed.execute({ durable: true, store, runId: 'graph-version' }),
+    ).rejects.toThrow(AgentGraphVersionError);
   });
 
   it('passes context and signal to graph handlers', async () => {

@@ -274,6 +274,12 @@ interface AgentExecuteOptions<TVars, TAttrs> {
 `durable: true` requires either `store` or an app-level default store. Direct
 execution without a store is ephemeral.
 
+Implementation note: direct `Agent.execute({ durable: true })` has no app-level
+default store, so it must receive `store` either in the execute options or via
+`agent.durable({ store })`. Direct durable graph execution accepts one inbound
+input per call; follow-up input is appended by executing the same named agent
+again with the same `runId` and store.
+
 ### App Runtime
 
 The app is the only host for event sources, bindings, delivery, and durable
@@ -445,6 +451,11 @@ If the registered agent graph does not match the stored graph version, resume
 must fail with a graph-version error before replay unless an explicit migration
 or force-continue policy is provided.
 
+First implementation: graph durable runs persist the generated graph manifest
+and compare the stored manifest hash against the currently registered agent
+before resume. Migrations and force-continue are not implemented; mismatches
+fail fast with a graph-version error.
+
 The graph manifest is a structural verification artifact, not an executable
 snapshot. Nodes may contain closures, `Source` instances, provider clients, and
 handlers that cannot be serialized. Execution code always comes from the
@@ -560,6 +571,12 @@ split runtime instead of layering more adapters over it.
 
 - Move durable journal logic from `durable.ts` into graph execution services.
 - Execute both ephemeral and durable runs through `GraphExecutor`.
+- First implementation scope: graph-authored direct and app runs execute through
+  `GraphExecutor` in both ephemeral and durable modes, with store-backed
+  session/result persistence, inbox resume, observer event persistence,
+  assistant delivery materialization, and graph manifest validation. Full
+  journaled model/tool effect replay is still owned by the legacy durable
+  services until the remaining durable journal logic is ported.
 - Preserve durable concepts:
   - run store
   - inbox cursor

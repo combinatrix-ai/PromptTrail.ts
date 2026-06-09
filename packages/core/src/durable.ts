@@ -58,7 +58,12 @@ import {
   GraphExecutionSuspended,
   type GraphInboundInput,
 } from './graph_executor';
-import type { AgentGraphNode } from './graph';
+import {
+  AgentGraphVersionError,
+  createAgentGraphManifest,
+  type AgentGraphManifest,
+  type AgentGraphNode,
+} from './graph';
 import type { Agent as GraphAgent } from './templates/agent';
 
 export type InboundKind = 'user' | 'system' | 'control';
@@ -1366,7 +1371,7 @@ async function peekInbox<TVars extends Vars, TAttrs extends Attrs>(
   });
 }
 
-export class DurableTurnBuilder<
+class DurableTurnBuilder<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
 > {
@@ -2135,6 +2140,7 @@ function assertPrepareModelInputDidNotPersistSession(
 export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   agent: PromptTrailRegisteredAgent<TVars, TAttrs>;
   agentName: string;
+  graphManifest?: AgentGraphManifest;
   initial: Session<TVars, TAttrs>;
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
@@ -2583,6 +2589,9 @@ export class PromptTrailApp {
     runId: string,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const run = this.getRun<TVars, TAttrs>(runId);
+    if (isGraphAgent(run.agent)) {
+      this.assertGraphRunManifest(runId, run);
+    }
     if (run.status === 'done' && run.result) {
       return { status: 'done', runId, session: run.result };
     }
@@ -2890,10 +2899,12 @@ export class PromptTrailApp {
     if (graphAgent) {
       if (durable) {
         const graph = graphAgent.toGraph();
+        const graphManifest = createAgentGraphManifest(graph);
         const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
         const run: StoredRun<TVars, TAttrs> = {
           agent: graphAgent,
           agentName: graph.name,
+          graphManifest,
           initial: options.session ?? Session.create<TVars, TAttrs>(),
           status: 'open',
           journal: { results: new Map(), sequence: [] },
@@ -3122,7 +3133,13 @@ export class PromptTrailApp {
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           strictObservers: this.strictObservers,
           skipNode: skipNodePaths
-            ? (_node, nodePath) => skipNodePaths.has(nodePath)
+            ? (_node, nodePath) => {
+                if (!skipNodePaths.has(nodePath)) {
+                  return false;
+                }
+                skipNodePaths.delete(nodePath);
+                return true;
+              }
             : undefined,
           observers: [
             async (event) => {
@@ -3157,6 +3174,29 @@ export class PromptTrailApp {
       run.graphCursor = cursor;
       this.persistRun(runId, run);
       throw error;
+    }
+  }
+
+  private assertGraphRunManifest<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(runId: string, run: StoredRun<TVars, TAttrs>): void {
+    if (!isGraphAgent(run.agent)) {
+      return;
+    }
+    const graph = run.agent.toGraph();
+    const manifest = createAgentGraphManifest(graph);
+    if (!run.graphManifest) {
+      run.graphManifest = manifest;
+      this.persistRun(runId, run);
+      return;
+    }
+    if (run.graphManifest.hash !== manifest.hash) {
+      throw new AgentGraphVersionError(
+        run.graphManifest.hash,
+        manifest.hash,
+        graph.name,
+      );
     }
   }
 
@@ -3477,7 +3517,7 @@ function collectGraphContinuationSkipNodes(
   nodes: readonly AgentGraphNode[],
   graphName: string,
   suspendedAt?: string,
-): ReadonlySet<string> {
+): Set<string> {
   const skipNodePaths = new Set<string>();
   let reachedContinuationEntry = false;
 
@@ -3497,7 +3537,10 @@ function collectGraphContinuationSkipNodes(
         reachedContinuationEntry = true;
         return;
       }
-      if (skipGraphContinuationBootstrapNode(child)) {
+      if (
+        skipGraphContinuationBootstrapNode(child) ||
+        (suspendedAt && (child.children ?? []).length === 0)
+      ) {
         skipNodePaths.add(nodePath);
       }
       visit(child.children ?? [], nodePath);
