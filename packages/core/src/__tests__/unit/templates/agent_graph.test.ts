@@ -580,6 +580,53 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
+  it('resumes direct durable graph loops from suspended input nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .turn('main', (turn) =>
+        turn
+          .inbox('first')
+          .repeat(
+            'waitLoop',
+            ({ session }) => ((session.getVar('count') as number) ?? 0) < 1,
+            (loop) =>
+              loop
+                .patch('count', (session) =>
+                  session.withVar(
+                    'count',
+                    ((session.getVar('count') as number) ?? 0) + 1,
+                  ),
+                )
+                .awaitInput('next')
+                .assistant(
+                  'reply',
+                  (session) =>
+                    `reply:${session.getLastMessage()?.content ?? ''}`,
+                ),
+          )
+          .assistant(
+            'done',
+            (session) => `done:${String(session.getVar('count'))}`,
+          ),
+      )
+      .durable({ store, runId: 'direct-loop-resume' });
+
+    const suspended = await agent.execute({ input: 'hello' });
+    const resumed = await agent.execute({ input: 'again' });
+
+    expect(suspended.messages.map((message) => message.content)).toEqual([
+      'hello',
+    ]);
+    expect(suspended.getVar('count')).toBe(1);
+    expect(resumed.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'reply:again',
+      'done:1',
+    ]);
+    expect(resumed.getVar('count')).toBe(1);
+  });
+
   it('fails direct durable graph resume when the graph manifest changes', async () => {
     const store = memoryStore();
 

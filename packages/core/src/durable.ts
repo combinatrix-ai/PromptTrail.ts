@@ -3109,6 +3109,8 @@ export class PromptTrailApp {
     const graph = run.agent.toGraph();
     const cursor = run.graphCursor ?? 0;
     const isContinuation = run.result !== undefined;
+    // Continuation skips replay the deterministic prefix once, then let loop
+    // children execute normally for any later iteration in the same resume.
     const skipNodePaths = isContinuation
       ? collectGraphContinuationSkipNodes(
           graph.nodes,
@@ -3146,6 +3148,7 @@ export class PromptTrailApp {
           nextEventSeq: () => this.nextRunEventSeq(runId, run),
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           strictObservers: this.strictObservers,
+          resumeFromNode: run.graphSuspendedAt,
           skipNode: skipNodePaths
             ? (_node, nodePath) => {
                 if (!skipNodePaths.has(nodePath)) {

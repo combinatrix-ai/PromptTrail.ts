@@ -50,6 +50,7 @@ export interface GraphExecutionOptions<
     nodePath: string,
     session: Session<TVars, TAttrs>,
   ) => boolean;
+  resumeFromNode?: string;
 }
 
 export class GraphExecutionSuspended extends Error {
@@ -79,6 +80,7 @@ interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
   signal?: AbortSignal;
   runtime: ExecutionRuntimeState<TVars, TAttrs>;
   skipNode?: GraphExecutionOptions<TVars, TAttrs>['skipNode'];
+  resumeFromNode?: string;
   activeGoal?: ActiveGoalExecution;
 }
 
@@ -138,6 +140,7 @@ export async function executeAgentGraph<
       nextEventSeq,
     }),
     skipNode: options.skipNode,
+    resumeFromNode: options.resumeFromNode,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -368,10 +371,14 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
   let iterations = 0;
   const maxIterations =
     positiveInteger(data.maxIterations) ?? state.maxLoopIterations;
-  while (shouldContinue()) {
+  let resumeIterationPending =
+    state.resumeFromNode !== undefined &&
+    isGraphDescendantPath(state.resumeFromNode, nodePath);
+  while (shouldContinue() || resumeIterationPending) {
     if (iterations++ >= maxIterations) {
       throw new Error(`Graph loop ${nodePath} exceeded max iterations.`);
     }
+    resumeIterationPending = false;
     await executeChildren(node.children ?? [], nodePath, state);
   }
 }
@@ -970,6 +977,10 @@ function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
     );
   }
   throw new Error(`Graph node ${nodePath} requires a condition.`);
+}
+
+function isGraphDescendantPath(path: string, ancestorPath: string): boolean {
+  return path.startsWith(`${ancestorPath}/`);
 }
 
 async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
