@@ -560,6 +560,9 @@ split runtime instead of layering more adapters over it.
 - Remove or stop exporting `DurableAgent`, `DurableTurnBuilder`, `Scenario`,
   and `MemoryDurableRuntime`. `DurableAgent` may remain as an internal legacy
   implementation while graph execution becomes authoritative.
+- Stop root-exporting legacy durable tool-only context/activity aliases once
+  `ToolExecutionContext` and `ExecutionDurableActivityOptions` cover the
+  public tool API.
 - Define the structural `RuntimeBundle` IR that app bindings compile to.
 
 ### Phase 2: Map Existing Semantics to Graph Nodes
