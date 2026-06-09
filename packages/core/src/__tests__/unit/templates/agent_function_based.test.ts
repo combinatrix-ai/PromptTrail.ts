@@ -315,9 +315,10 @@ describe('Agent Function-Based Templates', () => {
     });
   });
 
-  describe('Static factory methods', () => {
-    it('should create agent with Agent.system', async () => {
-      const agent = Agent.system('System prompt')
+  describe('Quick factory content-first methods', () => {
+    it('should create quick agent with system content', async () => {
+      const agent = Agent.quick()
+        .system('System prompt')
         .user('User message')
         .assistant('Response');
 
@@ -328,8 +329,9 @@ describe('Agent Function-Based Templates', () => {
       expect(messages[0].content).toBe('System prompt');
     });
 
-    it('should create agent with Agent.user', async () => {
-      const agent = Agent.user('First user message')
+    it('should create quick agent with user content', async () => {
+      const agent = Agent.quick()
+        .user('First user message')
         .assistant('Response')
         .user('Second user message');
 
@@ -341,10 +343,10 @@ describe('Agent Function-Based Templates', () => {
       expect(messages[0].type).toBe('user');
     });
 
-    it('should create agent with Agent.assistant', async () => {
-      const agent = Agent.assistant('Initial assistant message').user(
-        'User response',
-      );
+    it('should create quick agent with assistant content', async () => {
+      const agent = Agent.quick()
+        .assistant('Initial assistant message')
+        .user('User response');
 
       const session = await agent.execute();
 
@@ -366,17 +368,19 @@ describe('Agent Function-Based Templates', () => {
 
   describe('README examples', () => {
     it('should work with the first README example', async () => {
-      const agent = Agent.system('You are a helpful assistant.').loop(
+      const agent = Agent.quick().system('You are a helpful assistant.').loop(
         (l) => l.user().assistant(), // Use CLI for user input, LLM for assistant
         true, // Forever loop
       );
 
       // Since we can't actually test CLI input and forever loops,
       // let's test a simplified version
-      const testableAgent = Agent.system('You are a helpful assistant.').loop(
-        (l) => l.user('Test input').assistant('Test response'),
-        (s) => s.messages.length < 5,
-      );
+      const testableAgent = Agent.quick()
+        .system('You are a helpful assistant.')
+        .loop(
+          (l) => l.user('Test input').assistant('Test response'),
+          (s) => s.messages.length < 5,
+        );
 
       const session = await testableAgent.execute();
 
@@ -389,27 +393,29 @@ describe('Agent Function-Based Templates', () => {
 
     it('should work with loopForever helper', async () => {
       let counter = 0;
-      const agent = Agent.system('You are a helpful assistant.').loopForever(
-        (l) => {
+      const agent = Agent.quick()
+        .system('You are a helpful assistant.')
+        .loopForever((l) => {
           counter++;
           if (counter > 3) {
             // In real usage, this would be controlled by user input
             return l.user('exit');
           }
           return l.user(`Message ${counter}`);
-        },
-      );
+        });
 
       // Test with limited loop
       counter = 0;
-      const testableAgent = Agent.system('You are a helpful assistant.').loop(
-        (l) => {
-          counter++;
-          return l.user(`Message ${counter}`);
-        },
-        () => counter < 3,
-        3, // maxIterations
-      );
+      const testableAgent = Agent.quick()
+        .system('You are a helpful assistant.')
+        .loop(
+          (l) => {
+            counter++;
+            return l.user(`Message ${counter}`);
+          },
+          () => counter < 3,
+          3, // maxIterations
+        );
 
       const session = await testableAgent.execute();
 

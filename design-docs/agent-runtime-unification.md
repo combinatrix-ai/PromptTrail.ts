@@ -107,6 +107,10 @@ await Agent.quick()
 execution, but app registration and durable execution must validate that every
 node has a stable authored id.
 
+The old static content-first helpers `Agent.system(...)`, `Agent.user(...)`,
+and `Agent.assistant(...)` are not final public APIs. Content-first scripts
+must start from `Agent.quick()`.
+
 ### Tools
 
 Tools are registered on agents and can be used by both low-level turns and

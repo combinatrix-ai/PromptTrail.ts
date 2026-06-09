@@ -304,28 +304,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return new Agent<TC, TM>(new Sequence<TM, TC>(), undefined, true);
   }
 
-  static system<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    content: string,
-  ) {
-    return new Agent<TC, TM>().legacySystem(content);
-  }
-
-  static user<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource?: string | Source<string>,
-  ) {
-    return new Agent<TC, TM>().legacyUser(contentOrSource);
-  }
-
-  static assistant<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    contentOrSource?: string | Source<ModelOutput> | Source<string>,
-    validatorOrOptions?: IValidator | ValidationOptions,
-  ) {
-    return new Agent<TC, TM>().legacyAssistant(
-      contentOrSource,
-      validatorOrOptions,
-    );
-  }
-
   /** fluent helpers -------------------------------------------------- */
 
   add(t: Template<TM, TC>) {

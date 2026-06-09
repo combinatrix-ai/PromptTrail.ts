@@ -118,7 +118,9 @@ describe('public API surface', () => {
         },
       ],
     };
-    const session = await prompttrail.Agent.user('hello').execute(options);
+    const session = await prompttrail.Agent.create('public-direct-agent')
+      .user('message', 'hello')
+      .execute(options);
 
     expect(session.getLastMessage()?.content).toBe('hello');
   });
@@ -169,6 +171,15 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('Conditional');
     expect(prompttrail).not.toHaveProperty('Transform');
     expect(prompttrail).not.toHaveProperty('GenerateMessages');
+  });
+
+  it('does not expose static content-first Agent factories', () => {
+    const Agent = prompttrail.Agent as unknown as Record<string, unknown>;
+
+    expect(Agent).not.toHaveProperty('system');
+    expect(Agent).not.toHaveProperty('user');
+    expect(Agent).not.toHaveProperty('assistant');
+    expect(prompttrail.Agent.quick).toBeTypeOf('function');
   });
 
   it('does not expose Scenario as a public authoring API', () => {
