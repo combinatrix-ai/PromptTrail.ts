@@ -87,11 +87,19 @@ execution first breaks that path. Tag the pre-deletion commit
       read and delegates to run/resume/send; the duplicate direct
       store-read branch in `Agent` is gone. Active substrate names
       (`DurableRunStore` etc.) stay until §1.4–1.6.
-- [ ] **1.4 Consolidate the checkpoint substrate** that survives: session
+- [x] **1.4 Consolidate the checkpoint substrate** that survives: session
       checkpoint per node boundary, inbox cursor, suspended node path, idempotency
       memo for `external-write` only. Keep `collectGraphContinuationSkipNodes` /
       skip-prefix / `resumeFromNode` but factor it into a named, documented service
       (the current logic is subtle and under-named). (`durable.ts`, `graph_executor.ts`)
+      Done: new `checkpoint_continuation.ts` service with the checkpoint-model
+      doc comment and named contracts (`beginCheckpointGraphExecution`,
+      `deriveCheckpointResumeCoordinate`,
+      `computeCheckpointContinuationSkipNodes`,
+      `recordCheckpointGraphCompletion`/`Suspension`,
+      `createCheckpointOnceBoundary`). Behavior-preserving; no test changes.
+      Noted for later: `external-read` activities also route through
+      `ctx.once` today — revisit with §4.1's binary effect declaration.
 - [ ] **1.5 Drop persisted fields that only served replay** from `StoredRun`
       (journal sequence of model effects, event-history log). Keep session
       checkpoint, inbox+cursor, `graphSuspendedAt`, effect memo, outbox, context.

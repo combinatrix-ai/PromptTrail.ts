@@ -40,9 +40,23 @@ import {
   AgentGraphVersionError,
   createAgentGraphManifest,
   type AgentGraphManifest,
-  type AgentGraphNode,
 } from './graph';
 import type { Agent } from './templates/agent';
+import {
+  beginCheckpointGraphExecution,
+  computeCheckpointContinuationSkipNodes,
+  createCheckpointContinuationSkipPredicate,
+  createCheckpointOnceBoundary,
+  createCheckpointOnceMemoStore,
+  graphHasInboundConsumer,
+  recordCheckpointGraphCompletion,
+  recordCheckpointGraphSuspension,
+  restoreCheckpointGraphCursor,
+  type CheckpointOnceBoundary,
+  type CheckpointOnceMemoStore,
+  type CheckpointOnceOptions,
+  type CheckpointOnceScope,
+} from './checkpoint_continuation';
 
 export type InboundKind = 'user' | 'system' | 'control';
 
@@ -106,122 +120,13 @@ export interface PendingAssistantDeliveryOutboxEntry<
   entry: AssistantDeliveryOutboxEntry<TAttrs>;
 }
 
-export type OnceScope = 'run' | 'conversation';
+export type OnceScope = CheckpointOnceScope;
 
-export interface OnceOptions {
-  scope?: OnceScope;
-}
+export interface OnceOptions extends CheckpointOnceOptions {}
 
-export interface OnceBoundary {
-  once<T>(
-    name: string,
-    dep: unknown,
-    fn: () => T | Promise<T>,
-    options?: OnceOptions,
-  ): Promise<T>;
-}
+export interface OnceBoundary extends CheckpointOnceBoundary {}
 
-interface OnceMemoStore {
-  run: Map<string, unknown>;
-  conversation: Map<string, unknown>;
-}
-
-function createOnceMemoStore(): OnceMemoStore {
-  return {
-    run: new Map<string, unknown>(),
-    conversation: new Map<string, unknown>(),
-  };
-}
-
-function ensureOnceMemoStore(run: { once?: OnceMemoStore }): OnceMemoStore {
-  return (run.once ??= createOnceMemoStore());
-}
-
-function createOnceBoundary(
-  run: { once?: OnceMemoStore },
-  persist: () => void,
-): OnceBoundary {
-  return {
-    async once(name, dep, fn, options) {
-      const scope = options?.scope ?? 'run';
-      const key = onceMemoKey(name, dep);
-      const memo = ensureOnceMemoStore(run)[scope];
-      if (memo.has(key)) {
-        return memo.get(key) as Awaited<ReturnType<typeof fn>>;
-      }
-      const result = await fn();
-      memo.set(key, result);
-      persist();
-      return result;
-    },
-  };
-}
-
-function onceMemoKey(name: string, dep: unknown): string {
-  return name + ':' + hashOnceDep(dep);
-}
-
-function hashOnceDep(dep: unknown): string {
-  return fnv1a(stableSerialize(dep));
-}
-
-function stableSerialize(value: unknown, seen = new WeakSet<object>()): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (seen.has(value)) {
-    return '"[Circular]"';
-  }
-  seen.add(value);
-  if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
-  }
-  if (value instanceof Map) {
-    return stableSerialize(
-      [...value.entries()].sort(([left], [right]) =>
-        stableSerialize(left).localeCompare(stableSerialize(right)),
-      ),
-      seen,
-    );
-  }
-  if (value instanceof Set) {
-    return stableSerialize(
-      [...value.values()].sort((left, right) =>
-        stableSerialize(left).localeCompare(stableSerialize(right)),
-      ),
-      seen,
-    );
-  }
-  if (Array.isArray(value)) {
-    return (
-      '[' + value.map((item) => stableSerialize(item, seen)).join(',') + ']'
-    );
-  }
-  const serializable = value as { toJSON?: () => unknown };
-  if (typeof serializable.toJSON === 'function') {
-    return stableSerialize(serializable.toJSON(), seen);
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    '{' +
-    Object.keys(record)
-      .sort()
-      .map(
-        (key) => JSON.stringify(key) + ':' + stableSerialize(record[key], seen),
-      )
-      .join(',') +
-    '}'
-  );
-}
-
-function fnv1a(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index++) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
+type OnceMemoStore = CheckpointOnceMemoStore;
 
 export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   agent: PromptTrailRegisteredAgent<TVars, TAttrs>;
@@ -951,7 +856,7 @@ export class PromptTrailApp {
         graphManifest,
         initial: options.session ?? Session.create<TVars, TAttrs>(),
         status: 'open',
-        once: createOnceMemoStore(),
+        once: createCheckpointOnceMemoStore(),
         events: [],
         outbox: [],
         inbox: [],
@@ -1058,22 +963,19 @@ export class PromptTrailApp {
     run: StoredRun<TVars, TAttrs> & { agent: Agent<TVars, TAttrs> },
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const graph = run.agent.toGraph();
-    const cursor = run.graphCursor ?? 0;
-    const isContinuation = run.result !== undefined;
-    // Continuation skips replay the deterministic prefix once, then let loop
-    // children execute normally for any later iteration in the same resume.
-    const skipNodePaths = isContinuation
-      ? collectGraphContinuationSkipNodes(
+    const checkpoint = beginCheckpointGraphExecution(run, () =>
+      this.persistRun(runId, run),
+    );
+    const skipNodePaths = checkpoint.isContinuation
+      ? computeCheckpointContinuationSkipNodes(
           graph.nodes,
           graph.name,
-          run.graphSuspendedAt,
+          checkpoint.resumeFromNode,
         )
       : undefined;
-    const inbox = run.inbox
-      .slice(cursor)
-      .map((input) => graphInboundFromStoredInbound<TAttrs>(input));
-    run.graphCursor = run.inbox.length;
-    this.persistRun(runId, run);
+    const inbox = checkpoint.inbox.map((input) =>
+      graphInboundFromStoredInbound<TAttrs>(input),
+    );
 
     try {
       const session = await executeAgentGraph<TVars, TAttrs>(
@@ -1092,28 +994,22 @@ export class PromptTrailApp {
           ],
         },
         {
-          session: run.result ?? run.initial,
+          session: checkpoint.session,
           input: inbox,
           context: cloneDurableRuntimeValue(run.context),
           eventScopeId: runId,
           nextEventSeq: () => this.nextRunEventSeq(runId, run),
           durableToolExecution: (_context, execute) => {
             return execute(
-              createOnceBoundary(run, () => this.persistRun(runId, run)),
+              createCheckpointOnceBoundary(run, () =>
+                this.persistRun(runId, run),
+              ),
             );
           },
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           strictObservers: this.strictObservers,
-          resumeFromNode: run.graphSuspendedAt,
-          skipNode: skipNodePaths
-            ? (_node, nodePath) => {
-                if (!skipNodePaths.has(nodePath)) {
-                  return false;
-                }
-                skipNodePaths.delete(nodePath);
-                return true;
-              }
-            : undefined,
+          resumeFromNode: checkpoint.resumeFromNode,
+          skipNode: createCheckpointContinuationSkipPredicate(skipNodePaths),
           observers: [
             async (event) => {
               await this.emitObservers(run, event);
@@ -1122,11 +1018,10 @@ export class PromptTrailApp {
           ],
         },
       );
-      run.status = 'done';
-      run.result = session;
-      run.graphSuspendedAt = undefined;
-      this.materializeAssistantDeliveriesForRun(runId, run);
-      this.persistRun(runId, run);
+      recordCheckpointGraphCompletion(run, session, () => {
+        this.materializeAssistantDeliveriesForRun(runId, run);
+        this.persistRun(runId, run);
+      });
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof GraphExecutionSuspended) {
@@ -1134,9 +1029,9 @@ export class PromptTrailApp {
           (error.session as Session<TVars, TAttrs> | undefined) ??
           run.result ??
           run.initial;
-        run.result = session;
-        run.graphSuspendedAt = error.nodePath;
-        this.persistRun(runId, run);
+        recordCheckpointGraphSuspension(run, error.nodePath, session, () =>
+          this.persistRun(runId, run),
+        );
         return {
           status: 'suspended',
           runId,
@@ -1144,8 +1039,9 @@ export class PromptTrailApp {
           session,
         };
       }
-      run.graphCursor = cursor;
-      this.persistRun(runId, run);
+      restoreCheckpointGraphCursor(run, checkpoint.cursor, () =>
+        this.persistRun(runId, run),
+      );
       throw error;
     }
   }
@@ -1395,79 +1291,6 @@ function graphInboundFromStoredInbound<TAttrs extends Attrs>(
     content: input.content,
     attrs: input.attrs as TAttrs | undefined,
   };
-}
-
-function skipGraphContinuationBootstrapNode(node: {
-  type: string;
-  data?: unknown;
-}): boolean {
-  return node.type === 'system' || isStaticGraphUserNode(node);
-}
-
-function collectGraphContinuationSkipNodes(
-  nodes: readonly AgentGraphNode[],
-  graphName: string,
-  suspendedAt?: string,
-): Set<string> {
-  const skipNodePaths = new Set<string>();
-  let reachedContinuationEntry = false;
-
-  const visit = (
-    children: readonly AgentGraphNode[],
-    parentPath: string,
-  ): void => {
-    for (const child of children) {
-      if (reachedContinuationEntry) {
-        return;
-      }
-      const nodePath = `${parentPath}/${child.id}`;
-      if (
-        (suspendedAt && nodePath === suspendedAt) ||
-        (!suspendedAt && isGraphInboundConsumerNode(child))
-      ) {
-        reachedContinuationEntry = true;
-        return;
-      }
-      if (
-        skipGraphContinuationBootstrapNode(child) ||
-        (child.children ?? []).length === 0
-      ) {
-        skipNodePaths.add(nodePath);
-      }
-      visit(child.children ?? [], nodePath);
-    }
-  };
-
-  visit(nodes, graphName);
-  return skipNodePaths;
-}
-
-function isGraphInboundConsumerNode(node: AgentGraphNode): boolean {
-  return (
-    node.type === 'inbox' ||
-    node.type === 'awaitInput' ||
-    (node.type === 'user' && !isStaticGraphUserNode(node))
-  );
-}
-
-function graphHasInboundConsumer(nodes: readonly AgentGraphNode[]): boolean {
-  return nodes.some(
-    (node) =>
-      isGraphInboundConsumerNode(node) ||
-      graphHasInboundConsumer(node.children ?? []),
-  );
-}
-
-function isStaticGraphUserNode(node: {
-  type: string;
-  data?: unknown;
-}): boolean {
-  return (
-    node.type === 'user' &&
-    typeof node.data === 'object' &&
-    node.data !== null &&
-    ('input' in node.data || 'content' in node.data)
-  );
 }
 
 function runEventIdempotencyKey(
