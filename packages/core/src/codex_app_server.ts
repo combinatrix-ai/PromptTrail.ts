@@ -914,7 +914,9 @@ function normalizeCodexSkillListResult(
   return rawSkills.filter(isCodexRuntimeSkillInfo);
 }
 
-function isCodexRuntimeSkillInfo(value: unknown): value is CodexRuntimeSkillInfo {
+function isCodexRuntimeSkillInfo(
+  value: unknown,
+): value is CodexRuntimeSkillInfo {
   return Boolean(value) && typeof value === 'object';
 }
 
@@ -1282,7 +1284,10 @@ export function normalizeCodexRuntimeEvent(
       type: 'diff',
       id: getEventId(event),
       path: getString(
-        params.path ?? params.filePath ?? diffSource?.path ?? diffSource?.filePath,
+        params.path ??
+          params.filePath ??
+          diffSource?.path ??
+          diffSource?.filePath,
       ),
       added: getNumber(params.added ?? diffSource?.added),
       removed: getNumber(params.removed ?? diffSource?.removed),

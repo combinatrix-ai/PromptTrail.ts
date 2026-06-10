@@ -17,10 +17,7 @@ describe('ai-sdk tool adapter internals', () => {
       parameters: z.object({ query: z.string() }),
       execute,
     });
-    const promptTrailTool = aiSdkToolToPromptTrailTool(
-      'searchDocs',
-      aiSdkTool,
-    );
+    const promptTrailTool = aiSdkToolToPromptTrailTool('searchDocs', aiSdkTool);
 
     expect(promptTrailTool).toMatchObject({
       kind: 'tool',

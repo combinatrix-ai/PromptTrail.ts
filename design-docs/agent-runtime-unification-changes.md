@@ -31,8 +31,8 @@ porting its journal. This reframes Codex's "durable.ts に残る journal logic �
 
 ## 1. Durability: collapse to one checkpoint runtime
 
-Maps to Codex remaining-work items: *durable legacy 実行の完全な GraphExecutor 化*,
-*durable.ts journal logic*, *DurableAgent / GraphAgent 二重系の整理*.
+Maps to Codex remaining-work items: _durable legacy 実行の完全な GraphExecutor 化_,
+_durable.ts journal logic_, _DurableAgent / GraphAgent 二重系の整理_.
 
 Ordering (Decision Update 2, point 11): do **3.5 (decompose compatibility
 template nodes) before or together with this section** — legacy agents
@@ -41,57 +41,57 @@ execution first breaks that path. Tag the pre-deletion commit
 (e.g. `pre-replay-removal`) so the replay implementation stays recoverable.
 
 - [ ] **1.0 Rename the run mode `durable` → `checkpoint`.** Flag, option types,
-  and docs; "durable" overstates the guarantee (at-least-once + remote dedup,
-  not exactly-once). Final option shape (Decision Update 3, point 12):
-  `checkpoint?: true | RunStore | { store?: RunStore }`; the separate
-  top-level `store` execute option is removed; `runId` stays top-level;
-  binding override `.checkpoint(...)` takes the same union; `checkpoint: true`
-  with no ambient store fails immediately with guidance. See §8.0.
-  (`durable.ts`, `templates/agent.ts`, exports)
+      and docs; "durable" overstates the guarantee (at-least-once + remote dedup,
+      not exactly-once). Final option shape (Decision Update 3, point 12):
+      `checkpoint?: true | RunStore | { store?: RunStore }`; the separate
+      top-level `store` execute option is removed; `runId` stays top-level;
+      binding override `.checkpoint(...)` takes the same union; `checkpoint: true`
+      with no ambient store fails immediately with guidance. See §8.0.
+      (`durable.ts`, `templates/agent.ts`, exports)
 - [ ] **1.1 Delete the legacy replay path.** Remove the `DurableAgent` replay
-  runtime, its model-call effect journal, the event-replay log, and
-  `NondeterminismError` detection. Replace `journaled` per §8.1/§8.9: the memo
-  becomes `ctx.once(name, dep, fn, { scope? })` — dep-keyed, no order check,
-  scopes per §8.5. (`durable.ts`)
+      runtime, its model-call effect journal, the event-replay log, and
+      `NondeterminismError` detection. Replace `journaled` per §8.1/§8.9: the memo
+      becomes `ctx.once(name, dep, fn, { scope? })` — dep-keyed, no order check,
+      scopes per §8.5. (`durable.ts`)
 - [ ] **1.2 Remove replay-identity machinery.** Delete the middleware/hook
-  compound replay-identity validation (phase + kind + id + declaration-order vs
-  journal index). Keep stable ids only for (a) the structural version gate and
-  (b) idempotency-memo keys. (`durable.ts`, `graph.ts`)
+      compound replay-identity validation (phase + kind + id + declaration-order vs
+      journal index). Keep stable ids only for (a) the structural version gate and
+      (b) idempotency-memo keys. (`durable.ts`, `graph.ts`)
 - [ ] **1.3 Collapse `DurableAgent` / `GraphAgent` into one graph runtime.**
-  One agent type, one run store path, one resume path. (`durable.ts`,
-  `templates/agent.ts`)
+      One agent type, one run store path, one resume path. (`durable.ts`,
+      `templates/agent.ts`)
 - [ ] **1.4 Consolidate the checkpoint substrate** that survives: session
-  checkpoint per node boundary, inbox cursor, suspended node path, idempotency
-  memo for `external-write` only. Keep `collectGraphContinuationSkipNodes` /
-  skip-prefix / `resumeFromNode` but factor it into a named, documented service
-  (the current logic is subtle and under-named). (`durable.ts`, `graph_executor.ts`)
+      checkpoint per node boundary, inbox cursor, suspended node path, idempotency
+      memo for `external-write` only. Keep `collectGraphContinuationSkipNodes` /
+      skip-prefix / `resumeFromNode` but factor it into a named, documented service
+      (the current logic is subtle and under-named). (`durable.ts`, `graph_executor.ts`)
 - [ ] **1.5 Drop persisted fields that only served replay** from `StoredRun`
-  (journal sequence of model effects, event-history log). Keep session
-  checkpoint, inbox+cursor, `graphSuspendedAt`, effect memo, outbox, context.
-  (`durable.ts`)
+      (journal sequence of model effects, event-history log). Keep session
+      checkpoint, inbox+cursor, `graphSuspendedAt`, effect memo, outbox, context.
+      (`durable.ts`)
 - [ ] **1.6 Make the run store async and persist deltas.**
-  `DurableRunStore.set`/`persist` become `Promise<void>` and are awaited at
-  effect boundaries; checkpoints persist session deltas (appended messages +
-  vars/attrs diff + pointer), not full-session rewrites. Persist provider
-  thread/session ids for `.codex`/`.claude` nodes so resume reconnects
-  (Decision Update 2, points 7/9). See §8.7/§8.8. (`durable.ts`)
+      `DurableRunStore.set`/`persist` become `Promise<void>` and are awaited at
+      effect boundaries; checkpoints persist session deltas (appended messages +
+      vars/attrs diff + pointer), not full-session rewrites. Persist provider
+      thread/session ids for `.codex`/`.claude` nodes so resume reconnects
+      (Decision Update 2, points 7/9). See §8.7/§8.8. (`durable.ts`)
 - [ ] **1.7 Introduce a session identity.** `Session` has no version field
-  (`transitionVersion` is legacy replay state) and loop counters are
-  executor-local. Add a monotonic session identity/version used as the default
-  `once` dep and the delta pointer. See §8.6. (`session.ts`, `durable.ts`)
+      (`transitionVersion` is legacy replay state) and loop counters are
+      executor-local. Add a monotonic session identity/version used as the default
+      `once` dep and the delta pointer. See §8.6. (`session.ts`, `durable.ts`)
 - [ ] **1.8 Provider-session resume for `.codex`/`.claude` nodes.** The
-  provider owns the loop, so a crash mid-turn cannot be checkpointed. Primary:
-  persist the provider thread/session id in the checkpoint and reconnect on
-  resume (build on the existing Codex thread binding and Claude Agent session
-  resume). Persist the provider id **immediately when the provider returns
-  it** (not at turn completion) to minimize the unresumable window. Fallback
-  when unresumable: **default `fail`** (provider-turn-unresumable error,
-  fail-fast); `.codex({ onUnresumable: 'restart' })` opts into re-running the
-  whole turn with a preamble message (`restartNotice` overrides the default
-  text), capped by `maxRestarts` (default 1, counter persisted in run state).
-  Best-effort, documented as such; vendor-internal tool side effects sit
-  outside the idempotency memo and the docs must say so loudly.
-  (`durable.ts`, `codex_app_server.ts`, `claude_agent.ts`)
+      provider owns the loop, so a crash mid-turn cannot be checkpointed. Primary:
+      persist the provider thread/session id in the checkpoint and reconnect on
+      resume (build on the existing Codex thread binding and Claude Agent session
+      resume). Persist the provider id **immediately when the provider returns
+      it** (not at turn completion) to minimize the unresumable window. Fallback
+      when unresumable: **default `fail`** (provider-turn-unresumable error,
+      fail-fast); `.codex({ onUnresumable: 'restart' })` opts into re-running the
+      whole turn with a preamble message (`restartNotice` overrides the default
+      text), capped by `maxRestarts` (default 1, counter persisted in run state).
+      Best-effort, documented as such; vendor-internal tool side effects sit
+      outside the idempotency memo and the docs must say so loudly.
+      (`durable.ts`, `codex_app_server.ts`, `claude_agent.ts`)
 
 ## 2. Version gate: edits invalidate resume (broad hash)
 
@@ -103,147 +103,147 @@ runs new content against a prefix checkpointed under old content) is worse than
 a fail-fast.
 
 - [ ] **2.1 Hash structure + serializable content.** Keep
-  `createAgentGraphManifest` hashing node `data` where serializable (system
-  text, source configuration) **plus** `path`, `id`, `type`, edges, tool names
-  + effect declarations, handler ids. For non-serializable members (closures,
-  handlers, provider clients) hash a stable id stand-in. Document that
-  closure-body edits are undetectable by any hash. (`graph.ts`)
+      `createAgentGraphManifest` hashing node `data` where serializable (system
+      text, source configuration) **plus** `path`, `id`, `type`, edges, tool names
+  - effect declarations, handler ids. For non-serializable members (closures,
+    handlers, provider clients) hash a stable id stand-in. Document that
+    closure-body edits are undetectable by any hash. (`graph.ts`)
 - [ ] **2.2 Keep fail-fast on mismatch**; migrations/force-continue stay out of
-  scope (explicit migration = later, the Temporal `patched` analog).
-  (`durable.ts`)
+      scope (explicit migration = later, the Temporal `patched` analog).
+      (`durable.ts`)
 
 ## 3. Agent DSL: one form, optional ids, layering
 
-Maps to Codex item: *compatibility template node をさらに個別 graph node へ分解*.
+Maps to Codex item: _compatibility template node をさらに個別 graph node へ分解_.
 
 - [ ] **3.1 Make node ids optional.** Auto-derive from structural path
-  (parent scope + node type + occurrence index). Authored ids still win. Update
-  every node builder overload (final set per §9: `system/user/assistant/
-  transform/inbox/awaitInput/tools/loop/conditional/subroutine/parallel/
-  structured/codex/claude/goal`).
-  (`templates/agent.ts`, `graph.ts`)
+      (parent scope + node type + occurrence index). Authored ids still win. Update
+      every node builder overload (final set per §9: `system/user/assistant/
+transform/inbox/awaitInput/tools/loop/conditional/subroutine/parallel/
+structured/codex/claude/goal`).
+      (`templates/agent.ts`, `graph.ts`)
 - [ ] **3.2 Delete `Agent.quick()`.** Id-optional `Agent.create('name')` replaces
-  it. (`templates/agent.ts`, examples, exports)
+      it. (`templates/agent.ts`, examples, exports)
 - [ ] **3.3 Registration-time durable gate (two gears, tied to run mode).**
-  Ephemeral = loose: no declaration required (Temporal-style honor system).
-  **Durable = strict automatically** (decided — no separate `strict` flag): each
-  tool/hook/middleware that could write must declare one of *safe to re-run*
-  (read/compute) or *here is my idempotency key* (write); declaring neither is a
-  hard error at `app.add(agent)` / durable marking. **No strict opt-out in v1** —
-  durable is always strict. Also report nodes that need explicit ids
-  (`awaitInput`, goal interaction, loops). Framework-provided components ship
-  pre-classified, so the gate fires only on author code. Replace the
-  resume-time-only failure mode. **Dynamic (MCP/provider-discovered) tools**
-  cannot be seen at registration: the declaration attaches at *server/source
-  registration* (defaults + per-tool overrides), and a tool discovered at run
-  time without a resolvable declaration under checkpoint mode fails the run at
-  discovery — the gate is never silently bypassed (Decision Update 2, point 6).
-  (`durable.ts`, `graph.ts`, `capabilities.ts`)
+      Ephemeral = loose: no declaration required (Temporal-style honor system).
+      **Durable = strict automatically** (decided — no separate `strict` flag): each
+      tool/hook/middleware that could write must declare one of _safe to re-run_
+      (read/compute) or _here is my idempotency key_ (write); declaring neither is a
+      hard error at `app.add(agent)` / durable marking. **No strict opt-out in v1** —
+      durable is always strict. Also report nodes that need explicit ids
+      (`awaitInput`, goal interaction, loops). Framework-provided components ship
+      pre-classified, so the gate fires only on author code. Replace the
+      resume-time-only failure mode. **Dynamic (MCP/provider-discovered) tools**
+      cannot be seen at registration: the declaration attaches at _server/source
+      registration_ (defaults + per-tool overrides), and a tool discovered at run
+      time without a resolvable declaration under checkpoint mode fails the run at
+      discovery — the gate is never silently bypassed (Decision Update 2, point 6).
+      (`durable.ts`, `graph.ts`, `capabilities.ts`)
 - [ ] **3.4 Intent-layer auto tool-loop.** A top-level `assistant(...)` and every
-  `goal(...)` auto-loops by compiling to `assistant` + `loop(tools, assistant)`.
-  Pure sugar; no provider-internal loop. The manual layer is writing the
-  `loop` yourself (the `turn` container is removed — §9.2). (`templates/agent.ts`)
+      `goal(...)` auto-loops by compiling to `assistant` + `loop(tools, assistant)`.
+      Pure sugar; no provider-internal loop. The manual layer is writing the
+      `loop` yourself (the `turn` container is removed — §9.2). (`templates/agent.ts`)
 - [ ] **3.5 Decompose remaining compatibility template nodes** into native graph
-  nodes so nothing routes through the generic legacy `template` adapter node.
-  (`graph_executor.ts`, `templates/agent.ts`)
+      nodes so nothing routes through the generic legacy `template` adapter node.
+      (`graph_executor.ts`, `templates/agent.ts`)
 - [x] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
-  **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
-  **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
-  with the raw-model side (`Source.llm().openai()`/`.anthropic()` = model, graph
-  owns loop; `.codex()`/`.claude()` = vendor agent runtime, vendor owns loop).
-  Update method names, option types stay `CodexTurnOptions`/`ClaudeTurnOptions`;
-  internal `GraphNode.type` tags may stay `'codexTurn'`/`'claudeTurn'` or be
-  renamed to match — author-facing surface is `.codex`/`.claude`.
-  (`templates/agent.ts`, examples, exports)
+      **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
+      **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
+      with the raw-model side (`Source.llm().openai()`/`.anthropic()` = model, graph
+      owns loop; `.codex()`/`.claude()` = vendor agent runtime, vendor owns loop).
+      Update method names, option types stay `CodexTurnOptions`/`ClaudeTurnOptions`;
+      internal `GraphNode.type` tags may stay `'codexTurn'`/`'claudeTurn'` or be
+      renamed to match — author-facing surface is `.codex`/`.claude`.
+      (`templates/agent.ts`, examples, exports)
 
 ## 4. Tools: idempotency key is load-bearing; classification optional
 
 Rationale (Temporal/Restate/Inngest comparison): all three require an effect
-*boundary* but **none** require a read/write tag; idempotency is the developer's
-responsibility. In PromptTrail the tool already *is* the boundary, so the only
+_boundary_ but **none** require a read/write tag; idempotency is the developer's
+responsibility. In PromptTrail the tool already _is_ the boundary, so the only
 irreducible requirement is the **key**, and only for writes the author wants
 crash-safe. `kind` is optional sugar. Strict mode (3.3) adds the binary gate
 that replay systems get for free.
 
 - [ ] **4.1 Drop the `kind` taxonomy; the declaration is binary.** (Supersedes
-  the earlier "key required iff external-write" shape — see §8.2 and Decision
-  Update 2, point 4.) The type becomes
-  `{ idempotencyKey: string | (input) => string } | { repeatable: true }`;
-  keys may depend on input. `kind` survives only as optional retry/
-  observability metadata. Enforcement of "declare one of the two" lives in the
-  strict gate (3.3), not in the base type. (`tool.ts`)
+      the earlier "key required iff external-write" shape — see §8.2 and Decision
+      Update 2, point 4.) The type becomes
+      `{ idempotencyKey: string | (input) => string } | { repeatable: true }`;
+      keys may depend on input. `kind` survives only as optional retry/
+      observability metadata. Enforcement of "declare one of the two" lives in the
+      strict gate (3.3), not in the base type. (`tool.ts`)
 - [ ] **4.2 Keep auto-wrap as the common path** (confirmed). The engine wraps a
-  declared tool body in `ctx.once(tool.name, session-identity, body)` when a
-  checkpoint boundary is present — a single-effect tool needs **no** `ctx.once`
-  calls; explicit `ctx.once` remains for multiple nested boundaries or
-  conversation scope. The resolved `effect.idempotencyKey` (string or
-  `(input) => string`) is handed to the body as `ctx.idempotencyKey` for
-  forwarding to the remote system. (`tool.ts`, `graph_executor.ts`)
+      declared tool body in `ctx.once(tool.name, session-identity, body)` when a
+      checkpoint boundary is present — a single-effect tool needs **no** `ctx.once`
+      calls; explicit `ctx.once` remains for multiple nested boundaries or
+      conversation scope. The resolved `effect.idempotencyKey` (string or
+      `(input) => string`) is handed to the body as `ctx.idempotencyKey` for
+      forwarding to the remote system. (`tool.ts`, `graph_executor.ts`)
 - [ ] **4.3 Synchronous decision/transform handlers.** Type
-  `conditional`/`loop` conditions, `goal.isSatisfied`, and `patch` handlers as
-  synchronous (`=> boolean` / `=> Session`, drop the `| Promise<...>` variants)
-  so IO can't be `await`ed into a decision and effects stay in tools. Add a cheap
-  runtime guard that throws if a synchronous handler returns a thenable. No
-  global IO sandbox. Open: whether `transform` handlers join this rule — they
-  currently `await handler(session)` in `graph_executor.ts` and were omitted
-  from the original list. (`templates/agent.ts`, `graph_executor.ts`, `tool.ts`)
+      `conditional`/`loop` conditions, `goal.isSatisfied`, and `patch` handlers as
+      synchronous (`=> boolean` / `=> Session`, drop the `| Promise<...>` variants)
+      so IO can't be `await`ed into a decision and effects stay in tools. Add a cheap
+      runtime guard that throws if a synchronous handler returns a thenable. No
+      global IO sandbox. Open: whether `transform` handlers join this rule — they
+      currently `await handler(session)` in `graph_executor.ts` and were omitted
+      from the original list. (`templates/agent.ts`, `graph_executor.ts`, `tool.ts`)
 - [ ] **4.4 Unify effect classification across tool/hook/middleware** with the
-  phase-split rule (Decision Update 3, point 10): transform phases
-  (`beforeModel`/`prepareModelInput`/`afterModel`/`beforeTool`/`afterTool` +
-  hook lifecycle phases) become synchronous by type (thenable guard, no
-  declaration needed); wrapper phases (`wrapModelCall`/`wrapToolCall`) stay
-  async and a handler defining one must carry the binary effect declaration
-  (and gets `ctx.once`). External writes are keyed the same way as tools;
-  observers stay exempt (idempotent by contract). (`interceptors.ts`,
-  `tool.ts`)
+      phase-split rule (Decision Update 3, point 10): transform phases
+      (`beforeModel`/`prepareModelInput`/`afterModel`/`beforeTool`/`afterTool` +
+      hook lifecycle phases) become synchronous by type (thenable guard, no
+      declaration needed); wrapper phases (`wrapModelCall`/`wrapToolCall`) stay
+      async and a handler defining one must carry the binary effect declaration
+      (and gets `ctx.once`). External writes are keyed the same way as tools;
+      observers stay exempt (idempotent by contract). (`interceptors.ts`,
+      `tool.ts`)
 
 ## 5. App / sources: generic events, name disambiguation
 
 - [ ] **5.1 Generic `Trigger<TEvent>` for event sources** (renamed from the
-  earlier `Source<TEvent>` plan — §9.8) and infer `TEvent` in the binding
-  builder. Remove the closed
-  `RuntimeBindingEvent = DiscordMessageEvent | CronEvent` union. (`runtime_bindings.ts`)
+      earlier `Source<TEvent>` plan — §9.8) and infer `TEvent` in the binding
+      builder. Remove the closed
+      `RuntimeBindingEvent = DiscordMessageEvent | CronEvent` union. (`runtime_bindings.ts`)
 - [ ] **5.2 Move platform sources to packages.** `discord` / `cron` become the
-  first event-source packages, not core unions; `slack`/`github` add without
-  editing core. (`runtime_bindings.ts`, `runtime_discord.ts`)
+      first event-source packages, not core unions; `slack`/`github` add without
+      editing core. (`runtime_bindings.ts`, `runtime_discord.ts`)
 - [ ] **5.3 Resolve the "source" name collision.** Node content stays
-  `Source.llm()`; app event wiring is **`app.on(eventSource, builder)`**
-  (decided — rename the existing `.bind(...)` to `.on(...)`). The binding's
-  delivery setter is `.reply(...)`. (`durable.ts`, `runtime_bindings.ts`,
-  exports)
+      `Source.llm()`; app event wiring is **`app.on(eventSource, builder)`**
+      (decided — rename the existing `.bind(...)` to `.on(...)`). The binding's
+      delivery setter is `.reply(...)`. (`durable.ts`, `runtime_bindings.ts`,
+      exports)
 - [ ] **5.4 App `defaults` are constructor-only (decided).** Accept `defaults`
-  (durable, delivery, ...) only in `PromptTrail.app({ defaults })`; no mutable
-  `.defaults(...)` setter. Resolution order: binding override > app defaults >
-  built-in. Per-binding needs are met by binding-level overrides (`.durable(...)`,
-  `.reply(...)`), not by mutating app state. (`durable.ts`)
+      (durable, delivery, ...) only in `PromptTrail.app({ defaults })`; no mutable
+      `.defaults(...)` setter. Resolution order: binding override > app defaults >
+      built-in. Per-binding needs are met by binding-level overrides (`.durable(...)`,
+      `.reply(...)`), not by mutating app state. (`durable.ts`)
 - [ ] **5.5 Defer binding-level middleware/hooks (decided).** v1 ships agent +
-  app handler layers only; the ordering model keeps the binding slot reserved for
-  a later release. Do not implement binding-level handler injection now.
-  (`durable.ts`, `runtime_bindings.ts`)
+      app handler layers only; the ordering model keeps the binding slot reserved for
+      a later release. Do not implement binding-level handler injection now.
+      (`durable.ts`, `runtime_bindings.ts`)
 
 ## 6. Export hygiene
 
 - [ ] **6.1 Curate the package root.** `index.ts` currently `export *`s
-  `runtime_bindings`, `runtime_discord`, `runtime`, `interceptors`, etc.,
-  contradicting the doc's "no wildcard export of low-level modules." Move
-  host/dispatch/mock and low-level template primitives behind submodules; keep
-  `Agent`, graph helper types, `Parallel`, `Structured`, provider turn option
-  types, and app authoring types at root. (`index.ts`, `package.json` exports)
+      `runtime_bindings`, `runtime_discord`, `runtime`, `interceptors`, etc.,
+      contradicting the doc's "no wildcard export of low-level modules." Move
+      host/dispatch/mock and low-level template primitives behind submodules; keep
+      `Agent`, graph helper types, `Parallel`, `Structured`, provider turn option
+      types, and app authoring types at root. (`index.ts`, `package.json` exports)
 
 ## 7. Docs & examples
 
-Maps to Codex item: *README/examples の全面更新*.
+Maps to Codex item: _README/examples の全面更新_.
 
 - [ ] **7.1 Rewrite README** around the final API (checkpoint durability,
-  id-optional authoring, `goal`-first, `app.on(...)`).
+      id-optional authoring, `goal`-first, `app.on(...)`).
 - [ ] **7.2 Update examples** to id-optional `Agent.create`, `goal`/`turn`
-  layering, and the new app/event API. (`examples/*.ts`)
+      layering, and the new app/event API. (`examples/*.ts`)
 - [ ] **7.3 Migration notes** only where genuinely useful (no compatibility
-  guarantee).
+      guarantee).
 - [ ] **7.4 Document the binding / routing DSL model** as its own section
-  (README + a design doc). A binding is a **pure transform from a platform event
-  to a normalized routing decision**; the fluent chain fills slots of a record,
-  it is not an ordered pipeline. Cover:
+      (README + a design doc). A binding is a **pure transform from a platform event
+      to a normalized routing decision**; the fluent chain fills slots of a record,
+      it is not an ordered pipeline. Cover:
   - Routing-as-data: `b.to().conversation().input().reply().where().context()`
     compiles to a `RuntimeBinding` struct (order-independent) and into the
     `RuntimeBundle` IR (inspectable / testable / serializable).
@@ -254,7 +254,7 @@ Maps to Codex item: *README/examples の全面更新*.
   - Inbound/outbound symmetry: `.conversation(...)` = inbound identity (→ runId →
     which checkpoint to resume) vs `.reply(...)` = outbound identity (→
     `DeliveryTarget`), both projections of the same event. `.reply(...)` returns
-    a delivery *description* (data); actual sending is the App delivery driver +
+    a delivery _description_ (data); actual sending is the App delivery driver +
     outbox, so bindings stay side-effect free.
   - Mental model = an HTTP router whose slots are event projections rather than
     fixed strings.
@@ -304,8 +304,8 @@ Replace the replay journal (`journaled` + `sequence`/`position` +
 `NondeterminismError`) with a `useMemo`-style, dependency-keyed effect boundary:
 
 ```ts
-ctx.once(name, dep, fn)                          // run-scoped (default)
-ctx.once(name, key, fn, { scope: 'conversation' })  // once per conversation
+ctx.once(name, dep, fn); // run-scoped (default)
+ctx.once(name, key, fn, { scope: 'conversation' }); // once per conversation
 // no forever scope: permanent uniqueness belongs in the author's DB / remote
 ```
 
@@ -332,7 +332,7 @@ must-dedup — so `read`/`write` mis-frames it. Collapse the activity type:
 ```ts
 type Effect =
   | { idempotencyKey: string | ((input) => string); retry?: RetryPolicy } // dedup via once()
-  | { repeatable: true; retry?: RetryPolicy };                            // re-run, no memo
+  | { repeatable: true; retry?: RetryPolicy }; // re-run, no memo
 // under checkpoint(strict): declaring neither is a registration-time error
 ```
 
@@ -351,7 +351,7 @@ what they cannot:
    consulted by control flow (true for the standard loop; vars-driven custom
    loops must update the session themselves).
 2. **Suspended node path / skip-prefix (stack)** — robust because it is the
-   *persisted* position, not a re-derived one.
+   _persisted_ position, not a re-derived one.
 
 The single thing these cannot cover is the **non-atomic gap between committing
 the external effect and persisting the session checkpoint** (plus retry of a
@@ -403,7 +403,7 @@ Key on a stable session version, not a deep hash of the message history — O(1)
 and "same session" is an identity check. **Correction (verified): `Session` has
 no version field today** — `transitionVersion` lives on the legacy replay state
 (`DurableExecutionState` in `durable.ts`) that this rewrite deletes. A monotonic
-session identity must be *added* (work item 1.7), serving as both the default
+session identity must be _added_ (work item 1.7), serving as both the default
 `once` dep and the delta pointer. This keying is only correct if **within-node
 re-execution is deterministic**,
 which holds when nodes are decomposed finely enough that a nondeterministic call
@@ -411,7 +411,7 @@ which holds when nodes are decomposed finely enough that a nondeterministic call
 compatibility nodes) and §1 (checkpoint granularity) are coupled: finer nodes ⇒
 within-node replay is deterministic ⇒ content-addressed dedup is reliable.
 
-### 8.7 Checkpoint granularity → persist a session *delta*
+### 8.7 Checkpoint granularity → persist a session _delta_
 
 `store.set(runId, run)` currently rewrites the whole run per persist. Persisting
 the full session at every node boundary is O(session) per node ≈ O(n²) over a
@@ -454,34 +454,34 @@ Outcome of the vocabulary review (main doc Decision Update 3). These reshape
 the §3 DSL work; do them as part of §3.
 
 - [ ] **9.1 Unify `transform`** (absorbs `patch` and `messages` nodes — both
-  removed). Pure form is synchronous (`(session) => Session`, thenable guard);
-  `{ effect }` declaration (8.2 binary) unlocks the async form
-  `async (session, ctx) => Session` with `ctx.once` available. This is the
-  graph-invoked effect step (tools remain model-invoked). "patch" survives
-  only as the noun for hook/middleware session patches.
-  (`templates/agent.ts`, `graph_executor.ts`, `graph.ts`)
+      removed). Pure form is synchronous (`(session) => Session`, thenable guard);
+      `{ effect }` declaration (8.2 binary) unlocks the async form
+      `async (session, ctx) => Session` with `ctx.once` available. This is the
+      graph-invoked effect step (tools remain model-invoked). "patch" survives
+      only as the noun for hook/middleware session patches.
+      (`templates/agent.ts`, `graph_executor.ts`, `graph.ts`)
 - [ ] **9.2 Remove the `turn` node** (verified: runtime-wise a bare sequence).
-  `inbox`/`awaitInput`/`tools` become ordinary nodes available in any builder
-  scope. (`templates/agent.ts`, `graph_executor.ts`)
+      `inbox`/`awaitInput`/`tools` become ordinary nodes available in any builder
+      scope. (`templates/agent.ts`, `graph_executor.ts`)
 - [ ] **9.3 Remove `repeat`; `loop` everywhere** (verified implementation-
-  identical pre-condition loops). (`templates/agent.ts`)
+      identical pre-condition loops). (`templates/agent.ts`)
 - [ ] **9.4 Remove the authoring `sequence` node; rename the IR container to
-  `scope`.** Top level and all builders are implicit sequences. `subroutine`
-  compiles to `scope` + session policy. (`graph.ts`, `graph_executor.ts`)
+      `scope`.** Top level and all builders are implicit sequences. `subroutine`
+      compiles to `scope` + session policy. (`graph.ts`, `graph_executor.ts`)
 - [ ] **9.5 Fix `subroutine` defaults to actually isolate** (current defaults
-  `retainMessages: true` + `isolatedContext: false` make it a sequence).
-  Options become entry projection (`init`) / exit projection (`squash`) +
-  shortcuts; proposed defaults: enter fresh, append sub-messages on exit.
-  (`templates/agent.ts`, `graph_executor.ts`)
+      `retainMessages: true` + `isolatedContext: false` make it a sequence).
+      Options become entry projection (`init`) / exit projection (`squash`) +
+      shortcuts; proposed defaults: enter fresh, append sub-messages on exit.
+      (`templates/agent.ts`, `graph_executor.ts`)
 - [ ] **9.6 Document run-per-event as the standard shape.** Event-driven
-  agents end after one inbound event; continuity = app-layer conversation
-  resume. No infinite graph loops; `awaitInput` is mid-flow only. (README,
-  examples)
+      agents end after one inbound event; continuity = app-layer conversation
+      resume. No infinite graph loops; `awaitInput` is mid-flow only. (README,
+      examples)
 - [ ] **9.7 Remove `Agent.run` references** (doc phantom; `execute({ input })`
-  only).
+      only).
 - [ ] **9.8 Consistency renames:** `ctx.durable.*` →
-  `ctx.once` (scope option per §8.5); `app.source()` → `app.gateway()`; event-source
-  type = `Trigger<TEvent>` (not `Source<TEvent>`/`EventSource`);
-  `.durable(...)` overrides → `.checkpoint(...)`; `app.activity()` →
-  `app.presence()`. (`durable.ts`, `runtime_bindings.ts`, `runtime_discord.ts`,
-  exports)
+      `ctx.once` (scope option per §8.5); `app.source()` → `app.gateway()`; event-source
+      type = `Trigger<TEvent>` (not `Source<TEvent>`/`EventSource`);
+      `.durable(...)` overrides → `.checkpoint(...)`; `app.activity()` →
+      `app.presence()`. (`durable.ts`, `runtime_bindings.ts`, `runtime_discord.ts`,
+      exports)

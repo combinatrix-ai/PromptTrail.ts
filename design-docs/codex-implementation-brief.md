@@ -11,7 +11,7 @@ freely where the design requires it.
    Update (2026-06)** and **Decision Update 2 (2026-06-10)** blocks at the top
    are authoritative and supersede any conflicting older text below them;
    where they disagree, **Decision Update 2 wins**. The **Rationale and
-   Discussion** section explains *why* each decision was made; read it so you
+   Discussion** section explains _why_ each decision was made; read it so you
    don't re-litigate.
 2. `design-docs/agent-runtime-unification-changes.md` — the concrete change
    checklist (numbered tasks with target files). This is your work queue.
@@ -35,7 +35,7 @@ this brief, the Decision Update / this brief win.
   `effect.idempotencyKey` is handed to tool bodies as `ctx.idempotencyKey`;
   auto-wrap = `ctx.once(tool.name, session-identity, body)`.
 - **The session log is the journal.** Model outputs and tool results are already
-  persisted as session messages. The only *extra* memoized thing is the
+  persisted as session messages. The only _extra_ memoized thing is the
   dep-keyed effect memo below. Checkpoints persist session **deltas** (appended
   messages + vars/attrs diff + pointer); the run-store API is async
   (`Promise<void>`, awaited at effect boundaries); a monotonic session identity
@@ -54,7 +54,7 @@ this brief, the Decision Update / this brief win.
   separate flag, no opt-out in v1): declaring neither is a registration-time
   hard error for author tools/hooks/middleware; observers exempt;
   framework-provided components ship pre-classified. Dynamic (MCP) tools
-  declare at *server/source registration*; an undeclared tool discovered at run
+  declare at _server/source registration_; an undeclared tool discovered at run
   time under checkpoint fails the run at discovery. Handler phases: transform
   phases (beforeModel/prepareModelInput/afterModel/beforeTool/afterTool + hook
   lifecycle) are **synchronous by type** — no declaration needed, IO is typed

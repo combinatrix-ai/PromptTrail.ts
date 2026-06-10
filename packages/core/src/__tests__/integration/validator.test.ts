@@ -9,12 +9,12 @@ import { Source, type LlmSource } from '../../source';
 import { Assistant } from '../../templates';
 
 describe('AssistantTemplate with Validator', () => {
-  let llm: LlmSource;
+  let _llm: LlmSource;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    llm = Source.llm();
+    _llm = Source.llm();
 
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
@@ -40,7 +40,7 @@ describe('AssistantTemplate with Validator', () => {
       };
     });
 
-    const conditionalValidator: IValidator = {
+    const _conditionalValidator: IValidator = {
       validate: async (
         content,
         _context: Session,
@@ -64,7 +64,7 @@ describe('AssistantTemplate with Validator', () => {
 
   it('should throw an exception when validation fails and raiseError is true', async () => {
     // Create a mock source that throws an error
-    const mockSource = {
+    const _mockSource = {
       getContent: vi.fn().mockRejectedValue(new Error('Validation failed')),
     };
 

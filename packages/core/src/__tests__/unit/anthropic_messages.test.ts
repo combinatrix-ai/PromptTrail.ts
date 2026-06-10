@@ -632,9 +632,7 @@ describe('Anthropic Messages native adapter helpers', () => {
       tool_use_id: 'toolu-approval',
       is_error: true,
       content: JSON.stringify({
-        content: [
-          { type: 'text', text: 'Tool execution denied: too risky' },
-        ],
+        content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
         isError: true,
       }),
     });
@@ -862,10 +860,7 @@ describe('Anthropic Messages native adapter helpers', () => {
         'auto',
       ),
     ).toMatchObject({
-      tools: [
-        { name: 'lookup' },
-        { name: 'StructuredResult' },
-      ],
+      tools: [{ name: 'lookup' }, { name: 'StructuredResult' }],
       tool_choice: { type: 'any' },
     });
     expect(
@@ -876,10 +871,7 @@ describe('Anthropic Messages native adapter helpers', () => {
         'force',
       ),
     ).toMatchObject({
-      tools: [
-        { name: 'lookup' },
-        { name: 'StructuredResult' },
-      ],
+      tools: [{ name: 'lookup' }, { name: 'StructuredResult' }],
       tool_choice: { type: 'tool', name: 'StructuredResult' },
     });
   });

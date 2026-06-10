@@ -29,7 +29,7 @@ describe('Agent Function-Based Templates', () => {
         .user('Start the loop')
         .loop(
           (l) => l.user('Iteration message').assistant('Mock response'),
-          (session) => {
+          (_session) => {
             counter++;
             return counter <= 3;
           },
@@ -57,7 +57,7 @@ describe('Agent Function-Based Templates', () => {
       let iterations = 0;
 
       // Test loopForever helper
-      const agent = Agent.quick()
+      const _agent = Agent.quick()
         .system('Forever loop test')
         .loopForever((l) => {
           iterations++;
@@ -96,7 +96,7 @@ describe('Agent Function-Based Templates', () => {
           counter < 3, // This is evaluated once at build time!
         );
 
-      const session = await agent.execute();
+      const _session = await agent.execute();
 
       // Since boolean is evaluated at build time when counter is 0,
       // it will be true and loop forever (or until maxIterations)
@@ -368,7 +368,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('README examples', () => {
     it('should work with the first README example', async () => {
-      const agent = Agent.quick()
+      const _agent = Agent.quick()
         .system('You are a helpful assistant.')
         .loop(
           (l) => l.user().assistant(), // Use CLI for user input, LLM for assistant
@@ -395,7 +395,7 @@ describe('Agent Function-Based Templates', () => {
 
     it('should work with loopForever helper', async () => {
       let counter = 0;
-      const agent = Agent.quick()
+      const _agent = Agent.quick()
         .system('You are a helpful assistant.')
         .loopForever((l) => {
           counter++;

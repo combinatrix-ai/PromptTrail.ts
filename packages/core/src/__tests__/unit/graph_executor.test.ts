@@ -34,9 +34,7 @@ describe('GraphExecutor', () => {
   it('fails assistant nodes that return invalid results', async () => {
     const graph = createAgentGraph({
       name: 'assistant',
-      nodes: [
-        { id: 'reply', type: 'assistant', data: { input: () => 123 } },
-      ],
+      nodes: [{ id: 'reply', type: 'assistant', data: { input: () => 123 } }],
     });
 
     await expect(executeAgentGraph(graph)).rejects.toThrow(
@@ -119,8 +117,10 @@ describe('GraphExecutor', () => {
     let calls = 0;
     const graph = Agent.create('assistant')
       .turn('main', (turn) =>
-        turn.repeat('loop', () => calls++ < 2, (loop) =>
-          loop.assistant('reply', Source.literal('tick')),
+        turn.repeat(
+          'loop',
+          () => calls++ < 2,
+          (loop) => loop.assistant('reply', Source.literal('tick')),
         ),
       )
       .toGraph();
@@ -323,12 +323,17 @@ describe('GraphExecutor', () => {
                 }
               : 'final',
           )
-          .repeat('toolLoop', ({ session }) => session.hasToolCalls(), (loop) =>
-            loop.tools('tools').assistant('model', (session) =>
-              session.getMessagesByType('tool_result').length > 0
-                ? 'final'
-                : '',
-            ),
+          .repeat(
+            'toolLoop',
+            ({ session }) => session.hasToolCalls(),
+            (loop) =>
+              loop
+                .tools('tools')
+                .assistant('model', (session) =>
+                  session.getMessagesByType('tool_result').length > 0
+                    ? 'final'
+                    : '',
+                ),
           ),
       )
       .toGraph();
@@ -482,14 +487,14 @@ describe('GraphExecutor', () => {
       ],
     });
 
-    await expect(executeAgentGraph(graph, { input: 'inside' })).rejects.toMatchObject(
-      {
-        nodePath: 'assistant/draft/wait',
-        session: {
-          messages: [expect.objectContaining({ content: 'before' })],
-        },
+    await expect(
+      executeAgentGraph(graph, { input: 'inside' }),
+    ).rejects.toMatchObject({
+      nodePath: 'assistant/draft/wait',
+      session: {
+        messages: [expect.objectContaining({ content: 'before' })],
       },
-    );
+    });
   });
 
   it('executes goal nodes with model and satisfaction checks', async () => {

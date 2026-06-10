@@ -750,9 +750,15 @@ describe('OpenAI Responses native adapter helpers', () => {
     ]);
 
     await expect(
-      createOpenAIToolOutputItem(calls[0], [tool], Session.create(), undefined, {
-        channel: 'claw-test',
-      }),
+      createOpenAIToolOutputItem(
+        calls[0],
+        [tool],
+        Session.create(),
+        undefined,
+        {
+          channel: 'claw-test',
+        },
+      ),
     ).resolves.toEqual({
       type: 'function_call_output',
       call_id: 'call-1',
@@ -814,9 +820,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       type: 'function_call_output',
       call_id: 'call-approval',
       output: JSON.stringify({
-        content: [
-          { type: 'text', text: 'Tool execution denied: too risky' },
-        ],
+        content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
         isError: true,
       }),
     });

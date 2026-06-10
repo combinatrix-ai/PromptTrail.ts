@@ -550,10 +550,12 @@ function createNamespacedObserverDeliveryBindings(
   };
 }
 
-export function inMemoryObserverDeliveryBindingStore(options: {
-  ttlMs?: number;
-  maxEntries?: number;
-} = {}): ObserverDeliveryBindingStore {
+export function inMemoryObserverDeliveryBindingStore(
+  options: {
+    ttlMs?: number;
+    maxEntries?: number;
+  } = {},
+): ObserverDeliveryBindingStore {
   const ttlMs = options.ttlMs ?? 60 * 60 * 1_000;
   const maxEntries = options.maxEntries ?? 10_000;
   const entries = new Map<
@@ -589,10 +591,7 @@ export function inMemoryObserverDeliveryBindingStore(options: {
 }
 
 function pruneObserverDeliveryBindings(
-  entries: Map<
-    string,
-    { binding: ObserverDeliveryBinding; expiresAt: number }
-  >,
+  entries: Map<string, { binding: ObserverDeliveryBinding; expiresAt: number }>,
   ttlMs: number,
   maxEntries: number,
 ): void {

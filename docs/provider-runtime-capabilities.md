@@ -441,14 +441,14 @@ native-adapter guarantee.
   `additionalProperties: false` on every object; emulate optional fields with
   nullable unions. Refusals surface in a `refusal` field.
 - Anthropic Messages: native `output_config.format = { type: 'json_schema',
-  schema }`, or the older forced-tool path (`tool_choice: { type: 'tool', name }`
-  + `input_schema`). No recursion, no numeric/length constraints,
-  `additionalProperties` must be `false`.
+schema }`, or the older forced-tool path (`tool_choice: { type: 'tool', name }`
+  - `input_schema`). No recursion, no numeric/length constraints,
+    `additionalProperties` must be `false`.
 - Google Gemini: `responseMimeType: 'application/json'` +
   `responseJsonSchema` (or the narrower `responseSchema`); `propertyOrdering`
   controls field order.
 - ai-sdk: `generateText` / `streamText` with `experimental_output:
-  Output.object(...)` for the current adapter path.
+Output.object(...)` for the current adapter path.
 
 Decided mapping: native OpenAI Responses, Anthropic Messages, and Google Gemini
 adapters target each provider's structured-output field directly; the ai-sdk

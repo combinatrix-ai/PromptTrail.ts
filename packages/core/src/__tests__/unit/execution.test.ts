@@ -482,12 +482,9 @@ describe('observer bus', () => {
       {
         name: 'observer',
         async handle(_event, context) {
-          await context.deliveryBindings?.checkWrite(
-            '1:progress',
-            async () => {
-              writes.push('named');
-            },
-          );
+          await context.deliveryBindings?.checkWrite('1:progress', async () => {
+            writes.push('named');
+          });
         },
       },
       async (_event, context) => {

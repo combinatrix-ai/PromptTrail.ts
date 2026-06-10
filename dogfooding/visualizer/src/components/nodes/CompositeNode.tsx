@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+ 
 import React, { memo, ReactNode, FC } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 

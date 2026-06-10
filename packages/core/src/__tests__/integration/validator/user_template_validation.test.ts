@@ -15,13 +15,13 @@ describe('UserTemplate with real API validation', () => {
       ];
 
       let callCount = 0;
-      const getResponse = async () => {
+      const _getResponse = async () => {
         const response = responses[callCount];
         callCount++;
         return response || 'No more responses';
       };
 
-      const shortAnswerValidator = new CustomValidator(
+      const _shortAnswerValidator = new CustomValidator(
         async (input: string) => {
           const wordCount = input.split(/\s+/).filter(Boolean).length;
           return wordCount <= 5

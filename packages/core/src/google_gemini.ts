@@ -245,11 +245,7 @@ async function generateGoogleGeminiMessage<
       tools,
       toolDefinitions,
       binding,
-      getGeminiTurnExtraConfig(
-        continuationOptions,
-        tools,
-        extraConfig,
-      ),
+      getGeminiTurnExtraConfig(continuationOptions, tools, extraConfig),
     );
   }
 
@@ -782,7 +778,9 @@ export function convertMessagesToGeminiContents(
             })
           : [];
       const replayRequired =
-        message.type === 'assistant' ? getGeminiReplayRequiredParts(message) : [];
+        message.type === 'assistant'
+          ? getGeminiReplayRequiredParts(message)
+          : [];
       contents.push({
         role: message.type === 'assistant' ? 'model' : 'user',
         parts:

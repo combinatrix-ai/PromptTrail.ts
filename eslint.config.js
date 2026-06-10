@@ -13,6 +13,8 @@ export default [
       '**/.next/**',
       '**/coverage/**',
       '**/.turbo/**',
+      '**/.vercel/**',
+      'references/**',
     ],
   },
   {

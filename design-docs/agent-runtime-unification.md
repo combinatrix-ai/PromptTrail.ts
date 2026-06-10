@@ -73,10 +73,10 @@ goal):
     `idempotencyKey` only on side effects that must not repeat — same
     honor-system posture as Temporal activities.
   - **Durable implies strict (decided).** The moment a run is durable, each tool
-    must make one binary declaration: *safe to re-run* (read/compute) **or**
-    *here is my idempotency key* (write). Tools that declare neither are a
+    must make one binary declaration: _safe to re-run_ (read/compute) **or**
+    _here is my idempotency key_ (write). Tools that declare neither are a
     registration-time hard error. There is no separate `strict` flag — `durable`
-    *is* the strict gear, so "durable" always means a real durable engine. There
+    _is_ the strict gear, so "durable" always means a real durable engine. There
     is **no strict opt-out in the first version**; an escape hatch is added only
     if a concrete need appears. This catches the "forgot to make my write
     idempotent" bug that Temporal leaves to the developer, with a single decision
@@ -96,10 +96,10 @@ goal):
   Build-ID pinning. PromptTrail does not promise auto-tolerant edits; explicit
   migration may be added later as the analog of Temporal patching. Because edit
   tolerance is not promised, node ids may be auto-derived freely, and the
-  version gate's job is to *detect* the edit and fail safely.
+  version gate's job is to _detect_ the edit and fail safely.
 - **The graph version gate is structural-only (a nicety, not a guarantee).**
-  *(Superseded by Decision Update 2, point 8: edits invalidate resume and the
-  hash includes serializable content.)*
+  _(Superseded by Decision Update 2, point 8: edits invalidate resume and the
+  hash includes serializable content.)_
   The manifest hash should cover node ids, types, graph paths, edges, tool
   names/activity, and handler ids — **not** node content (system text, source
   configuration). This is so a prompt tweak does not needlessly kill a resumable
@@ -155,13 +155,13 @@ in `agent-runtime-unification-changes.md` §8).
    `onceGlobal(name, userid, fn)` is once-per-key across runs. Scope is
    explicit, never inferred from the dep: `once` = run-scoped journal, GC'd
    with the run; `onceGlobal` = cross-run store that requires a TTL/GC policy.
-   *(Superseded in part by Decision Update 3, point 11: `onceGlobal` is
+   _(Superseded in part by Decision Update 3, point 11: `onceGlobal` is
    removed; scope becomes an explicit `'run' | 'conversation'` option on
-   `ctx.once`, with no forever scope and no TTL.)*
+   `ctx.once`, with no forever scope and no TTL.)_
 4. **Effect declaration collapses to a binary; the `kind` taxonomy is
    dropped.** `external-read` vs `compute` is a distinction without a
-   difference (both = re-run is safe), and the real axis is *must-dedup* vs
-   *repeatable* — an idempotent write is repeatable, a counter increment is
+   difference (both = re-run is safe), and the real axis is _must-dedup_ vs
+   _repeatable_ — an idempotent write is repeatable, a counter increment is
    must-dedup, so read/write mis-frames it. The declaration becomes
    `{ idempotencyKey: string | (input) => string }` **or**
    `{ repeatable: true }`; under checkpoint mode declaring neither is a
@@ -181,7 +181,7 @@ in `agent-runtime-unification-changes.md` §8).
 6. **Dynamic (MCP/provider-discovered) tools declare at the source.** The
    strict gate is registration-time for static tools, but MCP servers expose
    tools only at run time. Decision: the effect declaration attaches at
-   *server/source registration* (defaults + per-tool overrides), and a tool
+   _server/source registration_ (defaults + per-tool overrides), and a tool
    discovered at run time without a resolvable declaration under checkpoint
    mode **fails the run at discovery** — the gate is never silently bypassed.
 7. **`.codex(...)` / `.claude(...)` under checkpoint: provider-session resume
@@ -257,9 +257,9 @@ highest-numbered wins.
      DSL previously lacked (tools are model-invoked; an agent had no way to
      run a declared programmatic effect such as "fetch and stash before the
      model runs").
-   This resolves the open transform question: undeclared transform is sync;
-   declared transform is the effect step. "patch" survives only as the noun
-   for session patches returned by hooks/middleware.
+     This resolves the open transform question: undeclared transform is sync;
+     declared transform is the effect step. "patch" survives only as the noun
+     for session patches returned by hooks/middleware.
 2. **The `turn` node is removed.** Verified: it has no runtime semantics
    (`executeChildren` once — a sequence) and existed only to scope the
    inbox/awaitInput/tools vocabulary at the type level. `inbox`, `awaitInput`,
@@ -349,7 +349,7 @@ highest-numbered wins.
 
 ## Rationale and Discussion (2026-06)
 
-This records *why* the decisions above were reached, including the alternatives
+This records _why_ the decisions above were reached, including the alternatives
 considered and the reference systems compared (`references/temporal-sdk-typescript`,
 `references/restate-sdk-typescript`, `references/inngest-js`). It is design
 history; the Decision Update above is the authoritative outcome.
@@ -360,7 +360,7 @@ The branch had two coexisting durability paradigms. A review first mis-diagnosed
 the graph runtime as "missing model-call journaling, therefore unsound." Reading
 `durable.ts` corrected this: the graph runtime is **checkpoint + skip-prefix**
 (persist the whole session at suspend; resume from it; skip the completed
-prefix), which is sound *without* journaling model calls. So the real question
+prefix), which is sound _without_ journaling model calls. So the real question
 was not a bug but a paradigm choice: keep the legacy **replay** runtime or the
 graph **checkpoint** runtime.
 
@@ -371,10 +371,10 @@ integration must route through the journal. The payoff is small storage, replay
 debugging, and automatic once-only effects. Checkpoint imposes none of that
 — "we save your session and move forward, write whatever code you want" — at the
 cost of losing free replay-debugging. (The "small storage" edge mostly vanishes
-for agents; see the convergence note below — the session log already *is* the
+for agents; see the convergence note below — the session log already _is_ the
 effect journal.)
 
-For a framework whose thesis is *lightweight authoring, durability as a flag*,
+For a framework whose thesis is _lightweight authoring, durability as a flag_,
 checkpoint is the better fit; replay is the right call only for expert,
 mission-critical exactly-once orchestration (Temporal's niche). Decision:
 checkpoint, and **delete** the replay machinery rather than port it.
@@ -386,9 +386,9 @@ converge for this domain," for two reasons worth recording.
 
 First, **the effects replay would journal are already persisted as session
 messages.** A model response is an assistant message; a tool result is a tool
-message. So PromptTrail's checkpoint *already journals* exactly what replay
-would — the session log *is* the effect journal. Durability does not throw away
-journaling; it keeps it (as messages) and only drops *re-execution on resume*.
+message. So PromptTrail's checkpoint _already journals_ exactly what replay
+would — the session log _is_ the effect journal. Durability does not throw away
+journaling; it keeps it (as messages) and only drops _re-execution on resume_.
 With model/tool effects captured this way, the sole remaining difference is the
 resume mechanic:
 
@@ -400,13 +400,13 @@ resume mechanic:
 For agents the control-flow glue (e.g. `session.hasToolCalls()`) is a pure
 function of the session, so re-running it (replay) yields the same answer as
 skipping it (checkpoint) — the two are observably isomorphic. What replay buys
-on top is nondeterminism *detection* and history-replay *debugging*; what it
+on top is nondeterminism _detection_ and history-replay _debugging_; what it
 costs is a determinism contract on re-run glue. Agents are intrinsically
 nondeterministic and the model output is captured either way, so the detection
 is worth less here while the determinism tax is real. Net: a genuine tilt to
 checkpoint (forward-only, no determinism contract), not a knockout. The one
 replay asset worth keeping — history-replay debugging — can be recovered as a
-debug harness over saved session snapshots *without* imposing a determinism
+debug harness over saved session snapshots _without_ imposing a determinism
 contract on production runs.
 
 #### Prior art: replay is for imperative code, checkpoint is for graphs
@@ -416,7 +416,7 @@ shape of the computation:
 
 - **Replay camp** (re-derive an arbitrary imperative call stack via deterministic
   re-execution): Temporal/Cadence, Azure Durable Functions, Restate, Inngest.
-  Replay is the trick that makes *ordinary imperative code* durable — you cannot
+  Replay is the trick that makes _ordinary imperative code_ durable — you cannot
   portably snapshot a running stack, so you rebuild it by replaying.
 - **Checkpoint camp** (persist state at each boundary, resume forward, do not
   re-run user code from the top): AWS Step Functions, Google Cloud Workflows,
@@ -444,9 +444,9 @@ remote system — so only the author can supply it. That makes the **key** the
 single irreducible thing a user must provide, and only for writes they want
 crash-safe.
 
-A read/write **taxonomy**, by contrast, is *not* required: re-running a read is
+A read/write **taxonomy**, by contrast, is _not_ required: re-running a read is
 harmless, and the reference systems confirm the posture — Temporal, Restate, and
-Inngest all require an effect *boundary* (activity / `ctx.run` / `step.run`) but
+Inngest all require an effect _boundary_ (activity / `ctx.run` / `step.run`) but
 none require a read/write tag, leaving idempotency to the developer. In
 PromptTrail the **tool is already that boundary** (the analog of a Temporal
 activity), so forcing a `kind` taxonomy would be ceremony the references show is
@@ -456,9 +456,9 @@ Why then offer **strict durable mode** (one binary decision per tool)? Because
 replay systems get a free forcing function — an unmarked effect re-executes
 loudly on every replay or throws in the sandbox, so mistakes surface
 immediately. Checkpoint removed that forcing function, so an undeclared write
-fails only *silently* in the rare crash-mid-node window. Strict mode restores a
+fails only _silently_ in the rare crash-mid-node window. Strict mode restores a
 forcing function at the lowest possible ceremony: "is this tool safe to re-run,
-or here is its key?" — one decision, not a taxonomy. This is strictly *more*
+or here is its key?" — one decision, not a taxonomy. This is strictly _more_
 helpful than Temporal, which leaves write-idempotency entirely to trust.
 
 ### Why edit tolerance is a non-goal
@@ -468,7 +468,7 @@ in-flight runs. Checking the references showed this is unsolved everywhere:
 Temporal does **not** auto-tolerate workflow edits — authors must wrap changes in
 explicit `patched()` / `deprecatePatch()` markers or pin runs to a Build ID /
 Worker Deployment (`references/temporal-sdk-typescript/packages/workflow/src/workflow.ts`).
-Holding PromptTrail to "auto-tolerant edits" was therefore a *higher* bar than
+Holding PromptTrail to "auto-tolerant edits" was therefore a _higher_ bar than
 Temporal. Dropping that bar simplifies the design: ids can be auto-derived
 freely, and the version gate's role is simply to detect an edit and fail fast
 (explicit migration, the analog of Temporal patching, can come later). This is
@@ -478,7 +478,7 @@ prompt tweak), not a correctness guarantee.
 ### Why synchronous decision handlers instead of an IO sandbox
 
 The question arose of whether durable mode should error on arbitrary async/IO,
-like Temporal's workflow sandbox. Under checkpoint the *determinism* rationale
+like Temporal's workflow sandbox. Under checkpoint the _determinism_ rationale
 for that ban evaporates (no replay). The only remaining reason to restrict IO in
 author code is to keep effects inside the keyed boundary so they are
 crash-protected. A full global IO sandbox (replacing `Date`/`Math.random`/timers
@@ -489,21 +489,21 @@ decision/transform handlers (`conditional`/`loop` conditions, `goal.isSatisfied`
 flows into tools. This also just enforces the design's pre-existing intent that
 `isSatisfied` be deterministic over the session. Neither approach is
 bullet-proof (a determined author can fire-and-forget a promise), but the type
-version removes the *accidental* path and makes the right way the easy way.
+version removes the _accidental_ path and makes the right way the easy way.
 
 ## Final Vocabulary
 
-| Term         | Meaning                                                                                                                           |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `Agent`      | A named, reusable graph of prompt, model, tool, goal, and control nodes.                                                          |
-| `App`        | Owns stores, sources, routing, execution, resume, locks, and delivery.                                                            |
-| `Binding`    | Maps platform events to an agent, conversation id, input, and defaults.                                                           |
-| `Run`        | One execution instance of an agent for a conversation/task.                                                                       |
+| Term         | Meaning                                                                                                                                                                                                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent`      | A named, reusable graph of prompt, model, tool, goal, and control nodes.                                                                                                                                                           |
+| `App`        | Owns stores, sources, routing, execution, resume, locks, and delivery.                                                                                                                                                             |
+| `Binding`    | Maps platform events to an agent, conversation id, input, and defaults.                                                                                                                                                            |
+| `Run`        | One execution instance of an agent for a conversation/task.                                                                                                                                                                        |
 | `Durable`    | Renamed `checkpoint` (Decision Update 2): session deltas are persisted at node boundaries and resumed forward. Execution is at-least-once; keyed effects are deduped best-effort locally and authoritatively by the remote system. |
-| `Goal`       | A high-level agent node that loops model/tool/user interaction until a satisfaction condition succeeds or attempts are exhausted. |
-| `Middleware` | Changes model/tool requests, results, or session patches through deterministic phases.                                            |
-| `Hook`       | Observes lifecycle phases and may return explicit session patches.                                                                |
-| `Observer`   | Receives emitted facts and may perform idempotent presentation/metrics side effects.                                              |
+| `Goal`       | A high-level agent node that loops model/tool/user interaction until a satisfaction condition succeeds or attempts are exhausted.                                                                                                  |
+| `Middleware` | Changes model/tool requests, results, or session patches through deterministic phases.                                                                                                                                             |
+| `Hook`       | Observes lifecycle phases and may return explicit session patches.                                                                                                                                                                 |
+| `Observer`   | Receives emitted facts and may perform idempotent presentation/metrics side effects.                                                                                                                                               |
 
 The old `DurableAgent`, `DurableTurnBuilder`, `Scenario`, and
 `MemoryDurableRuntime` concepts are not final public APIs. `RuntimeBundle` can
@@ -580,15 +580,15 @@ Agent.create('name')
   .system(content)
   .user(contentOrSource)
   .assistant(sourceOrHandler, options)
-  .transform(handler)                          // pure, sync
-  .transform(id, { effect }, asyncHandler)     // declared effect step
+  .transform(handler) // pure, sync
+  .transform(id, { effect }, asyncHandler) // declared effect step
   .inbox(options)
-  .awaitInput(id)                              // mid-flow input only
+  .awaitInput(id) // mid-flow input only
   .tools(options)
   .goal(id, goal, options)
   .conditional(condition, thenBuilder, elseBuilder)
   .loop(id, condition, builder, options)
-  .subroutine(id, builder, options)            // isolating by default
+  .subroutine(id, builder, options) // isolating by default
   .codex(options)
   .claude(options);
 ```
@@ -666,7 +666,10 @@ write the author wants crash-safe (see Rationale). The declaration is binary:
 // must-dedup (key, which may depend on input) or repeatable. Declaring neither
 // is a registration-time error under checkpoint mode.
 type Effect =
-  | { idempotencyKey: string | ((input: unknown) => string); retry?: RetryPolicy }
+  | {
+      idempotencyKey: string | ((input: unknown) => string);
+      retry?: RetryPolicy;
+    }
   | { repeatable: true; retry?: RetryPolicy };
 ```
 
@@ -772,7 +775,7 @@ avoid the "turn" collision).
   not compose `inbox`/`tools`/`repeat` inside them; **the provider owns the loop
   and session**. They sit at the raw-node layer.
 
-So the distinction is *who owns the loop*: `turn` = you (the graph);
+So the distinction is _who owns the loop_: `turn` = you (the graph);
 `.codex`/`.claude` = the provider. The naming also pairs with the raw-model
 side: `Source.llm().openai()` / `.anthropic()` call the model (graph owns the
 loop), while `.codex()` / `.claude()` hand the turn to the vendor's agent
@@ -1336,8 +1339,8 @@ is to delete the parallel replay system and the machinery that only served it.
   `external-write` is declared, the type requires the key.
 - Two gears tied to the run mode (decided): **ephemeral = loose** (no
   declaration, Temporal-style honor system); **durable = strict** automatically
-  (no separate flag) — each tool declares one of *safe to re-run* or *here is my
-  key* as a registration-time hard error. No strict opt-out in v1, so "durable"
+  (no separate flag) — each tool declares one of _safe to re-run_ or _here is my
+  key_ as a registration-time hard error. No strict opt-out in v1, so "durable"
   always means a real durable engine.
 - Framework-provided tools/hooks/middleware ship pre-classified; the strict gate
   fires only on author-written code.

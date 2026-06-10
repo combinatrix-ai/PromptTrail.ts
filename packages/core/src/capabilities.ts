@@ -243,11 +243,7 @@ function getConfiguredCapabilityRisk(
   ) {
     return 'execute';
   }
-  if (
-    name.includes('search') ||
-    name.includes('url') ||
-    name.includes('web')
-  ) {
+  if (name.includes('search') || name.includes('url') || name.includes('web')) {
     return 'network';
   }
   return 'external';

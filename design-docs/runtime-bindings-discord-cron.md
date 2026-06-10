@@ -47,12 +47,7 @@ const mainAgent = Agent.create()
   })
   .system('You are a helpful long-running assistant.')
   .loopForever((agent) =>
-    agent
-      .user()
-      .assistant()
-      .runTools()
-      .deliver()
-      .awaitNext(),
+    agent.user().assistant().runTools().deliver().awaitNext(),
   );
 
 const bundle = PromptTrail.runtimeBundle({
@@ -74,10 +69,12 @@ const bundle = PromptTrail.runtimeBundle({
       .where(discord.notBot())
       .where(discord.inChannels(['general', 'oracle_cloud', 'news']))
       .toAgent('main')
-      .conversation(discord.sessionKey({
-        groupSessionsPerUser: true,
-        threadSessionsPerUser: false,
-      }))
+      .conversation(
+        discord.sessionKey({
+          groupSessionsPerUser: true,
+          threadSessionsPerUser: false,
+        }),
+      )
       .defaults({
         delivery: discord.replyToThread(),
         toolsets: [
@@ -200,10 +197,12 @@ const workroom = PromptTrail.runtimeBundle({
       .where(discord.notBot())
       .where(discord.inChannels(['general', 'cloud-lab', 'news']))
       .toAgent('main')
-      .conversation(discord.sessionKey({
-        groupSessionsPerUser: true,
-        threadSessionsPerUser: false,
-      }))
+      .conversation(
+        discord.sessionKey({
+          groupSessionsPerUser: true,
+          threadSessionsPerUser: false,
+        }),
+      )
       .defaults({
         delivery: discord.replyToOriginThread(),
         toolsets: [
@@ -244,13 +243,15 @@ const workroom = PromptTrail.runtimeBundle({
       .name('HN top100 digest')
       .toAgent('main')
       .conversation(({ job }) => `cron:${job.id}`)
-      .input(({ scriptOutput }) => `
+      .input(
+        ({ scriptOutput }) => `
         You are running an automated Hacker News digest for #news.
         Use the fetched top 100 stories below. Pick the items that matter,
         read article/comment context when useful, and produce a concise digest.
 
         ${scriptOutput}
-      `)
+      `,
+      )
       .defaults({
         delivery: discord.channel('news'),
         toolsets: ['web', 'terminal', 'delegation'],
@@ -260,11 +261,13 @@ const workroom = PromptTrail.runtimeBundle({
       .name('Supplier earnings calendar daily update')
       .toAgent('main')
       .conversation(({ job }) => `cron:${job.id}`)
-      .input(`
+      .input(
+        `
         Maintain the user's supplier earnings calendar.
         Check for newly announced earnings dates and update the research note.
         If nothing changed, say so briefly.
-      `)
+      `,
+      )
       .defaults({
         delivery: Delivery.origin(),
         skills: ['supplier-research', 'api-change-watchers'],
@@ -445,12 +448,12 @@ discord.sessionKey({
 
 Expected keys:
 
-| Source | Default conversation behavior |
-| --- | --- |
-| Discord DM | one conversation per DM user/chat |
-| Discord channel | one conversation per user in that channel |
-| Discord thread | one shared conversation for all thread participants |
-| Cron job | one conversation per scheduled job/run identity |
+| Source          | Default conversation behavior                       |
+| --------------- | --------------------------------------------------- |
+| Discord DM      | one conversation per DM user/chat                   |
+| Discord channel | one conversation per user in that channel           |
+| Discord thread  | one shared conversation for all thread participants |
+| Cron job        | one conversation per scheduled job/run identity     |
 
 This mirrors the useful Hermes behavior: normal shared channels avoid context
 pollution between users, but threads become a shared room brain.
@@ -867,7 +870,7 @@ Given:
 channelSkillBindings: [
   { channel: 'cloud-lab', skills: ['cloud-ops-debugging'] },
   { channel: 'T_special', skills: ['incident-review'] },
-]
+];
 ```
 
 Expected:
@@ -1041,9 +1044,7 @@ describe('PromptTrail runtime bindings target API', () => {
       delivery: Delivery.replyToOrigin(),
     })
     .system('You are a durable workroom assistant.')
-    .loopForever((agent) =>
-      agent.user().assistant().deliver().awaitNext(),
-    );
+    .loopForever((agent) => agent.user().assistant().deliver().awaitNext());
 
   const workroom = PromptTrail.runtimeBundle({
     name: 'workroom-assistant',
@@ -1061,10 +1062,12 @@ describe('PromptTrail runtime bindings target API', () => {
         .where(discord.notBot())
         .where(discord.inChannels(['general', 'cloud-lab', 'news']))
         .toAgent('main')
-        .conversation(discord.sessionKey({
-          groupSessionsPerUser: true,
-          threadSessionsPerUser: false,
-        }))
+        .conversation(
+          discord.sessionKey({
+            groupSessionsPerUser: true,
+            threadSessionsPerUser: false,
+          }),
+        )
         .defaults({
           delivery: discord.replyToOriginThread(),
           toolsets: [
@@ -1161,9 +1164,11 @@ it('routes an allowed Discord message to the durable agent', async () => {
     status: 'suspended',
   });
 
-  expect(fixture.runtime.inbox(
-    'discord:guild:workroom:channel:C_cloud:user:U_alice',
-  )).toContainEqual({
+  expect(
+    fixture.runtime.inbox(
+      'discord:guild:workroom:channel:C_cloud:user:U_alice',
+    ),
+  ).toContainEqual({
     role: 'user',
     source: 'discord',
     content: 'why is the VM out of disk?',
@@ -1225,9 +1230,9 @@ it('shares a thread conversation across participants by default', async () => {
     content: 'I see the same failure',
   });
 
-  expect(fixture.runtime.inbox(
-    'discord:guild:workroom:thread:T_incident',
-  )).toEqual([
+  expect(
+    fixture.runtime.inbox('discord:guild:workroom:thread:T_incident'),
+  ).toEqual([
     expect.objectContaining({ author: 'alice' }),
     expect.objectContaining({ author: 'bob' }),
   ]);

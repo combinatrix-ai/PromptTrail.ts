@@ -808,7 +808,7 @@ describe('LlmSource', () => {
     });
 
     it('should throw error after max attempts with raiseError=true', async () => {
-      const validator = new CustomValidator((content) => ({
+      const validator = new CustomValidator((_content) => ({
         isValid: false,
         instruction: 'Always fails',
       }));
@@ -833,7 +833,7 @@ describe('LlmSource', () => {
     });
 
     it('should return invalid content with raiseError=false', async () => {
-      const validator = new CustomValidator((content) => ({
+      const validator = new CustomValidator((_content) => ({
         isValid: false,
         instruction: 'Always fails',
       }));

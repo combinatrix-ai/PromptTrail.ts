@@ -158,7 +158,8 @@ function fakeDiscordClient(sent: string[]) {
           predicate: (candidate: { id: string; name: string }) => boolean,
         ) => channels.find((channel) => predicate(channel)),
       },
-      fetch: async (id: string) => channels.find((channel) => channel.id === id),
+      fetch: async (id: string) =>
+        channels.find((channel) => channel.id === id),
     },
   } as never;
 }

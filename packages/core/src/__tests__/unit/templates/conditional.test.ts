@@ -104,7 +104,7 @@ describe('If Template', () => {
   });
 
   it('should handle complex conditions using session data', async () => {
-    interface SessionContext
+    interface _SessionContext
       extends Vars<{
         userRole: string;
       }> {}

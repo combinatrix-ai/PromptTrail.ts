@@ -87,8 +87,8 @@ describe('Default Content Source', () => {
 
     it('should override the default source with explicit source', async () => {
       // Create default sources
-      const defaultUserSource = Source.literal('Default user message');
-      const defaultAssistantSource = Source.literal(
+      const _defaultUserSource = Source.literal('Default user message');
+      const _defaultAssistantSource = Source.literal(
         'Default assistant message',
       );
 
@@ -395,8 +395,8 @@ describe('Default Content Source', () => {
 
     it('should override parent default sources with its own defaults', async () => {
       // Create parent default sources
-      const parentUserSource = Source.literal('Parent default user message');
-      const parentAssistantSource = Source.literal(
+      const _parentUserSource = Source.literal('Parent default user message');
+      const _parentAssistantSource = Source.literal(
         'Parent default assistant message',
       );
 

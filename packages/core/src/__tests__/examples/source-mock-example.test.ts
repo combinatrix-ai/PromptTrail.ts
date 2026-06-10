@@ -31,10 +31,10 @@ describe('Source.llm().mock() examples', () => {
       .mockResponse({ content: 'Configured mock response' });
 
     // The configuration is available for assertions
-    const lastCall = mockSource.getCallHistory()[0];
+    const _lastCall = mockSource.getCallHistory()[0];
 
     const agent = Agent.quick().assistant(mockSource);
-    const session = await agent.execute();
+    const _session = await agent.execute();
 
     // After execution, we can check what configuration was used
     const history = mockSource.getCallHistory();

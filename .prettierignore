@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+.next
+.turbo
+.vercel
+
+references
+
+pnpm-lock.yaml
+package-lock.json

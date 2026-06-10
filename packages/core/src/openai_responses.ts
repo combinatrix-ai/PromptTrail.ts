@@ -72,7 +72,7 @@ export async function* streamOpenAIResponsesEvents<
       options.provider.dangerouslyAllowBrowser,
   });
   const requestOptions = withOpenAIResponsesPromptCacheKey(session, options);
-  const tools = getOpenAIPromptTrailTools(requestOptions);
+  const _tools = getOpenAIPromptTrailTools(requestOptions);
   await requireConfiguredCapabilityApprovals(requestOptions.capabilities, {
     provider: 'openai',
     session,

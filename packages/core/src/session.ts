@@ -128,7 +128,9 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
    */
   hasToolCalls(): boolean {
     const message = this.getLastMessage();
-    return message?.type === 'assistant' && (message.toolCalls?.length ?? 0) > 0;
+    return (
+      message?.type === 'assistant' && (message.toolCalls?.length ?? 0) > 0
+    );
   }
 
   /**

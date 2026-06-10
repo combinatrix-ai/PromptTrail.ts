@@ -107,7 +107,7 @@ checkpoint frameworks lack:
    above and for at-least-once itself. Nothing in this section starts before
    it lands.
 
-Ordering: these go into the change list *after* §1 (durability collapse)
+Ordering: these go into the change list _after_ §1 (durability collapse)
 completes. This document only fixes the direction.
 
 ## Schema Strategy
@@ -131,7 +131,7 @@ destructive rewriting breaks both. The design rule:
 
 - Compaction is an explicit, checkpointed transform that **appends** a summary
   (observation log entry) and advances a context-assembly pointer. Raw
-  messages leave the *prompt*, never the *journal*.
+  messages leave the _prompt_, never the _journal_.
 - This is Mastra's Observational Memory shape translated into our model, and
   it keeps prompt-cacheability (append-only prefix) for free.
 - RAG/semantic recall is commodity and low priority; it can be built later as

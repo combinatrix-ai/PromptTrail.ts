@@ -453,9 +453,7 @@ describe('Google Gemini native adapter helpers', () => {
   });
 
   it('uses documented Gemini CachedContent minimum token thresholds', () => {
-    expect(getGeminiExplicitCacheMinTokens('gemini-3.1-flash-lite')).toBe(
-      4096,
-    );
+    expect(getGeminiExplicitCacheMinTokens('gemini-3.1-flash-lite')).toBe(4096);
     expect(getGeminiExplicitCacheMinTokens('models/other-model')).toBe(4096);
   });
 
@@ -748,9 +746,7 @@ describe('Google Gemini native adapter helpers', () => {
         id: 'call-approval',
         name: 'deleteRepo',
         response: {
-          content: [
-            { type: 'text', text: 'Tool execution denied: too risky' },
-          ],
+          content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
           isError: true,
         },
       },

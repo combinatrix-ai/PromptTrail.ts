@@ -92,7 +92,9 @@ export function resolveRuntimeInput<TEvent extends RuntimeBindingEvent>(
   return 'content' in event ? event.content : event.job.name;
 }
 
-export function resolveRuntimeBindingContext<TEvent extends RuntimeBindingEvent>(
+export function resolveRuntimeBindingContext<
+  TEvent extends RuntimeBindingEvent,
+>(
   binding: RuntimeBinding<TEvent>,
   event: TEvent,
 ): Record<string, unknown> | undefined {

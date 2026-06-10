@@ -69,7 +69,7 @@ describe('Agent', () => {
       .loop(
         // Use function-based loop
         (agent) => agent.user('This is iteration message'),
-        (session) => {
+        (_session) => {
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
           // The check runs *before* the body, so check if counter will exceed 3 *after* incrementing
@@ -101,7 +101,7 @@ describe('Agent', () => {
       .user('Start the loop')
       .loop(
         (agent) => agent.user('This is iteration message'),
-        (session) => {
+        (_session) => {
           // Use function-based loop
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
@@ -162,7 +162,7 @@ describe('Agent', () => {
             .user('Outer loop start')
             .loop(
               (innerAgent) => innerAgent.user('Inner loop message'),
-              (session) => {
+              (_session) => {
                 // Inner loop definition
                 innerCounter++;
                 // Exit inner loop when counter *exceeds* 2 (after 2 iterations)
@@ -172,7 +172,7 @@ describe('Agent', () => {
               },
             )
             .user('Outer loop end'),
-        (session) => {
+        (_session) => {
           // Outer loop definition
           outerCounter++;
           // Reset inner counter *before* the outer loop body executes for this iteration

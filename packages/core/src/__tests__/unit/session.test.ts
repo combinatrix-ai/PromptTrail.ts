@@ -89,9 +89,7 @@ describe('Session', () => {
       .addMessage({
         type: 'assistant',
         content: '',
-        toolCalls: [
-          { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
-        ],
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: '1' } }],
       })
       .addMessage({
         type: 'tool_result',
@@ -101,13 +99,13 @@ describe('Session', () => {
 
     expect(createSession().hasToolCalls()).toBe(false);
     expect(
-      createSession().addMessage({
-        type: 'assistant',
-        content: '',
-        toolCalls: [
-          { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
-        ],
-      }).hasToolCalls(),
+      createSession()
+        .addMessage({
+          type: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: '1' } }],
+        })
+        .hasToolCalls(),
     ).toBe(true);
     expect(session.hasToolCalls()).toBe(false);
   });

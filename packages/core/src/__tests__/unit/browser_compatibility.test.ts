@@ -29,7 +29,7 @@ describe('Browser Compatibility', () => {
   });
 
   it('should work with templates in browser context', async () => {
-    const llm: Source = Source.llm();
+    const _llm: Source = Source.llm();
 
     // Create a template
     const template = new Sequence()
