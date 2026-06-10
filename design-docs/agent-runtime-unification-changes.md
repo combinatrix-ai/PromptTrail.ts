@@ -40,7 +40,7 @@ currently route through the generic `template` adapter node, so deleting legacy
 execution first breaks that path. Tag the pre-deletion commit
 (e.g. `pre-replay-removal`) so the replay implementation stays recoverable.
 
-- [ ] **1.0 Rename the run mode `durable` → `checkpoint`.** Flag, option types,
+- [x] **1.0 Rename the run mode `durable` → `checkpoint`.** Flag, option types,
       and docs; "durable" overstates the guarantee (at-least-once + remote dedup,
       not exactly-once). Final option shape (Decision Update 3, point 12):
       `checkpoint?: true | RunStore | { store?: RunStore }`; the separate
@@ -48,6 +48,11 @@ execution first breaks that path. Tag the pre-deletion commit
       binding override `.checkpoint(...)` takes the same union; `checkpoint: true`
       with no ambient store fails immediately with guidance. See §8.0.
       (`durable.ts`, `templates/agent.ts`, exports)
+      Note: public surface only — internal `Durable*` machinery keeps its
+      name until §1.1–1.3. `RunStore` is exported as an alias of
+      `DurableRunStore`. App/binding checkpoint store overrides that differ
+      from `PromptTrail.app({ store })` fail fast for now ("store overrides
+      are not supported yet"); revisit with §1.3/§5.
 - [ ] **1.1 Delete the legacy replay path.** Remove the `DurableAgent` replay
       runtime, its model-call effect journal, the event-replay log, and
       `NondeterminismError` detection. Replace `journaled` per §8.1/§8.9: the memo

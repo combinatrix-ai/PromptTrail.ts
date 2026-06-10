@@ -46,6 +46,7 @@ export type {
   PromptTrailRegisteredAgent,
   PromptTrailRunOptions,
   PromptTrailSendOptions,
+  RunStore,
   StoredRun,
   ToolCall,
 } from './durable';
@@ -85,7 +86,8 @@ export {
   Structured,
 } from './templates';
 export type {
-  AgentDirectDurableOptions,
+  AgentCheckpointOption,
+  AgentCheckpointOptions,
   AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGoalOptions,

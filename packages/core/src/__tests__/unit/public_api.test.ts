@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as prompttrail from '../../index';
 import type {
-  AgentDirectDurableOptions,
+  AgentCheckpointOption,
   AgentExecuteOptions,
   AgentExecutionOptions,
   AgentGoalOptions,
@@ -108,16 +108,12 @@ describe('public API surface', () => {
 
   it('types direct agent execution options', async () => {
     const controller = new AbortController();
-    const durable: AgentDirectDurableOptions = {
-      runId: 'public-direct-agent-run',
-      store: prompttrail.memoryStore(),
-    };
+    const checkpoint: AgentCheckpointOption = prompttrail.memoryStore();
     const options: AgentExecuteOptions = {
       runId: 'public-direct-agent-run',
-      store: prompttrail.memoryStore(),
+      checkpoint,
       context: { userId: 'U1' },
       signal: controller.signal,
-      durable,
       observers: [
         () => {
           // type coverage only
@@ -304,7 +300,7 @@ describe('public API surface', () => {
     await app.run({
       agent: 'assistant',
       runId: 'public-event-replay',
-      durable: true,
+      checkpoint: true,
     });
     const stored: readonly ExecutionEvent[] = app.events('public-event-replay');
     const replayed: readonly ExecutionEvent[] = await app.replayEvents(

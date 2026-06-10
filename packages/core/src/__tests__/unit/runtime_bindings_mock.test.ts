@@ -23,7 +23,7 @@ function workroomFixture() {
     name: 'workroom-assistant',
     agents: { main },
     defaults: {
-      durable: true,
+      checkpoint: true,
     },
     bindings: [
       bind(discord.messages())

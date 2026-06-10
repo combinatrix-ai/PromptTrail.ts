@@ -1,4 +1,4 @@
-import type { PromptTrailRegisteredAgent } from './durable';
+import type { PromptTrailRegisteredAgent, RunStore } from './durable';
 
 export interface DiscordMessageEvent {
   source: 'discord';
@@ -70,7 +70,7 @@ export type DeliveryTarget =
   | ConcreteDiscordDeliveryTarget;
 
 export interface BindingDefaults {
-  durable?: boolean;
+  checkpoint?: true | RunStore | { store?: RunStore };
   delivery?: DeliveryTarget;
   toolsets?: readonly string[];
   skills?: readonly string[];
@@ -168,8 +168,8 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
     return this.defaults({ delivery });
   }
 
-  durable(durable = true): this {
-    return this.defaults({ durable });
+  checkpoint(checkpoint: BindingDefaults['checkpoint'] = true): this {
+    return this.defaults({ checkpoint });
   }
 
   toolsets(toolsets: readonly string[]): this {

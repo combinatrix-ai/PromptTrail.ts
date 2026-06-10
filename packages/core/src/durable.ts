@@ -2167,7 +2167,7 @@ export interface PromptTrailRunOptions<
   runId?: string;
   input?: string | Omit<Inbound, 'offset'>;
   session?: Session<TVars, TAttrs>;
-  durable?: boolean;
+  checkpoint?: CheckpointOption;
   resumable?: boolean;
   context?: Record<string, unknown>;
 }
@@ -2176,7 +2176,7 @@ export interface PromptTrailSendOptions {
   agent?: string;
   runId: string;
   input: string | Omit<Inbound, 'offset'>;
-  durable?: boolean;
+  checkpoint?: CheckpointOption;
   resumable?: boolean;
   context?: Record<string, unknown>;
 }
@@ -2187,7 +2187,7 @@ export interface InboundRuntimeEvent {
   runId: string;
   input: string;
   kind?: InboundKind;
-  durable?: boolean;
+  checkpoint?: CheckpointOption;
   resumable?: boolean;
   attrs?: Attrs;
 }
@@ -2206,6 +2206,10 @@ export interface DurableRunStore {
   delete(runId: string): void;
   entries(): Iterable<[string, StoredRun<any, any>]>;
 }
+
+export type RunStore = DurableRunStore;
+
+export type CheckpointOption = true | RunStore | { store?: RunStore };
 
 export class MemoryRunStore implements DurableRunStore {
   private runs = new Map<string, StoredRun<any, any>>();
@@ -2234,15 +2238,6 @@ export class MemoryRunStore implements DurableRunStore {
 export interface PromptTrailAppOptions {
   name?: string;
   store?: DurableRunStore;
-  /**
-   * App-level durable defaults. This configures the runtime's store and the
-   * default durability for new app runs. Per-run `durable` options are booleans
-   * that override this default.
-   */
-  durable?: {
-    store?: DurableRunStore;
-    defaultDurable?: boolean;
-  };
   defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
   sources?: Record<string, EventSource>;
@@ -2275,7 +2270,7 @@ export class PromptTrailApp {
   private readonly observerBuses: ObserverBus[] = [];
   private readonly deliveryObserverBuses: ObserverBus[] = [];
   private nextObserverBusIndex = 0;
-  private readonly defaultDurable: boolean;
+  private readonly defaultCheckpoint?: CheckpointOption;
   private readonly runtimeAdapters: RuntimeAdapter[] = [];
   private readonly runtimeActivity: RuntimeActivity | false | undefined;
   private readonly runtimeErrorMessage:
@@ -2292,10 +2287,11 @@ export class PromptTrailApp {
   constructor(options: PromptTrailAppOptions = {}) {
     this.name = options.name ?? 'app';
     this.store =
-      options.durable?.store ?? options.store ?? new MemoryRunStore();
+      checkpointOptionStore(options.defaults?.checkpoint) ??
+      options.store ??
+      new MemoryRunStore();
     this.runtimeDefaults = options.defaults ?? {};
-    this.defaultDurable =
-      options.durable?.defaultDurable ?? options.defaults?.durable ?? false;
+    this.defaultCheckpoint = options.defaults?.checkpoint;
     this.middleware = options.middleware ?? [];
     this.hooks = options.hooks ?? [];
     this.strictObservers = options.strictObservers;
@@ -2563,7 +2559,11 @@ export class PromptTrailApp {
   async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
     options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable = options.durable ?? options.resumable ?? this.defaultDurable;
+    const checkpoint =
+      options.checkpoint ??
+      (options.resumable ? true : undefined) ??
+      this.defaultCheckpoint;
+    this.assertAppCheckpointStore(checkpoint);
     const existing = this.store.get(options.runId);
     if (!existing) {
       if (!options.agent) {
@@ -2573,7 +2573,7 @@ export class PromptTrailApp {
         agent: options.agent,
         runId: options.runId,
         input: options.input,
-        durable,
+        checkpoint,
         context: options.context,
       });
     }
@@ -2897,7 +2897,7 @@ export class PromptTrailApp {
         content: event.input,
         attrs: event.attrs,
       },
-      durable: event.durable,
+      checkpoint: event.checkpoint,
       resumable: event.resumable,
     });
   }
@@ -2908,7 +2908,12 @@ export class PromptTrailApp {
   >(
     options: PromptTrailRunOptions<TVars, TAttrs>,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const durable = options.durable ?? options.resumable ?? this.defaultDurable;
+    const checkpoint =
+      options.checkpoint ??
+      (options.resumable ? true : undefined) ??
+      this.defaultCheckpoint;
+    this.assertAppCheckpointStore(checkpoint);
+    const durable = checkpoint !== undefined;
     const graphAgent = this.resolveGraphAgent(options.agent);
     if (graphAgent) {
       if (durable) {
@@ -3025,6 +3030,17 @@ export class PromptTrailApp {
         raw: { error },
       });
       throw error;
+    }
+  }
+
+  private assertAppCheckpointStore(
+    checkpoint: CheckpointOption | undefined,
+  ): void {
+    const store = checkpointOptionStore(checkpoint);
+    if (store && store !== this.store) {
+      throw new Error(
+        'App checkpoint store overrides are not supported yet. Configure the store on PromptTrail.app({ store }) and use checkpoint: true.',
+      );
     }
   }
 
@@ -3657,6 +3673,30 @@ function runEventIdempotencyKey(
   type: string,
 ): string {
   return `${runId}:run:${seq}:${type}`;
+}
+
+function checkpointOptionStore(
+  option: CheckpointOption | undefined,
+): RunStore | undefined {
+  if (option === undefined || option === true) {
+    return undefined;
+  }
+  if (isRunStore(option)) {
+    return option;
+  }
+  return option.store;
+}
+
+function isRunStore(value: unknown): value is RunStore {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'get' in value &&
+    'set' in value &&
+    'has' in value &&
+    'delete' in value &&
+    'entries' in value
+  );
 }
 
 export function agent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(

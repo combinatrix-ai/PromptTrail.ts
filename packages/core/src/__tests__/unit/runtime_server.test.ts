@@ -101,7 +101,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -329,7 +329,7 @@ describe('RuntimeServer', () => {
       }));
     const bundle = PromptTrail.runtimeBundle({
       name: 'graph-runtime',
-      defaults: { durable: false },
+      defaults: {},
       bindings: [
         bind(discord.messages())
           .to(main)
@@ -397,7 +397,6 @@ describe('RuntimeServer', () => {
     const app = PromptTrail.app({
       name: 'graph-runtime-app',
       defaults: {
-        durable: false,
         context: { appScope: 'runtime-app' },
       },
     }).bind(discord.messages(), (binding) => {
@@ -463,7 +462,7 @@ describe('RuntimeServer', () => {
       }));
     const app = PromptTrail.app({
       name: 'app-start-runtime',
-      defaults: { durable: false },
+      defaults: {},
     })
       .source({
         type: 'discord.messages',
@@ -569,7 +568,6 @@ describe('RuntimeServer', () => {
       agent: 'main',
       runId: 'app-agent-instance',
       input: 'hello',
-      durable: false,
     });
 
     expect(result.session.messages.map((message) => message.content)).toEqual([
@@ -584,7 +582,6 @@ describe('RuntimeServer', () => {
     const result = await app.run({
       agent: 'durable',
       runId: 'app-durable-agent-instance',
-      durable: false,
     });
 
     expect(result.session.getLastMessage()?.content).toBe('ok');
@@ -608,7 +605,7 @@ describe('RuntimeServer', () => {
       name: 'durable-graph-runtime',
       agents: { main },
       defaults: {
-        durable: true,
+        checkpoint: true,
         delivery: discord.replyToOriginThread(),
       },
       bindings: [
@@ -695,7 +692,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-delivery-seq-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -790,7 +787,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-error-delivery-test',
       agents: { main },
-      defaults: { durable: false },
+      defaults: {},
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -870,7 +867,7 @@ describe('RuntimeServer', () => {
       name: 'server-context-test',
       agents: { main },
       defaults: {
-        durable: true,
+        checkpoint: true,
         context: {
           channelPrompts: {
             general: 'General channel prompt',
@@ -982,7 +979,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-adapter-observer-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1075,7 +1072,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-restart-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1194,7 +1191,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-lock-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1305,7 +1302,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-lock-parallel-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1397,7 +1394,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-observer-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1474,7 +1471,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-completed-observer-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1562,7 +1559,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-materialize-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1692,7 +1689,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-existing-context-clone-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [
         bind(discord.messages())
           .where(discord.notBot())
@@ -1788,12 +1785,12 @@ describe('RuntimeServer', () => {
     await app.run({
       agent: 'main',
       runId,
-      durable: true,
+      checkpoint: true,
     });
     await app.run({
       agent: 'main',
       runId: otherRunId,
-      durable: true,
+      checkpoint: true,
     });
     const run = store.get(runId)!;
     run.outbox = [
@@ -1849,7 +1846,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [],
     });
     const app = PromptTrail.app({
@@ -1862,7 +1859,7 @@ describe('RuntimeServer', () => {
     await app.run({
       agent: 'main',
       runId,
-      durable: true,
+      checkpoint: true,
     });
     app.prepareAssistantDeliveries(runId, [
       {
@@ -1960,7 +1957,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-delivering-retry-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [],
     });
     const app = PromptTrail.app({
@@ -1973,7 +1970,7 @@ describe('RuntimeServer', () => {
     await app.run({
       agent: 'main',
       runId,
-      durable: true,
+      checkpoint: true,
     });
     app.prepareAssistantDeliveries(runId, [
       {
@@ -2024,7 +2021,7 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-order-test',
       agents: { main },
-      defaults: { durable: true },
+      defaults: { checkpoint: true },
       bindings: [],
     });
     const app = PromptTrail.app({
@@ -2038,7 +2035,7 @@ describe('RuntimeServer', () => {
     await app.run({
       agent: 'main',
       runId,
-      durable: true,
+      checkpoint: true,
     });
     app.prepareAssistantDeliveries(runId, [
       {

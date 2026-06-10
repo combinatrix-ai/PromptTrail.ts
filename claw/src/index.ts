@@ -36,7 +36,7 @@ const runtime = PromptTrail.app({
   name: 'claw-discord',
   store: memoryStore(),
   defaults: {
-    durable: true,
+    checkpoint: true,
   },
 })
   .agent('main', mainAgent)

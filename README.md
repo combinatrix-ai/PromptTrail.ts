@@ -33,7 +33,7 @@ console.log(session.getLastMessage()?.content);
 `Agent.execute(...)` takes a single options object. Pass initial state, runtime
 context, observers, or graph execution input as
 `execute({ session, context, observers, input, ... })`. Use `PromptTrail.app`
-for durable runs.
+for checkpointed runs.
 
 ### Interactive Chat Loop
 
@@ -165,7 +165,7 @@ CODEX_APP_SERVER_URL=ws://127.0.0.1:8390 pnpm --filter @prompttrail/core exec vi
 ### Control Flow
 
 Named agents use explicit node ids. The ids become stable graph coordinates for
-app bindings, events, and durable replay.
+app bindings, events, and checkpoint replay.
 
 ```typescript
 import { Agent } from '@prompttrail/core';
@@ -205,7 +205,7 @@ const agent = Agent.create('support')
 
 For throwaway scripts and template-level utilities such as `Parallel`,
 `Structured`, `codex()`, and `claude()`, use `Agent.quick()`.
-Quick agents are ephemeral and cannot run durable.
+Quick agents are ephemeral and cannot run checkpointed executions.
 
 #### Agent Goals (Goal-Oriented Flow)
 
@@ -273,7 +273,7 @@ const app = PromptTrail.app({ store: memoryStore() })
       .where(discord.notBot())
       .to(support)
       .conversation(discord.sessionKey({ threadSessionsPerUser: true }))
-      .durable()
+      .checkpoint()
       .delivery(discord.replyToOriginThread()),
   );
 

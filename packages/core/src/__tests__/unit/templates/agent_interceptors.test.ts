@@ -409,10 +409,12 @@ describe('Agent interceptors', () => {
       .assistant('reply', source);
 
     const first = await agent.execute({
-      durable: { runId: 'direct-agent-run', store },
+      checkpoint: { store },
+      runId: 'direct-agent-run',
     });
     const second = await agent.execute({
-      durable: { runId: 'direct-agent-run', store },
+      checkpoint: { store },
+      runId: 'direct-agent-run',
     });
 
     expect(first.getLastMessage()?.content).toBe('reply:1');
@@ -426,7 +428,7 @@ describe('Agent interceptors', () => {
     ]);
   });
 
-  it('accepts top-level runId and store in direct durable options', async () => {
+  it('accepts top-level runId and checkpoint store shorthand', async () => {
     const store = memoryStore();
     let calls = 0;
     const source = Source.callback(async () => {
@@ -439,14 +441,12 @@ describe('Agent interceptors', () => {
     );
 
     const first = await agent.execute({
-      durable: true,
+      checkpoint: store,
       runId: 'direct-agent-top-level-options',
-      store,
     });
     const second = await agent.execute({
-      durable: true,
+      checkpoint: store,
       runId: 'direct-agent-top-level-options',
-      store,
     });
 
     expect(first.getLastMessage()?.content).toBe('reply:1');
@@ -460,9 +460,8 @@ describe('Agent interceptors', () => {
     await Agent.create('direct-agent-durable-call-observers')
       .user('message', 'hello')
       .execute({
-        durable: true,
+        checkpoint: store,
         runId: 'direct-agent-durable-call-observers',
-        store,
         observers: [
           (event) => {
             events.push(`${event.seq}:${event.type}`);
@@ -481,7 +480,7 @@ describe('Agent interceptors', () => {
       return `fluent:${calls}`;
     });
     const agent = Agent.create('fluent-direct-agent')
-      .durable({ store })
+      .checkpoint({ store })
       .assistant('reply', source);
 
     await agent.execute();
@@ -491,7 +490,7 @@ describe('Agent interceptors', () => {
     expect(calls).toBe(1);
   });
 
-  it('lets direct execution options disable fluent durability', async () => {
+  it('lets direct execution options set checkpoint run identity', async () => {
     const store = memoryStore();
     let calls = 0;
     const source = Source.callback(async () => {
@@ -499,14 +498,20 @@ describe('Agent interceptors', () => {
       return `override:${calls}`;
     });
     const agent = Agent.create('disabled-fluent-direct-agent')
-      .durable({ runId: 'disabled-fluent-direct-agent-run', store })
+      .checkpoint({ store })
       .assistant('reply', source);
 
-    await agent.execute();
-    const ephemeral = await agent.execute({ durable: false });
+    await agent.execute({
+      checkpoint: store,
+      runId: 'direct-agent-checkpoint-run',
+    });
+    const replayed = await agent.execute({
+      checkpoint: store,
+      runId: 'direct-agent-checkpoint-run',
+    });
 
-    expect(ephemeral.getLastMessage()?.content).toBe('override:2');
-    expect(calls).toBe(2);
+    expect(replayed.getLastMessage()?.content).toBe('override:1');
+    expect(calls).toBe(1);
   });
 
   it('emits session.patched events for materialized phase patches', async () => {

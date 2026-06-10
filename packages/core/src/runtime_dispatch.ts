@@ -31,7 +31,7 @@ export interface RuntimeDispatchOptions<TEvent extends RuntimeBindingEvent> {
   defaults: BindingDefaults;
   content?: string;
   attrs?: Record<string, unknown>;
-  durable?: boolean;
+  checkpoint?: BindingDefaults['checkpoint'];
   resumable?: boolean;
 }
 
@@ -187,7 +187,7 @@ export async function dispatchRuntimeBindingEvent<
         runtimeContext: context,
       },
     },
-    durable: options.durable ?? defaults.durable ?? true,
+    checkpoint: options.checkpoint ?? defaults.checkpoint ?? true,
     resumable: options.resumable,
     context,
   });

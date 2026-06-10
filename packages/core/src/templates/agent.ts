@@ -5,6 +5,7 @@ import {
   agent as createDurableAgent,
   app as createDurableApp,
   type DurableRunStore,
+  type RunStore,
 } from '../durable';
 import {
   type ObserverDeliveryBindingOptions,
@@ -241,7 +242,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
   private readonly hooks: HookDefinition<TC, TM>[] = [];
   private readonly observers: ObserverLike[] = [];
-  private directDurableOptions?: AgentDirectDurableOptions | false;
+  private directCheckpointOptions?: AgentCheckpointOption;
   private directDurableStore?: DurableRunStore;
   private directDurableRunId?: string;
 
@@ -265,15 +266,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     options: AgentGraphExecutionOptions<TC, TM> | undefined,
   ): void {
     const rawOptions = options as Record<string, unknown> | undefined;
-    const unsupportedOption = ['runId', 'store'].find((key) => {
+    const unsupportedOption = ['runId'].find((key) => {
       if (!rawOptions || !(key in rawOptions)) {
         return false;
       }
-      return rawOptions.durable === undefined && !this.directDurableOptions;
+      return (
+        rawOptions.checkpoint === undefined && !this.directCheckpointOptions
+      );
     });
     if (unsupportedOption) {
       throw new Error(
-        `Graph Agent.execute option ${unsupportedOption} requires durable execution.`,
+        `Graph Agent.execute option ${unsupportedOption} requires checkpoint execution.`,
       );
     }
   }
@@ -346,21 +349,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     });
   }
 
-  durable(options: AgentDirectDurableOptions | boolean = true) {
-    if (this.quickMode && options !== false) {
-      throw new Error('Agent.quick() does not support durable execution.');
+  checkpoint(options: AgentCheckpointOption = true) {
+    if (this.quickMode) {
+      throw new Error('Agent.quick() does not support checkpoint execution.');
     }
-    this.directDurableOptions =
-      typeof options === 'boolean'
-        ? options
-          ? { runId: this.ensureDirectDurableRunId() }
-          : false
-        : {
-            ...options,
-            runId: options.runId ?? this.ensureDirectDurableRunId(),
-          };
-    if (typeof options === 'object' && options.store) {
-      this.directDurableStore = options.store;
+    this.directCheckpointOptions = options;
+    const checkpointStore = checkpointOptionStore(options);
+    if (checkpointStore) {
+      this.directDurableStore = checkpointStore;
     }
     return this;
   }
@@ -963,7 +959,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | Session<TC, TM>
       | AgentExecuteOptions<TC, TM>
       | undefined,
-    runtimeOrOptions?: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions,
+    runtimeOrOptions?:
+      | ExecutionRuntimeState<TC, TM>
+      | AgentExecutionOptions
+      | AgentExecutionInternalOptions,
   ): Promise<Session<TC, TM>> {
     if (this.graphNodes.length > 0) {
       const rawOptions =
@@ -971,6 +970,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           ? { session: sessionOrOptions }
           : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
       const options = rawOptions;
+      assertNoTopLevelStoreOption(options);
       this.assertGraphExecutionSupported(options);
       const durableOptions = this.resolveDirectDurableOptions(options);
       if (durableOptions) {
@@ -987,6 +987,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         (sessionOrOptions instanceof Session ? sessionOrOptions : undefined),
       optionsObject?.input,
     );
+    assertNoTopLevelStoreOption(optionsObject);
     const parentRuntime = optionsObject
       ? undefined
       : isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
@@ -1063,30 +1064,28 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   private resolveDirectDurableOptions(
-    executionOptions: AgentExecutionOptions | undefined,
+    executionOptions:
+      | AgentExecutionOptions
+      | AgentExecutionInternalOptions
+      | undefined,
   ): ResolvedAgentDirectDurableOptions | undefined {
     const authored =
-      executionOptions?.durable !== undefined
-        ? executionOptions.durable
-        : this.directDurableOptions;
+      executionOptions?.checkpoint !== undefined
+        ? executionOptions.checkpoint
+        : this.directCheckpointOptions;
     if (this.quickMode && authored !== undefined && authored !== false) {
-      throw new Error('Agent.quick() does not support durable execution.');
+      throw new Error('Agent.quick() does not support checkpoint execution.');
     }
     if (authored === undefined || authored === false) {
       return undefined;
     }
-    const options = authored === true ? {} : authored;
-    const store =
-      options.store ?? executionOptions?.store ?? this.directDurableStore;
+    const store = checkpointOptionStore(authored) ?? this.directDurableStore;
     if (!store) {
       throw new Error(
-        'Agent.execute({ durable: true }) requires a durable store. Pass execute({ durable: true, store }) or durable({ store }).',
+        'Agent.execute({ checkpoint: true }) requires checkpoint: store. Pass execute({ checkpoint: store }) or agent.checkpoint({ store }).',
       );
     }
-    const runId =
-      options.runId ??
-      executionOptions?.runId ??
-      this.ensureDirectDurableRunId();
+    const runId = executionOptions?.runId ?? this.ensureDirectDurableRunId();
     return { runId, store };
   }
 
@@ -1109,7 +1108,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
   private async executeDirectDurable(
     session: Session<TC, TM> | undefined,
-    executionOptions: AgentExecutionOptions | undefined,
+    executionOptions:
+      | AgentExecutionOptions
+      | AgentExecutionInternalOptions
+      | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
   ): Promise<Session<TC, TM>> {
     const durableAgent = createDurableAgent<TC, TM>('direct-agent').patch(
@@ -1122,14 +1124,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
           strictObservers: executionOptions?.strictObservers,
           signal: executionOptions?.signal,
-          durable: false,
+          checkpoint: false,
         }),
       }),
     );
     const durableRuntime = createDurableApp({
-      durable: {
-        store: durableOptions.store,
-        defaultDurable: true,
+      store: durableOptions.store,
+      defaults: {
+        checkpoint: true,
       },
     });
     const result = durableOptions.store.has(durableOptions.runId)
@@ -1138,7 +1140,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           agent: durableAgent,
           runId: durableOptions.runId,
           session,
-          durable: true,
+          checkpoint: true,
           context: executionOptions?.context,
         });
     return result.session;
@@ -1149,9 +1151,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     durableOptions: ResolvedAgentDirectDurableOptions,
   ): Promise<Session<TC, TM>> {
     const runtime = createDurableApp({
-      durable: {
-        store: durableOptions.store,
-        defaultDurable: true,
+      store: durableOptions.store,
+      defaults: {
+        checkpoint: true,
       },
       observers: executionOptions?.observers,
       strictObservers: executionOptions?.strictObservers,
@@ -1170,7 +1172,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         : await runtime.send<TC, TM>({
             runId: durableOptions.runId,
             input: graphInputForDurableSend(input),
-            durable: true,
+            checkpoint: true,
             context: executionOptions?.context,
           })
       : await runtime.run<TC, TM>({
@@ -1179,7 +1181,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           session: executionOptions?.session,
           input:
             input === undefined ? undefined : graphInputForDurableSend(input),
-          durable: true,
+          checkpoint: true,
           context: executionOptions?.context,
         });
     return result.session;
@@ -1206,27 +1208,59 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
 export interface AgentExecutionOptions {
   runId?: string;
-  store?: DurableRunStore;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
-  durable?: boolean | AgentDirectDurableOptions;
+  checkpoint?: AgentCheckpointOption;
   observers?: readonly ObserverLike[];
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
   strictObservers?: boolean;
 }
 
-interface AgentExecutionInternalOptions extends AgentExecutionOptions {
+interface AgentExecutionInternalOptions
+  extends Omit<AgentExecutionOptions, 'checkpoint'> {
   eventScopeId?: string;
+  checkpoint?: AgentCheckpointOption | false;
 }
 
-export interface AgentDirectDurableOptions {
-  runId?: string;
-  store?: DurableRunStore;
-}
+export type AgentCheckpointOption = true | RunStore | { store?: RunStore };
+
+export type AgentCheckpointOptions = AgentCheckpointOption;
 
 interface ResolvedAgentDirectDurableOptions {
   runId: string;
   store: DurableRunStore;
+}
+
+function checkpointOptionStore(
+  option: AgentCheckpointOption,
+): RunStore | undefined {
+  if (option === true) {
+    return undefined;
+  }
+  if (isRunStore(option)) {
+    return option;
+  }
+  return option.store;
+}
+
+function isRunStore(value: unknown): value is RunStore {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'get' in value &&
+    'set' in value &&
+    'has' in value &&
+    'delete' in value &&
+    'entries' in value
+  );
+}
+
+function assertNoTopLevelStoreOption(options: unknown): void {
+  if (typeof options === 'object' && options !== null && 'store' in options) {
+    throw new Error(
+      'Agent.execute option store has been removed. Use checkpoint: store instead.',
+    );
+  }
 }
 
 interface LegacyTemplateCompilerState {
@@ -1539,7 +1573,7 @@ function graphInputForDurableSend<TAttrs extends Attrs>(
 }
 
 function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
-  value: ExecutionRuntimeState<TC, TM> | AgentExecutionOptions | undefined,
+  value: unknown,
 ): value is ExecutionRuntimeState<TC, TM> {
   return (
     !!value &&

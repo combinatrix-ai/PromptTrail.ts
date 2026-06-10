@@ -145,8 +145,8 @@ describe('Agent graph authoring', () => {
   });
 
   it('rejects durable execution for quick agents', async () => {
-    expect(() => Agent.quick().durable()).toThrow(/Agent\.quick/);
-    await expect(Agent.quick().execute({ durable: true })).rejects.toThrow(
+    expect(() => Agent.quick().checkpoint()).toThrow(/Agent\.quick/);
+    await expect(Agent.quick().execute({ checkpoint: true })).rejects.toThrow(
       /Agent\.quick/,
     );
   });
@@ -156,13 +156,18 @@ describe('Agent graph authoring', () => {
     const graph = Agent.create('assistant').assistant('reply', () => 'ok');
 
     await expect(
-      graph.execute({ durable: true, input: 'hello' }),
-    ).rejects.toThrow(/requires a durable store/);
+      graph.execute({ checkpoint: true, input: 'hello' }),
+    ).rejects.toThrow(/requires checkpoint: store/);
     await expect(
       graph.execute({ runId: 'graph-run', input: 'hello' }),
-    ).rejects.toThrow(/requires durable execution/);
-    await expect(graph.execute({ store, input: 'hello' })).rejects.toThrow(
-      /requires durable execution/,
+    ).rejects.toThrow(/requires checkpoint execution/);
+    await expect(
+      (graph.execute as (options: unknown) => Promise<unknown>)({
+        store,
+        input: 'hello',
+      }),
+    ).rejects.toThrow(
+      /Agent\.execute option store has been removed. Use checkpoint: store/,
     );
   });
 
@@ -218,8 +223,7 @@ describe('Agent graph authoring', () => {
         (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
       )
       .execute({
-        durable: true,
-        store,
+        checkpoint: store,
         runId: 'direct-no-inbox',
         input: 'hello',
       });
@@ -247,16 +251,14 @@ describe('Agent graph authoring', () => {
       .assistant('reply', 'done');
 
     await agent.execute({
-      durable: true,
-      store,
+      checkpoint: store,
       runId: 'direct-completed',
       input: 'hello',
     });
 
     await expect(
       agent.execute({
-        durable: true,
-        store,
+        checkpoint: store,
         runId: 'direct-completed',
         input: 'again',
       }),
@@ -286,14 +288,12 @@ describe('Agent graph authoring', () => {
       );
 
     const first = await agent.execute({
-      durable: true,
-      store,
+      checkpoint: store,
       runId: 'direct-completed-continuation',
       input: 'hello',
     });
     const second = await agent.execute({
-      durable: true,
-      store,
+      checkpoint: store,
       runId: 'direct-completed-continuation',
       input: 'again',
     });
@@ -739,9 +739,12 @@ describe('Agent graph authoring', () => {
       .turn('main', (turn) =>
         turn.inbox('inbound').assistant('reply', Source.literal('ok')),
       )
-      .durable({ store, runId: 'direct-graph' });
+      .checkpoint({ store });
 
-    const session = await agent.execute({ input: 'hello' });
+    const session = await agent.execute({
+      input: 'hello',
+      runId: 'direct-graph',
+    });
     const run = store.get('direct-graph');
 
     expect(session.messages.map((message) => message.content)).toEqual([
@@ -785,9 +788,11 @@ describe('Agent graph authoring', () => {
           }))
           .tools('tools'),
       )
-      .durable({ store, runId: 'direct-graph-tool-effects' });
+      .checkpoint({ store });
 
-    const session = await agent.execute();
+    const session = await agent.execute({
+      runId: 'direct-graph-tool-effects',
+    });
     const run = store.get('direct-graph-tool-effects');
 
     expect(session.messages.map((message) => message.content)).toEqual([
@@ -815,10 +820,16 @@ describe('Agent graph authoring', () => {
             return `reply:${last}`;
           }),
       )
-      .durable({ store, runId: 'direct-resume' });
+      .checkpoint({ store });
 
-    const suspended = await agent.execute({ input: 'hello' });
-    const resumed = await agent.execute({ input: 'again' });
+    const suspended = await agent.execute({
+      input: 'hello',
+      runId: 'direct-resume',
+    });
+    const resumed = await agent.execute({
+      input: 'again',
+      runId: 'direct-resume',
+    });
 
     expect(suspended.messages.map((message) => message.content)).toEqual([
       'hello',
@@ -859,10 +870,16 @@ describe('Agent graph authoring', () => {
             (session) => `done:${String(session.getVar('count'))}`,
           ),
       )
-      .durable({ store, runId: 'direct-loop-resume' });
+      .checkpoint({ store });
 
-    const suspended = await agent.execute({ input: 'hello' });
-    const resumed = await agent.execute({ input: 'again' });
+    const suspended = await agent.execute({
+      input: 'hello',
+      runId: 'direct-loop-resume',
+    });
+    const resumed = await agent.execute({
+      input: 'again',
+      runId: 'direct-loop-resume',
+    });
 
     expect(suspended.messages.map((message) => message.content)).toEqual([
       'hello',
@@ -908,10 +925,16 @@ describe('Agent graph authoring', () => {
               ),
         ),
       )
-      .durable({ store, runId: 'direct-nested-loop-resume' });
+      .checkpoint({ store });
 
-    const suspended = await agent.execute({ input: 'hello' });
-    const resumed = await agent.execute({ input: 'again' });
+    const suspended = await agent.execute({
+      input: 'hello',
+      runId: 'direct-nested-loop-resume',
+    });
+    const resumed = await agent.execute({
+      input: 'again',
+      runId: 'direct-nested-loop-resume',
+    });
 
     expect(suspended.messages.map((message) => message.content)).toEqual([
       'hello',
@@ -932,14 +955,14 @@ describe('Agent graph authoring', () => {
 
     await Agent.create('assistant')
       .assistant('reply', Source.literal('ok'))
-      .execute({ durable: true, store, runId: 'graph-version' });
+      .execute({ checkpoint: store, runId: 'graph-version' });
 
     const changed = Agent.create('assistant')
       .system('system', 'Changed.')
       .assistant('reply', Source.literal('ok'));
 
     await expect(
-      changed.execute({ durable: true, store, runId: 'graph-version' }),
+      changed.execute({ checkpoint: store, runId: 'graph-version' }),
     ).rejects.toThrow(AgentGraphVersionError);
   });
 

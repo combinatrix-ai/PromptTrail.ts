@@ -73,7 +73,7 @@ describe('durable agent runtime', () => {
       agent: 'assistant',
       runId: 'run-1',
       input: 'hello',
-      durable: true,
+      checkpoint: true,
     });
 
     expect(first.status).toBe('suspended');
@@ -111,7 +111,7 @@ describe('durable agent runtime', () => {
     await app.run({
       agent: 'persisted',
       runId: 'run-persist-commits',
-      durable: true,
+      checkpoint: true,
       context: {
         delivery: {
           platform: 'discord',
@@ -178,7 +178,7 @@ describe('durable agent runtime', () => {
       agent: assistant,
       runId: 'run-2',
       input: 'hello',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-2');
 
@@ -241,7 +241,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-activity-tool',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-activity-tool');
 
@@ -292,7 +292,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: assistant,
         runId: 'run-write-tool',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow(
       'Durable tool sendDiscord external-write activity requires idempotencyKey.',
@@ -335,7 +335,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: assistant,
         runId: 'run-duplicate-tools',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow(
       'Duplicate durable tool step: tools/call-1. Tool call ids must be unique within tools.',
@@ -366,7 +366,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-patch',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-patch');
 
@@ -438,7 +438,7 @@ describe('durable agent runtime', () => {
       agent: 'intercepted',
       runId: 'run-intercepted',
       input: 'hello',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-intercepted');
 
@@ -540,7 +540,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'configured',
       runId: 'run-agent-configured',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-agent-configured');
 
@@ -598,7 +598,7 @@ describe('durable agent runtime', () => {
     const result = await app.run({
       agent: 'observed',
       runId: 'run-agent-observed',
-      durable: true,
+      checkpoint: true,
     });
 
     expect(result.status).toBe('done');
@@ -663,7 +663,7 @@ describe('durable agent runtime', () => {
     const result = await app.run({
       agent: 'observed',
       runId: 'run-observer-store',
-      durable: true,
+      checkpoint: true,
     });
 
     expect(result.status).toBe('done');
@@ -725,7 +725,7 @@ describe('durable agent runtime', () => {
     await app.run({
       agent: 'observed',
       runId: 'run-manual-observer-store',
-      durable: true,
+      checkpoint: true,
     });
     first();
     second();
@@ -785,7 +785,7 @@ describe('durable agent runtime', () => {
     const result = await app.run({
       agent: 'replay',
       runId: 'run-replayed-events',
-      durable: true,
+      checkpoint: true,
     });
     const stored = app.events('run-replayed-events');
     const replayResult = await app.replayEvents('run-replayed-events');
@@ -841,7 +841,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'replay',
       runId: 'run-replayed-history-dedupe',
-      durable: true,
+      checkpoint: true,
     });
     const firstPatchEvents = app
       .events('run-replayed-history-dedupe')
@@ -908,7 +908,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'phased',
       runId: 'run-agent-phases',
-      durable: true,
+      checkpoint: true,
     });
     const stored = store.get('run-agent-phases')!;
     stored.status = 'open';
@@ -971,7 +971,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'aliases',
       runId: 'run-hook-aliases',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-hook-aliases');
 
@@ -1052,7 +1052,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'hooks',
       runId: 'run-template-hooks',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-template-hooks');
 
@@ -1135,7 +1135,7 @@ describe('durable agent runtime', () => {
         agent: 'replayable',
         runId: 'run-replayable-effects',
         input: 'hello',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('phase crash');
 
@@ -1204,7 +1204,7 @@ describe('durable agent runtime', () => {
         app.run({
           agent: 'sugar',
           runId: 'run-replayable-sugar',
-          durable: true,
+          checkpoint: true,
         }),
       ).rejects.toThrow('phase crash');
       now = 5_000;
@@ -1266,7 +1266,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'retryable',
       runId: 'run-retryable-activity',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-retryable-activity');
 
@@ -1329,7 +1329,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-patch-observed',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-patch-observed');
 
@@ -1385,7 +1385,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'observed',
         runId: 'run-strict-patch-observed',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('patch observer failed:live');
     await expect(app.resume('run-strict-patch-observed')).rejects.toThrow(
@@ -1427,7 +1427,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'prepared',
       runId: 'run-prepare',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-prepare');
 
@@ -1494,7 +1494,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'wrapped',
       runId: 'run-wrap-model',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-wrap-model');
 
@@ -1550,7 +1550,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'wrapped',
         runId: 'run-wrap-model-crash',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('post-next model crash');
 
@@ -1604,7 +1604,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'retry',
       runId: 'run-model-retry-events',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-model-retry-events');
 
@@ -1661,7 +1661,7 @@ describe('durable agent runtime', () => {
       agent: 'chatty',
       runId: 'run-chat-intercepted',
       input: 'hello',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-chat-intercepted');
 
@@ -1747,7 +1747,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'intercepted',
       runId: 'run-tool-intercepted',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-tool-intercepted');
 
@@ -1843,7 +1843,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'wrapped',
       runId: 'run-wrap-tool',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-wrap-tool');
 
@@ -1915,7 +1915,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'retry',
       runId: 'run-tool-retry-events',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-tool-retry-events');
 
@@ -1997,7 +1997,7 @@ describe('durable agent runtime', () => {
           agent: 'tools',
           runId: 'run-tool-effects',
           input: 'hello',
-          durable: true,
+          checkpoint: true,
         }),
       ).rejects.toThrow('tool crash');
 
@@ -2074,7 +2074,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'retry',
       runId: 'run-retry-tool-activity',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-retry-tool-activity');
 
@@ -2143,7 +2143,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'wrapped',
         runId: 'run-wrap-tool-crash',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('post-next tool crash');
 
@@ -2179,7 +2179,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: assistant,
         runId: 'run-patch-command',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow(
       'Durable patch pause returned unsupported command suspend.',
@@ -2208,7 +2208,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-patch-halt',
-      durable: true,
+      checkpoint: true,
     });
     const stored = store.get('run-patch-halt')!;
     stored.status = 'open';
@@ -2251,7 +2251,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-phase-halt',
-      durable: true,
+      checkpoint: true,
     });
     const stored = store.get('run-phase-halt')!;
     stored.status = 'open';
@@ -2294,7 +2294,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-after-model-halt',
-      durable: true,
+      checkpoint: true,
     });
     const stored = store.get('run-after-model-halt')!;
     stored.status = 'open';
@@ -2363,7 +2363,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-after-tool-halt',
-      durable: true,
+      checkpoint: true,
     });
     const stored = store.get('run-after-tool-halt')!;
     stored.status = 'open';
@@ -2406,7 +2406,6 @@ describe('durable agent runtime', () => {
     const result = await app.run({
       agent: assistant,
       runId: 'run-ephemeral-patch-halt',
-      durable: false,
     });
 
     expect(result.status).toBe('done');
@@ -2460,7 +2459,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: assistant,
       runId: 'run-patch-middleware-state',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-patch-middleware-state');
 
@@ -2550,7 +2549,7 @@ describe('durable agent runtime', () => {
 
     const result = await app.run({
       agent: 'assistant',
-      durable: true,
+      checkpoint: true,
     });
 
     expect(result.status).toBe('done');
@@ -2621,7 +2620,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'assistant',
       runId: 'run-graph-goal',
-      durable: true,
+      checkpoint: true,
     });
     const second = await app.resume('run-graph-goal');
 
@@ -2652,7 +2651,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'assistant',
       runId: 'run-graph-multi-goal',
-      durable: true,
+      checkpoint: true,
     });
     const second = await app.send({
       runId: 'run-graph-multi-goal',
@@ -2673,18 +2672,16 @@ describe('durable agent runtime', () => {
     ).toHaveLength(1);
   });
 
-  it('uses app durable defaults for direct runs unless explicitly disabled', async () => {
-    const topLevelStore = memoryStore();
-    const durableStore = memoryStore();
+  it('uses app checkpoint defaults for direct runs', async () => {
+    const checkpointStore = memoryStore();
     const assistant = agent('default-durable')
       .assistant('reply', () => 'hello')
       .turn('wait', (turn) => turn.awaitUser());
     const app = PromptTrail.app({
       agents: { assistant },
-      store: topLevelStore,
-      durable: {
-        store: durableStore,
-        defaultDurable: true,
+      store: checkpointStore,
+      defaults: {
+        checkpoint: true,
       },
     });
 
@@ -2693,22 +2690,14 @@ describe('durable agent runtime', () => {
       runId: 'run-default-durable',
     });
     const replay = await app.resume('run-default-durable');
-    const ephemeral = await app.run({
-      agent: 'assistant',
-      runId: 'run-explicit-ephemeral',
-      durable: false,
-    });
 
     expect(first.status).toBe('suspended');
     expect(replay.status).toBe('suspended');
     expect(app.journal('run-default-durable')).toEqual(['reply/model']);
-    expect(durableStore.get('run-default-durable')).toBeDefined();
-    expect(topLevelStore.get('run-default-durable')).toBeUndefined();
-    expect(durableStore.get('run-explicit-ephemeral')).toBeUndefined();
-    expect(ephemeral.status).toBe('suspended');
+    expect(checkpointStore.get('run-default-durable')).toBeDefined();
   });
 
-  it('uses app durable defaults for send and source-created runs', async () => {
+  it('uses app checkpoint defaults for send and source-created runs', async () => {
     const defaultStore = memoryStore();
     const disabledStore = memoryStore();
     const source = manualSource();
@@ -2717,18 +2706,15 @@ describe('durable agent runtime', () => {
       .turn('wait', (turn) => turn.awaitUser());
     const durableApp = PromptTrail.app({
       agents: { assistant },
-      durable: {
-        store: defaultStore,
-        defaultDurable: true,
+      store: defaultStore,
+      defaults: {
+        checkpoint: true,
       },
     });
     const ephemeralApp = PromptTrail.app({
       agents: { assistant },
       sources: { manual: source },
-      durable: {
-        store: disabledStore,
-        defaultDurable: false,
-      },
+      store: disabledStore,
     });
 
     await durableApp.send({
@@ -2771,7 +2757,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-observed',
-      durable: true,
+      checkpoint: true,
     });
     const second = await app.send({
       runId: 'run-observed',
@@ -2833,7 +2819,7 @@ describe('durable agent runtime', () => {
     const suspended = await app.run({
       agent: 'hooks',
       runId: 'run-await-hooks',
-      durable: true,
+      checkpoint: true,
     });
     const stillSuspended = await app.resume('run-await-hooks');
     const completed = await app.send({
@@ -2890,7 +2876,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-model-observed',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-model-observed');
 
@@ -2934,7 +2920,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'failed',
         runId: 'run-model-failed',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('model unavailable');
 
@@ -2975,7 +2961,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-model-observer-failure',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-model-observer-failure');
 
@@ -3026,7 +3012,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'contextual',
       runId: 'run-contextual',
-      durable: true,
+      checkpoint: true,
       context: {
         channel: 'claw-test',
         requestId: 'req-1',
@@ -3073,7 +3059,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'observed',
         runId: 'run-strict-observer',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('observer broke');
   });
@@ -3117,7 +3103,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-tool-observed',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-tool-observed');
 
@@ -3173,7 +3159,7 @@ describe('durable agent runtime', () => {
       app.run({
         agent: 'failed',
         runId: 'run-tool-failed',
-        durable: true,
+        checkpoint: true,
       }),
     ).rejects.toThrow('tool unavailable');
 
@@ -3230,7 +3216,7 @@ describe('durable agent runtime', () => {
     const first = await app.run({
       agent: 'observed',
       runId: 'run-tool-observer-failure',
-      durable: true,
+      checkpoint: true,
     });
     const replay = await app.resume('run-tool-observer-failure');
 
@@ -3253,7 +3239,7 @@ describe('durable agent runtime', () => {
     await app.run({
       agent: stable,
       runId: 'run-5',
-      durable: true,
+      checkpoint: true,
     });
 
     const run = store.get('run-5')!;
@@ -3298,7 +3284,7 @@ describe('durable agent runtime', () => {
     const run = await app.run({
       agent: 'ordered',
       runId: 'run-middleware-order',
-      durable: true,
+      checkpoint: true,
     });
 
     expect(run.status).toBe('suspended');
@@ -3343,7 +3329,7 @@ describe('durable agent runtime', () => {
       agent: 'assistant',
       runId: 'run-6',
       input: 'hello',
-      durable: true,
+      checkpoint: true,
     });
 
     const result = await app.resume('run-6');
