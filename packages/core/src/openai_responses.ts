@@ -72,7 +72,10 @@ export async function* streamOpenAIResponsesEvents<
       options.provider.dangerouslyAllowBrowser,
   });
   const requestOptions = withOpenAIResponsesPromptCacheKey(session, options);
-  const _tools = getOpenAIPromptTrailTools(requestOptions);
+  // Unlike generateOpenAIResponsesMessage, this function does not resolve
+  // PromptTrailTool instances: tool definitions are sent via
+  // getOpenAIResponsesToolDefinitions below, and tool execution is owned by
+  // the caller (streamPromptTrailToolLoop in generate.ts).
   await requireConfiguredCapabilityApprovals(requestOptions.capabilities, {
     provider: 'openai',
     session,
