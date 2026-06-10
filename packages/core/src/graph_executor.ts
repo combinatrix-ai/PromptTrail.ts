@@ -316,7 +316,6 @@ async function emitGraphRunEvent<TVars extends Vars, TAttrs extends Attrs>(
     type,
     at: new Date().toISOString(),
     seq,
-    replay: 'live',
     source: state.runEventSource,
     ...event,
     idempotencyKey:

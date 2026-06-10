@@ -460,7 +460,6 @@ async function emitPhaseStepEvents<
       at: new Date().toISOString(),
       seq,
       phase: step.phase,
-      replay: 'live',
       idempotencyKey,
       sessionVersion: step.transition.afterVersion,
       source: step.kind,

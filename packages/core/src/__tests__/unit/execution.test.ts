@@ -6,7 +6,6 @@ import {
   applyResolvedExecutionTransition,
   createObserverDeliveryBindings,
   inMemoryObserverDeliveryBindingStore,
-  observerReceives,
   resolveExecutionTransition,
 } from '../../execution';
 import { Message } from '../../message';
@@ -219,9 +218,8 @@ describe('observer bus', () => {
     const bus = new ObserverBus([
       Observer.create({
         name: 'logger',
-        replayPolicy: 'adopt-replayed',
         handle(event) {
-          seen.push(`${event.replay}:${event.type}`);
+          seen.push(event.type);
         },
       }),
     ]);
@@ -231,27 +229,9 @@ describe('observer bus', () => {
       type: 'tool.completed',
       at: '2026-01-01T00:00:00.000Z',
       seq: 3,
-      replay: 'replayed',
     });
 
-    expect(seen).toEqual(['replayed:tool.completed']);
-  });
-
-  it('filters events by replay policy', () => {
-    const event = {
-      id: '1',
-      type: 'tool.started',
-      at: '2026-01-01T00:00:00.000Z',
-      seq: 1,
-      replay: 'replayed' as const,
-    };
-
-    expect(
-      observerReceives({ replayPolicy: 'live-only', handle() {} }, event),
-    ).toBe(false);
-    expect(
-      observerReceives({ replayPolicy: 'adopt-replayed', handle() {} }, event),
-    ).toBe(true);
+    expect(seen).toEqual(['tool.completed']);
   });
 
   it('serializes deliveries per observer', async () => {
@@ -298,53 +278,69 @@ describe('observer bus', () => {
     expect(seen).toEqual(['start:1', 'end:1', 'start:2', 'end:2']);
   });
 
-  it('uses stable queue keys for unnamed observers after replay filtering', async () => {
+  it('uses stable queue keys for unnamed observers', async () => {
     const seen: string[] = [];
     let releaseFirst: (() => void) | undefined;
     let firstStarted: (() => void) | undefined;
+    let secondFastSeen: (() => void) | undefined;
     const first = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
     const started = new Promise<void>((resolve) => {
       firstStarted = resolve;
     });
+    const fastSecond = new Promise<void>((resolve) => {
+      secondFastSeen = resolve;
+    });
     const bus = new ObserverBus([
       {
-        replayPolicy: 'live-only',
         async handle(event) {
-          seen.push(`live:${event.id}`);
-          firstStarted?.();
-          await first;
+          seen.push(`slow:start:${event.id}`);
+          if (event.id === '1') {
+            firstStarted?.();
+            await first;
+          }
+          seen.push(`slow:end:${event.id}`);
         },
       },
       {
-        replayPolicy: 'adopt-replayed',
         handle(event) {
-          seen.push(`adopt:${event.id}`);
+          seen.push(`fast:${event.id}`);
+          if (event.id === '2') {
+            secondFastSeen?.();
+          }
         },
       },
     ]);
 
-    const emitLive = bus.emit({
-      id: 'live',
+    const emit1 = bus.emit({
+      id: '1',
       type: 'event',
       at: '2026-01-01T00:00:00.000Z',
       seq: 1,
-      replay: 'live',
     });
     await started;
+    expect(seen).toEqual(['slow:start:1', 'fast:1']);
 
-    await bus.emit({
-      id: 'replayed',
+    const emit2 = bus.emit({
+      id: '2',
       type: 'event',
       at: '2026-01-01T00:00:00.000Z',
       seq: 2,
-      replay: 'replayed',
     });
+    await fastSecond;
 
-    expect(seen).toEqual(['live:live', 'adopt:live', 'adopt:replayed']);
+    expect(seen).toEqual(['slow:start:1', 'fast:1', 'fast:2']);
     releaseFirst?.();
-    await emitLive;
+    await Promise.all([emit1, emit2]);
+    expect(seen).toEqual([
+      'slow:start:1',
+      'fast:1',
+      'fast:2',
+      'slow:end:1',
+      'slow:start:2',
+      'slow:end:2',
+    ]);
   });
 
   it('emits observer.failed without failing best-effort observer delivery', async () => {

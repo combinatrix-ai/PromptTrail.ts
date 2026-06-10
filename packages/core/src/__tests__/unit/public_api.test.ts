@@ -10,7 +10,6 @@ import type {
   CodexTurnOptions,
   ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
-  ExecutionEvent,
   ObserverDeliveryBindingStore,
   RuntimeAdapter,
 } from '../../index';
@@ -275,41 +274,6 @@ describe('public API surface', () => {
     await expect(boundary.once('createdAt', 'dep', () => 1_000)).resolves.toBe(
       1_000,
     );
-  });
-
-  it('types durable event replay helpers', async () => {
-    const events: ExecutionEvent[] = [];
-    const app = prompttrail.PromptTrail.app({
-      agents: {
-        assistant: prompttrail.Agent.create('assistant').assistant(
-          'reply',
-          () => 'ok',
-        ),
-      },
-      store: prompttrail.memoryStore(),
-    });
-
-    await app.run({
-      agent: 'assistant',
-      runId: 'public-event-replay',
-      checkpoint: true,
-    });
-    const stored: readonly ExecutionEvent[] = app.events('public-event-replay');
-    const replayed: readonly ExecutionEvent[] = await app.replayEvents(
-      'public-event-replay',
-      [
-        {
-          replayPolicy: 'adopt-replayed',
-          handle(event) {
-            events.push(event);
-          },
-        },
-      ],
-    );
-
-    expect(stored.length).toBeGreaterThan(0);
-    expect(replayed).toHaveLength(stored.length);
-    expect(events.every((event) => event.replay === 'replayed')).toBe(true);
   });
 
   it('exposes runtime bundle creation as explicit IR API', () => {

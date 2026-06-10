@@ -169,8 +169,6 @@ export function applyResolvedExecutionTransition<
   };
 }
 
-export type RuntimeReplayMode = 'live' | 'replayed';
-
 export interface ExecutionEventBase {
   id: string;
   type: string;
@@ -183,15 +181,12 @@ export interface ExecutionEventBase {
   stepId?: string;
   phase?: string;
   source?: string;
-  replay?: RuntimeReplayMode;
   idempotencyKey?: string;
   sessionVersion?: number;
   raw?: unknown;
 }
 
 export type ExecutionEvent = ExecutionEventBase & Record<string, unknown>;
-
-export type ObserverReplayPolicy = 'live-only' | 'adopt-replayed';
 
 export interface ObserverContext {
   signal?: AbortSignal;
@@ -228,7 +223,6 @@ export interface ObserverDeliveryBindings {
 
 export interface Observer {
   name?: string;
-  replayPolicy?: ObserverReplayPolicy;
   handle(event: ExecutionEvent, context: ObserverContext): Promise<void> | void;
 }
 
@@ -318,7 +312,6 @@ export class ObserverBus {
             key: entry.observer.name ?? `observer:${index}`,
             observer: entry.observer,
           }))
-          .filter(({ observer }) => observerReceives(observer, event))
           .map(async ({ key, observer }) => {
             const observerContext = this.contextWithDeliveryBindings(
               context,
@@ -367,7 +360,6 @@ export class ObserverBus {
       turnId: originalEvent.turnId,
       templatePath: originalEvent.templatePath,
       stepId: originalEvent.stepId,
-      replay: originalEvent.replay ?? 'live',
       raw: {
         observer: failedObserver.name,
         observerKey: failedKey,
@@ -385,10 +377,7 @@ export class ObserverBus {
           key: entry.observer.name ?? `observer:${index}`,
           observer: entry.observer,
         }))
-        .filter(
-          ({ key, observer }) =>
-            key !== failedKey && observerReceives(observer, failureEvent),
-        )
+        .filter(({ key }) => key !== failedKey)
         .map(async ({ key, observer }) => {
           try {
             await this.enqueue(
@@ -479,19 +468,6 @@ export function normalizeObserver(observer: ObserverLike): Observer {
     return { handle: observer };
   }
   return observer;
-}
-
-export function observerReceives(
-  observer: Observer,
-  event: ExecutionEvent,
-): boolean {
-  const replay = event.replay ?? 'live';
-  switch (observer.replayPolicy ?? 'live-only') {
-    case 'live-only':
-      return replay === 'live';
-    case 'adopt-replayed':
-      return true;
-  }
 }
 
 export function createObserverDeliveryBindings(

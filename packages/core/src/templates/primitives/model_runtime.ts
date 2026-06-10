@@ -124,7 +124,6 @@ export async function emitModelEvent<
     type,
     at: new Date().toISOString(),
     seq,
-    replay: 'live',
     source: 'model',
     phase: 'model',
     stepId: 'model',

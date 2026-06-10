@@ -100,10 +100,18 @@ execution first breaks that path. Tag the pre-deletion commit
       `createCheckpointOnceBoundary`). Behavior-preserving; no test changes.
       Noted for later: `external-read` activities also route through
       `ctx.once` today — revisit with §4.1's binary effect declaration.
-- [ ] **1.5 Drop persisted fields that only served replay** from `StoredRun`
+- [x] **1.5 Drop persisted fields that only served replay** from `StoredRun`
       (journal sequence of model effects, event-history log). Keep session
       checkpoint, inbox+cursor, `graphSuspendedAt`, effect memo, outbox, context.
       (`durable.ts`)
+      Done: `StoredRun.events`/`eventSeq` dropped, along with the §1.2
+      holdovers they justified — `PromptTrailApp.events()`/`replayEvents()`,
+      `ExecutionEvent.replay`, and the `replayPolicy`/`observerReceives`
+      observer filter (no consumer outside the replay path; outbox delivery
+      dedup keys on outbox index, not event seq). Event seq stays monotonic
+      per run via an in-memory app counter so idempotency keys cannot collide
+      across resumes within a process; durable cross-restart sequencing moves
+      to §1.6.
 - [ ] **1.6 Make the run store async and persist deltas.**
       `DurableRunStore.set`/`persist` become `Promise<void>` and are awaited at
       effect boundaries; checkpoints persist session deltas (appended messages +

@@ -296,7 +296,6 @@ async function emitTurnModelEvent<
     type,
     at: new Date().toISOString(),
     seq,
-    replay: 'live',
     source: 'model',
     phase: 'model',
     stepId,

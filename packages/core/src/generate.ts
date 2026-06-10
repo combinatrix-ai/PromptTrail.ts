@@ -818,7 +818,6 @@ async function emitStreamingToolEvent<TAttrs extends Attrs>(
     type,
     at: new Date().toISOString(),
     seq,
-    replay: 'live',
     source: 'tool',
     stepId: call.id,
     idempotencyKey: `${call.id}:${type}`,

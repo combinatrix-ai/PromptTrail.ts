@@ -136,12 +136,10 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
   once: OnceMemoStore;
-  events?: ExecutionEvent[];
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
   graphCursor?: number;
   graphSuspendedAt?: string;
-  eventSeq?: number;
   context?: Record<string, unknown>;
 }
 
@@ -269,6 +267,12 @@ export class PromptTrailApp {
     | undefined;
   private runtimeServer?: RuntimeServer;
   private runCounter = 0;
+  // Event idempotency keys embed this sequence, so it must stay monotonic
+  // across resumes of the same run within this process — the lifetime of the
+  // in-memory delivery-binding stores that dedupe on those keys. It is not
+  // persisted; durable cross-restart sequencing is the async store's job
+  // (change list §1.6).
+  private readonly runEventSeqs = new Map<string, number>();
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.name = options.name ?? 'app';
@@ -718,37 +722,6 @@ export class PromptTrailApp {
     return run ? [...(run.outbox ?? [])] : [];
   }
 
-  events(runId: string): readonly ExecutionEvent[] {
-    const run = this.store.get(runId);
-    return run ? [...(run.events ?? [])] : [];
-  }
-
-  async replayEvents(
-    runId: string,
-    observers?: readonly ObserverLike[],
-  ): Promise<readonly ExecutionEvent[]> {
-    const run = this.getRun(runId);
-    const events = (run.events ?? []).map((event) => ({
-      ...event,
-      replay: 'replayed' as const,
-    }));
-    if (observers) {
-      const bus = new ObserverBus(observers, {
-        strictObservers: this.strictObservers,
-        ...this.observerDeliveryBindingOptions,
-      });
-      const context = observerContextFromRunContext(run.context);
-      for (const event of events) {
-        await bus.emit(event, context);
-      }
-      return events;
-    }
-    for (const event of events) {
-      await this.emitReplayedObservers(run, event);
-    }
-    return events;
-  }
-
   pendingAssistantDeliveryOutbox(): PendingAssistantDeliveryOutboxEntry[] {
     this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
@@ -857,11 +830,9 @@ export class PromptTrailApp {
         initial: options.session ?? Session.create<TVars, TAttrs>(),
         status: 'open',
         once: createCheckpointOnceMemoStore(),
-        events: [],
         outbox: [],
         inbox: [],
         graphCursor: 0,
-        eventSeq: 0,
         context: cloneDurableRuntimeValue(options.context),
       };
       this.store.set(runId, run);
@@ -907,7 +878,6 @@ export class PromptTrailApp {
           seq,
           conversationId: runId,
           runId,
-          replay: 'live',
           source: 'app',
           ...event,
           idempotencyKey:
@@ -998,7 +968,7 @@ export class PromptTrailApp {
           input: inbox,
           context: cloneDurableRuntimeValue(run.context),
           eventScopeId: runId,
-          nextEventSeq: () => this.nextRunEventSeq(runId, run),
+          nextEventSeq: () => this.nextRunEventSeq(runId),
           durableToolExecution: (_context, execute) => {
             return execute(
               createCheckpointOnceBoundary(run, () =>
@@ -1066,40 +1036,7 @@ export class PromptTrailApp {
     }
   }
 
-  private async emitRunEvent<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
-    runId: string,
-    type: 'run.started' | 'run.completed' | 'run.suspended' | 'error',
-    options: Partial<ExecutionEvent> = {},
-  ): Promise<void> {
-    const seq = this.nextRunEventSeq(runId, run);
-    await this.emitObservers(run, {
-      id: `${runId}:${seq}:${type}`,
-      type,
-      at: new Date().toISOString(),
-      seq,
-      conversationId: runId,
-      runId,
-      replay: 'live',
-      source: 'app',
-      ...options,
-      idempotencyKey:
-        options.idempotencyKey ?? runEventIdempotencyKey(runId, seq, type),
-    });
-    this.persistRun(runId, run);
-  }
-
   private async emitObservers<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
-    event: ExecutionEvent,
-  ): Promise<void> {
-    if ((event.replay ?? 'live') === 'live') {
-      (run.events ??= []).push({ ...event });
-    }
-    await this.emitObserverBuses(run, event);
-  }
-
-  private async emitReplayedObservers<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
     event: ExecutionEvent,
   ): Promise<void> {
@@ -1121,13 +1058,9 @@ export class PromptTrailApp {
     return Object.fromEntries(this.agents.entries());
   }
 
-  private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
-    runId: string,
-    run: StoredRun<TVars, TAttrs>,
-  ): number {
-    const seq = run.eventSeq ?? 0;
-    run.eventSeq = seq + 1;
-    this.persistRun(runId, run);
+  private nextRunEventSeq(runId: string): number {
+    const seq = this.runEventSeqs.get(runId) ?? 0;
+    this.runEventSeqs.set(runId, seq + 1);
     return seq;
   }
 

@@ -511,7 +511,6 @@ export class RuntimeServer {
       seq,
       conversationId: options.conversationId,
       runId: options.conversationId,
-      replay: 'live',
       idempotencyKey: options.deliveryAttempt.idempotencyKey,
       source: 'runtime',
       raw: {

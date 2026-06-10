@@ -939,7 +939,6 @@ describe('RuntimeServer', () => {
         ],
         observers: [
           {
-            replayPolicy: 'live-only',
             handle(event, context) {
               if (event.type === 'run.started') {
                 observerDelivery.push(context.delivery);
