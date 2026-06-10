@@ -141,14 +141,14 @@ const agent = Agent.create('summarizer')
 ### Codex App Server Turns
 
 Codex App Server is treated as an external runtime turn, not as an OpenAI model
-provider. `codexTurn()` runs one Codex turn and inserts the final Codex answer
+provider. `codex()` runs one Codex turn and inserts the final Codex answer
 back into the PromptTrail session while preserving Codex metadata in message
 attributes.
 
 ```typescript
 const agent = Agent.create('repo-review')
   .user('prompt', 'Inspect this repository and suggest the next edit')
-  .codexTurn('codex', {
+  .codex('codex', {
     transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
     cwd: process.cwd(),
     sandboxPolicy: { type: 'readOnly' },
@@ -204,7 +204,7 @@ const agent = Agent.create('support')
 ```
 
 For throwaway scripts and template-level utilities such as `Parallel`,
-`Structured`, `codexTurn()`, and `claudeTurn()`, use `Agent.quick()`.
+`Structured`, `codex()`, and `claude()`, use `Agent.quick()`.
 Quick agents are ephemeral and cannot run durable.
 
 #### Agent Goals (Goal-Oriented Flow)

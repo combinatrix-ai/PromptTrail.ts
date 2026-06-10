@@ -13,7 +13,7 @@ describe.skipIf(!codexAppServerAvailable)(
     it('should run a Codex turn over WebSocket and append the final answer', async () => {
       const session = await Agent.quick()
         .user('Reply exactly: PROMPTTRAIL_CODEX_TURN_OK')
-        .codexTurn({
+        .codex({
           transport: {
             kind: 'websocket',
             url: codexAppServerUrl!,
@@ -41,7 +41,7 @@ describe.skipIf(!codexAppServerAvailable)(
       const events: unknown[] = [];
       const session = await Agent.quick()
         .user('Reply exactly: PROMPTTRAIL_CODEX_EVENT_OK')
-        .codexTurn({
+        .codex({
           transport: {
             kind: 'websocket',
             url: codexAppServerUrl!,

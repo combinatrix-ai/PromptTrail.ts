@@ -146,7 +146,7 @@ Maps to Codex item: *compatibility template node をさらに個別 graph node �
 - [ ] **3.5 Decompose remaining compatibility template nodes** into native graph
   nodes so nothing routes through the generic legacy `template` adapter node.
   (`graph_executor.ts`, `templates/agent.ts`)
-- [ ] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
+- [x] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
   **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
   **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
   with the raw-model side (`Source.llm().openai()`/`.anthropic()` = model, graph

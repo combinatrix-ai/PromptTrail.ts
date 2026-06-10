@@ -674,8 +674,8 @@ describe('Agent graph authoring', () => {
 
   it('compiles graph Codex and Claude turn template nodes', () => {
     const graph = Agent.create('assistant')
-      .codexTurn('codex', {} as never)
-      .claudeTurn('claude', {} as never)
+      .codex('codex', {} as never)
+      .claude('claude', {} as never)
       .toGraph('v1');
     const manifest = createAgentGraphManifest(graph);
 
@@ -690,8 +690,8 @@ describe('Agent graph authoring', () => {
     const claudeClient = new GraphFakeClaudeAgentClient();
     const graph = Agent.create('assistant')
       .user('prompt', 'Review this')
-      .codexTurn('codex', { client: codexClient })
-      .claudeTurn('claude', { client: claudeClient })
+      .codex('codex', { client: codexClient })
+      .claude('claude', { client: claudeClient })
       .toGraph('v1');
 
     for (const node of graph.nodes) {
@@ -1134,11 +1134,11 @@ describe('Agent graph authoring', () => {
     expect(() => graphStarted().parallel(new Parallel())).toThrow(
       /Graph Agent\.parallel/,
     );
-    expect(() => graphStarted().codexTurn({} as never)).toThrow(
-      /Graph Agent\.codexTurn/,
+    expect(() => graphStarted().codex({} as never)).toThrow(
+      /Graph Agent\.codex/,
     );
-    expect(() => graphStarted().claudeTurn({} as never)).toThrow(
-      /Graph Agent\.claudeTurn/,
+    expect(() => graphStarted().claude({} as never)).toThrow(
+      /Graph Agent\.claude/,
     );
     expect(() => graphStarted().transform((session) => session)).toThrow(
       /Graph Agent\.transform/,

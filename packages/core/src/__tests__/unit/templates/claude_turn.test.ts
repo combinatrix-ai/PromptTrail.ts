@@ -44,7 +44,7 @@ describe('ClaudeTurn template', () => {
     const client = new FakeClaudeAgentClient();
     const session = await Agent.quick()
       .user('Review this')
-      .claudeTurn({
+      .claude({
         client,
         cwd: '/repo',
         model: 'claude-haiku-4-5',
@@ -95,7 +95,7 @@ describe('ClaudeTurn template', () => {
     const client = new FakeClaudeAgentClient();
     const session = await Agent.quick()
       .user('Continue')
-      .claudeTurn({ client, retainMessages: false, retain: 'none' })
+      .claude({ client, retainMessages: false, retain: 'none' })
       .execute({ session: Session.create() });
 
     expect(session.messages).toHaveLength(1);
@@ -110,7 +110,7 @@ describe('ClaudeTurn template', () => {
   it('passes direct execution context to input callbacks', async () => {
     const client = new FakeClaudeAgentClient();
     await Agent.quick()
-      .claudeTurn({
+      .claude({
         client,
         sessionId: (_session, context) => `session-${context?.channel}`,
         input: (session, context) =>
@@ -140,7 +140,7 @@ describe('ClaudeTurn template', () => {
           }),
         }),
       )
-      .claudeTurn({
+      .claude({
         client,
         input: (session) => String(session.getVar('injected' as never)),
       })
@@ -164,7 +164,7 @@ describe('ClaudeTurn template', () => {
           }),
         }),
       )
-      .claudeTurn({ client })
+      .claude({ client })
       .execute({ session: Session.create() });
 
     expect(session.getLastMessage()).toMatchObject({
@@ -199,7 +199,7 @@ describe('ClaudeTurn template', () => {
           }),
         }),
       )
-      .claudeTurn({ client })
+      .claude({ client })
       .execute({ session: Session.create() });
 
     expect(client.queries).toHaveLength(0);
@@ -233,7 +233,7 @@ describe('ClaudeTurn template', () => {
           }),
         }),
       )
-      .claudeTurn({
+      .claude({
         client,
         input: (session) => String(session.getVar('transient' as never)),
       })
@@ -256,7 +256,7 @@ describe('ClaudeTurn template', () => {
             }),
           }),
         )
-        .claudeTurn({ client })
+        .claude({ client })
         .execute({ session: Session.create() }),
     ).rejects.toThrow(
       'ClaudeTurn prepareModelInput cannot return persistent session patches.',
@@ -277,7 +277,7 @@ describe('ClaudeTurn template', () => {
         }
       })
       .user('Review this')
-      .claudeTurn({ client })
+      .claude({ client })
       .execute({ session: Session.create() });
 
     expect(events).toHaveLength(2);
@@ -303,7 +303,7 @@ describe('ClaudeTurn template', () => {
           }
         })
         .user('Review this')
-        .claudeTurn({ client })
+        .claude({ client })
         .execute({ session: Session.create() }),
     ).rejects.toThrow('claude unavailable');
 
@@ -320,12 +320,12 @@ describe('ClaudeTurn template', () => {
     const originalClient = new FakeClaudeAgentClient();
     const originalSession = await Agent.quick()
       .user('Original')
-      .claudeTurn({ client: originalClient })
+      .claude({ client: originalClient })
       .execute({ session: Session.create() });
     const client = new FakeClaudeAgentClient();
 
     await Agent.quick()
-      .claudeTurn({ client, sessionId: 'auto' })
+      .claude({ client, sessionId: 'auto' })
       .execute({
         session: originalSession.addMessage({
           type: 'user',
@@ -348,7 +348,7 @@ describe('ClaudeTurn template', () => {
     await expect(
       Agent.quick()
         .user('Use docs')
-        .claudeTurn({
+        .claude({
           client,
           capabilities: [
             {
@@ -393,7 +393,7 @@ describe('ClaudeTurn template', () => {
     await expect(
       Agent.quick()
         .user('Run a command')
-        .claudeTurn({
+        .claude({
           client,
           capabilities: [
             {
@@ -429,7 +429,7 @@ describe('ClaudeTurn template', () => {
     try {
       await Agent.quick()
         .user('Review this')
-        .claudeTurn({
+        .claude({
           client,
           cwd,
           capabilities: [

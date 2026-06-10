@@ -584,17 +584,15 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  codexTurn(options: CodexTurnOptions<TM, TC>): this;
-  codexTurn(id: string, options: CodexTurnOptions<TM, TC>): this;
-  codexTurn(
+  codex(options: CodexTurnOptions<TM, TC>): this;
+  codex(id: string, options: CodexTurnOptions<TM, TC>): this;
+  codex(
     idOrOptions: string | CodexTurnOptions<TM, TC>,
     maybeOptions?: CodexTurnOptions<TM, TC>,
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
-        throw new Error(
-          'Graph Agent.codexTurn requires codexTurn(id, options).',
-        );
+        throw new Error('Graph Agent.codex requires codex(id, options).');
       }
       this.graphNodes.push({
         id: idOrOptions,
@@ -604,23 +602,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.codexTurn requires codexTurn(id, options).');
+      throw new Error('Graph Agent.codex requires codex(id, options).');
     }
     this.root.add(new CodexTurn(idOrOptions));
     return this;
   }
 
-  claudeTurn(options: ClaudeTurnOptions<TM, TC>): this;
-  claudeTurn(id: string, options: ClaudeTurnOptions<TM, TC>): this;
-  claudeTurn(
+  claude(options: ClaudeTurnOptions<TM, TC>): this;
+  claude(id: string, options: ClaudeTurnOptions<TM, TC>): this;
+  claude(
     idOrOptions: string | ClaudeTurnOptions<TM, TC>,
     maybeOptions?: ClaudeTurnOptions<TM, TC>,
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
-        throw new Error(
-          'Graph Agent.claudeTurn requires claudeTurn(id, options).',
-        );
+        throw new Error('Graph Agent.claude requires claude(id, options).');
       }
       this.graphNodes.push({
         id: idOrOptions,
@@ -630,9 +626,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.claudeTurn requires claudeTurn(id, options).',
-      );
+      throw new Error('Graph Agent.claude requires claude(id, options).');
     }
     this.root.add(new ClaudeTurn(idOrOptions));
     return this;
