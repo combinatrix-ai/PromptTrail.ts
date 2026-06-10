@@ -42,7 +42,7 @@ import {
   type AgentGraphManifest,
   type AgentGraphNode,
 } from './graph';
-import type { Agent as GraphAgent } from './templates/agent';
+import type { Agent } from './templates/agent';
 
 export type InboundKind = 'user' | 'system' | 'control';
 
@@ -243,7 +243,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
 export type PromptTrailRegisteredAgent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
-> = GraphAgent<TVars, TAttrs>;
+> = Agent<TVars, TAttrs>;
 
 export interface PromptTrailRunOptions<
   TVars extends Vars = Vars,
@@ -342,7 +342,7 @@ export interface PromptTrailAppOptions {
 export class PromptTrailApp {
   private readonly name: string;
   private readonly store: DurableRunStore;
-  private readonly graphAgents = new Map<string, GraphAgent<any, any>>();
+  private readonly agents = new Map<string, Agent<any, any>>();
   private readonly sources = new Map<string, EventSource>();
   private readonly runtimeBindings: RuntimeBinding<RuntimeBindingEvent>[] = [];
   private readonly runtimeDefaults: BindingDefaults;
@@ -416,11 +416,8 @@ export class PromptTrailApp {
       typeof nameOrAgent === 'string'
         ? nameOrAgent
         : registeredAgentName(registeredAgent);
-    if (isGraphAgent(registeredAgent)) {
-      this.graphAgents.set(name, registeredAgent);
-      return this;
-    }
-    throw new Error(`Unsupported agent registration: ${name}`);
+    this.agents.set(name, registeredAgent);
+    return this;
   }
 
   source(source: RuntimeSourceDriver): this;
@@ -631,6 +628,43 @@ export class PromptTrailApp {
     return this.startRun(options);
   }
 
+  async executeCheckpointRun<
+    TVars extends Vars = Vars,
+    TAttrs extends Attrs = Attrs,
+  >(options: {
+    agent: Agent<TVars, TAttrs>;
+    runId: string;
+    input?: string | Omit<Inbound, 'offset'>;
+    session?: Session<TVars, TAttrs>;
+    context?: Record<string, unknown>;
+  }): Promise<DurableRunResult<TVars, TAttrs>> {
+    const existing = this.store.get(options.runId);
+    if (existing) {
+      existing.agent = options.agent;
+      existing.agentName = options.agent.toGraph().name;
+      this.store.set(options.runId, existing);
+    }
+    if (!this.store.has(options.runId)) {
+      return this.run<TVars, TAttrs>({
+        agent: options.agent,
+        runId: options.runId,
+        session: options.session,
+        input: options.input,
+        checkpoint: true,
+        context: options.context,
+      });
+    }
+    if (options.input === undefined) {
+      return this.resume<TVars, TAttrs>(options.runId);
+    }
+    return this.send<TVars, TAttrs>({
+      runId: options.runId,
+      input: options.input,
+      checkpoint: true,
+      context: options.context,
+    });
+  }
+
   async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
     options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
@@ -657,7 +691,6 @@ export class PromptTrailApp {
       existing.context = cloneDurableRuntimeValue(options.context);
     }
     if (
-      isGraphAgent(existing.agent) &&
       existing.status === 'done' &&
       !graphHasInboundConsumer(existing.agent.toGraph().nodes)
     ) {
@@ -681,10 +714,10 @@ export class PromptTrailApp {
     ) {
       return { status: 'done', runId, session: run.result };
     }
-    return this.resumeGraphAgentRun(
+    return this.resumeAgentRun(
       runId,
       run as StoredRun<TVars, TAttrs> & {
-        agent: GraphAgent<TVars, TAttrs>;
+        agent: Agent<TVars, TAttrs>;
       },
     );
   }
@@ -904,16 +937,16 @@ export class PromptTrailApp {
       this.defaultCheckpoint;
     this.assertAppCheckpointStore(checkpoint);
     const durable = checkpoint !== undefined;
-    const graphAgent = this.resolveGraphAgent(options.agent);
-    if (!graphAgent) {
+    const agent = this.resolveAgent(options.agent);
+    if (!agent) {
       throw new Error(`Unknown agent: ${String(options.agent)}`);
     }
     if (durable) {
-      const graph = graphAgent.toGraph();
+      const graph = agent.toGraph();
       const graphManifest = createAgentGraphManifest(graph);
       const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
       const run: StoredRun<TVars, TAttrs> = {
-        agent: graphAgent,
+        agent,
         agentName: graph.name,
         graphManifest,
         initial: options.session ?? Session.create<TVars, TAttrs>(),
@@ -932,7 +965,7 @@ export class PromptTrailApp {
       }
       return this.resume<TVars, TAttrs>(runId);
     }
-    return this.executeGraphAgentRun(graphAgent, options);
+    return this.executeAgentRun(agent, options);
   }
 
   private assertAppCheckpointStore(
@@ -946,14 +979,14 @@ export class PromptTrailApp {
     }
   }
 
-  private async executeGraphAgentRun<
+  private async executeAgentRun<
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
   >(
-    graphAgent: GraphAgent<TVars, TAttrs>,
+    agent: Agent<TVars, TAttrs>,
     options: PromptTrailRunOptions<TVars, TAttrs>,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const graph = graphAgent.toGraph();
+    const graph = agent.toGraph();
     const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
     let eventSeq = 0;
     const emitGraphRunEvent = async (
@@ -980,7 +1013,7 @@ export class PromptTrailApp {
     };
     await emitGraphRunEvent('run.started', { sessionVersion: 0 });
     try {
-      const session = await graphAgent.execute({
+      const session = await agent.execute({
         session: options.session,
         input:
           options.input === undefined
@@ -1017,12 +1050,12 @@ export class PromptTrailApp {
     }
   }
 
-  private async resumeGraphAgentRun<
+  private async resumeAgentRun<
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
   >(
     runId: string,
-    run: StoredRun<TVars, TAttrs> & { agent: GraphAgent<TVars, TAttrs> },
+    run: StoredRun<TVars, TAttrs> & { agent: Agent<TVars, TAttrs> },
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const graph = run.agent.toGraph();
     const cursor = run.graphCursor ?? 0;
@@ -1121,9 +1154,6 @@ export class PromptTrailApp {
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
   >(runId: string, run: StoredRun<TVars, TAttrs>): void {
-    if (!isGraphAgent(run.agent)) {
-      return;
-    }
     const graph = run.agent.toGraph();
     const manifest = createAgentGraphManifest(graph);
     if (!run.graphManifest) {
@@ -1192,7 +1222,7 @@ export class PromptTrailApp {
   }
 
   private registeredAgents(): Record<string, PromptTrailRegisteredAgent> {
-    return Object.fromEntries(this.graphAgents.entries());
+    return Object.fromEntries(this.agents.entries());
   }
 
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
@@ -1224,17 +1254,15 @@ export class PromptTrailApp {
     this.store.set(runId, run);
   }
 
-  private resolveGraphAgent<TVars extends Vars, TAttrs extends Attrs>(
+  private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
     registeredAgent: string | PromptTrailRegisteredAgent<TVars, TAttrs>,
-  ): GraphAgent<TVars, TAttrs> | undefined {
+  ): Agent<TVars, TAttrs> | undefined {
     if (typeof registeredAgent === 'string') {
-      return this.graphAgents.get(registeredAgent) as
-        | GraphAgent<TVars, TAttrs>
+      return this.agents.get(registeredAgent) as
+        | Agent<TVars, TAttrs>
         | undefined;
     }
-    return isGraphAgent(registeredAgent)
-      ? (registeredAgent as GraphAgent<TVars, TAttrs>)
-      : undefined;
+    return registeredAgent;
   }
 
   private getRun<TVars extends Vars, TAttrs extends Attrs>(
@@ -1337,15 +1365,6 @@ function cloneDurableRuntimeValue<T>(value: T): T {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isGraphAgent(value: unknown): value is GraphAgent<any, any> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { execute?: unknown }).execute === 'function' &&
-    typeof (value as { toGraph?: unknown }).toGraph === 'function'
-  );
 }
 
 function registeredAgentName(agent: PromptTrailRegisteredAgent): string {

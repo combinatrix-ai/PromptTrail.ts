@@ -1139,30 +1139,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
     });
     const input = executionOptions?.input;
-    const existing = durableOptions.store.get(durableOptions.runId);
-    if (existing) {
-      existing.agent = this;
-      existing.agentName = this.toGraph(executionOptions?.version).name;
-      durableOptions.store.set(durableOptions.runId, existing);
-    }
-    const result = durableOptions.store.has(durableOptions.runId)
-      ? input === undefined
-        ? await runtime.resume<TC, TM>(durableOptions.runId)
-        : await runtime.send<TC, TM>({
-            runId: durableOptions.runId,
-            input: graphInputForDurableSend(input),
-            checkpoint: true,
-            context: executionOptions?.context,
-          })
-      : await runtime.run<TC, TM>({
-          agent: this,
-          runId: durableOptions.runId,
-          session: executionOptions?.session,
-          input:
-            input === undefined ? undefined : graphInputForDurableSend(input),
-          checkpoint: true,
-          context: executionOptions?.context,
-        });
+    const result = await runtime.executeCheckpointRun<TC, TM>({
+      agent: this,
+      runId: durableOptions.runId,
+      session: executionOptions?.session,
+      input: input === undefined ? undefined : graphInputForDurableSend(input),
+      context: executionOptions?.context,
+    });
     return result.session;
   }
 

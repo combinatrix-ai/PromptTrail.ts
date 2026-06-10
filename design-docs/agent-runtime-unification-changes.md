@@ -77,9 +77,16 @@ execution first breaks that path. Tag the pre-deletion commit
       Kept: `replayed` + `PromptTrailApp.replayEvents()` as a live explicit
       event re-emission API gated by `adopt-replayed`; whether
       `StoredRun.events` storage stays is a §1.5 decision.
-- [ ] **1.3 Collapse `DurableAgent` / `GraphAgent` into one graph runtime.**
+- [x] **1.3 Collapse `DurableAgent` / `GraphAgent` into one graph runtime.**
       One agent type, one run store path, one resume path. (`durable.ts`,
       `templates/agent.ts`)
+      Done: `GraphAgent` alias and `isGraphAgent` guard removed —
+      `PromptTrailRegisteredAgent` is exactly `Agent`. Direct
+      `Agent.execute({ checkpoint })` calls the shared
+      `PromptTrailApp.executeCheckpointRun(...)`, which owns the store
+      read and delegates to run/resume/send; the duplicate direct
+      store-read branch in `Agent` is gone. Active substrate names
+      (`DurableRunStore` etc.) stay until §1.4–1.6.
 - [ ] **1.4 Consolidate the checkpoint substrate** that survives: session
       checkpoint per node boundary, inbox cursor, suspended node path, idempotency
       memo for `external-write` only. Keep `collectGraphContinuationSkipNodes` /
