@@ -18,7 +18,7 @@ class TrackingRunStore implements DurableRunStore {
     return this.runs.get(runId);
   }
 
-  set(runId: string, run: StoredRun<any, any>): void {
+  async set(runId: string, run: StoredRun<any, any>): Promise<void> {
     this.runs.set(runId, run);
     this.snapshots.push({
       runId,
@@ -33,12 +33,69 @@ class TrackingRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
-  delete(runId: string): void {
+  async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
 
   entries(): Iterable<[string, StoredRun<any, any>]> {
     return this.runs.entries();
+  }
+}
+
+class ControlledDelayRunStore implements DurableRunStore {
+  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly pending: Array<{
+    runId: string;
+    run: StoredRun<any, any>;
+    snapshot: {
+      status: StoredRun<any, any>['status'];
+      onceRunEntries: number;
+      resultMessages?: number;
+    };
+    resolve: () => void;
+  }> = [];
+
+  get(runId: string): StoredRun<any, any> | undefined {
+    return this.runs.get(runId);
+  }
+
+  set(runId: string, run: StoredRun<any, any>): Promise<void> {
+    return new Promise((resolve) => {
+      this.pending.push({
+        runId,
+        run,
+        snapshot: {
+          status: run.status,
+          onceRunEntries: run.once.run.size,
+          resultMessages: run.result?.messages.length,
+        },
+        resolve: () => {
+          this.runs.set(runId, run);
+          resolve();
+        },
+      });
+    });
+  }
+
+  has(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  async delete(runId: string): Promise<void> {
+    this.runs.delete(runId);
+  }
+
+  entries(): Iterable<[string, StoredRun<any, any>]> {
+    return this.runs.entries();
+  }
+
+  async resolveNext(): Promise<void> {
+    const pending = this.pending.shift();
+    if (!pending) {
+      throw new Error('No pending store write to resolve.');
+    }
+    pending.resolve();
+    await Promise.resolve();
   }
 }
 
@@ -159,7 +216,79 @@ describe('checkpoint app runtime', () => {
         onceRunEntries: 1,
       }),
     );
-    expect(app.assistantDeliveryOutbox('run-persist-commits')).toHaveLength(1);
+    expect(
+      await app.assistantDeliveryOutbox('run-persist-commits'),
+    ).toHaveLength(1);
+  });
+
+  it('awaits async once memo and final run persists at effect boundaries', async () => {
+    const store = new ControlledDelayRunStore();
+    const events: string[] = [];
+    const assistant = Agent.create('ordered-persist')
+      .tool('write', {
+        kind: 'tool',
+        name: 'write',
+        description: 'Write.',
+        inputSchema: {
+          parse: (input: unknown) => input,
+        } as any,
+        activity: { kind: 'external-write', idempotencyKey: 'write:ordered' },
+        execute: () => {
+          events.push('external-write');
+          return 'written';
+        },
+      })
+      .assistant('reply', () => ({
+        content: 'need write',
+        toolCalls: [{ id: 'call-1', name: 'write', arguments: {} }],
+      }))
+      .turn('tools', (turn) => turn.tools('run'))
+      .patch('after-write', (session) => {
+        events.push('next-node');
+        return session;
+      });
+    const app = PromptTrail.app({
+      agents: { ordered: assistant },
+      store,
+    });
+    const runPromise = app
+      .run({
+        agent: 'ordered',
+        runId: 'run-ordered-persists',
+        checkpoint: true,
+      })
+      .then((result) => {
+        events.push(`reported:${result.status}`);
+        return result;
+      });
+
+    await resolveUntilPendingWrite(store, (pending) => {
+      return (
+        pending.snapshot.status === 'open' &&
+        pending.snapshot.onceRunEntries === 1
+      );
+    });
+
+    expect(events).toContain('external-write');
+    expect(events).not.toContain('next-node');
+
+    await store.resolveNext();
+    await waitFor(() => events.includes('next-node'));
+
+    await resolveUntilPendingWrite(store, (pending) => {
+      return (
+        pending.snapshot.status === 'done' &&
+        pending.snapshot.resultMessages === 2
+      );
+    });
+
+    expect(events).not.toContain('reported:done');
+
+    await store.resolveNext();
+    const result = await runPromise;
+
+    expect(result.status).toBe('done');
+    expect(events).toContain('reported:done');
   });
 
   it('does not duplicate graph goal prompts when resuming checkpoint app runs', async () => {
@@ -307,3 +436,27 @@ describe('checkpoint app runtime', () => {
     ]);
   });
 });
+
+async function resolveUntilPendingWrite(
+  store: ControlledDelayRunStore,
+  predicate: (pending: ControlledDelayRunStore['pending'][number]) => boolean,
+): Promise<void> {
+  for (let attempts = 0; attempts < 100; attempts++) {
+    await waitFor(() => store.pending.length > 0);
+    if (predicate(store.pending[0])) {
+      return;
+    }
+    await store.resolveNext();
+  }
+  throw new Error('Timed out waiting for matching pending store write.');
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempts = 0; attempts < 100; attempts++) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('Timed out waiting for condition.');
+}

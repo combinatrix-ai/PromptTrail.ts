@@ -189,10 +189,15 @@ export interface EventSource {
 }
 
 export interface DurableRunStore {
+  /**
+   * Reads remain synchronous for the current whole-run store API, while writes
+   * are async so effect -> memo -> persist completes before the next effect can
+   * run under the at-least-once checkpoint model.
+   */
   get(runId: string): StoredRun<any, any> | undefined;
-  set(runId: string, run: StoredRun<any, any>): void;
+  set(runId: string, run: StoredRun<any, any>): Promise<void>;
   has(runId: string): boolean;
-  delete(runId: string): void;
+  delete(runId: string): Promise<void>;
   entries(): Iterable<[string, StoredRun<any, any>]>;
 }
 
@@ -207,7 +212,7 @@ export class MemoryRunStore implements DurableRunStore {
     return this.runs.get(runId);
   }
 
-  set(runId: string, run: StoredRun<any, any>): void {
+  async set(runId: string, run: StoredRun<any, any>): Promise<void> {
     this.runs.set(runId, run);
   }
 
@@ -215,7 +220,7 @@ export class MemoryRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
-  delete(runId: string): void {
+  async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
 
@@ -551,7 +556,7 @@ export class PromptTrailApp {
     if (existing) {
       existing.agent = options.agent;
       existing.agentName = options.agent.toGraph().name;
-      this.store.set(options.runId, existing);
+      await this.store.set(options.runId, existing);
     }
     if (!this.store.has(options.runId)) {
       return this.run<TVars, TAttrs>({
@@ -607,7 +612,7 @@ export class PromptTrailApp {
         `Cannot send input to completed graph run: ${options.runId}. Start a new run or include an inbound consumer before completion.`,
       );
     }
-    this.append(options.runId, normalizeInbound(options.input));
+    await this.append(options.runId, normalizeInbound(options.input));
     return this.resume<TVars, TAttrs>(options.runId);
   }
 
@@ -615,7 +620,7 @@ export class PromptTrailApp {
     runId: string,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const run = this.getRun<TVars, TAttrs>(runId);
-    this.assertGraphRunManifest(runId, run);
+    await this.assertGraphRunManifest(runId, run);
     if (
       run.status === 'done' &&
       run.result &&
@@ -631,10 +636,10 @@ export class PromptTrailApp {
     );
   }
 
-  prepareAssistantDeliveries<TAttrs extends Attrs = Attrs>(
+  async prepareAssistantDeliveries<TAttrs extends Attrs = Attrs>(
     runId: string,
     deliveries: readonly AssistantDeliveryOutboxInput<TAttrs>[],
-  ): AssistantDeliveryOutboxEntry<TAttrs>[] {
+  ): Promise<AssistantDeliveryOutboxEntry<TAttrs>[]> {
     const run = this.store.get(runId);
     if (!run) {
       return deliveries.map((delivery) =>
@@ -656,7 +661,7 @@ export class PromptTrailApp {
         );
       }
     }
-    this.store.set(runId, run);
+    await this.store.set(runId, run);
     return outbox.filter(
       (entry) =>
         deliveries.some(
@@ -665,13 +670,13 @@ export class PromptTrailApp {
     );
   }
 
-  markAssistantDelivery(
+  async markAssistantDelivery(
     runId: string,
     idempotencyKey: string,
     status: AssistantDeliveryOutboxEntry['status'],
     error?: unknown,
     platformBinding?: unknown,
-  ): void {
+  ): Promise<void> {
     const run = this.store.get(runId);
     if (!run) {
       return;
@@ -705,25 +710,27 @@ export class PromptTrailApp {
     if (platformBinding !== undefined) {
       entry.platformBinding = cloneDurableRuntimeValue(platformBinding);
     }
-    this.store.set(runId, run);
+    await this.store.set(runId, run);
   }
 
-  assistantDeliveryOutbox(
+  async assistantDeliveryOutbox(
     runId: string,
-  ): readonly AssistantDeliveryOutboxEntry[] {
+  ): Promise<readonly AssistantDeliveryOutboxEntry[]> {
     const run = this.store.get(runId);
     if (!run) {
       return [];
     }
-    this.materializeAssistantDeliveriesForRun(runId, run);
+    await this.materializeAssistantDeliveriesForRun(runId, run);
     if (this.backfillAssistantDeliveryOutboxMetadata(runId, run)) {
-      this.store.set(runId, run);
+      await this.store.set(runId, run);
     }
     return run ? [...(run.outbox ?? [])] : [];
   }
 
-  pendingAssistantDeliveryOutbox(): PendingAssistantDeliveryOutboxEntry[] {
-    this.materializePendingAssistantDeliveries();
+  async pendingAssistantDeliveryOutbox(): Promise<
+    PendingAssistantDeliveryOutboxEntry[]
+  > {
+    await this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
     for (const [runId, run] of this.store.entries()) {
       const changed = this.backfillAssistantDeliveryOutboxMetadata(runId, run);
@@ -733,7 +740,7 @@ export class PromptTrailApp {
         }
       }
       if (changed) {
-        this.store.set(runId, run);
+        await this.store.set(runId, run);
       }
     }
     return pending;
@@ -758,16 +765,16 @@ export class PromptTrailApp {
     return changed;
   }
 
-  materializePendingAssistantDeliveries(): void {
+  async materializePendingAssistantDeliveries(): Promise<void> {
     for (const [runId, run] of this.store.entries()) {
-      this.materializeAssistantDeliveriesForRun(runId, run);
+      await this.materializeAssistantDeliveriesForRun(runId, run);
     }
   }
 
-  private materializeAssistantDeliveriesForRun<
+  private async materializeAssistantDeliveriesForRun<
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): void {
+  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
     const target = deliveryTargetFromContext(run.context);
     if (!target || !run.result) {
       return;
@@ -786,7 +793,7 @@ export class PromptTrailApp {
         idempotencyKey: assistantDeliveryKey(runId, index, target),
         target,
       }));
-    this.prepareAssistantDeliveries(runId, deliveries);
+    await this.prepareAssistantDeliveries(runId, deliveries);
   }
 
   private async handleEvent(event: InboundRuntimeEvent): Promise<void> {
@@ -835,9 +842,9 @@ export class PromptTrailApp {
         graphCursor: 0,
         context: cloneDurableRuntimeValue(options.context),
       };
-      this.store.set(runId, run);
+      await this.store.set(runId, run);
       if (options.input !== undefined) {
-        this.append(runId, normalizeInbound(options.input));
+        await this.append(runId, normalizeInbound(options.input));
       }
       return this.resume<TVars, TAttrs>(runId);
     }
@@ -933,7 +940,7 @@ export class PromptTrailApp {
     run: StoredRun<TVars, TAttrs> & { agent: Agent<TVars, TAttrs> },
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const graph = run.agent.toGraph();
-    const checkpoint = beginCheckpointGraphExecution(run, () =>
+    const checkpoint = await beginCheckpointGraphExecution(run, () =>
       this.persistRun(runId, run),
     );
     const skipNodePaths = checkpoint.isContinuation
@@ -983,14 +990,14 @@ export class PromptTrailApp {
           observers: [
             async (event) => {
               await this.emitObservers(run, event);
-              this.persistRun(runId, run);
+              await this.persistRun(runId, run);
             },
           ],
         },
       );
-      recordCheckpointGraphCompletion(run, session, () => {
-        this.materializeAssistantDeliveriesForRun(runId, run);
-        this.persistRun(runId, run);
+      await recordCheckpointGraphCompletion(run, session, async () => {
+        await this.materializeAssistantDeliveriesForRun(runId, run);
+        await this.persistRun(runId, run);
       });
       return { status: 'done', runId, session };
     } catch (error) {
@@ -999,8 +1006,11 @@ export class PromptTrailApp {
           (error.session as Session<TVars, TAttrs> | undefined) ??
           run.result ??
           run.initial;
-        recordCheckpointGraphSuspension(run, error.nodePath, session, () =>
-          this.persistRun(runId, run),
+        await recordCheckpointGraphSuspension(
+          run,
+          error.nodePath,
+          session,
+          () => this.persistRun(runId, run),
         );
         return {
           status: 'suspended',
@@ -1009,22 +1019,22 @@ export class PromptTrailApp {
           session,
         };
       }
-      restoreCheckpointGraphCursor(run, checkpoint.cursor, () =>
+      await restoreCheckpointGraphCursor(run, checkpoint.cursor, () =>
         this.persistRun(runId, run),
       );
       throw error;
     }
   }
 
-  private assertGraphRunManifest<
+  private async assertGraphRunManifest<
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): void {
+  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
     const graph = run.agent.toGraph();
     const manifest = createAgentGraphManifest(graph);
     if (!run.graphManifest) {
       run.graphManifest = manifest;
-      this.persistRun(runId, run);
+      await this.persistRun(runId, run);
       return;
     }
     if (run.graphManifest.hash !== manifest.hash) {
@@ -1064,23 +1074,26 @@ export class PromptTrailApp {
     return seq;
   }
 
-  private append(runId: string, message: Omit<Inbound, 'offset'>): void {
+  private async append(
+    runId: string,
+    message: Omit<Inbound, 'offset'>,
+  ): Promise<void> {
     const run = this.getRun(runId);
     run.inbox.push({ ...message, offset: run.inbox.length });
     if (run.status === 'done') {
       run.status = 'open';
     }
-    this.persistRun(runId, run);
+    await this.persistRun(runId, run);
   }
 
-  private persistRun<TVars extends Vars, TAttrs extends Attrs>(
+  private async persistRun<TVars extends Vars, TAttrs extends Attrs>(
     runId: string,
     run: StoredRun<TVars, TAttrs>,
-  ): void {
+  ): Promise<void> {
     if (!this.store.has(runId)) {
       return;
     }
-    this.store.set(runId, run);
+    await this.store.set(runId, run);
   }
 
   private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(

@@ -398,13 +398,13 @@ class MockRuntimeFixture {
       event,
       defaults,
     });
-    this.deliverUndelivered(conversationId, result.session.messages);
+    await this.deliverUndelivered(conversationId, result.session.messages);
   }
 
-  private deliverUndelivered(
+  private async deliverUndelivered(
     conversationId: string,
     messages: readonly Message<Attrs>[],
-  ): void {
+  ): Promise<void> {
     const runContext =
       (this.store.get(conversationId)?.context as
         | Record<string, unknown>
@@ -428,7 +428,7 @@ class MockRuntimeFixture {
         };
       })
       .filter((delivery) => !this.deliveryTracker.has(delivery.idempotencyKey));
-    const deliveryAttempts = this.app.prepareAssistantDeliveries(
+    const deliveryAttempts = await this.app.prepareAssistantDeliveries(
       conversationId,
       pending,
     );
@@ -436,7 +436,7 @@ class MockRuntimeFixture {
       const message = deliveryAttempt.message;
       const delivery = deliveryAttempt.target as DeliveryTarget | undefined;
       if (!isConcreteDiscordDeliveryTarget(delivery)) {
-        this.app.markAssistantDelivery(
+        await this.app.markAssistantDelivery(
           conversationId,
           deliveryAttempt.idempotencyKey,
           'skipped',
@@ -457,7 +457,7 @@ class MockRuntimeFixture {
         content: message.content,
         idempotencyKey: deliveryAttempt.idempotencyKey,
       });
-      this.app.markAssistantDelivery(
+      await this.app.markAssistantDelivery(
         conversationId,
         deliveryAttempt.idempotencyKey,
         'delivered',

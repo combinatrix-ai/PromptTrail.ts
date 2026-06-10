@@ -118,6 +118,16 @@ execution first breaks that path. Tag the pre-deletion commit
       vars/attrs diff + pointer), not full-session rewrites. Persist provider
       thread/session ids for `.codex`/`.claude` nodes so resume reconnects
       (Decision Update 2, points 7/9). See §8.7/§8.8. (`durable.ts`)
+      Progress — async half done: `DurableRunStore.set`/`delete` return
+      `Promise<void>` (reads stay sync until the delta work), every persist is
+      awaited, and `createCheckpointOnceBoundary` awaits the memo persist
+      before `once()` returns (closes the §8.8 sync-persist gap); the
+      assistant-delivery outbox helpers became async public APIs. Ordering is
+      locked by a controlled-delay-store unit test. Remaining: session-delta
+      persistence + provider thread-id slot. Noted for the delta half: outbox
+      materialization writes whole runs from read paths, `persistRun` does a
+      sync `has` before async `set`, and `entries()` scans are sync — the
+      delta store contract should address all three.
 - [ ] **1.7 Introduce a session identity.** `Session` has no version field
       (`transitionVersion` is legacy replay state) and loop counters are
       executor-local. Add a monotonic session identity/version used as the default

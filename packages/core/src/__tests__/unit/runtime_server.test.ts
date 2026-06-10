@@ -303,7 +303,7 @@ describe('RuntimeServer', () => {
     ]);
     returnedBinding.messageId = 'driver-retained-mutated';
     expect(
-      app.assistantDeliveryOutbox(conversationId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(conversationId)).map((entry) => ({
         platformBinding: entry.platformBinding,
         target: entry.target,
       })),
@@ -316,7 +316,7 @@ describe('RuntimeServer', () => {
         }),
       },
     ]);
-    expect(app.pendingAssistantDeliveryOutbox()).toEqual([]);
+    expect(await app.pendingAssistantDeliveryOutbox()).toEqual([]);
     expect(observerWrites).toEqual([
       'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
       'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app',
@@ -665,7 +665,7 @@ describe('RuntimeServer', () => {
       graphCursor: 2,
     });
     expect(run.inbox).toHaveLength(2);
-    expect(app.assistantDeliveryOutbox('discord:graph')).toHaveLength(2);
+    expect(await app.assistantDeliveryOutbox('discord:graph')).toHaveLength(2);
   });
 
   it('accepts Agent instances in runtime bindings', () => {
@@ -1058,7 +1058,7 @@ describe('RuntimeServer', () => {
 
     expect(deliveries).toEqual(['reply:first', 'reply:second']);
     expect(
-      app.assistantDeliveryOutbox(conversationId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(conversationId)).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
         status: entry.status,
       })),
@@ -1449,11 +1449,11 @@ describe('RuntimeServer', () => {
 
     expect(deliveries).toBe(1);
     expect(
-      app
-        .assistantDeliveryOutbox(
+      (
+        await app.assistantDeliveryOutbox(
           'discord:guild:workroom:channel:C_general:user:U_alice',
         )
-        .map((entry) => entry.status),
+      ).map((entry) => entry.status),
     ).toEqual(['delivered']);
   });
 
@@ -1511,7 +1511,7 @@ describe('RuntimeServer', () => {
       discordDeliveryTarget('general'),
     );
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
         id: entry.id,
         idempotencyKey: entry.idempotencyKey,
         conversationId: entry.conversationId,
@@ -1537,7 +1537,7 @@ describe('RuntimeServer', () => {
 
     const run = store.get(runId)!;
     run.outbox = [];
-    store.set(runId, run);
+    await store.set(runId, run);
     expect(store.get(runId)?.outbox).toEqual([]);
 
     const server = PromptTrail.server({
@@ -1563,7 +1563,7 @@ describe('RuntimeServer', () => {
 
     expect(deliveries).toEqual([`${deliveryKey}:reply:hello`]);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
         id: entry.id,
         idempotencyKey: entry.idempotencyKey,
         conversationId: entry.conversationId,
@@ -1653,7 +1653,7 @@ describe('RuntimeServer', () => {
       discordDeliveryTarget('general'),
     );
     expect(
-      app.pendingAssistantDeliveryOutbox().map(({ entry }) => ({
+      (await app.pendingAssistantDeliveryOutbox()).map(({ entry }) => ({
         idempotencyKey: entry.idempotencyKey,
         target: entry.target,
       })),
@@ -1709,7 +1709,7 @@ describe('RuntimeServer', () => {
         attempts: 0,
       } as never,
     ];
-    store.set(runId, run);
+    await store.set(runId, run);
     const otherRun = store.get(otherRunId)!;
     otherRun.outbox = [
       {
@@ -1721,9 +1721,9 @@ describe('RuntimeServer', () => {
         attempts: 0,
       } as never,
     ];
-    store.set(otherRunId, otherRun);
+    await store.set(otherRunId, otherRun);
 
-    expect(app.assistantDeliveryOutbox(runId)).toEqual([
+    expect(await app.assistantDeliveryOutbox(runId)).toEqual([
       expect.objectContaining({
         id: deliveryKey,
         conversationId: runId,
@@ -1767,7 +1767,7 @@ describe('RuntimeServer', () => {
       runId,
       checkpoint: true,
     });
-    app.prepareAssistantDeliveries(runId, [
+    await app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
         idempotencyKey: deliveryKey,
@@ -1778,7 +1778,7 @@ describe('RuntimeServer', () => {
         target,
       },
     ]);
-    app.markAssistantDelivery(
+    await app.markAssistantDelivery(
       runId,
       deliveryKey,
       'failed',
@@ -1831,7 +1831,7 @@ describe('RuntimeServer', () => {
       `${deliveryKey}:${JSON.stringify({ messageId: 'retry-mutated-binding' })}:retry-mutated-message`,
     ]);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
         platformBinding: entry.platformBinding,
         status: entry.status,
         attempts: entry.attempts,
@@ -1878,7 +1878,7 @@ describe('RuntimeServer', () => {
       runId,
       checkpoint: true,
     });
-    app.prepareAssistantDeliveries(runId, [
+    await app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
         idempotencyKey: deliveryKey,
@@ -1889,7 +1889,7 @@ describe('RuntimeServer', () => {
         target,
       },
     ]);
-    app.markAssistantDelivery(runId, deliveryKey, 'delivering');
+    await app.markAssistantDelivery(runId, deliveryKey, 'delivering');
 
     const server = PromptTrail.server({
       bundle,
@@ -1913,7 +1913,7 @@ describe('RuntimeServer', () => {
 
     expect(deliveries).toEqual([`${deliveryKey}:retry delivering`]);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
         status: entry.status,
         attempts: entry.attempts,
         lastError: entry.lastError,
@@ -1943,7 +1943,7 @@ describe('RuntimeServer', () => {
       runId,
       checkpoint: true,
     });
-    app.prepareAssistantDeliveries(runId, [
+    await app.prepareAssistantDeliveries(runId, [
       {
         assistantIndex: 0,
         idempotencyKey: firstDeliveryKey,
@@ -1989,7 +1989,7 @@ describe('RuntimeServer', () => {
 
     expect(order).toEqual([`deliver:${firstDeliveryKey}`, 'source-start']);
     expect(
-      app.assistantDeliveryOutbox(runId).map((entry) => ({
+      (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
         idempotencyKey: entry.idempotencyKey,
         status: entry.status,
         attempts: entry.attempts,

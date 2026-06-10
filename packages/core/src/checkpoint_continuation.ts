@@ -72,14 +72,14 @@ export interface CheckpointGraphExecutionStart<
  * runtime behavior routes all declared durable tool activities through this
  * memo, but its surviving durability purpose is external-write idempotency.
  */
-export function beginCheckpointGraphExecution<
+export async function beginCheckpointGraphExecution<
   TVars extends Vars,
   TAttrs extends Attrs,
   TInbound,
 >(
   run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
-  persist: () => void,
-): CheckpointGraphExecutionStart<TVars, TAttrs, TInbound> {
+  persist: () => Promise<void>,
+): Promise<CheckpointGraphExecutionStart<TVars, TAttrs, TInbound>> {
   const cursor = run.graphCursor ?? 0;
   const start: CheckpointGraphExecutionStart<TVars, TAttrs, TInbound> = {
     cursor,
@@ -89,7 +89,7 @@ export function beginCheckpointGraphExecution<
     isContinuation: run.result !== undefined,
   };
   run.graphCursor = run.inbox.length;
-  persist();
+  await persist();
   return start;
 }
 
@@ -168,22 +168,22 @@ export function createCheckpointContinuationSkipPredicate<
   };
 }
 
-export function recordCheckpointGraphCompletion<
+export async function recordCheckpointGraphCompletion<
   TVars extends Vars,
   TAttrs extends Attrs,
   TInbound,
 >(
   run: CompletableCheckpointGraphRunState<TVars, TAttrs, TInbound>,
   session: Session<TVars, TAttrs>,
-  persist: () => void,
-): void {
+  persist: () => Promise<void>,
+): Promise<void> {
   run.status = 'done';
   run.result = session;
   run.graphSuspendedAt = undefined;
-  persist();
+  await persist();
 }
 
-export function recordCheckpointGraphSuspension<
+export async function recordCheckpointGraphSuspension<
   TVars extends Vars,
   TAttrs extends Attrs,
   TInbound,
@@ -191,24 +191,24 @@ export function recordCheckpointGraphSuspension<
   run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
   nodePath: string,
   session: Session<TVars, TAttrs>,
-  persist: () => void,
-): void {
+  persist: () => Promise<void>,
+): Promise<void> {
   run.result = session;
   run.graphSuspendedAt = nodePath;
-  persist();
+  await persist();
 }
 
-export function restoreCheckpointGraphCursor<
+export async function restoreCheckpointGraphCursor<
   TVars extends Vars,
   TAttrs extends Attrs,
   TInbound,
 >(
   run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
   cursor: number,
-  persist: () => void,
-): void {
+  persist: () => Promise<void>,
+): Promise<void> {
   run.graphCursor = cursor;
-  persist();
+  await persist();
 }
 
 export function createCheckpointOnceMemoStore(): CheckpointOnceMemoStore {
@@ -220,7 +220,7 @@ export function createCheckpointOnceMemoStore(): CheckpointOnceMemoStore {
 
 export function createCheckpointOnceBoundary(
   run: { once?: CheckpointOnceMemoStore },
-  persist: () => void,
+  persist: () => Promise<void>,
 ): CheckpointOnceBoundary {
   return {
     async once(name, dep, fn, options) {
@@ -232,7 +232,7 @@ export function createCheckpointOnceBoundary(
       }
       const result = await fn();
       memo.set(key, result);
-      persist();
+      await persist();
       return result;
     },
   };

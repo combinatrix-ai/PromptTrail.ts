@@ -320,10 +320,11 @@ export class RuntimeServer {
       dispatched.result.session.messages as readonly Message<Attrs>[],
       dispatched.delivery,
     );
-    const deliveryAttempts = this.options.runtime.prepareAssistantDeliveries(
-      dispatched.conversationId,
-      pending,
-    );
+    const deliveryAttempts =
+      await this.options.runtime.prepareAssistantDeliveries(
+        dispatched.conversationId,
+        pending,
+      );
     for (const deliveryAttempt of deliveryAttempts) {
       let platformBinding: unknown;
       try {
@@ -333,7 +334,7 @@ export class RuntimeServer {
           delivery: dispatched.delivery,
           deliveryAttempt,
         });
-        this.options.runtime.markAssistantDelivery(
+        await this.options.runtime.markAssistantDelivery(
           dispatched.conversationId,
           deliveryAttempt.idempotencyKey,
           'delivering',
@@ -353,7 +354,7 @@ export class RuntimeServer {
           cloneEventRawValue(deliveryAttempt.message),
         );
       } catch (error) {
-        this.options.runtime.markAssistantDelivery(
+        await this.options.runtime.markAssistantDelivery(
           dispatched.conversationId,
           deliveryAttempt.idempotencyKey,
           'failed',
@@ -368,7 +369,7 @@ export class RuntimeServer {
         });
         throw error;
       }
-      this.options.runtime.markAssistantDelivery(
+      await this.options.runtime.markAssistantDelivery(
         dispatched.conversationId,
         deliveryAttempt.idempotencyKey,
         'delivered',
@@ -388,7 +389,7 @@ export class RuntimeServer {
 
   private async retryPendingDeliveries(): Promise<void> {
     for (const [runId, entries] of pendingDeliveriesByRun(
-      this.options.runtime.pendingAssistantDeliveryOutbox(),
+      await this.options.runtime.pendingAssistantDeliveryOutbox(),
     )) {
       for (const entry of entries) {
         const completed = await this.retryOutboxEntry(runId, entry);
@@ -425,7 +426,7 @@ export class RuntimeServer {
         delivery: entry.target,
         deliveryAttempt: entry,
       });
-      this.options.runtime.markAssistantDelivery(
+      await this.options.runtime.markAssistantDelivery(
         runId,
         entry.idempotencyKey,
         'delivering',
@@ -443,7 +444,7 @@ export class RuntimeServer {
         cloneEventRawValue(entry.message),
       );
     } catch (error) {
-      this.options.runtime.markAssistantDelivery(
+      await this.options.runtime.markAssistantDelivery(
         runId,
         entry.idempotencyKey,
         'failed',
@@ -458,7 +459,7 @@ export class RuntimeServer {
       });
       return false;
     }
-    this.options.runtime.markAssistantDelivery(
+    await this.options.runtime.markAssistantDelivery(
       runId,
       entry.idempotencyKey,
       'delivered',
