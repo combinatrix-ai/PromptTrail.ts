@@ -128,10 +128,22 @@ execution first breaks that path. Tag the pre-deletion commit
       materialization writes whole runs from read paths, `persistRun` does a
       sync `has` before async `set`, and `entries()` scans are sync — the
       delta store contract should address all three.
-- [ ] **1.7 Introduce a session identity.** `Session` has no version field
+- [x] **1.7 Introduce a session identity.** `Session` has no version field
       (`transitionVersion` is legacy replay state) and loop counters are
       executor-local. Add a monotonic session identity/version used as the default
       `once` dep and the delta pointer. See §8.6. (`session.ts`, `durable.ts`)
+      Done: `Session.version` — lineage-local monotonic identity, bumped by
+      `addMessage`/`withVar`/`withVars` and non-empty execution transitions,
+      preserved by type-only views, round-tripped through
+      `toJSON`/`fromJSON`. Default tool once dep is now
+      `idempotencyKey ?? session.version ?? parsedInput` (the old fallback
+      deep-hashed the whole session — the §8.6 violation), and
+      `stableSerialize` maps a `Session` inside explicit deps to its version.
+      Event `sessionVersion` still means messages.length — left for §1.6b.
+      Note for §4.1: two same-name tool calls in one assistant batch share a
+      version, so the default dep dedupes them — same behavior as the old
+      whole-session dep; the strict gate's idempotencyKey remains the answer
+      for must-dedup writes.
 - [ ] **1.8 Provider-session resume for `.codex`/`.claude` nodes.** The
       provider owns the loop, so a crash mid-turn cannot be checkpointed. Primary:
       persist the provider thread/session id in the checkpoint and reconnect on

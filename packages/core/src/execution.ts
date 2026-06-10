@@ -161,9 +161,17 @@ export function applyResolvedExecutionTransition<
     transition.session.middlewareStateSet,
     transition.session.middlewareStateDelete,
   );
+  const sessionVersion = isEmptySessionDelta(transition.session)
+    ? session.version
+    : session.version + 1;
 
   return {
-    session: new Session<TVars, TAttrs>(messages, vars, session.print),
+    session: new Session<TVars, TAttrs>(
+      messages,
+      vars,
+      session.print,
+      sessionVersion,
+    ),
     middlewareState,
     command: transition.command,
   };

@@ -11,11 +11,24 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     messages: readonly Message<TAttrs>[] = [],
     public readonly vars: TVars,
     public readonly print: boolean = false,
+    private readonly _version: number = 0,
   ) {
     this.messages = messages.map(makeMessagePersistenceSafe);
   }
 
   public readonly messages: readonly Message<TAttrs>[];
+
+  /**
+   * Lineage-local session identity.
+   *
+   * This version is monotonic only within one session lineage, so two unrelated
+   * sessions can share the same number. It exists as the default `once` dep and
+   * as the future session-delta pointer.
+   */
+  get version(): number {
+    return this._version;
+  }
+
   /**
    * Create a new session with additional message
    */
@@ -50,6 +63,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [...this.messages, message],
       { ...this.vars }, // Create a shallow copy of the context
       this.print,
+      this.version + 1,
     );
   }
 
@@ -74,14 +88,24 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [key]: value,
     } as TVars & { [P in K]: V };
 
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      newContext,
+      this.print,
+      this.version + 1,
+    );
   }
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
   ): Session<Vars<TVars & U>, TAttrs> {
     const newContext = { ...this.vars, ...vars } as TVars & U;
-    return new Session([...this.messages], newContext, this.print);
+    return new Session(
+      [...this.messages],
+      newContext,
+      this.print,
+      this.version + 1,
+    );
   }
 
   /**
@@ -99,6 +123,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       [...this.messages] as Message<Attrs<U>>[],
       { ...this.vars },
       this.print,
+      this.version,
     );
   }
 
@@ -177,6 +202,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       messages: this.messages.map(makeMessagePersistenceSafe),
       context: this.vars,
       print: this.print,
+      version: this.version,
     };
   }
 
@@ -383,11 +409,23 @@ export namespace Session {
       );
     }
 
-    return createSession<TVars, TAttrs>({
-      messages: json.messages as Message<Attrs<TAttrs>>[],
-      context: json.context as TVars,
-      print: json.print ? (json.print as boolean) : false,
-    });
+    if (
+      json.version !== undefined &&
+      (typeof json.version !== 'number' ||
+        !Number.isInteger(json.version) ||
+        json.version < 0)
+    ) {
+      throw new ValidationError(
+        'Invalid session JSON: version must be a non-negative integer',
+      );
+    }
+
+    return new Session<Vars<TVars>, Attrs<TAttrs>>(
+      json.messages as Message<Attrs<TAttrs>>[],
+      (json.context ?? {}) as Vars<TVars>,
+      json.print ? (json.print as boolean) : false,
+      json.version === undefined ? 0 : (json.version as number),
+    );
   }
 
   /**

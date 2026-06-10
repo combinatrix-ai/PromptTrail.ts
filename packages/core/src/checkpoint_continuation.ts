@@ -1,6 +1,6 @@
 import type { AgentGraphNode } from './graph';
 import type { GraphExecutionOptions } from './graph_executor';
-import type { Attrs, Session, Vars } from './session';
+import { Session, type Attrs, type Vars } from './session';
 
 export type CheckpointOnceScope = 'run' | 'conversation';
 
@@ -272,6 +272,9 @@ function stableSerialize(value: unknown, seen = new WeakSet<object>()): string {
   seen.add(value);
   if (value instanceof Date) {
     return JSON.stringify(value.toISOString());
+  }
+  if (value instanceof Session) {
+    return stableSerialize({ sessionVersion: value.version }, seen);
   }
   if (value instanceof Map) {
     return stableSerialize(

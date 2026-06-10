@@ -40,6 +40,7 @@ describe('Session', () => {
     const session = createSession({ messages });
     expect(session.messages).toHaveLength(2);
     expect(session.messages[0].content).toBe('System message');
+    expect(session.version).toBe(0);
   });
 
   it('should add messages immutably', () => {
@@ -48,8 +49,10 @@ describe('Session', () => {
     const newSession = session.addMessage(newMessage);
 
     expect(session.messages).toHaveLength(0);
+    expect(session.version).toBe(0);
     expect(newSession.messages).toHaveLength(1);
     expect(newSession.messages[0].content).toBe('Test message');
+    expect(newSession.version).toBe(1);
   });
 
   it('should update metadata immutably', () => {
@@ -67,6 +70,25 @@ describe('Session', () => {
     expect(session.getVar('added')).toBeUndefined();
     expect(newSession.getVar('initial')).toBe(true);
     expect(newSession.getVar('added')).toBe('value');
+    expect(session.version).toBe(0);
+    expect(newSession.version).toBe(1);
+  });
+
+  it('should advance version monotonically for message and vars changes', () => {
+    const session = createSession({
+      messages: [createUserMessage('Initial')],
+      context: { count: 0 },
+    });
+    const withMessage = session.addMessage(createUserMessage('Next'));
+    const withVar = withMessage.withVar('count', 1);
+    const withVars = withVar.withVars({ done: true });
+    const typed = withVars.withAttrsType<{ hidden: boolean }>();
+
+    expect(session.version).toBe(0);
+    expect(withMessage.version).toBe(1);
+    expect(withVar.version).toBe(2);
+    expect(withVars.version).toBe(3);
+    expect(typed.version).toBe(3);
   });
 
   it('should get messages by type', () => {
@@ -155,6 +177,7 @@ describe('Session', () => {
     expect(parsedJson).toHaveProperty('messages');
     expect(parsedJson).toHaveProperty('context');
     expect(parsedJson).toHaveProperty('print');
+    expect(parsedJson).toHaveProperty('version', 0);
     expect(parsedJson.context).toEqual(context);
     // With plain objects, we can directly compare
     expect(parsedJson.context).toMatchObject(context);
@@ -325,17 +348,20 @@ describe('Session Namespace', () => {
   });
 
   it('should deserialize from JSON using Session.fromJSON()', () => {
-    const jsonData = {
+    const original = Session.create({
       messages: [createSystemMessage('Test')],
-      context: { key: 'value' },
+      vars: { key: 'value' },
       print: false,
-    };
+    }).withVar('updated', true);
+    const jsonData = original.toJSON();
 
     const session = Session.fromJSON(jsonData);
     expect(session.messages).toHaveLength(1);
     expect(session.messages[0].content).toBe('Test');
     expect(session.getVar('key')).toBe('value');
+    expect(session.getVar('updated')).toBe(true);
     expect(session.print).toBe(false);
+    expect(session.version).toBe(original.version);
   });
 
   it('should handle invalid JSON gracefully in Session.fromJSON()', () => {
@@ -353,6 +379,13 @@ describe('Session Namespace', () => {
         context: 'not an object',
       }),
     ).toThrow('Invalid session JSON: context must be an object');
+
+    expect(() =>
+      Session.fromJSON({
+        messages: [],
+        version: -1,
+      }),
+    ).toThrow('Invalid session JSON: version must be a non-negative integer');
   });
 
   it('should provide consistent API with proper type inference', () => {
@@ -502,6 +535,7 @@ describe('Session New API - Gradual Typing', () => {
     expect(typedSession.getVar('userId')).toBe('123');
     expect(typedSession.getVar('name')).toBe('John');
     expect(typedSession.messages).toHaveLength(0);
+    expect(typedSession.version).toBe(originalSession.version);
 
     // Original session should be unchanged
     expect(originalSession.getVar('userId')).toBe('123');

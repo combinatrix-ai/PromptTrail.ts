@@ -724,6 +724,7 @@ export function getGeminiCacheablePrefixSession(
       session.messages.slice(0, lastCacheHintIndex + 1),
       session.vars,
       session.print,
+      session.version,
     ),
     messageIndex: lastCacheHintIndex,
   };
