@@ -67,10 +67,16 @@ execution first breaks that path. Tag the pre-deletion commit
       vocabulary in `execution.ts` (`replayed`/`journaled` event policy) and
       `PromptTrailApp.replayEvents()` — still used by observer/delivery
       tests; fold into §1.2/§1.5.
-- [ ] **1.2 Remove replay-identity machinery.** Delete the middleware/hook
+- [x] **1.2 Remove replay-identity machinery.** Delete the middleware/hook
       compound replay-identity validation (phase + kind + id + declaration-order vs
       journal index). Keep stable ids only for (a) the structural version gate and
       (b) idempotency-memo keys. (`durable.ts`, `graph.ts`)
+      Done: audit found no surviving journal-index validation after §1.1.
+      Removed the dead `journaled` runtime event mode and the
+      `live-and-journaled` observer policy (default is now `live-only`).
+      Kept: `replayed` + `PromptTrailApp.replayEvents()` as a live explicit
+      event re-emission API gated by `adopt-replayed`; whether
+      `StoredRun.events` storage stays is a §1.5 decision.
 - [ ] **1.3 Collapse `DurableAgent` / `GraphAgent` into one graph runtime.**
       One agent type, one run store path, one resume path. (`durable.ts`,
       `templates/agent.ts`)

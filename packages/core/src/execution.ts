@@ -169,7 +169,7 @@ export function applyResolvedExecutionTransition<
   };
 }
 
-export type RuntimeReplayMode = 'live' | 'journaled' | 'replayed';
+export type RuntimeReplayMode = 'live' | 'replayed';
 
 export interface ExecutionEventBase {
   id: string;
@@ -191,10 +191,7 @@ export interface ExecutionEventBase {
 
 export type ExecutionEvent = ExecutionEventBase & Record<string, unknown>;
 
-export type ObserverReplayPolicy =
-  | 'live-only'
-  | 'live-and-journaled'
-  | 'adopt-replayed';
+export type ObserverReplayPolicy = 'live-only' | 'adopt-replayed';
 
 export interface ObserverContext {
   signal?: AbortSignal;
@@ -489,11 +486,9 @@ export function observerReceives(
   event: ExecutionEvent,
 ): boolean {
   const replay = event.replay ?? 'live';
-  switch (observer.replayPolicy ?? 'live-and-journaled') {
+  switch (observer.replayPolicy ?? 'live-only') {
     case 'live-only':
       return replay === 'live';
-    case 'live-and-journaled':
-      return replay === 'live' || replay === 'journaled';
     case 'adopt-replayed':
       return true;
   }

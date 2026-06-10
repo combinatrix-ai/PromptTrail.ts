@@ -158,7 +158,7 @@ export function discordProgressObserver(
     });
   return {
     name: 'discordProgress',
-    replayPolicy: 'live-and-journaled',
+    replayPolicy: 'live-only',
     async handle(event, context) {
       if (event.type !== 'tool.started' && event.type !== 'tool.completed') {
         return;

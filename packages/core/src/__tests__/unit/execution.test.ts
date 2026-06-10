@@ -250,12 +250,6 @@ describe('observer bus', () => {
       observerReceives({ replayPolicy: 'live-only', handle() {} }, event),
     ).toBe(false);
     expect(
-      observerReceives(
-        { replayPolicy: 'live-and-journaled', handle() {} },
-        event,
-      ),
-    ).toBe(false);
-    expect(
       observerReceives({ replayPolicy: 'adopt-replayed', handle() {} }, event),
     ).toBe(true);
   });
