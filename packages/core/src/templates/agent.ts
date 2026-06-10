@@ -32,6 +32,7 @@ import type { PromptTrailTool } from '../tool';
 import { IValidator } from '../validators';
 import type { Template } from './base';
 import { Fluent } from './composite/chainable';
+import { Composite } from './composite/composite';
 import { Loop } from './composite/loop';
 import { Parallel } from './composite/parallel';
 import { Sequence } from './composite/sequence';
@@ -1093,13 +1094,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return {
       name: 'direct-agent',
       version: 'legacy-template',
-      nodes: [
-        {
-          id: 'root',
-          type: 'template',
-          data: { template: this.root },
-        },
-      ],
+      nodes: compileLegacyRootTemplate(this.root as Composite<TM, TC>),
       edges: [],
       tools: this.graphTools,
       middleware: this.middleware,
@@ -1232,6 +1227,235 @@ export interface AgentDirectDurableOptions {
 interface ResolvedAgentDirectDurableOptions {
   runId: string;
   store: DurableRunStore;
+}
+
+interface LegacyTemplateCompilerState {
+  nextIds: Map<string, number>;
+}
+
+function compileLegacyRootTemplate<TM extends Attrs, TC extends Vars>(
+  root: Composite<TM, TC>,
+): AgentGraphNode[] {
+  return compileLegacyCompositeChildren(root, {
+    nextIds: new Map<string, number>(),
+  });
+}
+
+function compileLegacyCompositeChildren<TM extends Attrs, TC extends Vars>(
+  composite: Composite<TM, TC>,
+  state: LegacyTemplateCompilerState,
+): AgentGraphNode[] {
+  return composite.getTemplates().map((template, index) => {
+    const prepared = composite.ensureTemplateHasContentSource(template);
+    return withLegacyTemplateLifecycle(
+      compileLegacyTemplate(prepared, state),
+      prepared,
+      index,
+    );
+  });
+}
+
+function compileLegacyTemplateDirect<TM extends Attrs, TC extends Vars>(
+  template: Template<TM, TC>,
+  state: LegacyTemplateCompilerState,
+): AgentGraphNode[] {
+  return [compileLegacyTemplate(template, state)];
+}
+
+function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
+  template: Template<TM, TC>,
+  state: LegacyTemplateCompilerState,
+): AgentGraphNode {
+  if (template instanceof Sequence) {
+    return {
+      id: nextLegacyNodeId(state, 'sequence'),
+      type: 'turn',
+      data: { kind: 'legacySequence' },
+      children: compileLegacyCompositeChildren(template, state),
+    };
+  }
+  if (template instanceof Loop) {
+    return {
+      id: nextLegacyNodeId(state, 'loop'),
+      type: 'loop',
+      data: compactGraphData({
+        condition: wrapLegacyCondition(template.getLoopCondition()),
+        maxIterations: template.getMaxIterations(),
+        legacyNoCondition: template.getLoopCondition() === undefined,
+        legacyWarnOnMaxIterations: true,
+      }),
+      children: compileLegacyCompositeChildren(template, state),
+    };
+  }
+  if (template instanceof Conditional) {
+    return {
+      id: nextLegacyNodeId(state, 'conditional'),
+      type: 'conditional',
+      data: { condition: wrapLegacyCondition(template.getCondition()) },
+      children: compactGraphChildren([
+        {
+          id: 'then',
+          type: 'turn',
+          children: compileLegacyTemplateDirect(
+            template.getThenTemplate(),
+            state,
+          ),
+        },
+        template.getElseTemplate()
+          ? {
+              id: 'else',
+              type: 'turn',
+              children: compileLegacyTemplateDirect(
+                template.getElseTemplate()!,
+                state,
+              ),
+            }
+          : undefined,
+      ]),
+    };
+  }
+  if (template instanceof Subroutine) {
+    return {
+      id: isStableLegacyNodeId(template.id)
+        ? template.id
+        : nextLegacyNodeId(state, 'subroutine'),
+      type: 'subroutine',
+      data: compactGraphData({
+        initWith: template.getInitFunction(),
+        squashWith: template.getSquashFunction(),
+        retainMessages: template.getRetainMessages(),
+        isolatedContext: template.getIsolatedContext(),
+      }),
+      children: compileLegacyCompositeChildren(template, state),
+    };
+  }
+  if (template instanceof System) {
+    // Route through transform → executeTemplateNode so the runtime Source is
+    // resolved and the system message is added exactly as the legacy path did.
+    return {
+      id: nextLegacyNodeId(state, 'system'),
+      type: 'transform',
+      data: { template },
+    };
+  }
+  if (template instanceof User) {
+    return {
+      id: nextLegacyNodeId(state, 'user'),
+      type: 'user',
+      data: compactGraphData({
+        input: template.getContentSource(),
+        legacyRequireContent: true,
+      }),
+    };
+  }
+  if (template instanceof Assistant) {
+    // Route through transform → executeTemplateNode so validator / retry
+    // semantics and the full runtime are preserved.
+    return {
+      id: nextLegacyNodeId(state, 'assistant'),
+      type: 'transform',
+      data: { template },
+    };
+  }
+  if (template instanceof GenerateMessages) {
+    return {
+      id: nextLegacyNodeId(state, 'messages'),
+      type: 'messages',
+      data: { handler: template.getGenerateMessages() },
+    };
+  }
+  if (template instanceof Transform) {
+    return {
+      id: nextLegacyNodeId(state, 'transform'),
+      type: 'transform',
+      data: { handler: template.getTransformFn() },
+    };
+  }
+  if (template instanceof Structured) {
+    return {
+      id: nextLegacyNodeId(state, 'structured'),
+      type: 'structured',
+      data: { template },
+    };
+  }
+  if (template instanceof Parallel) {
+    return {
+      id: nextLegacyNodeId(state, 'parallel'),
+      type: 'parallel',
+      data: { template },
+    };
+  }
+  if (template instanceof CodexTurn) {
+    return {
+      id: nextLegacyNodeId(state, 'codexTurn'),
+      type: 'codexTurn',
+      data: { template },
+    };
+  }
+  if (template instanceof ClaudeTurn) {
+    return {
+      id: nextLegacyNodeId(state, 'claudeTurn'),
+      type: 'claudeTurn',
+      data: { template },
+    };
+  }
+  // Catch-all: unknown template type. Store as template so executeTemplateNode
+  // calls template.execute(session, runtime) with the full runtime context.
+  return {
+    id: nextLegacyNodeId(state, 'transform'),
+    type: 'transform',
+    data: { template },
+  };
+}
+
+function withLegacyTemplateLifecycle<TM extends Attrs, TC extends Vars>(
+  node: AgentGraphNode,
+  template: Template<TM, TC>,
+  templateIndex: number,
+): AgentGraphNode {
+  return {
+    ...node,
+    data: {
+      ...((node.data as Record<string, unknown> | undefined) ?? {}),
+      legacyTemplateLifecycle: {
+        templateIndex,
+        templateName: template.constructor.name,
+      },
+    },
+  };
+}
+
+function wrapLegacyCondition<TC extends Vars, TM extends Attrs>(
+  condition: ((session: Session<TC, TM>) => boolean) | undefined,
+):
+  | ((context: {
+      session: Session<TC, TM>;
+      context?: Record<string, unknown>;
+      signal?: AbortSignal;
+    }) => boolean)
+  | undefined {
+  if (!condition) {
+    return undefined;
+  }
+  return ({ session }) => condition(session);
+}
+
+function nextLegacyNodeId(
+  state: LegacyTemplateCompilerState,
+  kind: string,
+): string {
+  const next = state.nextIds.get(kind) ?? 0;
+  state.nextIds.set(kind, next + 1);
+  return `${kind}${next}`;
+}
+
+function isStableLegacyNodeId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value === value.trim() &&
+    /^[A-Za-z][A-Za-z0-9_-]*$/.test(value)
+  );
 }
 
 function createDirectDurableRunId(): string {

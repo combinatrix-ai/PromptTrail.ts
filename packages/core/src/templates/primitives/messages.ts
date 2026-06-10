@@ -23,6 +23,13 @@ export class GenerateMessages<
     super();
   }
 
+  /**
+   * @internal
+   */
+  getGenerateMessages(): GenerateMessagesFn<TAttrs, TVars> {
+    return this.generateMessages;
+  }
+
   async execute(
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {

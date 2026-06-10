@@ -23,6 +23,27 @@ export class Conditional<
     this.elseTemplate = options.elseTemplate;
   }
 
+  /**
+   * @internal
+   */
+  getCondition(): (session: Session<TVars, TAttrs>) => boolean {
+    return this.condition;
+  }
+
+  /**
+   * @internal
+   */
+  getThenTemplate(): Template<TAttrs, TVars> {
+    return this.thenTemplate;
+  }
+
+  /**
+   * @internal
+   */
+  getElseTemplate(): Template<TAttrs, TVars> | undefined {
+    return this.elseTemplate;
+  }
+
   async execute(
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,

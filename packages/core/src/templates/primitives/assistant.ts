@@ -58,6 +58,19 @@ export class Assistant<
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {
+    return this.executeSource(session, runtime);
+  }
+
+  /**
+   * Execute the configured assistant source without routing through the
+   * generic template adapter entrypoint.
+   *
+   * @internal
+   */
+  async executeSource(
+    session?: Session<TVars, TAttrs>,
+    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+  ): Promise<Session<TVars, TAttrs>> {
     let validSession = this.ensureSession(session);
 
     // Content source should always be available now (either provided or default)

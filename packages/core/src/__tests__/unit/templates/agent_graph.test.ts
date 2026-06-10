@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type {
   ClaudeAgentClient,
@@ -1146,5 +1146,229 @@ describe('Agent graph authoring', () => {
     expect(() => graphStarted().add(Agent.quick().build())).toThrow(
       /Graph Agent\.add/,
     );
+  });
+});
+
+describe('Legacy agent compilation through GraphExecutor', () => {
+  it('executes a legacy system/user/assistant sequence via graph', async () => {
+    const session = await Agent.quick()
+      .system('You are concise.')
+      .user('Hello')
+      .assistant('Hi there')
+      .execute();
+
+    expect(session.messages.map((m) => [m.type, m.content])).toEqual([
+      ['system', 'You are concise.'],
+      ['user', 'Hello'],
+      ['assistant', 'Hi there'],
+    ]);
+  });
+
+  it('executes a legacy assistant with a Source-based content source', async () => {
+    const session = await Agent.quick()
+      .user('ping')
+      .assistant(Source.literal('pong'))
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('pong');
+  });
+
+  it('executes a legacy loop that warns on max-iterations instead of throwing', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const session = await Agent.quick()
+        .loop(
+          (body) => body.user('tick'),
+          () => true, // never-ending condition
+          { maxIterations: 3 },
+        )
+        .execute();
+
+      // Legacy behaviour: warn and stop at max rather than throwing
+      expect(session.messages.length).toBeGreaterThanOrEqual(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('maximum iterations'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('executes a legacy loop without a condition as a one-shot sequence with a warning', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const session = await Agent.quick()
+        .loop((body) => body.user('once'))
+        .execute();
+
+      expect(session.messages.map((m) => m.content)).toEqual(['once']);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('loop condition'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('fires beforeTemplate and afterTemplate hooks around each legacy child', async () => {
+    const calls: string[] = [];
+
+    const session = await Agent.quick()
+      .hook(
+        Hook.create({
+          name: 'lifecycleHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`before:${req.templateIndex}:${req.templateName}`);
+          },
+          onAfterTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`after:${req.templateIndex}:${req.templateName}`);
+          },
+        }),
+      )
+      .user('first')
+      .assistant('second')
+      .execute();
+
+    expect(session.messages.map((m) => m.content)).toEqual(['first', 'second']);
+    // Two children at index 0 and 1; template names match class names
+    expect(calls).toEqual([
+      'before:0:User',
+      'after:0:User',
+      'before:1:Assistant',
+      'after:1:Assistant',
+    ]);
+  });
+
+  it('halts sibling execution when beforeTemplate hook returns halt', async () => {
+    const session = await Agent.quick()
+      .hook(
+        Hook.create({
+          name: 'haltHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as { templateIndex: number };
+            if (req.templateIndex === 1) {
+              return { command: { type: 'halt' as const } };
+            }
+          },
+        }),
+      )
+      .user('first')
+      .user('second') // should be skipped
+      .user('third') // should be skipped
+      .execute();
+
+    // Only the first user message should be added
+    expect(session.messages.map((m) => m.content)).toEqual(['first']);
+  });
+
+  it('fires beforeTemplate and afterTemplate inside a legacy loop body', async () => {
+    const calls: string[] = [];
+    let iterations = 0;
+
+    await Agent.quick()
+      .hook(
+        Hook.create({
+          name: 'loopLifecycleHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`before:${req.templateIndex}:${req.templateName}`);
+          },
+          onAfterTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`after:${req.templateIndex}:${req.templateName}`);
+          },
+        }),
+      )
+      .loop(
+        (body) => body.user('tick'),
+        () => iterations++ < 2,
+      )
+      .execute();
+
+    // Loop body builder wraps children in a Sequence (body template), so the
+    // graph hierarchy is: Loop → Sequence → User.  Each level gets lifecycle
+    // events.  Root fires before/after for the Loop node (index 0).  Each
+    // iteration fires before/after for the Sequence (index 0) and User
+    // (index 0) inside it.
+    expect(calls).toEqual([
+      'before:0:Loop',
+      'before:0:Sequence',
+      'before:0:User',
+      'after:0:User',
+      'after:0:Sequence', // iter 1
+      'before:0:Sequence',
+      'before:0:User',
+      'after:0:User',
+      'after:0:Sequence', // iter 2
+      'after:0:Loop',
+    ]);
+  });
+
+  it('executes a legacy conditional through the graph compiler', async () => {
+    const runAgent = async (condition: boolean) => {
+      const session = await Agent.quick()
+        .user('setup')
+        .conditional(
+          () => condition,
+          (then) => then.assistant('yes'),
+          (otherwise) => otherwise.assistant('no'),
+        )
+        .execute();
+      return session.messages.map((m) => m.content);
+    };
+
+    expect(await runAgent(true)).toEqual(['setup', 'yes']);
+    expect(await runAgent(false)).toEqual(['setup', 'no']);
+  });
+
+  it('passes middleware runtime through nested legacy agents', async () => {
+    const modelCalls: string[] = [];
+
+    const session = await Agent.quick()
+      .use(
+        Middleware.create({
+          name: 'trackMiddleware',
+          beforeModel: () => {
+            modelCalls.push('beforeModel');
+            return { session: { vars: { fromMiddleware: true } } };
+          },
+        }),
+      )
+      .assistant(Source.literal('ok'))
+      .execute();
+
+    // The middleware's beforeModel fires and injects the var; the assistant
+    // executes correctly through the legacy compilation graph path.
+    expect(session.getLastMessage()?.content).toBe('ok');
+    expect(modelCalls).toEqual(['beforeModel']);
+    expect(session.getVar('fromMiddleware')).toBe(true);
+  });
+
+  it('executes a legacy subroutine with isolated context through the graph compiler', async () => {
+    const session = await Agent.quick()
+      .user('outer')
+      .subroutine((sub) =>
+        sub
+          .transform((s) => s.withVar('inSub', true))
+          .assistant(Source.literal('sub-result')),
+      )
+      .execute();
+
+    // Subroutine messages are appended to the parent session by default
+    expect(session.messages.map((m) => m.content)).toContain('sub-result');
   });
 });

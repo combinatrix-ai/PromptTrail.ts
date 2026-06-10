@@ -45,6 +45,53 @@ export abstract class Composite<
     return this;
   }
 
+  /**
+   * Expose child templates to the legacy-to-graph compiler without routing
+   * execution through the generic template adapter.
+   *
+   * @internal
+   */
+  getTemplates(): Template<TAttrs, TVars>[] {
+    return [...this.templates];
+  }
+
+  /**
+   * @internal
+   */
+  getLoopCondition():
+    | ((session: Session<TVars, TAttrs>) => boolean)
+    | undefined {
+    return this.loopCondition;
+  }
+
+  /**
+   * @internal
+   */
+  getMaxIterations(): number {
+    return this.maxIterations;
+  }
+
+  /**
+   * @internal
+   */
+  getInitFunction():
+    | ((session: Session<TVars, TAttrs>) => Session<TVars, TAttrs>)
+    | undefined {
+    return this.initFunction;
+  }
+
+  /**
+   * @internal
+   */
+  getSquashFunction():
+    | ((
+        parentSession: Session<TVars, TAttrs>,
+        childSession: Session<TVars, TAttrs>,
+      ) => Session<TVars, TAttrs>)
+    | undefined {
+    return this.squashFunction;
+  }
+
   // Set default content sources for the template
   // Priority: this.contentSource > content source passed by the parent
   // If child template is a CompositeTemplate, pass the default too

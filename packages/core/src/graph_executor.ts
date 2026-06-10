@@ -245,7 +245,12 @@ export async function executeAgentGraph<
         materializeRemainingInbox(state);
         inboxMaterialized = true;
       }
-      await executeGraphNode(node, `${graph.name}/${node.id}`, state);
+      const halted = await executeGraphNodeWithLegacyLifecycle(
+        node,
+        `${graph.name}/${node.id}`,
+        state,
+      );
+      if (halted) break;
     }
     if (materializeInboxWithoutConsumer && !inboxMaterialized) {
       materializeRemainingInbox(state);
@@ -444,9 +449,6 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'claudeTurn':
       await executeClaudeTurnNode(node, nodePath, state);
       return;
-    case 'template':
-      await executeTemplateNode(node, nodePath, state);
-      return;
     case 'parallel':
       await executeParallelNode(node, nodePath, state);
       return;
@@ -462,8 +464,64 @@ async function executeChildren<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   for (const child of nodes) {
-    await executeGraphNode(child, `${parentPath}/${child.id}`, state);
+    const halted = await executeGraphNodeWithLegacyLifecycle(
+      child,
+      `${parentPath}/${child.id}`,
+      state,
+    );
+    if (halted) break;
   }
+}
+
+/**
+ * Execute a single graph node, firing legacy beforeTemplate/afterTemplate
+ * lifecycle hooks when the node carries legacyTemplateLifecycle metadata.
+ *
+ * Returns true if execution should halt (sibling iteration should stop).
+ */
+async function executeGraphNodeWithLegacyLifecycle<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<boolean> {
+  const data = graphNodeData(node);
+  const lifecycle = isRecord(data.legacyTemplateLifecycle)
+    ? (data.legacyTemplateLifecycle as {
+        templateIndex: number;
+        templateName: string;
+      })
+    : null;
+
+  if (lifecycle) {
+    const before = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'beforeTemplate',
+      session: state.session,
+      request: lifecycle,
+    });
+    state.session = before.session;
+    if (before.command.type === 'halt') {
+      return true;
+    }
+  }
+
+  await executeGraphNode(node, nodePath, state);
+
+  if (lifecycle) {
+    const after = await runRuntimeExecutionPhase(state.runtime, {
+      phase: 'afterTemplate',
+      session: state.session,
+      request: lifecycle,
+    });
+    state.session = after.session;
+    if (after.command.type === 'halt') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -476,17 +534,33 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
     await executeGoalAttemptsNode(node, nodePath, state);
     return;
   }
+  // Legacy-compiled loops may carry no condition (Loop created without loopIf):
+  // treat them as a one-shot sequence and warn, matching Composite.execute().
+  if (data.legacyNoCondition === true) {
+    console.warn(`Loop ${nodePath} executed without a loop condition.`);
+    await executeChildren(node.children ?? [], nodePath, state);
+    return;
+  }
   const shouldContinue = () =>
     resolveGraphCondition(data.condition, nodePath, state);
 
   let iterations = 0;
   const maxIterations =
     positiveInteger(data.maxIterations) ?? state.maxLoopIterations;
+  // Legacy-compiled loops warn on max-iterations instead of throwing, matching
+  // the Composite.execute() behaviour (which never threw on the limit).
+  const warnOnMax = data.legacyWarnOnMaxIterations === true;
   let resumeIterationPending =
     state.resumeFromNode !== undefined &&
     isGraphDescendantPath(state.resumeFromNode, nodePath);
   while (shouldContinue() || resumeIterationPending) {
     if (iterations++ >= maxIterations) {
+      if (warnOnMax) {
+        console.warn(
+          `Loop ${nodePath} reached maximum iterations (${maxIterations}). Exiting.`,
+        );
+        break;
+      }
       throw new Error(`Graph loop ${nodePath} exceeded max iterations.`);
     }
     resumeIterationPending = false;

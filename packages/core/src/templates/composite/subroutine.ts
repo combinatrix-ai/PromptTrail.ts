@@ -145,6 +145,20 @@ export class Subroutine<
   }
 
   /**
+   * @internal
+   */
+  getRetainMessages(): boolean {
+    return this.retainMessages;
+  }
+
+  /**
+   * @internal
+   */
+  getIsolatedContext(): boolean {
+    return this.isolatedContext;
+  }
+
+  /**
    * Sets the squash function for merging the subroutine session back into the parent session.
    * @param fn Function to merge the subroutine session into the parent session
    * @returns This instance for method chaining

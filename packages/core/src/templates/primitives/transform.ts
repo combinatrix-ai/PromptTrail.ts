@@ -33,6 +33,13 @@ export class Transform<
     }
   }
 
+  /**
+   * @internal
+   */
+  getTransformFn(): TransformFn<TAttrs, TVars> {
+    return this.transformFn;
+  }
+
   // Update execute signature
   async execute(
     session?: Session<TVars, TAttrs>,

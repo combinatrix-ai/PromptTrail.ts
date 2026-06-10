@@ -143,9 +143,18 @@ structured/codex/claude/goal`).
       `goal(...)` auto-loops by compiling to `assistant` + `loop(tools, assistant)`.
       Pure sugar; no provider-internal loop. The manual layer is writing the
       `loop` yourself (the `turn` container is removed — §9.2). (`templates/agent.ts`)
-- [ ] **3.5 Decompose remaining compatibility template nodes** into native graph
-      nodes so nothing routes through the generic legacy `template` adapter node.
-      (`graph_executor.ts`, `templates/agent.ts`)
+- [~] **3.5 Decompose remaining compatibility template nodes** into native graph
+  nodes so nothing routes through the generic legacy `template` adapter node.
+  (`graph_executor.ts`, `templates/agent.ts`)
+  Done: the whole-tree `{ type: 'template' }` wrapper and the `'template'`
+  node type are deleted; legacy trees compile per-kind to native nodes
+  (loop/conditional/subroutine/user/messages/transform/structured/parallel/
+  codexTurn/claudeTurn) with legacy lifecycle preserved via node metadata
+  (`legacyTemplateLifecycle`, sibling-halt, warn-on-max-iterations).
+  Remaining: `System` and `Assistant` leaves still delegate to
+  `template.execute` through a `transform` node (runtime Source resolution
+  and validator/retry semantics); fold them into native nodes together
+  with §3.4's assistant auto tool-loop work.
 - [x] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
       **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
       **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
