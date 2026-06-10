@@ -351,7 +351,7 @@ describe('execution interceptors', () => {
             beforeModel: async ({ durable }) => ({
               session: {
                 vars: {
-                  now: await durable.memo('now', () => Date.now()),
+                  now: await durable.once('now', 'clock', () => Date.now()),
                 },
               },
             }),
@@ -359,7 +359,7 @@ describe('execution interceptors', () => {
         ],
       }),
     ).rejects.toThrow(
-      "ctx.durable.memo() is not allowed in middleware clock beforeModel; declare durability: 'replayable-handler'",
+      "ctx.once() is not allowed in middleware clock beforeModel; declare durability: 'replayable-handler'",
     );
   });
 
@@ -375,9 +375,9 @@ describe('execution interceptors', () => {
             beforeModel: async ({ durable }) => ({
               session: {
                 vars: {
-                  profile: await durable.activity(
+                  profile: await durable.once(
                     'load-profile',
-                    { kind: 'external-read' },
+                    'profile',
                     () => 'loaded',
                   ),
                 },
@@ -387,7 +387,7 @@ describe('execution interceptors', () => {
         ],
       }),
     ).rejects.toThrow(
-      'ctx.durable.activity() is only available when middleware profile beforeModel runs in durable replayable-handler mode.',
+      'ctx.once() is only available when middleware profile beforeModel runs in durable replayable-handler mode.',
     );
   });
 
@@ -397,25 +397,10 @@ describe('execution interceptors', () => {
       phase: 'beforeModel',
       session: createSession(),
       durableBoundary: (handler) => ({
-        async memo(name, fn) {
+        async once(name, dep, fn) {
           provided.push(
-            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
+            `${handler.kind}:${handler.name}:${handler.phase}:${name}:${dep}`,
           );
-          return fn();
-        },
-        async now(name) {
-          provided.push(
-            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
-          );
-          return 123;
-        },
-        async randomId(name) {
-          provided.push(
-            `${handler.kind}:${handler.name}:${handler.phase}:${name}`,
-          );
-          return 'id';
-        },
-        async activity(_name, _options, fn) {
           return fn();
         },
       }),
@@ -426,7 +411,7 @@ describe('execution interceptors', () => {
           beforeModel: async ({ durable }) => ({
             session: {
               vars: {
-                now: await durable.memo('now', () => 123),
+                now: await durable.once('now', 'clock', () => 123),
               },
             },
           }),
@@ -435,23 +420,14 @@ describe('execution interceptors', () => {
     });
 
     expect(result.session.getVarsObject()).toEqual({ now: 123 });
-    expect(provided).toEqual(['middleware:clock:beforeModel:now']);
+    expect(provided).toEqual(['middleware:clock:beforeModel:now:clock']);
 
     await expect(
       runExecutionPhase({
         phase: 'beforeModel',
         session: createSession(),
         durableBoundary: () => ({
-          async memo(_name, fn) {
-            return fn();
-          },
-          async now() {
-            return 456;
-          },
-          async randomId() {
-            return 'id';
-          },
-          async activity(_name, _options, fn) {
+          async once(_name, _dep, fn) {
             return fn();
           },
         }),
@@ -461,7 +437,7 @@ describe('execution interceptors', () => {
             beforeModel: async ({ durable }) => ({
               session: {
                 vars: {
-                  now: await durable.memo('now', () => 456),
+                  now: await durable.once('now', 'clock', () => 456),
                 },
               },
             }),
@@ -469,7 +445,7 @@ describe('execution interceptors', () => {
         ],
       }),
     ).rejects.toThrow(
-      "ctx.durable.memo() is not allowed in middleware materialized beforeModel; declare durability: 'replayable-handler'",
+      "ctx.once() is not allowed in middleware materialized beforeModel; declare durability: 'replayable-handler'",
     );
   });
 

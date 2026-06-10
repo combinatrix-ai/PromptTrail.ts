@@ -254,17 +254,8 @@ describe('Tool namespace', () => {
           { id: '1' },
           {
             durable: {
-              async memo(_name, fn) {
-                return fn();
-              },
-              async now() {
-                return 0;
-              },
-              async randomId() {
-                return 'id';
-              },
-              async activity(name, options, fn) {
-                events.push(`${name}:${options.kind}`);
+              async once(name, _dep, fn) {
+                events.push(name);
                 return fn();
               },
             },
@@ -274,7 +265,7 @@ describe('Tool namespace', () => {
         content: [{ type: 'json', json: { id: '1' } }],
         structuredContent: { id: '1' },
       });
-      expect(events).toEqual(['lookup:external-read']);
+      expect(events).toEqual(['lookup']);
     });
 
     it('uses the invoked capability name for durable activity boundaries', async () => {
@@ -295,24 +286,15 @@ describe('Tool namespace', () => {
         {
           capability: 'lookup',
           durable: {
-            async memo(_name, fn) {
-              return fn();
-            },
-            async now() {
-              return 0;
-            },
-            async randomId() {
-              return 'id';
-            },
-            async activity(name, options, fn) {
-              events.push(`${name}:${options.kind}`);
+            async once(name, _dep, fn) {
+              events.push(name);
               return fn();
             },
           },
         },
       );
 
-      expect(events).toEqual(['lookup:external-read']);
+      expect(events).toEqual(['lookup']);
     });
   });
 });

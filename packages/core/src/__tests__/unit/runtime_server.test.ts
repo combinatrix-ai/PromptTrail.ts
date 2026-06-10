@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PromptTrail, agent, memoryStore } from '../../durable';
+import { PromptTrail, memoryStore } from '../../durable';
 import { Middleware } from '../../interceptors';
 import {
   bind,
@@ -25,6 +25,12 @@ function discordDeliveryTarget(channel: string, thread?: string) {
     channel,
     thread,
   };
+}
+
+function chatAgent(name: string, handler: any): Agent {
+  return Agent.create(name).turn('chat', (turn) =>
+    turn.inbox('inbox').assistant('reply', handler),
+  );
 }
 
 describe('RuntimeServer', () => {
@@ -76,7 +82,7 @@ describe('RuntimeServer', () => {
       },
       delete() {},
     };
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
     const app = PromptTrail.app({
@@ -255,7 +261,7 @@ describe('RuntimeServer', () => {
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['general:reply:hello']);
     expect(observerEvents).toEqual([
-      '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-',
+      '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started',
       `0:delivery.pending:${finalDeliveryKey}`,
       `1:delivery.completed:${finalDeliveryKey}`,
     ]);
@@ -312,10 +318,10 @@ describe('RuntimeServer', () => {
     ]);
     expect(app.pendingAssistantDeliveryOutbox()).toEqual([]);
     expect(observerWrites).toEqual([
-      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
-      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app',
-      'claim:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:undefined',
-      'complete:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:chat#0/model:model:model.started:-"]:app-second',
+      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
+      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app',
+      'claim:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
+      'complete:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app-second',
       `claim:["runtimeObserver:0","${finalDeliveryKey}"]:undefined`,
       `complete:["runtimeObserver:0","${finalDeliveryKey}"]:server`,
     ]);
@@ -367,7 +373,7 @@ describe('RuntimeServer', () => {
 
   it('registers Agent instances from runtime bindings into bundles', () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
-    const durable = agent('durable');
+    const durable = Agent.create('durable');
     const bundle = PromptTrail.runtimeBundle({
       name: 'binding-agent-registration',
       bindings: [
@@ -577,7 +583,7 @@ describe('RuntimeServer', () => {
   });
 
   it('registers durable agent factory results directly on apps', async () => {
-    const durable = agent('durable').assistant('reply', () => 'ok');
+    const durable = Agent.create('durable').assistant('reply', () => 'ok');
     const app = PromptTrail.app().agent(durable);
     const result = await app.run({
       agent: 'durable',
@@ -664,7 +670,7 @@ describe('RuntimeServer', () => {
 
   it('accepts Agent instances in runtime bindings', () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
-    const durable = agent('durable');
+    const durable = Agent.create('durable');
     const binding = bind(discord.messages())
       .to(main)
       .conversation(() => 'discord:graph')
@@ -686,7 +692,7 @@ describe('RuntimeServer', () => {
   it('allocates delivery event sequence numbers per conversation', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveryEvents: string[] = [];
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
@@ -781,7 +787,7 @@ describe('RuntimeServer', () => {
   it('uses stable idempotency keys for runtime error delivery', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
-    const main = agent('main').chat('chat', () => {
+    const main = chatAgent('main', () => {
       throw new Error('handler failed');
     });
     const bundle = PromptTrail.runtimeBundle({
@@ -860,7 +866,7 @@ describe('RuntimeServer', () => {
     const deliveries: string[] = [];
     const middlewareDelivery: unknown[] = [];
     const observerDelivery: unknown[] = [];
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getVarsObject().channelPrompt}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
@@ -964,109 +970,10 @@ describe('RuntimeServer', () => {
     ]);
   });
 
-  it('routes durable tool events to adapter observers', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
-    const observerEvents: string[] = [];
-    const main = agent('main')
-      .tool('lookup', {
-        execute: async () => 'found',
-      })
-      .assistant('reply', () => ({
-        content: 'using tool',
-        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: {} }],
-      }))
-      .runTools('tools');
-    const bundle = PromptTrail.runtimeBundle({
-      name: 'server-adapter-observer-test',
-      agents: { main },
-      defaults: { checkpoint: true },
-      bindings: [
-        bind(discord.messages())
-          .where(discord.notBot())
-          .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
-          .defaults({
-            delivery: discord.replyToOriginThread(),
-            behavior: {
-              allowedChannels: ['general'],
-              requireMention: false,
-            },
-          }),
-      ],
-    });
-    const adapter: RuntimeAdapter = {
-      name: 'test-discord',
-      sources: [
-        {
-          type: 'discord.messages',
-          start(ctx) {
-            emit = ctx.emit;
-          },
-        },
-      ],
-      deliveries: [
-        {
-          platform: 'discord',
-          deliver() {},
-        },
-      ],
-      observers: [
-        {
-          name: 'adapterProgress',
-          handle(event, context) {
-            if (
-              event.type !== 'tool.started' &&
-              event.type !== 'tool.completed'
-            ) {
-              return;
-            }
-            observerEvents.push(
-              `${event.type}:${event.name}:${(context.delivery as { platform?: string } | undefined)?.platform}`,
-            );
-          },
-        },
-      ],
-    };
-    const app = PromptTrail.app({
-      store: memoryStore(),
-      agents: bundle.agents,
-    });
-    const firstServer = PromptTrail.server({
-      bundle,
-      runtime: app,
-      adapters: [adapter],
-    });
-    const secondServer = PromptTrail.server({
-      bundle,
-      runtime: app,
-      adapters: [adapter],
-    });
-
-    await firstServer.start();
-    await secondServer.start();
-    await emit?.({
-      source: 'discord',
-      guild: 'workroom',
-      channel: 'general',
-      channelId: 'C_general',
-      author: 'alice',
-      authorId: 'U_alice',
-      authorBot: false,
-      content: 'hello',
-    });
-
-    expect(observerEvents).toEqual([
-      'tool.started:lookup:discord',
-      'tool.completed:lookup:discord',
-    ]);
-    await firstServer.stop();
-    await secondServer.stop();
-  });
-
   it('persists completed final deliveries across server restarts', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
@@ -1179,7 +1086,7 @@ describe('RuntimeServer', () => {
     const firstHandlerStarted = new Promise<void>((resolve) => {
       firstStarted = resolve;
     });
-    const main = agent('main').chat('chat', async (session) => {
+    const main = chatAgent('main', async (session) => {
       const content = session.getLastMessage()?.content ?? '';
       order.push(`handler:${content}`);
       if (content === 'first') {
@@ -1287,7 +1194,7 @@ describe('RuntimeServer', () => {
     const secondHandlerStarted = new Promise<void>((resolve) => {
       secondStarted = resolve;
     });
-    const main = agent('main').chat('chat', async (session) => {
+    const main = chatAgent('main', async (session) => {
       const content = session.getLastMessage()?.content ?? '';
       order.push(`handler:${content}`);
       if (content === 'first') {
@@ -1390,7 +1297,7 @@ describe('RuntimeServer', () => {
 
   it('surfaces observer failures when strictObservers is enabled', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
-    const main = agent('main').chat('chat', () => 'reply');
+    const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-observer-test',
       agents: { main },
@@ -1467,7 +1374,7 @@ describe('RuntimeServer', () => {
   it('does not roll back completed delivery when strict observer fails on completion', async () => {
     let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
     let deliveries = 0;
-    const main = agent('main').chat('chat', () => 'reply');
+    const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-completed-observer-test',
       agents: { main },
@@ -1553,7 +1460,7 @@ describe('RuntimeServer', () => {
 
   it('materializes missing final delivery outbox entries on startup', async () => {
     const deliveries: string[] = [];
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
@@ -1683,7 +1590,7 @@ describe('RuntimeServer', () => {
   });
 
   it('isolates existing run context from returned dispatch context mutations', async () => {
-    const main = agent('main').chat('chat', (session) => ({
+    const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
@@ -1771,7 +1678,7 @@ describe('RuntimeServer', () => {
 
   it('fills runtime outbox metadata on existing delivery entries', async () => {
     const store = memoryStore();
-    const main = agent('main').assistant('reply', () => 'stored reply');
+    const main = Agent.create('main').assistant('reply', () => 'stored reply');
     const app = PromptTrail.app({
       store,
       agents: { main },
@@ -1842,7 +1749,7 @@ describe('RuntimeServer', () => {
   it('retries pending final deliveries before starting sources', async () => {
     const order: string[] = [];
     const deliveries: string[] = [];
-    const main = agent('main').assistant('reply', () => 'stored reply');
+    const main = Agent.create('main').assistant('reply', () => 'stored reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-test',
       agents: { main },
@@ -1953,7 +1860,7 @@ describe('RuntimeServer', () => {
 
   it('retries delivering final deliveries on startup', async () => {
     const deliveries: string[] = [];
-    const main = agent('main').assistant('reply', () => 'stored reply');
+    const main = Agent.create('main').assistant('reply', () => 'stored reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-delivering-retry-test',
       agents: { main },
@@ -2017,7 +1924,7 @@ describe('RuntimeServer', () => {
 
   it('stops startup delivery retries for a conversation after the first failure', async () => {
     const order: string[] = [];
-    const main = agent('main').assistant('reply', () => 'stored reply');
+    const main = Agent.create('main').assistant('reply', () => 'stored reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-outbox-retry-order-test',
       agents: { main },

@@ -51,13 +51,11 @@ export type ExecutionDurableActivityOptions =
     });
 
 export interface ExecutionDurableBoundary {
-  memo<T>(name: string, fn: () => T | Promise<T>): Promise<T>;
-  now(name: string): Promise<number>;
-  randomId(name: string): Promise<string>;
-  activity<T>(
+  once<T>(
     name: string,
-    options: ExecutionDurableActivityOptions,
+    dep: unknown,
     fn: () => T | Promise<T>,
+    options?: { scope?: 'run' | 'conversation' },
   ): Promise<T>;
 }
 
@@ -975,30 +973,20 @@ function rejectingDurableBoundary(
   reason: 'materialized-phase' | 'unavailable',
 ): ExecutionDurableBoundary {
   return {
-    async memo() {
-      throw new Error(durableEffectError(label, 'memo', reason));
-    },
-    async now() {
-      throw new Error(durableEffectError(label, 'now', reason));
-    },
-    async randomId() {
-      throw new Error(durableEffectError(label, 'randomId', reason));
-    },
-    async activity() {
-      throw new Error(durableEffectError(label, 'activity', reason));
+    async once() {
+      throw new Error(durableEffectError(label, reason));
     },
   };
 }
 
 function durableEffectError(
   label: string,
-  method: 'memo' | 'now' | 'randomId' | 'activity',
   reason: 'materialized-phase' | 'unavailable',
 ): string {
   if (reason === 'materialized-phase') {
-    return `ctx.durable.${method}() is not allowed in ${label}; declare durability: 'replayable-handler' to use nested durable effects.`;
+    return `ctx.once() is not allowed in ${label}; declare durability: 'replayable-handler' to use nested durable effects.`;
   }
-  return `ctx.durable.${method}() is only available when ${label} runs in durable replayable-handler mode.`;
+  return `ctx.once() is only available when ${label} runs in durable replayable-handler mode.`;
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

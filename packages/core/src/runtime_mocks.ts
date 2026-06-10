@@ -1,6 +1,7 @@
-import { agent, app, MemoryRunStore, type AssistantResult } from './durable';
+import { app, MemoryRunStore } from './durable';
 import type { Message } from './message';
 import type { Attrs } from './session';
+import { Agent } from './templates';
 import {
   type BindingDefaults,
   type CronEvent,
@@ -70,9 +71,19 @@ export interface MockAssistantInput {
   context: Record<string, unknown>;
 }
 
-export type MockAssistantHandler = (
-  input: MockAssistantInput,
-) => AssistantResult<Attrs>;
+export type MockAssistantHandler = (input: MockAssistantInput) =>
+  | string
+  | Message<Attrs>
+  | {
+      content: string;
+      attrs?: Attrs;
+      toolCalls?: Array<{
+        id: string;
+        name: string;
+        arguments: Record<string, unknown>;
+      }>;
+      structuredContent?: Record<string, unknown>;
+    };
 
 type DiscordReceiveHandler = (
   message: MockDiscordReceiveOptions,
@@ -230,7 +241,7 @@ class MockRuntimeFixture {
     lastAssistantObservation: () => unknown;
   };
   readonly effects: {
-    journal: () => EffectJournalEntry[];
+    entries: () => EffectJournalEntry[];
   };
 
   private readonly deliveryTracker = new AssistantDeliveryTracker();
@@ -274,24 +285,23 @@ class MockRuntimeFixture {
       lastAssistantObservation: () => this.lastAssistantObservation(),
     };
     this.effects = {
-      journal: () => [...this.effectEntries],
+      entries: () => [...this.effectEntries],
     };
   }
 
-  private buildAgents(): Record<string, ReturnType<typeof agent>> {
+  private buildAgents(): Record<string, Agent<any, Attrs>> {
     const assistant = this.options.assistant ?? deterministicAssistant();
-    const agents: Record<string, ReturnType<typeof agent>> = {};
+    const agents: Record<string, Agent<any, Attrs>> = {};
     for (const name of Object.keys(this.options.bundle.agents)) {
-      agents[name] = agent(name).chat('chat', (session) => {
-        const last = session.getLastMessage();
-        const attrs = (last?.attrs ?? {}) as Record<string, unknown>;
-        const context =
-          (attrs.runtimeContext as Record<string, unknown> | undefined) ?? {};
-        return assistant({
-          input: { latestText: last?.content ?? '' },
-          context,
-        });
-      });
+      agents[name] = Agent.create<any, Attrs>(name).turn('chat', (turn) =>
+        turn.inbox('inbox').assistant('reply', (session, runtime) => {
+          const last = session.getLastMessage();
+          return assistant({
+            input: { latestText: last?.content ?? '' },
+            context: runtime?.context ?? {},
+          });
+        }),
+      );
     }
     return agents;
   }
@@ -395,6 +405,10 @@ class MockRuntimeFixture {
     conversationId: string,
     messages: readonly Message<Attrs>[],
   ): void {
+    const runContext =
+      (this.store.get(conversationId)?.context as
+        | Record<string, unknown>
+        | undefined) ?? {};
     const pending = messages
       .filter(
         (message): message is Message<Attrs> & { type: 'assistant' } =>
@@ -403,7 +417,9 @@ class MockRuntimeFixture {
       .map((message, index) => {
         const attrs = (message.attrs ?? {}) as Record<string, unknown>;
         const observed = (attrs.observed ?? {}) as Record<string, unknown>;
-        const delivery = observed.delivery as DeliveryTarget | undefined;
+        const delivery = (observed.delivery ?? runContext.delivery) as
+          | DeliveryTarget
+          | undefined;
         return {
           message,
           assistantIndex: index,
@@ -462,7 +478,7 @@ class MockRuntimeFixture {
       for (const message of [...messages].reverse()) {
         if (message.type === 'assistant') {
           const attrs = (message.attrs ?? {}) as Record<string, unknown>;
-          return attrs.observed;
+          return attrs.observed ?? run.context;
         }
       }
     }

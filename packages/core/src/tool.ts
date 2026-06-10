@@ -116,14 +116,19 @@ export async function executePromptTrailTool<TInput, TResult>(
       capability: executionName,
       activity: tool.activity ?? context.activity,
     };
+    const idempotencyKey = executionContext.activity?.idempotencyKey;
+    const toolContext = {
+      ...executionContext,
+      idempotencyKey,
+    };
     const result =
       executionContext.durable && executionContext.activity
-        ? await executionContext.durable.activity(
+        ? await executionContext.durable.once(
             executionName,
-            executionContext.activity,
-            () => tool.execute(parsedInput, executionContext),
+            idempotencyKey ?? executionContext.session ?? parsedInput,
+            () => tool.execute(parsedInput, toolContext),
           )
-        : await tool.execute(parsedInput, executionContext);
+        : await tool.execute(parsedInput, toolContext);
     return toolResultToCallToolResult(result);
   } catch (error) {
     return {

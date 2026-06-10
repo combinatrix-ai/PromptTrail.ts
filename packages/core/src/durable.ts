@@ -1,35 +1,13 @@
-import { Message, type Message as PromptTrailMessage } from './message';
+import type { Message as PromptTrailMessage } from './message';
 import {
   ObserverBus,
-  applyResolvedExecutionTransition,
   normalizeObserver,
-  resolveExecutionTransition,
   type ExecutionEvent,
-  type ExecutionPatch,
   type ObserverContext,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
-  type ResolvedExecutionCommand,
-  type ResolvedExecutionTransition,
 } from './execution';
-import {
-  runExecutionPhase,
-  runMiddlewareWrapper,
-  assertHookDefinitionSupported,
-  type ExecutionDurableActivityOptions,
-  type ExecutionDurableRetryPolicy,
-  type ExecutionDurableBoundary,
-  type ExecutionDurableBoundaryProvider,
-  type ExecutionHandlerDescriptor,
-  type ExecutionPhase,
-  type ExecutionLifecyclePhase,
-  type ExecutionPhaseStep,
-  type ExecutionWrapperPhase,
-  type HookDefinition,
-  type MiddlewareDefinition,
-  type RunMiddlewareWrapperResult,
-  type RunExecutionPhaseResult,
-} from './interceptors';
+import type { HookDefinition, MiddlewareDefinition } from './interceptors';
 import { assistantDeliveryKey } from './runtime_delivery_keys';
 import {
   bind as createRuntimeBindingBuilder,
@@ -75,82 +53,11 @@ export interface Inbound {
   attrs?: Attrs;
 }
 
-export interface DurableTool<
-  TArgs extends Record<string, unknown> = Record<string, unknown>,
-  TResult = unknown,
-> {
-  description?: string;
-  activity?:
-    | DurableActivityOptions
-    | ((
-        call: ToolCall,
-        context: DurableActivityContext,
-      ) => DurableActivityOptions);
-  execute(
-    args: TArgs,
-    context: DurableToolExecutionContext,
-  ): Promise<TResult> | TResult;
-}
-
 export interface ToolCall {
   name: string;
   arguments: Record<string, unknown>;
   id: string;
 }
-
-export type DurableActivityKind =
-  | 'pure-call'
-  | 'external-read'
-  | 'external-write';
-
-export type DurableActivityOptions =
-  | {
-      kind: Exclude<DurableActivityKind, 'external-write'>;
-      idempotencyKey?: string;
-      retry?: ExecutionDurableRetryPolicy;
-    }
-  | {
-      kind: 'external-write';
-      idempotencyKey: string;
-      retry?: ExecutionDurableRetryPolicy;
-    };
-
-export interface DurableActivityContext {
-  runId: string;
-  stepId: string;
-  session: Session<any, any>;
-  context?: Record<string, unknown>;
-}
-
-export interface DurableToolExecutionContext extends DurableActivityContext {
-  toolCall: ToolCall;
-  activity: DurableActivityOptions;
-  durable: ExecutionDurableBoundary;
-}
-
-export type AssistantResult<TAttrs extends Attrs = Attrs> =
-  | string
-  | PromptTrailMessage<TAttrs>
-  | {
-      content: string;
-      attrs?: TAttrs;
-      toolCalls?: ToolCall[];
-      structuredContent?: Record<string, unknown>;
-    };
-
-export type AssistantHandler<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> = (
-  session: Session<TVars, TAttrs>,
-) => Promise<AssistantResult<TAttrs>> | AssistantResult<TAttrs>;
-
-export type DurablePatchHandler<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> = (
-  session: Session<TVars, TAttrs>,
-) => Promise<ExecutionPatch<TVars, TAttrs>> | ExecutionPatch<TVars, TAttrs>;
 
 export interface DurableRunResult<
   TVars extends Vars = Vars,
@@ -199,1942 +106,121 @@ export interface PendingAssistantDeliveryOutboxEntry<
   entry: AssistantDeliveryOutboxEntry<TAttrs>;
 }
 
-export class Suspend extends Error {
-  constructor(readonly stepId: string) {
-    super(`suspend:${stepId}`);
-    this.name = 'Suspend';
-  }
+export type OnceScope = 'run' | 'conversation';
+
+export interface OnceOptions {
+  scope?: OnceScope;
 }
 
-export class Halt<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> extends Error {
-  constructor(readonly session: Session<TVars, TAttrs>) {
-    super('halt');
-    this.name = 'Halt';
-  }
-}
-
-export class NondeterminismError extends Error {
-  constructor(
-    readonly expected: string,
-    readonly actual: string,
-    readonly position: number,
-  ) {
-    super(
-      `Durable replay diverged at journal position ${position}: expected ${expected}, got ${actual}`,
-    );
-    this.name = 'NondeterminismError';
-  }
-}
-
-interface JournalState {
-  results: Map<string, unknown>;
-  sequence: string[];
-}
-
-interface DurableExecutionState<TVars extends Vars, TAttrs extends Attrs> {
-  runId: string;
-  session: Session<TVars, TAttrs>;
-  journal: JournalState;
-  inbox: Inbound[];
-  cursor: number;
-  sequencePosition: number;
-  transitionVersion: number;
-  middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
-  hooks: readonly HookDefinition<TVars, TAttrs>[];
-  middlewareState: Record<string, unknown>;
-  context?: Record<string, unknown>;
-  emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
-  nextEventSeq?: () => number;
-  persist?: () => void;
-  commitSession?: (session: Session<TVars, TAttrs>) => void;
-}
-
-interface DurableModelRequest<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
-}
-
-interface DurablePhaseJournal<TAttrs extends Attrs = Attrs> {
-  request?: unknown;
-  result?: unknown;
-  command: ResolvedExecutionCommand;
-  beforeVersion: number;
-  afterVersion: number;
-  middlewareState: Record<string, unknown>;
-  steps: ExecutionPhaseStep<TAttrs>[];
-  nestedStepIds: string[];
-}
-
-interface DurableWrapperJournal<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
-  request: unknown;
-  result: unknown;
-  command: ResolvedExecutionCommand;
-  beforeVersion: number;
-  afterVersion: number;
-  middlewareState: Record<string, unknown>;
-  steps: ExecutionPhaseStep<TAttrs>[];
-  nestedStepIds: string[];
-}
-
-interface DurableCompositeJournal {
-  __promptTrailComposite: true;
-  result: unknown;
-  nestedStepIds: string[];
-}
-
-type DurableNode<TVars extends Vars, TAttrs extends Attrs> =
-  | { type: 'system'; id: string; content: string }
-  | {
-      type: 'patch';
-      id: string;
-      handler: DurablePatchHandler<TVars, TAttrs>;
-    }
-  | {
-      type: 'assistant';
-      id: string;
-      handler: AssistantHandler<TVars, TAttrs>;
-    }
-  | {
-      type: 'chat';
-      id: string;
-      handler: AssistantHandler<TVars, TAttrs>;
-    }
-  | { type: 'runTools'; id: string }
-  | { type: 'awaitUser'; id: string }
-  | { type: 'steer'; id: string; mode: 'all' | 'one' }
-  | {
-      type: 'turn';
-      id: string;
-      nodes: DurableNode<TVars, TAttrs>[];
-      untilNoToolCalls: boolean;
-    };
-
-function normalizeAssistantMessage<TAttrs extends Attrs>(
-  result: AssistantResult<TAttrs>,
-): PromptTrailMessage<TAttrs> {
-  if (typeof result === 'string') {
-    return Message.assistant(result);
-  }
-  if ('type' in result) {
-    return result;
-  }
-  return {
-    type: 'assistant',
-    content: result.content,
-    attrs: result.attrs,
-    toolCalls: result.toolCalls,
-    structuredContent: result.structuredContent,
-  };
-}
-
-function stringifyToolResult(result: unknown): string {
-  if (typeof result === 'string') {
-    return result;
-  }
-  return JSON.stringify(result);
-}
-
-function normalizeToolResultMessage<TAttrs extends Attrs>(
-  result: unknown,
-  call: ToolCall,
-): PromptTrailMessage<TAttrs> {
-  if (
-    result &&
-    typeof result === 'object' &&
-    'type' in result &&
-    (result as { type?: unknown }).type === 'tool_result'
-  ) {
-    return result as PromptTrailMessage<TAttrs>;
-  }
-  return {
-    type: 'tool_result',
-    content: stringifyToolResult(result),
-    attrs: { toolCallId: call.id } as unknown as TAttrs,
-  };
-}
-
-function toolCallsOf<TAttrs extends Attrs>(
-  session: Session<any, TAttrs>,
-): ToolCall[] {
-  return (session.getLastMessage()?.toolCalls ?? []) as ToolCall[];
-}
-
-function resolveDurableToolActivity(
-  tool: DurableTool,
-  call: ToolCall,
-  context: DurableActivityContext,
-): DurableActivityOptions {
-  const activity =
-    typeof tool.activity === 'function'
-      ? tool.activity(call, context)
-      : (tool.activity ?? { kind: 'external-read' });
-  if (activity.kind === 'external-write' && !activity.idempotencyKey) {
-    throw new Error(
-      `Durable tool ${call.name} external-write activity requires idempotencyKey.`,
-    );
-  }
-  return activity;
-}
-
-function assertUniqueDurableToolSteps(
-  stepIds: readonly string[],
-  nodePath: string,
-): void {
-  const seen = new Set<string>();
-  for (const stepId of stepIds) {
-    if (seen.has(stepId)) {
-      throw new Error(
-        `Duplicate durable tool step: ${stepId}. Tool call ids must be unique within ${nodePath}.`,
-      );
-    }
-    seen.add(stepId);
-  }
-}
-
-function childPath(parent: string, id: string): string {
-  return parent ? `${parent}/${id}` : id;
-}
-
-function durableTemplateLifecycleRequest<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(node: DurableNode<TVars, TAttrs>, nodePath: string): Record<string, unknown> {
-  return {
-    templateId: node.id,
-    templateName: node.type,
-    templatePath: nodePath,
-  };
-}
-
-async function journaled<T, TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  fn: () => Promise<T> | T,
-): Promise<T> {
-  const expected = state.journal.sequence[state.sequencePosition];
-  if (state.journal.results.has(stepId)) {
-    if (expected !== stepId) {
-      throw new NondeterminismError(expected, stepId, state.sequencePosition);
-    }
-    state.sequencePosition++;
-    return state.journal.results.get(stepId) as T;
-  }
-  if (expected !== undefined) {
-    throw new NondeterminismError(expected, stepId, state.sequencePosition);
-  }
-  const result = await fn();
-  state.journal.results.set(stepId, result);
-  state.journal.sequence.push(stepId);
-  state.sequencePosition++;
-  state.persist?.();
-  return result;
-}
-
-function createDurableBoundaryProvider<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  parentStepId: string,
-  nestedStepIds: string[],
-): ExecutionDurableBoundaryProvider {
-  return (handler) => {
-    const memo = async <T>(
-      name: string,
-      fn: () => T | Promise<T>,
-    ): Promise<T> => {
-      const nestedStepId = durableEffectStepId(
-        parentStepId,
-        handler,
-        'memo',
-        name,
-      );
-      nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, fn);
-    };
-    return {
-      memo,
-      now: (name) => memo(name, () => Date.now()),
-      randomId: (name) => memo(name, () => durableRandomId()),
-      activity: async (name, options, fn) => {
-        assertDurableHandlerActivityOptions(handler, name, options);
-        const nestedStepId = durableEffectStepId(
-          parentStepId,
-          handler,
-          'activity',
-          name,
-        );
-        nestedStepIds.push(nestedStepId);
-        return journaled(state, nestedStepId, () =>
-          runDurableActivityWithRetry(options, fn),
-        );
-      },
-    };
-  };
-}
-
-function durableEffectStepId(
-  parentStepId: string,
-  handler: ExecutionHandlerDescriptor,
-  kind: 'memo' | 'activity',
-  name: string,
-): string {
-  return `${parentStepId}/${handler.kind}[${handler.registrationIndex}]/${handler.phase}/${handler.name ?? '<anonymous>'}/${kind}/${name}`;
-}
-
-function assertDurableHandlerActivityOptions(
-  handler: ExecutionHandlerDescriptor,
-  name: string,
-  options: ExecutionDurableActivityOptions,
-): void {
-  if (options.kind === 'external-write' && !options.idempotencyKey) {
-    throw new Error(
-      `Durable ${handler.kind} ${handler.name ?? '<anonymous>'} activity ${name} external-write requires idempotencyKey.`,
-    );
-  }
-}
-
-function createDurableToolBoundary<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  parentStepId: string,
-  call: ToolCall,
-  nestedStepIds: string[],
-): ExecutionDurableBoundary {
-  const memo = async <T>(
+export interface OnceBoundary {
+  once<T>(
     name: string,
+    dep: unknown,
     fn: () => T | Promise<T>,
-  ): Promise<T> => {
-    const nestedStepId = durableToolEffectStepId(
-      parentStepId,
-      call,
-      'memo',
-      name,
-    );
-    nestedStepIds.push(nestedStepId);
-    return journaled(state, nestedStepId, fn);
-  };
+    options?: OnceOptions,
+  ): Promise<T>;
+}
+
+interface OnceMemoStore {
+  run: Map<string, unknown>;
+  conversation: Map<string, unknown>;
+}
+
+function createOnceMemoStore(): OnceMemoStore {
   return {
-    memo,
-    now: (name) => memo(name, () => Date.now()),
-    randomId: (name) => memo(name, () => durableRandomId()),
-    activity: async (name, options, fn) => {
-      assertDurableToolActivityOptions(call, name, options);
-      const nestedStepId = durableToolEffectStepId(
-        parentStepId,
-        call,
-        'activity',
-        name,
-      );
-      nestedStepIds.push(nestedStepId);
-      return journaled(state, nestedStepId, () =>
-        runDurableActivityWithRetry(options, fn),
-      );
-    },
+    run: new Map<string, unknown>(),
+    conversation: new Map<string, unknown>(),
   };
 }
 
-function durableRandomId(): string {
-  const cryptoLike = globalThis.crypto as
-    | { randomUUID?: () => string }
-    | undefined;
-  return (
-    cryptoLike?.randomUUID?.() ??
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-  );
+function ensureOnceMemoStore(run: { once?: OnceMemoStore }): OnceMemoStore {
+  return (run.once ??= createOnceMemoStore());
 }
 
-function durableToolEffectStepId(
-  parentStepId: string,
-  call: ToolCall,
-  kind: 'memo' | 'activity',
-  name: string,
-): string {
-  return `${parentStepId}/tool/${call.name}/${kind}/${name}`;
-}
-
-function assertDurableToolActivityOptions(
-  call: ToolCall,
-  name: string,
-  options: ExecutionDurableActivityOptions,
-): void {
-  if (options.kind === 'external-write' && !options.idempotencyKey) {
-    throw new Error(
-      `Durable tool ${call.name} activity ${name} external-write requires idempotencyKey.`,
-    );
-  }
-}
-
-async function runDurableActivityWithRetry<T>(
-  options: ExecutionDurableActivityOptions,
-  fn: () => T | Promise<T>,
-): Promise<T> {
-  const maxAttempts = durableActivityMaxAttempts(options);
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (attempt === maxAttempts) {
-        throw error;
-      }
-    }
-  }
-  throw lastError;
-}
-
-function durableActivityMaxAttempts(
-  options: ExecutionDurableActivityOptions,
-): number {
-  const maxAttempts = options.retry?.maxAttempts ?? 1;
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
-    throw new Error(
-      'Durable activity retry.maxAttempts must be a positive integer.',
-    );
-  }
-  return maxAttempts;
-}
-
-async function runDurableCompositeJournal<
-  T,
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  fn: (nestedStepIds: string[]) => Promise<T> | T,
-): Promise<T> {
-  if (state.journal.results.has(stepId)) {
-    const record = state.journal.results.get(stepId);
-    if (isDurableCompositeJournal(record)) {
-      return applyDurableCompositeJournal(state, stepId, record) as T;
-    }
-    return journaled(state, stepId, async () => record as T);
-  }
-  assertCanRunDurableCompositeStep(state, stepId);
-  const nestedStepIds: string[] = [];
-  const result = await fn(nestedStepIds);
-  commitDurableJournalRecord(state, stepId, {
-    __promptTrailComposite: true,
-    result,
-    nestedStepIds,
-  } satisfies DurableCompositeJournal);
-  return result;
-}
-
-function applyDurableCompositeJournal<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  record: DurableCompositeJournal,
-): unknown {
-  replayNestedJournalSteps(state, record.nestedStepIds ?? []);
-  const expected = state.journal.sequence[state.sequencePosition];
-  if (expected !== stepId) {
-    throw new NondeterminismError(expected, stepId, state.sequencePosition);
-  }
-  state.sequencePosition++;
-  return record.result;
-}
-
-function isDurableCompositeJournal(
-  value: unknown,
-): value is DurableCompositeJournal {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    (value as { __promptTrailComposite?: unknown }).__promptTrailComposite ===
-      true
-  );
-}
-
-async function runDurableExecutionPhase<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TRequest = unknown,
-  TResult = unknown,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  options: {
-    phase: ExecutionLifecyclePhase;
-    session: Session<TVars, TAttrs>;
-    request?: TRequest;
-    result?: TResult;
-  },
-): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
-  if (!hasDurablePhaseHandler(state, options.phase)) {
-    return {
-      session: options.session,
-      request: options.request,
-      result: options.result,
-      middlewareState: state.middlewareState,
-      command: { type: 'none' },
-      beforeVersion: state.transitionVersion,
-      afterVersion: state.transitionVersion,
-      steps: [],
-    };
-  }
-
-  if (state.journal.results.has(stepId)) {
-    const record = state.journal.results.get(
-      stepId,
-    ) as DurablePhaseJournal<TAttrs>;
-    return await applyDurablePhaseJournal<TVars, TAttrs, TRequest, TResult>(
-      state,
-      stepId,
-      options.session,
-      record,
-      'journaled',
-    );
-  }
-
-  assertCanRunDurableCompositeStep(state, stepId);
-  const nestedStepIds: string[] = [];
-  const phase = await runExecutionPhase({
-    phase: options.phase,
-    session: options.session,
-    request: options.request,
-    result: options.result,
-    middlewareState: state.middlewareState,
-    middleware: state.middleware,
-    hooks: state.hooks,
-    context: state.context,
-    beforeVersion: state.transitionVersion,
-    durableBoundary: createDurableBoundaryProvider(
-      state,
-      stepId,
-      nestedStepIds,
-    ),
-  });
-  const record = {
-    request: phase.request,
-    result: phase.result,
-    command: phase.command,
-    beforeVersion: phase.beforeVersion,
-    afterVersion: phase.afterVersion,
-    middlewareState: phase.middlewareState,
-    steps: phase.steps,
-    nestedStepIds,
-  } satisfies DurablePhaseJournal<TAttrs>;
-  commitDurableJournalRecord(state, stepId, record);
-
-  return await applyDurablePhaseJournal<TVars, TAttrs, TRequest, TResult>(
-    state,
-    stepId,
-    options.session,
-    record,
-    'live',
-  );
-}
-
-async function applyDurablePhaseJournal<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TRequest = unknown,
-  TResult = unknown,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  baseSession: Session<TVars, TAttrs>,
-  record: DurablePhaseJournal<TAttrs>,
-  replay: 'live' | 'journaled',
-): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
-  if (replay === 'journaled') {
-    replayNestedJournalSteps(state, record.nestedStepIds ?? []);
-    const expected = state.journal.sequence[state.sequencePosition];
-    if (expected !== stepId) {
-      throw new NondeterminismError(expected, stepId, state.sequencePosition);
-    }
-    state.sequencePosition++;
-  }
-  if (record.beforeVersion !== state.transitionVersion) {
-    throw new NondeterminismError(
-      `version:${state.transitionVersion}`,
-      `version:${record.beforeVersion}`,
-      state.sequencePosition - 1,
-    );
-  }
-  assertDurablePhaseStepOrder(state, record.steps);
-
-  let session = baseSession;
-  let middlewareState = state.middlewareState;
-  for (const step of record.steps) {
-    if (step.transition.beforeVersion !== state.transitionVersion) {
-      throw new NondeterminismError(
-        `version:${state.transitionVersion}`,
-        `version:${step.transition.beforeVersion}`,
-        state.sequencePosition - 1,
-      );
-    }
-    const applied = applyResolvedExecutionTransition(session, step.transition, {
-      middlewareState,
-    });
-    session = applied.session;
-    middlewareState = applied.middlewareState;
-    state.transitionVersion = step.transition.afterVersion;
-    await emitDurablePhaseStepEvent(state, stepId, step, replay);
-  }
-  state.middlewareState = middlewareState;
-
+function createOnceBoundary(
+  run: { once?: OnceMemoStore },
+  persist: () => void,
+): OnceBoundary {
   return {
-    session,
-    request: record.request as TRequest | undefined,
-    result: record.result as TResult | undefined,
-    middlewareState,
-    command: record.command,
-    beforeVersion: record.beforeVersion,
-    afterVersion: record.afterVersion,
-    steps: record.steps,
-  };
-}
-
-function hasDurablePhaseHandler<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  phase: ExecutionLifecyclePhase,
-): boolean {
-  if (phase === 'suspend') {
-    return state.hooks.some((hook) => Boolean(hook.onSuspend ?? hook.onResume));
-  }
-  return (
-    state.middleware.some((middleware) =>
-      Boolean(durableMiddlewareHandlerForPhase(middleware, phase)),
-    ) ||
-    state.hooks.some((hook) => Boolean(hookHandlerForDurablePhase(hook, phase)))
-  );
-}
-
-function durableMiddlewareHandlerForPhase<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  middleware: MiddlewareDefinition<TVars, TAttrs>,
-  phase: ExecutionLifecyclePhase,
-): unknown {
-  switch (phase) {
-    case 'beforeAgent':
-      return middleware.beforeAgent;
-    case 'afterAgent':
-      return middleware.afterAgent;
-    case 'beforeTemplate':
-    case 'afterTemplate':
-      return undefined;
-    case 'beforeModel':
-      return middleware.beforeModel;
-    case 'prepareModelInput':
-      return middleware.prepareModelInput;
-    case 'afterModel':
-      return middleware.afterModel;
-    case 'beforeTool':
-      return middleware.beforeTool;
-    case 'afterTool':
-      return middleware.afterTool;
-    case 'suspend':
-    case 'resume':
-      return undefined;
-  }
-}
-
-function hookHandlerForDurablePhase<TVars extends Vars, TAttrs extends Attrs>(
-  hook: HookDefinition<TVars, TAttrs>,
-  phase: ExecutionLifecyclePhase,
-): unknown {
-  assertHookDefinitionSupported(hook);
-  switch (phase) {
-    case 'beforeAgent':
-      return hook.onRunStart ?? hook.onBeforeAgent;
-    case 'afterAgent':
-      return hook.onRunEnd ?? hook.onAfterAgent;
-    case 'beforeTemplate':
-      return hook.onBeforeTemplate;
-    case 'afterTemplate':
-      return hook.onAfterTemplate;
-    case 'beforeModel':
-      return hook.onBeforeModel;
-    case 'afterModel':
-      return hook.onAfterModel;
-    case 'beforeTool':
-      return hook.onBeforeTool;
-    case 'afterTool':
-      return hook.onAfterTool;
-    case 'suspend':
-      return hook.onSuspend;
-    case 'resume':
-      return hook.onResume;
-    case 'prepareModelInput':
-      return undefined;
-  }
-}
-
-function assertDurablePhaseStepOrder<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  steps: readonly ExecutionPhaseStep<TAttrs>[],
-): void {
-  for (const step of steps) {
-    const current = durablePhaseStepCoordinate(state, step);
-    const expected = durableRecordedStepCoordinate(step);
-    if (current !== expected) {
-      throw new NondeterminismError(
-        expected,
-        current,
-        state.sequencePosition - 1,
-      );
-    }
-  }
-}
-
-function durableRecordedStepCoordinate<TAttrs extends Attrs>(
-  step: ExecutionPhaseStep<TAttrs>,
-): string {
-  return `${step.kind}:${step.phase}:${step.registrationIndex}:${step.name ?? '<anonymous>'}`;
-}
-
-function durablePhaseStepCoordinate<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  step: ExecutionPhaseStep<TAttrs>,
-): string {
-  if (step.kind === 'middleware') {
-    const middleware = state.middleware[step.registrationIndex];
-    const handler = middleware
-      ? durableMiddlewareStepHandlerForPhase(middleware, step.phase)
-      : undefined;
-    if (!handler) {
-      return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
-    }
-    return `${step.kind}:${step.phase}:${step.registrationIndex}:${middleware.name ?? '<anonymous>'}`;
-  }
-  if (step.phase === 'wrapModelCall' || step.phase === 'wrapToolCall') {
-    return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
-  }
-  const hook = state.hooks[step.registrationIndex];
-  const handler = hook
-    ? hookHandlerForDurablePhase(hook, step.phase)
-    : undefined;
-  if (!handler) {
-    return `${step.kind}:${step.phase}:${step.registrationIndex}:<missing>`;
-  }
-  return `${step.kind}:${step.phase}:${step.registrationIndex}:${hook.name ?? '<anonymous>'}`;
-}
-
-function durableMiddlewareStepHandlerForPhase<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  middleware: MiddlewareDefinition<TVars, TAttrs>,
-  phase: ExecutionPhase,
-): unknown {
-  if (phase === 'wrapModelCall') {
-    return middleware.wrapModelCall;
-  }
-  if (phase === 'wrapToolCall') {
-    return middleware.wrapToolCall;
-  }
-  return durableMiddlewareHandlerForPhase(middleware, phase);
-}
-
-async function runDurableMiddlewareWrapper<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TRequest,
-  TResult,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  options: {
-    phase: ExecutionWrapperPhase;
-    session: Session<TVars, TAttrs>;
-    request: TRequest;
-    call: (input: {
-      session: Session<TVars, TAttrs>;
-      request: TRequest;
-      journalStepId: string;
-      nestedStepIds: string[];
-    }) => Promise<TResult>;
-  },
-): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
-  if (state.journal.results.has(stepId)) {
-    const record = state.journal.results.get(stepId) as DurableWrapperJournal<
-      TVars,
-      TAttrs
-    >;
-    return await replayDurableWrapperJournal(
-      state,
-      stepId,
-      options.session,
-      record,
-    );
-  }
-
-  assertCanRunDurableCompositeStep(state, stepId);
-  const nestedStepIds: string[] = [];
-  let nestedCallIndex = 0;
-  const wrapped = await runMiddlewareWrapper({
-    phase: options.phase,
-    session: options.session,
-    request: options.request,
-    call: async (input) => {
-      const nestedStepId = `${stepId}/next/${nestedCallIndex++}`;
-      nestedStepIds.push(nestedStepId);
-      return runDurableCompositeJournal(
-        state,
-        nestedStepId,
-        (callNestedStepIds) =>
-          options.call({
-            ...input,
-            journalStepId: nestedStepId,
-            nestedStepIds: callNestedStepIds,
-          }),
-      );
-    },
-    middlewareState: state.middlewareState,
-    middleware: state.middleware,
-    context: state.context,
-    beforeVersion: state.transitionVersion,
-    durableBoundary: createDurableBoundaryProvider(
-      state,
-      stepId,
-      nestedStepIds,
-    ),
-  });
-  const record = {
-    session: wrapped.session,
-    request: wrapped.request,
-    result: wrapped.result,
-    command: wrapped.command,
-    beforeVersion: wrapped.beforeVersion,
-    afterVersion: wrapped.afterVersion,
-    middlewareState: wrapped.middlewareState,
-    steps: wrapped.steps,
-    nestedStepIds,
-  } satisfies DurableWrapperJournal<TVars, TAttrs>;
-  commitDurableJournalRecord(state, stepId, record);
-
-  return await applyDurableWrapperJournal(
-    state,
-    stepId,
-    options.session,
-    record,
-    'live',
-  );
-}
-
-function commitDurableJournalRecord<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  record: unknown,
-): void {
-  const expected = state.journal.sequence[state.sequencePosition];
-  if (expected !== undefined) {
-    throw new NondeterminismError(expected, stepId, state.sequencePosition);
-  }
-  state.journal.results.set(stepId, record);
-  state.journal.sequence.push(stepId);
-  state.sequencePosition++;
-  state.persist?.();
-}
-
-function assertCanRunDurableCompositeStep<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(state: DurableExecutionState<TVars, TAttrs>, stepId: string): void {
-  const expected = state.journal.sequence[state.sequencePosition];
-  if (expected !== undefined && !expected.startsWith(`${stepId}/`)) {
-    throw new NondeterminismError(expected, stepId, state.sequencePosition);
-  }
-}
-
-function replayNestedJournalSteps<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  nestedStepIds: readonly string[],
-): void {
-  for (const nestedStepId of nestedStepIds) {
-    const record = state.journal.results.get(nestedStepId);
-    if (isDurableCompositeJournal(record)) {
-      applyDurableCompositeJournal(state, nestedStepId, record);
-      continue;
-    }
-    const expected = state.journal.sequence[state.sequencePosition];
-    if (expected !== nestedStepId) {
-      throw new NondeterminismError(
-        expected,
-        nestedStepId,
-        state.sequencePosition,
-      );
-    }
-    if (record === undefined && !state.journal.results.has(nestedStepId)) {
-      throw new Error(`Missing durable nested step ${nestedStepId}.`);
-    }
-    state.sequencePosition++;
-  }
-}
-
-async function replayDurableWrapperJournal<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TRequest,
-  TResult,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  session: Session<TVars, TAttrs>,
-  record: DurableWrapperJournal<TVars, TAttrs>,
-): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
-  replayNestedJournalSteps(state, record.nestedStepIds ?? []);
-
-  const expected = state.journal.sequence[state.sequencePosition];
-  if (expected !== stepId) {
-    throw new NondeterminismError(expected, stepId, state.sequencePosition);
-  }
-  state.sequencePosition++;
-  return await applyDurableWrapperJournal(
-    state,
-    stepId,
-    session,
-    record,
-    'journaled',
-  );
-}
-
-async function applyDurableWrapperJournal<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TRequest,
-  TResult,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  baseSession: Session<TVars, TAttrs>,
-  record: DurableWrapperJournal<TVars, TAttrs>,
-  replay: 'live' | 'journaled',
-): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
-  if (record.beforeVersion !== state.transitionVersion) {
-    throw new NondeterminismError(
-      `version:${state.transitionVersion}`,
-      `version:${record.beforeVersion}`,
-      state.sequencePosition - 1,
-    );
-  }
-  assertDurablePhaseStepOrder(state, record.steps);
-
-  let session = baseSession;
-  let middlewareState = state.middlewareState;
-  for (const step of record.steps) {
-    if (step.transition.beforeVersion !== state.transitionVersion) {
-      throw new NondeterminismError(
-        `version:${state.transitionVersion}`,
-        `version:${step.transition.beforeVersion}`,
-        state.sequencePosition - 1,
-      );
-    }
-    const applied = applyResolvedExecutionTransition(session, step.transition, {
-      middlewareState,
-    });
-    session = applied.session;
-    middlewareState = applied.middlewareState;
-    state.transitionVersion = step.transition.afterVersion;
-    await emitDurablePhaseStepEvent(state, stepId, step, replay);
-  }
-  state.middlewareState = middlewareState;
-
-  return {
-    session: record.session,
-    request: record.request as TRequest,
-    result: record.result as TResult,
-    middlewareState,
-    command: record.command,
-    beforeVersion: record.beforeVersion,
-    afterVersion: record.afterVersion,
-    steps: record.steps,
-  };
-}
-
-function hasDurableWrapperHandler<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  phase: ExecutionWrapperPhase,
-): boolean {
-  return state.middleware.some((middleware) => Boolean(middleware[phase]));
-}
-
-async function emitDurablePhaseStepEvent<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  step: ExecutionPhaseStep<TAttrs>,
-  replay: 'live' | 'journaled',
-): Promise<void> {
-  if (
-    !state.emitEvent ||
-    !state.nextEventSeq ||
-    step.transition.beforeVersion === step.transition.afterVersion
-  ) {
-    return;
-  }
-  const seq = state.nextEventSeq();
-  await state.emitEvent({
-    id: `${state.runId}:${seq}:session.patched`,
-    type: 'session.patched',
-    at: new Date().toISOString(),
-    seq,
-    conversationId: state.runId,
-    runId: state.runId,
-    stepId,
-    phase: step.phase,
-    replay,
-    idempotencyKey: durableEventIdempotencyKey(state, {
-      stepId,
-      phase: step.phase,
-      type: 'session.patched',
-      scope: durablePhaseStepEventScope(step),
-    }),
-    source: step.kind,
-    sessionVersion: step.transition.afterVersion,
-    raw: {
-      kind: step.kind,
-      name: step.name,
-      registrationIndex: step.registrationIndex,
-      beforeVersion: step.transition.beforeVersion,
-      afterVersion: step.transition.afterVersion,
-      command: step.transition.command,
-    },
-  });
-}
-
-async function emitDurableExecutionEvent<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  type: string,
-  options: Partial<ExecutionEvent> = {},
-): Promise<void> {
-  if (!state.emitEvent || !state.nextEventSeq) {
-    return;
-  }
-  const seq = state.nextEventSeq();
-  try {
-    await state.emitEvent({
-      id: `${state.runId}:${seq}:${type}`,
-      type,
-      at: new Date().toISOString(),
-      seq,
-      conversationId: state.runId,
-      runId: state.runId,
-      replay: 'live',
-      source: 'durable',
-      sessionVersion: state.transitionVersion,
-      ...options,
-      idempotencyKey:
-        options.idempotencyKey ??
-        durableEventIdempotencyKey(state, {
-          stepId: options.stepId,
-          phase: options.phase,
-          type,
-        }),
-    });
-  } catch {
-    // Tool/model progress events are observer side effects. They must not
-    // prevent the surrounding durable activity result from being journaled.
-  }
-}
-
-function durableEventIdempotencyKey<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  options: {
-    stepId?: string;
-    phase?: string;
-    type: string;
-    scope?: string;
-  },
-): string {
-  return [
-    state.runId,
-    options.stepId ?? '-',
-    options.phase ?? '-',
-    options.type,
-    options.scope ?? '-',
-  ].join(':');
-}
-
-function durablePhaseStepEventScope<TAttrs extends Attrs>(
-  step: ExecutionPhaseStep<TAttrs>,
-): string {
-  return [step.kind, step.registrationIndex, step.name ?? '<anonymous>'].join(
-    ':',
-  );
-}
-
-async function awaitInbound<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-): Promise<Inbound> {
-  const hadSuspended = await applyAwaitLifecyclePhaseIfNext(
-    state,
-    stepId,
-    'suspend',
-  );
-  const inbound = state.inbox.find((message) => message.offset >= state.cursor);
-  if (!inbound) {
-    if (!hadSuspended) {
-      await runAwaitLifecyclePhase(state, stepId, 'suspend');
-    }
-    throw new Suspend(stepId);
-  }
-  if (hadSuspended) {
-    await runAwaitLifecyclePhase(state, stepId, 'resume');
-  }
-  const offset = await journaled(state, stepId, async () => {
-    return inbound.offset;
-  });
-  state.cursor = offset + 1;
-  const resolvedInbound = state.inbox.find(
-    (message) => message.offset === offset,
-  );
-  if (!resolvedInbound) {
-    throw new Error(`Missing inbox message at offset ${offset}`);
-  }
-  return resolvedInbound;
-}
-
-async function applyAwaitLifecyclePhaseIfNext<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  phase: 'suspend' | 'resume',
-): Promise<boolean> {
-  const lifecycleStepId = awaitLifecycleStepId(stepId, phase);
-  if (state.journal.sequence[state.sequencePosition] !== lifecycleStepId) {
-    return false;
-  }
-  await runAwaitLifecyclePhase(state, stepId, phase);
-  return true;
-}
-
-async function runAwaitLifecyclePhase<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  phase: 'suspend' | 'resume',
-): Promise<void> {
-  const result = await runDurableExecutionPhase(
-    state,
-    awaitLifecycleStepId(stepId, phase),
-    {
-      phase,
-      session: state.session,
-      request: { stepId },
-    },
-  );
-  handleDurablePhaseCommand(result.command, stepId, result.session);
-  state.session = result.session;
-}
-
-function awaitLifecycleStepId(
-  stepId: string,
-  phase: 'suspend' | 'resume',
-): string {
-  return `${stepId}/on${phase === 'suspend' ? 'Suspend' : 'Resume'}`;
-}
-
-async function peekInbox<TVars extends Vars, TAttrs extends Attrs>(
-  state: DurableExecutionState<TVars, TAttrs>,
-  stepId: string,
-  mode: 'all' | 'one',
-): Promise<Inbound[]> {
-  const offsets = await journaled(state, stepId, async () => {
-    const visible = state.inbox.filter(
-      (message) => message.offset >= state.cursor,
-    );
-    return (mode === 'one' ? visible.slice(0, 1) : visible).map(
-      (message) => message.offset,
-    );
-  });
-  if (offsets.length > 0) {
-    state.cursor = offsets[offsets.length - 1] + 1;
-  }
-  return offsets.map((offset) => {
-    const inbound = state.inbox.find((message) => message.offset === offset);
-    if (!inbound) {
-      throw new Error(`Missing inbox message at offset ${offset}`);
-    }
-    return inbound;
-  });
-}
-
-class DurableTurnBuilder<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  private nodes: DurableNode<TVars, TAttrs>[] = [];
-  private shouldLoopUntilNoToolCalls = false;
-
-  steer(id = 'steer', mode: 'all' | 'one' = 'all'): this {
-    this.nodes.push({ type: 'steer', id, mode });
-    return this;
-  }
-
-  assistant(id: string, handler: AssistantHandler<TVars, TAttrs>): this {
-    this.nodes.push({ type: 'assistant', id, handler });
-    return this;
-  }
-
-  patch(id: string, handler: DurablePatchHandler<TVars, TAttrs>): this {
-    this.nodes.push({ type: 'patch', id, handler });
-    return this;
-  }
-
-  runTools(id = 'tools'): this {
-    this.nodes.push({ type: 'runTools', id });
-    return this;
-  }
-
-  untilNoToolCalls(): this {
-    this.shouldLoopUntilNoToolCalls = true;
-    return this;
-  }
-
-  awaitUser(id = 'input'): this {
-    this.nodes.push({ type: 'awaitUser', id });
-    return this;
-  }
-
-  build(): {
-    nodes: DurableNode<TVars, TAttrs>[];
-    untilNoToolCalls: boolean;
-  } {
-    return {
-      nodes: [...this.nodes],
-      untilNoToolCalls: this.shouldLoopUntilNoToolCalls,
-    };
-  }
-}
-
-class DurableAgent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
-  private nodes: DurableNode<TVars, TAttrs>[] = [];
-  private tools = new Map<string, DurableTool>();
-  private middlewareDefinitions: MiddlewareDefinition<TVars, TAttrs>[] = [];
-  private hookDefinitions: HookDefinition<TVars, TAttrs>[] = [];
-  private observerDefinitions: ObserverLike[] = [];
-
-  constructor(readonly name: string) {}
-
-  use(middleware: MiddlewareDefinition<TVars, TAttrs>): this {
-    this.middlewareDefinitions.push(middleware);
-    return this;
-  }
-
-  hook(hook: HookDefinition<TVars, TAttrs>): this {
-    this.hookDefinitions.push(hook);
-    return this;
-  }
-
-  observe(observer: ObserverLike): this {
-    this.observerDefinitions.push(observer);
-    return this;
-  }
-
-  runtimeMiddleware(): readonly MiddlewareDefinition<TVars, TAttrs>[] {
-    return this.middlewareDefinitions;
-  }
-
-  runtimeHooks(): readonly HookDefinition<TVars, TAttrs>[] {
-    return this.hookDefinitions;
-  }
-
-  runtimeObservers(): readonly ObserverLike[] {
-    return this.observerDefinitions;
-  }
-
-  system(content: string, id = 'system'): this {
-    this.nodes.push({ type: 'system', id, content });
-    return this;
-  }
-
-  tool(name: string, tool: DurableTool): this {
-    this.tools.set(name, tool);
-    return this;
-  }
-
-  assistant(id: string, handler: AssistantHandler<TVars, TAttrs>): this {
-    this.nodes.push({ type: 'assistant', id, handler });
-    return this;
-  }
-
-  patch(id: string, handler: DurablePatchHandler<TVars, TAttrs>): this {
-    this.nodes.push({ type: 'patch', id, handler });
-    return this;
-  }
-
-  chat(id: string, handler: AssistantHandler<TVars, TAttrs>): this {
-    this.nodes.push({ type: 'chat', id, handler });
-    return this;
-  }
-
-  runTools(id = 'tools'): this {
-    this.nodes.push({ type: 'runTools', id });
-    return this;
-  }
-
-  turn(
-    id: string,
-    builder: (
-      turn: DurableTurnBuilder<TVars, TAttrs>,
-    ) => DurableTurnBuilder<TVars, TAttrs>,
-  ): this {
-    const turn = builder(new DurableTurnBuilder<TVars, TAttrs>()).build();
-    this.nodes.push({
-      type: 'turn',
-      id,
-      nodes: turn.nodes,
-      untilNoToolCalls: turn.untilNoToolCalls,
-    });
-    return this;
-  }
-
-  async execute(
-    state: DurableExecutionState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
-    let session = state.session;
-    const before = await runDurableExecutionPhase(state, 'beforeAgent', {
-      phase: 'beforeAgent',
-      session,
-    });
-    handleDurablePhaseCommand(before.command, 'beforeAgent', before.session);
-    session = before.session;
-    state.session = session;
-    for (const node of this.nodes) {
-      session = await this.executeNode(state, node, '', session);
-      state.session = session;
-    }
-    const after = await runDurableExecutionPhase(state, 'afterAgent', {
-      phase: 'afterAgent',
-      session,
-    });
-    handleDurablePhaseCommand(after.command, 'afterAgent', after.session);
-    state.session = after.session;
-    return after.session;
-  }
-
-  private async executeNode(
-    state: DurableExecutionState<TVars, TAttrs>,
-    node: DurableNode<TVars, TAttrs>,
-    path: string,
-    session: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
-    const nodePath = childPath(path, node.id);
-    const request = durableTemplateLifecycleRequest(node, nodePath);
-    const before = await runDurableExecutionPhase(
-      state,
-      `${nodePath}/beforeTemplate`,
-      {
-        phase: 'beforeTemplate',
-        session,
-        request,
-      },
-    );
-    handleDurablePhaseCommand(before.command, nodePath, before.session);
-    state.session = before.session;
-
-    const executed = await this.executeNodeBody(
-      state,
-      node,
-      nodePath,
-      before.session,
-    );
-    state.session = executed;
-
-    const after = await runDurableExecutionPhase(
-      state,
-      `${nodePath}/afterTemplate`,
-      {
-        phase: 'afterTemplate',
-        session: executed,
-        request,
-      },
-    );
-    handleDurablePhaseCommand(after.command, nodePath, after.session);
-    state.session = after.session;
-    return after.session;
-  }
-
-  private async executeNodeBody(
-    state: DurableExecutionState<TVars, TAttrs>,
-    node: DurableNode<TVars, TAttrs>,
-    nodePath: string,
-    session: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
-    switch (node.type) {
-      case 'system':
-        return session.addMessage(Message.system(node.content));
-      case 'patch': {
-        const transition = await journaled(
-          state,
-          `${nodePath}/transition`,
-          async () => {
-            const resolved = resolveExecutionTransition(
-              session,
-              await node.handler(session),
-              {
-                beforeVersion: state.transitionVersion,
-              },
-            );
-            assertDurablePatchTransitionSupported(resolved, nodePath);
-            return resolved;
-          },
-        );
-        if (transition.beforeVersion !== state.transitionVersion) {
-          // This catches corrupted or hand-edited transition journals. Normal
-          // code-order nondeterminism is still detected by journaled step ids.
-          throw new NondeterminismError(
-            `version:${state.transitionVersion}`,
-            `version:${transition.beforeVersion}`,
-            state.sequencePosition - 1,
-          );
-        }
-        assertDurablePatchTransitionSupported(transition, nodePath);
-        const applied = applyResolvedExecutionTransition(session, transition, {
-          middlewareState: state.middlewareState,
-        });
-        state.transitionVersion = transition.afterVersion;
-        state.middlewareState = applied.middlewareState;
-        state.session = applied.session;
-        handleDurablePhaseCommand(
-          transition.command,
-          nodePath,
-          applied.session,
-        );
-        return applied.session;
+    async once(name, dep, fn, options) {
+      const scope = options?.scope ?? 'run';
+      const key = onceMemoKey(name, dep);
+      const memo = ensureOnceMemoStore(run)[scope];
+      if (memo.has(key)) {
+        return memo.get(key) as Awaited<ReturnType<typeof fn>>;
       }
-      case 'assistant': {
-        const before = await runDurableExecutionPhase(
-          state,
-          `${nodePath}/beforeModel`,
-          {
-            phase: 'beforeModel',
-            session,
-          },
-        );
-        handleDurablePhaseCommand(before.command, nodePath, before.session);
-        session = before.session;
-        state.session = session;
-
-        const request: DurableModelRequest<TVars, TAttrs> = { session };
-        const prepared = await runDurableExecutionPhase<
-          TVars,
-          TAttrs,
-          DurableModelRequest<TVars, TAttrs>
-        >(state, `${nodePath}/prepareModelInput`, {
-          phase: 'prepareModelInput',
-          session,
-          request,
-        });
-        handleDurablePhaseCommand(prepared.command, nodePath, prepared.session);
-        assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
-        const modelSession =
-          (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
-            ?.session ?? session;
-
-        let message: PromptTrailMessage<TAttrs>;
-        if (hasDurableWrapperHandler(state, 'wrapModelCall')) {
-          const wrapped = await runDurableMiddlewareWrapper<
-            TVars,
-            TAttrs,
-            DurableModelRequest<TVars, TAttrs>,
-            AssistantResult<TAttrs>
-          >(state, `${nodePath}/wrapModelCall`, {
-            phase: 'wrapModelCall',
-            session,
-            request: { session: modelSession },
-            call: async ({ request, journalStepId }) =>
-              this.executeDurableModel(
-                state,
-                journalStepId,
-                request.session,
-                node.handler,
-              ),
-          });
-          session = wrapped.session;
-          state.session = session;
-          message = normalizeAssistantMessage(wrapped.result);
-          handleDurablePhaseCommand(
-            wrapped.command,
-            nodePath,
-            session.addMessage(message),
-          );
-        } else {
-          message = await journaled(state, `${nodePath}/model`, async () =>
-            normalizeAssistantMessage(
-              await this.executeDurableModel(
-                state,
-                `${nodePath}/model`,
-                modelSession,
-                node.handler,
-              ),
-            ),
-          );
-        }
-        const after = await runDurableExecutionPhase(
-          state,
-          `${nodePath}/afterModel`,
-          {
-            phase: 'afterModel',
-            session,
-            result: message,
-          },
-        );
-        const finalMessage = normalizeAssistantMessage(
-          (after.result as AssistantResult<TAttrs> | undefined) ?? message,
-        );
-        const completed = after.session.addMessage(finalMessage);
-        state.commitSession?.(completed);
-        handleDurablePhaseCommand(after.command, nodePath, completed);
-        return completed;
-      }
-      case 'chat': {
-        let current = session;
-        let iteration = 0;
-        while (true) {
-          const inbound = await awaitInbound(
-            state,
-            `${nodePath}#${iteration}/input`,
-          );
-          current = current.addMessage(
-            Message.user(inbound.content, inbound.attrs as TAttrs | undefined),
-          );
-          state.session = current;
-          const before = await runDurableExecutionPhase(
-            state,
-            `${nodePath}#${iteration}/beforeModel`,
-            {
-              phase: 'beforeModel',
-              session: current,
-            },
-          );
-          handleDurablePhaseCommand(before.command, nodePath, before.session);
-          current = before.session;
-          state.session = current;
-          const request: DurableModelRequest<TVars, TAttrs> = {
-            session: current,
-          };
-          const prepared = await runDurableExecutionPhase<
-            TVars,
-            TAttrs,
-            DurableModelRequest<TVars, TAttrs>
-          >(state, `${nodePath}#${iteration}/prepareModelInput`, {
-            phase: 'prepareModelInput',
-            session: current,
-            request,
-          });
-          handleDurablePhaseCommand(
-            prepared.command,
-            nodePath,
-            prepared.session,
-          );
-          assertPrepareModelInputDidNotPersistSession(prepared.steps, nodePath);
-          const modelSession =
-            (prepared.request as DurableModelRequest<TVars, TAttrs> | undefined)
-              ?.session ?? current;
-          let message: PromptTrailMessage<TAttrs>;
-          if (hasDurableWrapperHandler(state, 'wrapModelCall')) {
-            const wrapped = await runDurableMiddlewareWrapper<
-              TVars,
-              TAttrs,
-              DurableModelRequest<TVars, TAttrs>,
-              AssistantResult<TAttrs>
-            >(state, `${nodePath}#${iteration}/wrapModelCall`, {
-              phase: 'wrapModelCall',
-              session: current,
-              request: { session: modelSession },
-              call: async ({ request, journalStepId }) =>
-                this.executeDurableModel(
-                  state,
-                  journalStepId,
-                  request.session,
-                  node.handler,
-                ),
-            });
-            current = wrapped.session;
-            state.session = current;
-            message = normalizeAssistantMessage(wrapped.result);
-            handleDurablePhaseCommand(
-              wrapped.command,
-              nodePath,
-              current.addMessage(message),
-            );
-          } else {
-            message = await journaled(
-              state,
-              `${nodePath}#${iteration}/model`,
-              async () =>
-                normalizeAssistantMessage(
-                  await this.executeDurableModel(
-                    state,
-                    `${nodePath}#${iteration}/model`,
-                    modelSession,
-                    node.handler,
-                  ),
-                ),
-            );
-          }
-          const after = await runDurableExecutionPhase(
-            state,
-            `${nodePath}#${iteration}/afterModel`,
-            {
-              phase: 'afterModel',
-              session: current,
-              result: message,
-            },
-          );
-          const finalMessage = normalizeAssistantMessage(
-            (after.result as AssistantResult<TAttrs> | undefined) ?? message,
-          );
-          current = after.session.addMessage(finalMessage);
-          state.commitSession?.(current);
-          handleDurablePhaseCommand(after.command, nodePath, current);
-          state.session = current;
-          iteration++;
-        }
-      }
-      case 'runTools': {
-        let next = session;
-        const calls = toolCallsOf(session);
-        const stepIds = calls.map(
-          (call, index) => `${nodePath}/${call.id || index}`,
-        );
-        assertUniqueDurableToolSteps(stepIds, nodePath);
-        for (let index = 0; index < calls.length; index++) {
-          const call = calls[index];
-          const stepId = stepIds[index];
-          const before = await runDurableExecutionPhase<
-            TVars,
-            TAttrs,
-            ToolCall
-          >(state, `${stepId}/beforeTool`, {
-            phase: 'beforeTool',
-            session: next,
-            request: call,
-          });
-          handleDurablePhaseCommand(before.command, stepId, before.session);
-          let nextCall = (before.request as ToolCall | undefined) ?? call;
-          let message: PromptTrailMessage<TAttrs>;
-          let toolSession = before.session;
-          if (hasDurableWrapperHandler(state, 'wrapToolCall')) {
-            const wrapped = await runDurableMiddlewareWrapper<
-              TVars,
-              TAttrs,
-              ToolCall,
-              unknown
-            >(state, `${stepId}/wrapToolCall`, {
-              phase: 'wrapToolCall',
-              session: before.session,
-              request: nextCall,
-              call: async ({
-                session,
-                request,
-                journalStepId,
-                nestedStepIds,
-              }) =>
-                this.executeDurableTool(state, stepId, request, session, {
-                  journalStepId,
-                  nestedStepIds,
-                  eventStepId: journalStepId,
-                }),
-            });
-            nextCall = (wrapped.request as ToolCall | undefined) ?? nextCall;
-            toolSession = wrapped.session;
-            message = normalizeToolResultMessage(wrapped.result, nextCall);
-            handleDurablePhaseCommand(
-              wrapped.command,
-              stepId,
-              toolSession.addMessage(message),
-            );
-          } else {
-            const result = await runDurableCompositeJournal(
-              state,
-              stepId,
-              (nestedStepIds) =>
-                this.executeDurableTool(
-                  state,
-                  stepId,
-                  nextCall,
-                  before.session,
-                  {
-                    journalStepId: stepId,
-                    nestedStepIds,
-                  },
-                ),
-            );
-            message = normalizeToolResultMessage(result, nextCall);
-          }
-          const after = await runDurableExecutionPhase<
-            TVars,
-            TAttrs,
-            ToolCall,
-            PromptTrailMessage<TAttrs>
-          >(state, `${stepId}/afterTool`, {
-            phase: 'afterTool',
-            session: toolSession,
-            request: nextCall,
-            result: message,
-          });
-          next = after.session.addMessage(
-            (after.result as PromptTrailMessage<TAttrs> | undefined) ?? message,
-          );
-          handleDurablePhaseCommand(after.command, stepId, next);
-        }
-        return next;
-      }
-      case 'awaitUser': {
-        const inbound = await awaitInbound(state, `${nodePath}/input`);
-        return state.session.addMessage(
-          Message.user(inbound.content, inbound.attrs as TAttrs | undefined),
-        );
-      }
-      case 'steer': {
-        const inbound = await peekInbox(state, `${nodePath}/peek`, node.mode);
-        return inbound.reduce(
-          (current, message) =>
-            current.addMessage(
-              Message.user(
-                message.content,
-                message.attrs as TAttrs | undefined,
-              ),
-            ),
-          session,
-        );
-      }
-      case 'turn': {
-        if (!node.untilNoToolCalls) {
-          let current = session;
-          for (const child of node.nodes) {
-            current = await this.executeNode(state, child, nodePath, current);
-            state.session = current;
-          }
-          return current;
-        }
-
-        const awaitIndex = node.nodes.findIndex(
-          (child) => child.type === 'awaitUser',
-        );
-        const loopNodes =
-          awaitIndex === -1 ? node.nodes : node.nodes.slice(0, awaitIndex);
-        const tailNodes = awaitIndex === -1 ? [] : node.nodes.slice(awaitIndex);
-
-        let current = session;
-        let iteration = 0;
-        let shouldLoop = false;
-        do {
-          shouldLoop = false;
-          for (const child of loopNodes) {
-            current = await this.executeNode(
-              state,
-              child,
-              `${nodePath}#${iteration}`,
-              current,
-            );
-            state.session = current;
-            if (child.type === 'assistant' && toolCallsOf(current).length > 0) {
-              shouldLoop = true;
-            }
-          }
-          iteration++;
-        } while (shouldLoop);
-
-        for (const child of tailNodes) {
-          current = await this.executeNode(state, child, nodePath, current);
-          state.session = current;
-        }
-        return current;
-      }
-    }
-  }
-
-  private async executeDurableModel<TVars extends Vars, TAttrs extends Attrs>(
-    state: DurableExecutionState<TVars, TAttrs>,
-    stepId: string,
-    session: Session<TVars, TAttrs>,
-    handler: AssistantHandler<TVars, TAttrs>,
-  ): Promise<AssistantResult<TAttrs>> {
-    await emitDurableExecutionEvent(state, 'model.started', {
-      stepId,
-      phase: 'model',
-    });
-    try {
-      const result = await handler(session);
-      await emitDurableExecutionEvent(state, 'model.completed', {
-        stepId,
-        phase: 'model',
-      });
+      const result = await fn();
+      memo.set(key, result);
+      persist();
       return result;
-    } catch (error) {
-      await emitDurableExecutionEvent(state, 'model.failed', {
-        stepId,
-        phase: 'model',
-        error,
-      });
-      throw error;
-    }
-  }
-
-  private async executeDurableTool<TAttrs extends Attrs>(
-    state: DurableExecutionState<any, TAttrs>,
-    stepId: string,
-    call: ToolCall,
-    session: Session<any, TAttrs>,
-    journal: {
-      journalStepId: string;
-      nestedStepIds: string[];
-      eventStepId?: string;
     },
-  ): Promise<unknown> {
-    const tool = this.tools.get(call.name);
-    if (!tool) {
-      throw new Error(`Unknown durable tool: ${call.name}`);
-    }
-    const activity = resolveDurableToolActivity(tool, call, {
-      runId: state.runId,
-      stepId,
-      session,
-      context: state.context,
-    });
-    await emitDurableExecutionEvent(state, 'tool.started', {
-      stepId: journal.eventStepId ?? stepId,
-      phase: 'tool',
-      raw: { toolCall: call, activity },
-      toolCallId: call.id,
-      name: call.name,
-    });
-    try {
-      const result = await this.executeDurableToolWithRetry(
-        tool,
-        call,
-        activity,
-        state,
-        stepId,
-        session,
-        journal,
-      );
-      await emitDurableExecutionEvent(state, 'tool.completed', {
-        stepId: journal.eventStepId ?? stepId,
-        phase: 'tool',
-        raw: { toolCall: call, activity },
-        toolCallId: call.id,
-        name: call.name,
-      });
-      return result;
-    } catch (error) {
-      await emitDurableExecutionEvent(state, 'tool.failed', {
-        stepId: journal.eventStepId ?? stepId,
-        phase: 'tool',
-        raw: { toolCall: call, activity },
-        toolCallId: call.id,
-        name: call.name,
-        error,
-      });
-      throw error;
-    }
-  }
-
-  private async executeDurableToolWithRetry<TAttrs extends Attrs>(
-    tool: DurableTool,
-    call: ToolCall,
-    activity: DurableActivityOptions,
-    state: DurableExecutionState<any, TAttrs>,
-    stepId: string,
-    session: Session<any, TAttrs>,
-    journal: {
-      journalStepId: string;
-      nestedStepIds: string[];
-    },
-  ): Promise<unknown> {
-    const maxAttempts = durableActivityMaxAttempts(activity);
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const nestedStart = journal.nestedStepIds.length;
-      try {
-        return await tool.execute(call.arguments, {
-          runId: state.runId,
-          stepId,
-          session,
-          context: state.context,
-          toolCall: call,
-          activity,
-          durable: createDurableToolBoundary(
-            state,
-            journal.journalStepId,
-            call,
-            journal.nestedStepIds,
-          ),
-        });
-      } catch (error) {
-        if (
-          attempt === maxAttempts ||
-          journal.nestedStepIds.length !== nestedStart
-        ) {
-          throw error;
-        }
-      }
-    }
-    throw new Error('Durable tool retry exhausted without an error.');
-  }
+  };
 }
 
-function assertDurablePatchTransitionSupported(
-  transition: ResolvedExecutionTransition,
-  nodePath: string,
-): void {
-  if (
-    transition.command.type !== 'none' &&
-    transition.command.type !== 'halt'
-  ) {
-    throw new Error(
-      `Durable patch ${nodePath} returned unsupported command ${transition.command.type}.`,
+function onceMemoKey(name: string, dep: unknown): string {
+  return name + ':' + hashOnceDep(dep);
+}
+
+function hashOnceDep(dep: unknown): string {
+  return fnv1a(stableSerialize(dep));
+}
+
+function stableSerialize(value: unknown, seen = new WeakSet<object>()): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (seen.has(value)) {
+    return '"[Circular]"';
+  }
+  seen.add(value);
+  if (value instanceof Date) {
+    return JSON.stringify(value.toISOString());
+  }
+  if (value instanceof Map) {
+    return stableSerialize(
+      [...value.entries()].sort(([left], [right]) =>
+        stableSerialize(left).localeCompare(stableSerialize(right)),
+      ),
+      seen,
     );
   }
-}
-
-function handleDurablePhaseCommand<TVars extends Vars, TAttrs extends Attrs>(
-  command: ResolvedExecutionCommand,
-  nodePath: string,
-  session: Session<TVars, TAttrs>,
-): void {
-  if (command.type === 'none') {
-    return;
+  if (value instanceof Set) {
+    return stableSerialize(
+      [...value.values()].sort((left, right) =>
+        stableSerialize(left).localeCompare(stableSerialize(right)),
+      ),
+      seen,
+    );
   }
-  if (command.type === 'halt') {
-    throw new Halt(session);
-  }
-  throw new Error(
-    `Durable phase ${nodePath} returned unsupported command ${command.type}.`,
-  );
-}
-
-function assertPrepareModelInputDidNotPersistSession(
-  steps: readonly ExecutionPhaseStep[],
-  nodePath: string,
-): void {
-  const hasPersistentSessionDelta = steps.some(({ transition }) => {
-    const delta = transition.session;
+  if (Array.isArray(value)) {
     return (
-      delta.messageOp.type !== 'none' ||
-      Object.keys(delta.varsSet).length > 0 ||
-      delta.varsDelete.length > 0
-    );
-  });
-  if (hasPersistentSessionDelta) {
-    throw new Error(
-      `Durable prepareModelInput ${nodePath} cannot return persistent session patches. Return request.session instead.`,
+      '[' + value.map((item) => stableSerialize(item, seen)).join(',') + ']'
     );
   }
+  const serializable = value as { toJSON?: () => unknown };
+  if (typeof serializable.toJSON === 'function') {
+    return stableSerialize(serializable.toJSON(), seen);
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    '{' +
+    Object.keys(record)
+      .sort()
+      .map(
+        (key) => JSON.stringify(key) + ':' + stableSerialize(record[key], seen),
+      )
+      .join(',') +
+    '}'
+  );
+}
+
+function fnv1a(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index++) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
 }
 
 export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
@@ -2144,7 +230,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   initial: Session<TVars, TAttrs>;
   status: 'open' | 'done';
   result?: Session<TVars, TAttrs>;
-  journal: JournalState;
+  once: OnceMemoStore;
   events?: ExecutionEvent[];
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
@@ -2157,7 +243,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
 export type PromptTrailRegisteredAgent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
-> = DurableAgent<TVars, TAttrs> | GraphAgent<TVars, TAttrs>;
+> = GraphAgent<TVars, TAttrs>;
 
 export interface PromptTrailRunOptions<
   TVars extends Vars = Vars,
@@ -2256,7 +342,6 @@ export interface PromptTrailAppOptions {
 export class PromptTrailApp {
   private readonly name: string;
   private readonly store: DurableRunStore;
-  private readonly agents = new Map<string, DurableAgent<any, any>>();
   private readonly graphAgents = new Map<string, GraphAgent<any, any>>();
   private readonly sources = new Map<string, EventSource>();
   private readonly runtimeBindings: RuntimeBinding<RuntimeBindingEvent>[] = [];
@@ -2278,10 +363,6 @@ export class PromptTrailApp {
     | ((ctx: RuntimeServerErrorContext) => string | undefined)
     | undefined;
   private runtimeServer?: RuntimeServer;
-  private readonly agentObserverBuses = new WeakMap<
-    DurableAgent<any, any>,
-    ObserverBus
-  >();
   private runCounter = 0;
 
   constructor(options: PromptTrailAppOptions = {}) {
@@ -2335,14 +416,8 @@ export class PromptTrailApp {
       typeof nameOrAgent === 'string'
         ? nameOrAgent
         : registeredAgentName(registeredAgent);
-    if (registeredAgent instanceof DurableAgent) {
-      this.agents.set(name, registeredAgent);
-      this.graphAgents.delete(name);
-      return this;
-    }
     if (isGraphAgent(registeredAgent)) {
       this.graphAgents.set(name, registeredAgent);
-      this.agents.delete(name);
       return this;
     }
     throw new Error(`Unsupported agent registration: ${name}`);
@@ -2598,105 +673,20 @@ export class PromptTrailApp {
     runId: string,
   ): Promise<DurableRunResult<TVars, TAttrs>> {
     const run = this.getRun<TVars, TAttrs>(runId);
-    if (isGraphAgent(run.agent)) {
-      this.assertGraphRunManifest(runId, run);
-    }
+    this.assertGraphRunManifest(runId, run);
     if (
       run.status === 'done' &&
       run.result &&
-      (!isGraphAgent(run.agent) ||
-        run.inbox.length <= (run.graphCursor ?? run.inbox.length))
+      run.inbox.length <= (run.graphCursor ?? run.inbox.length)
     ) {
       return { status: 'done', runId, session: run.result };
     }
-    if (isGraphAgent(run.agent)) {
-      return this.resumeGraphAgentRun(
-        runId,
-        run as StoredRun<TVars, TAttrs> & {
-          agent: GraphAgent<TVars, TAttrs>;
-        },
-      );
-    }
-
-    const state: DurableExecutionState<TVars, TAttrs> = {
+    return this.resumeGraphAgentRun(
       runId,
-      session: run.initial,
-      journal: run.journal,
-      inbox: run.inbox,
-      cursor: 0,
-      sequencePosition: 0,
-      transitionVersion: 0,
-      middleware: this.middlewareForRun(run),
-      hooks: this.hooksForRun(run),
-      middlewareState: {},
-      context: cloneDurableRuntimeValue(run.context),
-      emitEvent: async (event) => {
-        await this.emitObservers(run, event);
-        this.persistRun(runId, run);
+      run as StoredRun<TVars, TAttrs> & {
+        agent: GraphAgent<TVars, TAttrs>;
       },
-      nextEventSeq: () => this.nextRunEventSeq(runId, run),
-      persist: () => this.persistRun(runId, run),
-      commitSession: (session) => {
-        run.result = session;
-        this.materializeAssistantDeliveriesForRun(runId, run);
-        this.persistRun(runId, run);
-      },
-    };
-
-    await this.emitRunEvent(run, runId, 'run.started', {
-      sessionVersion: state.transitionVersion,
-    });
-    try {
-      const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
-      const session = await durableAgent.execute(state);
-      run.status = 'done';
-      run.result = session;
-      this.materializeAssistantDeliveriesForRun(runId, run);
-      this.persistRun(runId, run);
-      await this.emitRunEvent(run, runId, 'run.completed', {
-        sessionVersion: state.transitionVersion,
-      });
-      return { status: 'done', runId, session };
-    } catch (error) {
-      if (error instanceof Suspend) {
-        run.result = state.session;
-        this.persistRun(runId, run);
-        await this.emitRunEvent(run, runId, 'run.suspended', {
-          stepId: error.stepId,
-          sessionVersion: state.transitionVersion,
-        });
-        return {
-          status: 'suspended',
-          runId,
-          awaiting: error.stepId,
-          session: state.session,
-        };
-      }
-      if (error instanceof Halt) {
-        run.status = 'done';
-        run.result = error.session as Session<TVars, TAttrs>;
-        this.materializeAssistantDeliveriesForRun(runId, run);
-        this.persistRun(runId, run);
-        await this.emitRunEvent(run, runId, 'run.completed', {
-          sessionVersion: state.transitionVersion,
-        });
-        return {
-          status: 'done',
-          runId,
-          session: run.result,
-        };
-      }
-      await this.emitRunEvent(run, runId, 'error', {
-        sessionVersion: state.transitionVersion,
-        error,
-        raw: { error },
-      });
-      throw error;
-    }
-  }
-
-  journal(runId: string): readonly string[] {
-    return [...this.getRun(runId).journal.sequence];
+    );
   }
 
   prepareAssistantDeliveries<TAttrs extends Attrs = Attrs>(
@@ -2915,122 +905,34 @@ export class PromptTrailApp {
     this.assertAppCheckpointStore(checkpoint);
     const durable = checkpoint !== undefined;
     const graphAgent = this.resolveGraphAgent(options.agent);
-    if (graphAgent) {
-      if (durable) {
-        const graph = graphAgent.toGraph();
-        const graphManifest = createAgentGraphManifest(graph);
-        const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
-        const run: StoredRun<TVars, TAttrs> = {
-          agent: graphAgent,
-          agentName: graph.name,
-          graphManifest,
-          initial: options.session ?? Session.create<TVars, TAttrs>(),
-          status: 'open',
-          journal: { results: new Map(), sequence: [] },
-          events: [],
-          outbox: [],
-          inbox: [],
-          graphCursor: 0,
-          eventSeq: 0,
-          context: cloneDurableRuntimeValue(options.context),
-        };
-        this.store.set(runId, run);
-        if (options.input !== undefined) {
-          this.append(runId, normalizeInbound(options.input));
-        }
-        return this.resume<TVars, TAttrs>(runId);
-      }
-      return this.executeGraphAgentRun(graphAgent, options);
+    if (!graphAgent) {
+      throw new Error(`Unknown agent: ${String(options.agent)}`);
     }
-    const durableAgent = this.resolveAgent(options.agent);
-    const runId = options.runId ?? `${durableAgent.name}-${++this.runCounter}`;
-    const initial = options.session ?? Session.create<TVars, TAttrs>();
-    const context = cloneDurableRuntimeValue(options.context);
-    const run: StoredRun<TVars, TAttrs> = {
-      agent: durableAgent,
-      agentName: durableAgent.name,
-      initial,
-      status: 'open',
-      journal: { results: new Map(), sequence: [] },
-      events: [],
-      outbox: [],
-      inbox: [],
-      eventSeq: 0,
-      context,
-    };
-
     if (durable) {
+      const graph = graphAgent.toGraph();
+      const graphManifest = createAgentGraphManifest(graph);
+      const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
+      const run: StoredRun<TVars, TAttrs> = {
+        agent: graphAgent,
+        agentName: graph.name,
+        graphManifest,
+        initial: options.session ?? Session.create<TVars, TAttrs>(),
+        status: 'open',
+        once: createOnceMemoStore(),
+        events: [],
+        outbox: [],
+        inbox: [],
+        graphCursor: 0,
+        eventSeq: 0,
+        context: cloneDurableRuntimeValue(options.context),
+      };
       this.store.set(runId, run);
       if (options.input !== undefined) {
         this.append(runId, normalizeInbound(options.input));
       }
       return this.resume<TVars, TAttrs>(runId);
     }
-
-    if (options.input !== undefined) {
-      run.inbox.push({ ...normalizeInbound(options.input), offset: 0 });
-    }
-    return this.executeEphemeral(runId, run);
-  }
-
-  private async executeEphemeral<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(
-    runId: string,
-    run: StoredRun<TVars, TAttrs>,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const state: DurableExecutionState<TVars, TAttrs> = {
-      runId,
-      session: run.initial,
-      journal: run.journal,
-      inbox: run.inbox,
-      cursor: 0,
-      sequencePosition: 0,
-      transitionVersion: 0,
-      middleware: this.middlewareForRun(run),
-      hooks: this.hooksForRun(run),
-      middlewareState: {},
-      context: cloneDurableRuntimeValue(run.context),
-      emitEvent: (event) => this.emitObservers(run, event),
-      nextEventSeq: () => this.nextRunEventSeq(runId, run),
-    };
-    await this.emitRunEvent(run, runId, 'run.started', {
-      sessionVersion: state.transitionVersion,
-    });
-    try {
-      const session = await run.agent.execute(state);
-      await this.emitRunEvent(run, runId, 'run.completed', {
-        sessionVersion: state.transitionVersion,
-      });
-      return { status: 'done', runId, session };
-    } catch (error) {
-      if (error instanceof Suspend) {
-        await this.emitRunEvent(run, runId, 'run.suspended', {
-          stepId: error.stepId,
-          sessionVersion: state.transitionVersion,
-        });
-        return {
-          status: 'suspended',
-          runId,
-          awaiting: error.stepId,
-          session: state.session,
-        };
-      }
-      if (error instanceof Halt) {
-        const session = error.session as Session<TVars, TAttrs>;
-        await this.emitRunEvent(run, runId, 'run.completed', {
-          sessionVersion: state.transitionVersion,
-        });
-        return { status: 'done', runId, session };
-      }
-      await this.emitRunEvent(run, runId, 'error', {
-        sessionVersion: state.transitionVersion,
-        error,
-        raw: { error },
-      });
-      throw error;
-    }
+    return this.executeGraphAgentRun(graphAgent, options);
   }
 
   private assertAppCheckpointStore(
@@ -3162,25 +1064,9 @@ export class PromptTrailApp {
           context: cloneDurableRuntimeValue(run.context),
           eventScopeId: runId,
           nextEventSeq: () => this.nextRunEventSeq(runId, run),
-          durableToolExecution: ({ nodePath, toolCall, session }, execute) => {
-            const graphDurableState = this.createGraphDurableExecutionState(
-              runId,
-              run,
-              session,
-            );
-            const stepId = `${nodePath}/${toolCall.id}`;
-            return runDurableCompositeJournal(
-              graphDurableState,
-              stepId,
-              (nestedStepIds) =>
-                execute(
-                  createDurableToolBoundary(
-                    graphDurableState,
-                    stepId,
-                    toolCall,
-                    nestedStepIds,
-                  ),
-                ),
+          durableToolExecution: (_context, execute) => {
+            return execute(
+              createOnceBoundary(run, () => this.persistRun(runId, run)),
             );
           },
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
@@ -3231,40 +1117,6 @@ export class PromptTrailApp {
     }
   }
 
-  private createGraphDurableExecutionState<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(
-    runId: string,
-    run: StoredRun<TVars, TAttrs>,
-    session: Session<TVars, TAttrs>,
-  ): DurableExecutionState<TVars, TAttrs> {
-    return {
-      runId,
-      session,
-      journal: run.journal,
-      inbox: run.inbox,
-      cursor: run.graphCursor ?? run.inbox.length,
-      sequencePosition: run.journal.sequence.length,
-      transitionVersion: session.messages.length,
-      middleware: [],
-      hooks: [],
-      middlewareState: {},
-      context: cloneDurableRuntimeValue(run.context),
-      emitEvent: async (event) => {
-        await this.emitObservers(run, event);
-        this.persistRun(runId, run);
-      },
-      nextEventSeq: () => this.nextRunEventSeq(runId, run),
-      persist: () => this.persistRun(runId, run),
-      commitSession: (committedSession) => {
-        run.result = committedSession;
-        this.materializeAssistantDeliveriesForRun(runId, run);
-        this.persistRun(runId, run);
-      },
-    };
-  }
-
   private assertGraphRunManifest<
     TVars extends Vars = Vars,
     TAttrs extends Attrs = Attrs,
@@ -3311,26 +1163,6 @@ export class PromptTrailApp {
     this.persistRun(runId, run);
   }
 
-  private middlewareForRun<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
-  ): readonly MiddlewareDefinition<TVars, TAttrs>[] {
-    const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
-    return [
-      ...durableAgent.runtimeMiddleware(),
-      ...(this.middleware as readonly MiddlewareDefinition<TVars, TAttrs>[]),
-    ];
-  }
-
-  private hooksForRun<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
-  ): readonly HookDefinition<TVars, TAttrs>[] {
-    const durableAgent = run.agent as DurableAgent<TVars, TAttrs>;
-    return [
-      ...durableAgent.runtimeHooks(),
-      ...(this.hooks as readonly HookDefinition<TVars, TAttrs>[]),
-    ];
-  }
-
   private async emitObservers<TVars extends Vars, TAttrs extends Attrs>(
     run: StoredRun<TVars, TAttrs>,
     event: ExecutionEvent,
@@ -3357,38 +1189,10 @@ export class PromptTrailApp {
     for (const bus of this.observerBuses) {
       await bus.emit(event, context);
     }
-    if (isGraphAgent(run.agent)) {
-      return;
-    }
-    const agent = run.agent as DurableAgent<TVars, TAttrs>;
-    const observers = agent.runtimeObservers();
-    if (observers.length === 0) {
-      return;
-    }
-    await this.observerBusForAgent(agent, observers).emit(event, context);
-  }
-
-  private observerBusForAgent(
-    agent: DurableAgent<any, any>,
-    observers: readonly ObserverLike[],
-  ): ObserverBus {
-    const existing = this.agentObserverBuses.get(agent);
-    if (existing) {
-      return existing;
-    }
-    const bus = new ObserverBus(observers, {
-      strictObservers: this.strictObservers,
-      ...this.observerDeliveryBindingOptions,
-    });
-    this.agentObserverBuses.set(agent, bus);
-    return bus;
   }
 
   private registeredAgents(): Record<string, PromptTrailRegisteredAgent> {
-    return {
-      ...Object.fromEntries(this.agents.entries()),
-      ...Object.fromEntries(this.graphAgents.entries()),
-    };
+    return Object.fromEntries(this.graphAgents.entries());
   }
 
   private nextRunEventSeq<TVars extends Vars, TAttrs extends Attrs>(
@@ -3406,9 +1210,6 @@ export class PromptTrailApp {
     run.inbox.push({ ...message, offset: run.inbox.length });
     if (run.status === 'done') {
       run.status = 'open';
-      if (!isGraphAgent(run.agent)) {
-        run.result = undefined;
-      }
     }
     this.persistRun(runId, run);
   }
@@ -3421,22 +1222,6 @@ export class PromptTrailApp {
       return;
     }
     this.store.set(runId, run);
-  }
-
-  private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
-    durableAgent: string | PromptTrailRegisteredAgent<TVars, TAttrs>,
-  ): DurableAgent<TVars, TAttrs> {
-    if (durableAgent instanceof DurableAgent) {
-      return durableAgent;
-    }
-    if (typeof durableAgent !== 'string') {
-      throw new Error('Graph Agent cannot be used as a durable agent yet.');
-    }
-    const resolved = this.agents.get(durableAgent);
-    if (!resolved) {
-      throw new Error(`Unknown agent: ${durableAgent}`);
-    }
-    return resolved as DurableAgent<TVars, TAttrs>;
   }
 
   private resolveGraphAgent<TVars extends Vars, TAttrs extends Attrs>(
@@ -3558,7 +1343,6 @@ function isGraphAgent(value: unknown): value is GraphAgent<any, any> {
   return (
     typeof value === 'object' &&
     value !== null &&
-    !(value instanceof DurableAgent) &&
     typeof (value as { execute?: unknown }).execute === 'function' &&
     typeof (value as { toGraph?: unknown }).toGraph === 'function'
   );
@@ -3697,12 +1481,6 @@ function isRunStore(value: unknown): value is RunStore {
     'delete' in value &&
     'entries' in value
   );
-}
-
-export function agent<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-  name: string,
-): DurableAgent<TVars, TAttrs> {
-  return new DurableAgent<TVars, TAttrs>(name);
 }
 
 export function memoryStore(): DurableRunStore {

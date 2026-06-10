@@ -21,26 +21,19 @@ export { createSession, Session, SessionBuilder, Vars, Attrs } from './session';
 export * from './source';
 export * from './skills';
 export * from './stream';
-export {
-  Halt,
-  MemoryRunStore,
-  NondeterminismError,
-  PromptTrail,
-  Suspend,
-  memoryStore,
-} from './durable';
+export { MemoryRunStore, PromptTrail, memoryStore } from './durable';
 export type {
   AssistantDeliveryOutboxEntry,
   AssistantDeliveryOutboxInput,
-  AssistantHandler,
-  AssistantResult,
-  DurablePatchHandler,
   DurableRunResult,
   DurableRunStore,
   EventSource,
   Inbound,
   InboundKind,
   InboundRuntimeEvent,
+  OnceBoundary,
+  OnceOptions,
+  OnceScope,
   PendingAssistantDeliveryOutboxEntry,
   PromptTrailAppOptions,
   PromptTrailRegisteredAgent,

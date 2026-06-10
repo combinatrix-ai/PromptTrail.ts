@@ -2,7 +2,6 @@ import { Session, type Attrs, type Vars } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
 import {
-  agent as createDurableAgent,
   app as createDurableApp,
   type DurableRunStore,
   type RunStore,
@@ -341,7 +340,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return createAgentGraph({
       name: this.graphName,
       version,
-      nodes: this.graphNodes,
+      nodes:
+        this.graphNodes.length > 0
+          ? this.graphNodes
+          : compileLegacyRootTemplate(this.root as Composite<TM, TC>),
       tools: this.graphTools,
       middleware: this.middleware,
       hooks: this.hooks,
@@ -1114,36 +1116,13 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
   ): Promise<Session<TC, TM>> {
-    const durableAgent = createDurableAgent<TC, TM>('direct-agent').patch(
-      'agent',
-      async (current) => ({
-        session: await this.executeInternal(current, {
-          context: executionOptions?.context,
-          eventScopeId: durableOptions.runId,
-          observers: executionOptions?.observers,
-          observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
-          strictObservers: executionOptions?.strictObservers,
-          signal: executionOptions?.signal,
-          checkpoint: false,
-        }),
-      }),
+    return this.executeGraphDirectDurable(
+      {
+        ...executionOptions,
+        session,
+      } as AgentExecuteOptions<TC, TM>,
+      durableOptions,
     );
-    const durableRuntime = createDurableApp({
-      store: durableOptions.store,
-      defaults: {
-        checkpoint: true,
-      },
-    });
-    const result = durableOptions.store.has(durableOptions.runId)
-      ? await durableRuntime.resume<TC, TM>(durableOptions.runId)
-      : await durableRuntime.run<TC, TM>({
-          agent: durableAgent,
-          runId: durableOptions.runId,
-          session,
-          checkpoint: true,
-          context: executionOptions?.context,
-        });
-    return result.session;
   }
 
   private async executeGraphDirectDurable(

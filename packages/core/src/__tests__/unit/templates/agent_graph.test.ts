@@ -758,7 +758,7 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('journals graph durable tool activity and nested durable effects', async () => {
+  it('memoizes graph checkpoint tool activity and nested once effects', async () => {
     const store = memoryStore();
     let memoCalls = 0;
     let toolCalls = 0;
@@ -769,10 +769,15 @@ describe('Agent graph authoring', () => {
       activity: { kind: 'external-read' },
       execute: async ({ id }, context) => {
         toolCalls++;
-        const memo = await context.durable?.memo('stable-value', () => {
-          memoCalls++;
-          return `memo:${id}:${memoCalls}`;
-        });
+        const memo = await context.durable?.once(
+          'stable-value',
+          id,
+          () => {
+            memoCalls++;
+            return `memo:${id}:${memoCalls}`;
+          },
+          { scope: 'run' },
+        );
         return `${memo}:${context.activity?.kind ?? 'none'}`;
       },
     });
@@ -801,11 +806,7 @@ describe('Agent graph authoring', () => {
     ]);
     expect(toolCalls).toBe(1);
     expect(memoCalls).toBe(1);
-    expect(run?.journal.sequence).toEqual([
-      'assistant/main/tools/call-1/tool/lookup/memo/stable-value',
-      'assistant/main/tools/call-1/tool/lookup/activity/lookup',
-      'assistant/main/tools/call-1',
-    ]);
+    expect(run?.once.run.size).toBe(2);
   });
 
   it('resumes direct durable graph agents from suspended input nodes', async () => {

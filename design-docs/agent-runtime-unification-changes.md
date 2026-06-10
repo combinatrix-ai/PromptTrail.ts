@@ -53,11 +53,20 @@ execution first breaks that path. Tag the pre-deletion commit
       `DurableRunStore`. App/binding checkpoint store overrides that differ
       from `PromptTrail.app({ store })` fail fast for now ("store overrides
       are not supported yet"); revisit with §1.3/§5.
-- [ ] **1.1 Delete the legacy replay path.** Remove the `DurableAgent` replay
+- [x] **1.1 Delete the legacy replay path.** Remove the `DurableAgent` replay
       runtime, its model-call effect journal, the event-replay log, and
       `NondeterminismError` detection. Replace `journaled` per §8.1/§8.9: the memo
       becomes `ctx.once(name, dep, fn, { scope? })` — dep-keyed, no order check,
       scopes per §8.5. (`durable.ts`)
+      Done (tag `pre-replay-removal` preserves the replay implementation):
+      −5751/+335 lines; `DurableAgent`, `agent()` factory, `journaled`,
+      journal state, `NondeterminismError`, `StoredRun.journal` all removed;
+      `ctx.once` memo persists on `StoredRun.once.{run,conversation}`; direct
+      `Agent.execute({ checkpoint })` now routes through graph checkpoint
+      execution (progress toward §1.3). Left for later: observer replay
+      vocabulary in `execution.ts` (`replayed`/`journaled` event policy) and
+      `PromptTrailApp.replayEvents()` — still used by observer/delivery
+      tests; fold into §1.2/§1.5.
 - [ ] **1.2 Remove replay-identity machinery.** Delete the middleware/hook
       compound replay-identity validation (phase + kind + id + declaration-order vs
       journal index). Keep stable ids only for (a) the structural version gate and

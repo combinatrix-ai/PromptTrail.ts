@@ -265,24 +265,16 @@ describe('public API surface', () => {
     );
   });
 
-  it('types durable boundary memo sugar helpers', async () => {
+  it('types durable boundary once helper', async () => {
     const boundary: ExecutionDurableBoundary = {
-      async memo(_name, fn) {
-        return fn();
-      },
-      async now() {
-        return 1_000;
-      },
-      async randomId() {
-        return 'id-1';
-      },
-      async activity(_name, _options, fn) {
+      async once(_name, _dep, fn) {
         return fn();
       },
     };
 
-    await expect(boundary.now('createdAt')).resolves.toBe(1_000);
-    await expect(boundary.randomId('traceId')).resolves.toBe('id-1');
+    await expect(boundary.once('createdAt', 'dep', () => 1_000)).resolves.toBe(
+      1_000,
+    );
   });
 
   it('types durable event replay helpers', async () => {

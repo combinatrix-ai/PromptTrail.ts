@@ -37,6 +37,7 @@ export interface ToolExecutionContext {
   raw?: unknown;
   approvalHandler?: ApprovalHandler;
   activity?: ExecutionDurableActivityOptions;
+  idempotencyKey?: string;
   durable?: ExecutionDurableBoundary;
 }
 

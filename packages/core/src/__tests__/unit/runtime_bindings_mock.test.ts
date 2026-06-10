@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PromptTrail, agent } from '../../durable';
+import { PromptTrail } from '../../durable';
+import { Agent } from '../../templates';
 import { Delivery, bind, cron, discord } from '../../runtime_bindings';
 import {
   deterministicAssistant,
@@ -18,7 +19,7 @@ function discordDeliveryTarget(channel: string, thread?: string) {
 }
 
 function workroomFixture() {
-  const main = agent('main');
+  const main = Agent.create('main');
   const workroom = PromptTrail.runtimeBundle({
     name: 'workroom-assistant',
     agents: { main },
@@ -108,7 +109,7 @@ function workroomFixture() {
 }
 
 function mentionGatedFixture() {
-  const main = agent('main');
+  const main = Agent.create('main');
   const workroom = PromptTrail.runtimeBundle({
     name: 'mention-gated',
     agents: { main },
@@ -156,7 +157,7 @@ function mentionGatedFixture() {
 }
 
 function threadPerUserFixture() {
-  const main = agent('main');
+  const main = Agent.create('main');
   const workroom = PromptTrail.runtimeBundle({
     name: 'thread-per-user',
     agents: { main },
@@ -202,7 +203,7 @@ function threadPerUserFixture() {
 }
 
 function channelContextFixture() {
-  const main = agent('main');
+  const main = Agent.create('main');
   const workroom = PromptTrail.runtimeBundle({
     name: 'channel-context',
     agents: { main },
@@ -292,7 +293,7 @@ describe('runtime bindings with mock Discord and cron', () => {
     expect(fixture.runtime.conversations()).toContainEqual({
       id: 'discord:guild:workroom:channel:C_cloud:user:U_alice',
       agent: 'main',
-      status: 'suspended',
+      status: 'done',
     });
     expect(
       fixture.runtime.inbox(
@@ -570,7 +571,7 @@ describe('runtime bindings with mock Discord and cron', () => {
     await fixture.cron.tick('Supplier earnings calendar daily update');
 
     expect(fixture.discord.deliveries()).toEqual([]);
-    expect(fixture.effects.journal()).toContainEqual(
+    expect(fixture.effects.entries()).toContainEqual(
       expect.objectContaining({
         kind: 'unresolvedDelivery',
         idempotencyKey:
@@ -598,7 +599,7 @@ describe('runtime bindings with mock Discord and cron', () => {
         content: 'reply:first',
       }),
     ]);
-    expect(fixture.effects.journal()).toContainEqual(
+    expect(fixture.effects.entries()).toContainEqual(
       expect.objectContaining({
         kind: 'delivery',
         idempotencyKey: assistantDeliveryKey(
