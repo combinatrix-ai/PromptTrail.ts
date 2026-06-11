@@ -25,6 +25,7 @@ import type {
   SchemaGenerationMode,
   SchemaGenerationOptions,
 } from './llm_types';
+import { aiSdkToolToPromptTrailTool } from './ai_sdk_tools';
 import type { Session, Vars } from './session';
 import { isPromptTrailTool } from './tool';
 import { interpolateTemplate } from './utils/template_interpolation';
@@ -923,6 +924,16 @@ export interface MockedLlmSource extends LlmSource {
   reset(): MockedLlmSource;
 }
 
+function normalizeLlmSourceTool(
+  name: string,
+  tool: unknown,
+): PromptTrailTool<any, any> {
+  if (isPromptTrailTool(tool)) {
+    return tool;
+  }
+  return aiSdkToolToPromptTrailTool(name, tool as never);
+}
+
 /**
  * Source for LLM content generation, with immutable and fluent configuration
  */
@@ -1134,31 +1145,37 @@ export class LlmSource extends ModelSource {
     return this.clone({ topK: value });
   }
 
-  // Tool configuration - all return new instances
-  addTool(name: string, tool: PromptTrailTool<any, any>): LlmSource {
+  // Tool configuration - all return new instances. Raw ai-sdk tools are
+  // adapted on entry: downstream tool plumbing only handles PromptTrail
+  // tools, and an unadapted ai-sdk tool would otherwise never reach the
+  // model request.
+  addTool(name: string, tool: PromptTrailTool<any, any> | unknown): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
-        [name]: tool,
+        [name]: normalizeLlmSourceTool(name, tool),
       },
     });
   }
 
-  withTool(name: string, tool: PromptTrailTool<any, any>): LlmSource {
+  withTool(name: string, tool: PromptTrailTool<any, any> | unknown): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
-        [name]: tool,
+        [name]: normalizeLlmSourceTool(name, tool),
       },
     });
   }
 
-  withTools(tools: Record<string, PromptTrailTool<any, any>>): LlmSource {
+  withTools(
+    tools: Record<string, PromptTrailTool<any, any> | unknown>,
+  ): LlmSource {
     return this.clone({
-      tools: {
-        ...this.options.tools,
-        ...tools,
-      },
+      tools: Object.fromEntries(
+        Object.entries({ ...this.options.tools, ...tools }).map(
+          ([name, tool]) => [name, normalizeLlmSourceTool(name, tool)],
+        ),
+      ),
     });
   }
 

@@ -393,11 +393,11 @@ describe('LlmSource', () => {
   });
 
   describe('Fluent API - Tool configuration', () => {
-    it('should add tools', async () => {
+    it('should adapt raw ai-sdk tools into PromptTrail tools', async () => {
       const weatherTool = {
-        name: 'get_weather',
         description: 'Get weather',
-        parameters: { type: 'object' },
+        parameters: z.object({ location: z.string() }),
+        execute: async ({ location }: { location: string }) => ({ location }),
       };
 
       const source = Source.llm().addTool('weather', weatherTool);
@@ -407,10 +407,24 @@ describe('LlmSource', () => {
         expect.anything(),
         expect.objectContaining({
           tools: expect.objectContaining({
-            weather: weatherTool,
+            weather: expect.objectContaining({
+              kind: 'tool',
+              name: 'weather',
+              description: 'Get weather',
+            }),
           }),
         }),
       );
+    });
+
+    it('should reject tools that are neither PromptTrail nor ai-sdk tools', () => {
+      expect(() =>
+        Source.llm().addTool('weather', {
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: { type: 'object' },
+        }),
+      ).toThrow(/must use a Zod parameters schema/);
     });
 
     it('should set tool choice', async () => {
@@ -448,8 +462,18 @@ describe('LlmSource', () => {
     });
 
     it('should add multiple tools', async () => {
-      const weatherTool = { name: 'weather' };
-      const calculatorTool = { name: 'calculator' };
+      const weatherTool = Tool.create({
+        name: 'weather',
+        description: 'Get weather',
+        inputSchema: z.object({ location: z.string() }),
+        execute: ({ location }) => ({ location }),
+      });
+      const calculatorTool = Tool.create({
+        name: 'calculator',
+        description: 'Calculate',
+        inputSchema: z.object({ expression: z.string() }),
+        execute: ({ expression }) => ({ expression }),
+      });
 
       const source = Source.llm()
         .addTool('weather', weatherTool)

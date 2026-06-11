@@ -73,7 +73,11 @@ export function toAiSdkToolSet(
   const toolSet: ToolSet = {};
   for (const [name, value] of Object.entries(tools)) {
     if (!isPromptTrailTool(value)) {
-      continue;
+      // Silently dropping a tool here means the model never sees it — fail
+      // loudly instead so a raw ai-sdk tool cannot vanish from the request.
+      throw new Error(
+        `Tool "${name}" is not a PromptTrail tool. Wrap ai-sdk tools with aiSdkToolToPromptTrailTool(name, tool) or register them via Source.llm().addTool(...).`,
+      );
     }
     toolSet[name] = promptTrailToolToAiSdkTool(value, {
       ...context,
