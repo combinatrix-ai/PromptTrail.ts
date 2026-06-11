@@ -252,7 +252,7 @@ describe('GraphExecutor', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { kind: 'external-read' },
+      activity: { repeatable: true, kind: 'external-read' },
       execute: ({ id }, context) => {
         seen.push({
           id,
@@ -292,7 +292,7 @@ describe('GraphExecutor', () => {
       {
         id: '1',
         context: { runId: 'graph-run' },
-        activity: { kind: 'external-read' },
+        activity: { repeatable: true, kind: 'external-read' },
         capability: 'lookup',
       },
     ]);

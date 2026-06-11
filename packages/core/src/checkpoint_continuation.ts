@@ -71,12 +71,11 @@ export interface CheckpointGraphExecutionStart<
  * prefixes are not duplicated, while `resumeFromNode` lets loops re-enter the
  * suspended node's children even when their condition is currently false.
  *
- * External writes are still at-least-once. The local once memo records durable
- * activity results after the effect and before the next checkpoint so retries can
- * reuse the recorded value when the store has it; effective-once still requires
- * the remote system to deduplicate by the declared idempotency key. Existing
- * runtime behavior routes all declared durable tool activities through this
- * memo, but its surviving durability purpose is external-write idempotency.
+ * Keyed external effects are still at-least-once. The local once memo records
+ * keyed durable activity results after the effect and before the next checkpoint
+ * so retries can reuse the recorded value when the store has it; effective-once
+ * still requires the remote system to deduplicate by the declared idempotency
+ * key. Repeatable effects deliberately bypass this memo.
  */
 export async function beginCheckpointGraphExecution<
   TVars extends Vars,

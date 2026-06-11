@@ -919,7 +919,7 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('memoizes graph checkpoint tool activity and nested once effects', async () => {
+  it('memoizes graph checkpoint keyed tool activity and nested once effects', async () => {
     const store = memoryStore();
     let memoCalls = 0;
     let toolCalls = 0;
@@ -927,7 +927,10 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { kind: 'external-read' },
+      activity: {
+        idempotencyKey: (input) => `lookup:${(input as { id: string }).id}`,
+        kind: 'external-read',
+      },
       execute: async ({ id }, context) => {
         toolCalls++;
         const memo = await context.durable?.once(

@@ -547,7 +547,7 @@ describe('checkpoint app runtime', () => {
         inputSchema: {
           parse: (input: unknown) => input,
         } as any,
-        activity: { kind: 'external-write', idempotencyKey: 'write:1' },
+        activity: { idempotencyKey: 'write:1' },
         execute: () => 'written',
       })
       .assistant('reply', () => ({
@@ -595,7 +595,7 @@ describe('checkpoint app runtime', () => {
         inputSchema: {
           parse: (input: unknown) => input,
         } as any,
-        activity: { kind: 'external-write', idempotencyKey: 'write:ordered' },
+        activity: { idempotencyKey: 'write:ordered' },
         execute: () => {
           events.push('external-write');
           return 'written';
@@ -818,7 +818,7 @@ describe('checkpoint app runtime', () => {
     ).toEqual(['redacted', 'continue', 'done']);
   });
 
-  it('uses session version as the default checkpoint tool once dep', async () => {
+  it('uses resolved keyed declarations as the checkpoint tool once dep', async () => {
     const run = { once: createCheckpointOnceMemoStore() };
     let persists = 0;
     let executions = 0;
@@ -831,9 +831,12 @@ describe('checkpoint app runtime', () => {
       inputSchema: {
         parse: (input: unknown) => input,
       } as any,
-      activity: { kind: 'external-read' },
-      execute: () => {
+      activity: {
+        idempotencyKey: (input) => `lookup:${(input as { id: string }).id}`,
+      },
+      execute: (_input, context) => {
         executions++;
+        expect(context.idempotencyKey).toBe(`lookup:same`);
         return `value:${executions}`;
       },
     });
@@ -867,10 +870,10 @@ describe('checkpoint app runtime', () => {
 
     expect(first.content).toEqual([{ type: 'text', text: 'value:1' }]);
     expect(second.content).toEqual([{ type: 'text', text: 'value:1' }]);
-    expect(third.content).toEqual([{ type: 'text', text: 'value:2' }]);
-    expect(executions).toBe(2);
-    expect(persists).toBe(2);
-    expect(run.once.run.size).toBe(2);
+    expect(third.content).toEqual([{ type: 'text', text: 'value:1' }]);
+    expect(executions).toBe(1);
+    expect(persists).toBe(1);
+    expect(run.once.run.size).toBe(1);
   });
 
   it('does not duplicate graph goal prompts when resuming checkpoint app runs', async () => {

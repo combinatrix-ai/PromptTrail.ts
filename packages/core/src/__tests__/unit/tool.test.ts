@@ -78,13 +78,19 @@ describe('Tool namespace', () => {
       const testTool = Tool.create({
         description: 'Read data',
         inputSchema: z.object({ id: z.string() }),
-        activity: { kind: 'external-read' },
+        activity: { repeatable: true, kind: 'external-read' },
         execute: ({ id }) => ({ id }),
       });
 
       expect(testTool.name).toBe('tool');
-      expect(testTool.activity).toEqual({ kind: 'external-read' });
-      expect(testTool.metadata?.activity).toEqual({ kind: 'external-read' });
+      expect(testTool.activity).toEqual({
+        repeatable: true,
+        kind: 'external-read',
+      });
+      expect(testTool.metadata?.activity).toEqual({
+        repeatable: true,
+        kind: 'external-read',
+      });
     });
   });
 
@@ -232,50 +238,131 @@ describe('Tool namespace', () => {
       });
     });
 
-    it('wraps tool execution in a supplied durable activity boundary', async () => {
+    it('wraps keyed tool execution with resolved function keys', async () => {
       const events: string[] = [];
+      const memo = new Map<string, unknown>();
+      let executions = 0;
       const durableTool = Tool.create({
+        name: 'charge',
+        description: 'Charge',
+        inputSchema: z.object({ id: z.string() }),
+        activity: {
+          idempotencyKey: (input) => `charge:${(input as { id: string }).id}`,
+          retry: { maxAttempts: 2 },
+        },
+        execute: ({ id }, context) => {
+          executions++;
+          expect(context.activity).toEqual({
+            idempotencyKey: expect.any(Function),
+            retry: { maxAttempts: 2 },
+          });
+          expect(context.idempotencyKey).toBe(`charge:${id}`);
+          return { id, executions };
+        },
+      });
+      const durable = {
+        async once<T>(name: string, dep: unknown, fn: () => T | Promise<T>) {
+          const key = `${name}:${String(dep)}`;
+          events.push(key);
+          if (memo.has(key)) {
+            return memo.get(key) as T;
+          }
+          const result = await fn();
+          memo.set(key, result);
+          return result;
+        },
+      };
+
+      const first = await executePromptTrailTool(
+        durableTool,
+        { id: '1' },
+        { durable },
+      );
+      const second = await executePromptTrailTool(
+        durableTool,
+        { id: '1' },
+        { durable },
+      );
+      const third = await executePromptTrailTool(
+        durableTool,
+        { id: '2' },
+        { durable },
+      );
+
+      expect(first.content).toEqual([
+        { type: 'json', json: { id: '1', executions: 1 } },
+      ]);
+      expect(second.content).toEqual(first.content);
+      expect(third.content).toEqual([
+        { type: 'json', json: { id: '2', executions: 2 } },
+      ]);
+      expect(events).toEqual([
+        'charge:charge:1',
+        'charge:charge:1',
+        'charge:charge:2',
+      ]);
+      expect(executions).toBe(2);
+    });
+
+    it('does not wrap repeatable tools in a durable boundary', async () => {
+      const events: string[] = [];
+      let executions = 0;
+      const repeatableTool = Tool.create({
         name: 'lookup',
         description: 'Lookup',
         inputSchema: z.object({ id: z.string() }),
-        activity: { kind: 'external-read', retry: { maxAttempts: 2 } },
+        activity: { repeatable: true },
         execute: ({ id }, context) => {
-          expect(context.activity).toEqual({
-            kind: 'external-read',
-            retry: { maxAttempts: 2 },
-          });
-          return { id };
+          executions++;
+          expect(context.idempotencyKey).toBeUndefined();
+          return { id, executions };
         },
       });
 
-      await expect(
-        executePromptTrailTool(
-          durableTool,
-          { id: '1' },
-          {
-            durable: {
-              async once(name, _dep, fn) {
-                events.push(name);
-                return fn();
-              },
+      const first = await executePromptTrailTool(
+        repeatableTool,
+        { id: '1' },
+        {
+          durable: {
+            async once(name, dep, fn) {
+              events.push(`${name}:${String(dep)}`);
+              return fn();
             },
           },
-        ),
-      ).resolves.toEqual({
-        content: [{ type: 'json', json: { id: '1' } }],
-        structuredContent: { id: '1' },
-      });
-      expect(events).toEqual(['lookup']);
+        },
+      );
+      const second = await executePromptTrailTool(
+        repeatableTool,
+        { id: '1' },
+        {
+          durable: {
+            async once(name, dep, fn) {
+              events.push(`${name}:${String(dep)}`);
+              return fn();
+            },
+          },
+        },
+      );
+
+      expect(first.content).toEqual([
+        { type: 'json', json: { id: '1', executions: 1 } },
+      ]);
+      expect(second.content).toEqual([
+        { type: 'json', json: { id: '1', executions: 2 } },
+      ]);
+      expect(events).toEqual([]);
+      expect(executions).toBe(2);
     });
 
-    it('uses the invoked capability name for durable activity boundaries', async () => {
+    it('uses the invoked capability name for keyed durable boundaries', async () => {
       const events: string[] = [];
       const durableTool = Tool.create({
         description: 'Lookup',
         inputSchema: z.object({ id: z.string() }),
-        activity: { kind: 'external-read' },
+        activity: { idempotencyKey: 'lookup:1' },
         execute: ({ id }, context) => {
           expect(context.capability).toBe('lookup');
+          expect(context.idempotencyKey).toBe('lookup:1');
           return { id };
         },
       });
@@ -286,15 +373,15 @@ describe('Tool namespace', () => {
         {
           capability: 'lookup',
           durable: {
-            async once(name, _dep, fn) {
-              events.push(name);
+            async once(name, dep, fn) {
+              events.push(`${name}:${String(dep)}`);
               return fn();
             },
           },
         },
       );
 
-      expect(events).toEqual(['lookup']);
+      expect(events).toEqual(['lookup:lookup:1']);
     });
   });
 });

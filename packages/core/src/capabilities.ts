@@ -1,8 +1,8 @@
 import type { z } from 'zod';
 import type { CacheHint } from './cache';
 import type {
-  ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
+  ExecutionEffectDeclaration,
 } from './interceptors';
 import type { Session } from './session';
 
@@ -36,7 +36,7 @@ export interface ToolExecutionContext {
   capability?: string;
   raw?: unknown;
   approvalHandler?: ApprovalHandler;
-  activity?: ExecutionDurableActivityOptions;
+  activity?: ExecutionEffectDeclaration;
   idempotencyKey?: string;
   durable?: ExecutionDurableBoundary;
 }
@@ -62,7 +62,7 @@ export interface PromptTrailTool<TInput = unknown, TResult = unknown> {
   ) => Promise<TResult> | TResult;
   approval?: ApprovalPolicy;
   cache?: CacheHint;
-  activity?: ExecutionDurableActivityOptions;
+  activity?: ExecutionEffectDeclaration;
   metadata?: Record<string, unknown>;
 }
 

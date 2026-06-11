@@ -276,20 +276,31 @@ irreducible requirement is the **key**, and only for writes the author wants
 crash-safe. `kind` is optional sugar. Strict mode (3.3) adds the binary gate
 that replay systems get for free.
 
-- [ ] **4.1 Drop the `kind` taxonomy; the declaration is binary.** (Supersedes
+- [x] **4.1 Drop the `kind` taxonomy; the declaration is binary.** (Supersedes
       the earlier "key required iff external-write" shape — see §8.2 and Decision
       Update 2, point 4.) The type becomes
       `{ idempotencyKey: string | (input) => string } | { repeatable: true }`;
       keys may depend on input. `kind` survives only as optional retry/
       observability metadata. Enforcement of "declare one of the two" lives in the
       strict gate (3.3), not in the base type. (`tool.ts`)
-- [ ] **4.2 Keep auto-wrap as the common path** (confirmed). The engine wraps a
+      Done: `ExecutionEffectDeclaration` replaces
+      `ExecutionDurableActivityOptions`/`ActivityKind` (arms made exclusive
+      via `never`); all declarations migrated.
+- [x] **4.2 Keep auto-wrap as the common path** (confirmed). The engine wraps a
       declared tool body in `ctx.once(tool.name, session-identity, body)` when a
       checkpoint boundary is present — a single-effect tool needs **no** `ctx.once`
       calls; explicit `ctx.once` remains for multiple nested boundaries or
       conversation scope. The resolved `effect.idempotencyKey` (string or
       `(input) => string`) is handed to the body as `ctx.idempotencyKey` for
       forwarding to the remote system. (`tool.ts`, `graph_executor.ts`)
+      Done: keyed tools wrap in `once(toolName, resolvedKey, body)` with the
+      resolved string as the memo dep AND as `ctx.idempotencyKey` (closes the
+      §8.8 "key validated but never used" bug); repeatable tools deliberately
+      bypass the memo and re-run on resume (the §1.4 open note — resolved);
+      undeclared tools unchanged until the §3.3 gate. The §1.7
+      session-version fallback dep for tools is structurally gone — there is
+      no declared-but-keyless state anymore. Function keys appear in the
+      manifest as named function stand-ins.
 - [ ] **4.3 Synchronous decision/transform handlers.** Type
       `conditional`/`loop` conditions, `goal.isSatisfied`, and `patch` handlers as
       synchronous (`=> boolean` / `=> Session`, drop the `| Promise<...>` variants)

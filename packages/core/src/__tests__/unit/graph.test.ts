@@ -69,32 +69,80 @@ describe('AgentGraph', () => {
     );
   });
 
-  it('includes first-class tool activity in graph manifests', () => {
-    const tool = (kind: 'external-read' | 'pure-call'): PromptTrailTool => ({
+  it('includes binary tool activity in graph manifests', () => {
+    function lookupKey(input: unknown): string {
+      return `lookup:${(input as { id: string }).id}`;
+    }
+    function otherLookupKey(input: unknown): string {
+      return `lookup:${(input as { id: string }).id}`;
+    }
+    const tool = (
+      idempotencyKey: (input: unknown) => string,
+    ): PromptTrailTool => ({
       kind: 'tool',
       name: 'lookup',
       description: 'Lookup',
       inputSchema: z.object({ id: z.string() }),
-      activity: { kind },
+      activity: { idempotencyKey },
       execute: ({ id }) => ({ id }),
     });
-    const readGraph = createAgentGraph({
+    const keyedGraph = createAgentGraph({
       name: 'tools',
       nodes: [{ id: 'reply', type: 'assistant' }],
-      tools: { lookup: tool('external-read') },
+      tools: { lookup: tool(lookupKey) },
     });
-    const pureGraph = createAgentGraph({
+    const renamedKeyGraph = createAgentGraph({
       name: 'tools',
       nodes: [{ id: 'reply', type: 'assistant' }],
-      tools: { lookup: tool('pure-call') },
+      tools: { lookup: tool(otherLookupKey) },
     });
 
-    const manifest = createAgentGraphManifest(readGraph);
+    const manifest = createAgentGraphManifest(keyedGraph);
 
     expect(manifest.tools).toEqual([
-      { name: 'lookup', activity: { kind: 'external-read' } },
+      {
+        name: 'lookup',
+        activity: {
+          idempotencyKey: { kind: 'function', name: 'lookupKey' },
+        },
+      },
     ]);
-    expect(manifest.hash).not.toBe(createAgentGraphManifest(pureGraph).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(renamedKeyGraph).hash,
+    );
+  });
+
+  it('does not detect function key body edits in graph manifests', () => {
+    const tool = (
+      idempotencyKey: (input: unknown) => string,
+    ): PromptTrailTool => ({
+      kind: 'tool',
+      name: 'lookup',
+      description: 'Lookup',
+      inputSchema: z.object({ id: z.string() }),
+      activity: { idempotencyKey },
+      execute: ({ id }) => ({ id }),
+    });
+    const firstKey = function lookupKey(): string {
+      return 'first';
+    };
+    const secondKey = function lookupKey(): string {
+      return 'second';
+    };
+    const firstGraph = createAgentGraph({
+      name: 'tools',
+      nodes: [{ id: 'reply', type: 'assistant' }],
+      tools: { lookup: tool(firstKey) },
+    });
+    const secondGraph = createAgentGraph({
+      name: 'tools',
+      nodes: [{ id: 'reply', type: 'assistant' }],
+      tools: { lookup: tool(secondKey) },
+    });
+
+    expect(createAgentGraphManifest(firstGraph).hash).toBe(
+      createAgentGraphManifest(secondGraph).hash,
+    );
   });
 
   it('does not treat shared manifest references as circular values', () => {

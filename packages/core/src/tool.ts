@@ -7,7 +7,7 @@ import type {
   PromptTrailTool,
   ToolExecutionContext,
 } from './capabilities';
-import type { ExecutionDurableActivityOptions } from './interceptors';
+import type { ExecutionEffectDeclaration } from './interceptors';
 
 export type { CallToolResult, PromptTrailTool, ToolExecutionContext };
 
@@ -27,7 +27,7 @@ export namespace Tool {
     ) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
     cache?: CacheHint;
-    activity?: ExecutionDurableActivityOptions;
+    activity?: ExecutionEffectDeclaration;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -42,7 +42,7 @@ export namespace Tool {
       | ((input: TParams) => Promise<TResult> | TResult);
     approval?: ApprovalPolicy;
     cache?: CacheHint;
-    activity?: ExecutionDurableActivityOptions;
+    activity?: ExecutionEffectDeclaration;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
     const inputSchema = config.inputSchema;
@@ -116,17 +116,19 @@ export async function executePromptTrailTool<TInput, TResult>(
       capability: executionName,
       activity: tool.activity ?? context.activity,
     };
-    const idempotencyKey = executionContext.activity?.idempotencyKey;
-    const sessionIdentity = executionContext.session?.version;
+    const idempotencyKey = resolveIdempotencyKey(
+      executionContext.activity,
+      parsedInput,
+    );
     const toolContext = {
       ...executionContext,
       idempotencyKey,
     };
     const result =
-      executionContext.durable && executionContext.activity
+      executionContext.durable && idempotencyKey !== undefined
         ? await executionContext.durable.once(
             executionName,
-            idempotencyKey ?? sessionIdentity ?? parsedInput,
+            idempotencyKey,
             () => tool.execute(parsedInput, toolContext),
           )
         : await tool.execute(parsedInput, toolContext);
@@ -137,6 +139,18 @@ export async function executePromptTrailTool<TInput, TResult>(
       isError: true,
     };
   }
+}
+
+function resolveIdempotencyKey(
+  activity: ExecutionEffectDeclaration | undefined,
+  input: unknown,
+): string | undefined {
+  if (!activity || !('idempotencyKey' in activity)) {
+    return undefined;
+  }
+  return typeof activity.idempotencyKey === 'function'
+    ? activity.idempotencyKey(input)
+    : activity.idempotencyKey;
 }
 
 export async function resolveToolApproval<TInput>(

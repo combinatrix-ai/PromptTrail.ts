@@ -28,27 +28,23 @@ export type ExecutionPhase = ExecutionLifecyclePhase | ExecutionWrapperPhase;
 
 export type HandlerDurabilityMode = 'materialized-phase' | 'replayable-handler';
 
-export type ExecutionDurableActivityKind =
-  | 'pure-call'
-  | 'external-read'
-  | 'external-write';
-
 export interface ExecutionDurableRetryPolicy {
   maxAttempts?: number;
 }
 
-interface ExecutionDurableActivityBaseOptions {
+interface ExecutionEffectDeclarationBaseOptions {
+  kind?: string;
   retry?: ExecutionDurableRetryPolicy;
 }
 
-export type ExecutionDurableActivityOptions =
-  | (ExecutionDurableActivityBaseOptions & {
-      kind: Exclude<ExecutionDurableActivityKind, 'external-write'>;
-      idempotencyKey?: string;
+export type ExecutionEffectDeclaration =
+  | (ExecutionEffectDeclarationBaseOptions & {
+      idempotencyKey: string | ((input: unknown) => string);
+      repeatable?: never;
     })
-  | (ExecutionDurableActivityBaseOptions & {
-      kind: 'external-write';
-      idempotencyKey: string;
+  | (ExecutionEffectDeclarationBaseOptions & {
+      repeatable: true;
+      idempotencyKey?: never;
     });
 
 export interface ExecutionDurableBoundary {

@@ -8,8 +8,8 @@ import type {
   AgentGoalOptions,
   ClaudeTurnOptions,
   CodexTurnOptions,
-  ExecutionDurableActivityOptions,
   ExecutionDurableBoundary,
+  ExecutionEffectDeclaration,
   ObserverDeliveryBindingStore,
   RuntimeAdapter,
 } from '../../index';
@@ -30,28 +30,38 @@ describe('public API surface', () => {
     expect(prompttrail.Source.llm()).not.toHaveProperty('providerOptions');
   });
 
-  it('types external-write durable activities with required idempotency keys', () => {
-    const read: ExecutionDurableActivityOptions = { kind: 'external-read' };
-    const write: ExecutionDurableActivityOptions = {
-      kind: 'external-write',
-      idempotencyKey: 'write:1',
+  it('types binary effect declarations', () => {
+    const repeatable: ExecutionEffectDeclaration = {
+      repeatable: true,
+      kind: 'external-read',
     };
-    // @ts-expect-error external-write activities need an idempotency key.
-    const missingKey: ExecutionDurableActivityOptions = {
+    const keyed: ExecutionEffectDeclaration = {
+      idempotencyKey: 'write:1',
+      kind: 'external-write',
+    };
+    const functionKey: ExecutionEffectDeclaration = {
+      idempotencyKey: (input) => `write:${String(input)}`,
+    };
+    // @ts-expect-error declared effects must be keyed or repeatable.
+    const missingDeclaration: ExecutionEffectDeclaration = {
       kind: 'external-write',
     };
 
-    expect(read.kind).toBe('external-read');
-    expect(write.idempotencyKey).toBe('write:1');
-    expect(missingKey.kind).toBe('external-write');
+    expect(repeatable.repeatable).toBe(true);
+    expect(keyed.idempotencyKey).toBe('write:1');
+    expect(typeof functionKey.idempotencyKey).toBe('function');
+    if (typeof functionKey.idempotencyKey === 'function') {
+      expect(functionKey.idempotencyKey('1')).toBe('write:1');
+    }
+    expect(missingDeclaration.kind).toBe('external-write');
   });
 
-  it('types external-write tool activities with required idempotency keys', () => {
+  it('types binary tool effect declarations', () => {
     const readTool = prompttrail.Tool.create({
       name: 'read',
       description: 'read',
       inputSchema: z.object({}),
-      activity: { kind: 'external-read' },
+      activity: { repeatable: true },
       execute: () => 'read',
     });
     const writeTool = prompttrail.Tool.create({
@@ -59,8 +69,8 @@ describe('public API surface', () => {
       description: 'write',
       inputSchema: z.object({}),
       activity: {
-        kind: 'external-write',
         idempotencyKey: 'write:tool',
+        kind: 'external-write',
         retry: { maxAttempts: 2 },
       },
       execute: () => 'write',
@@ -69,15 +79,15 @@ describe('public API surface', () => {
       name: 'missing',
       description: 'missing',
       inputSchema: z.object({}),
-      // @ts-expect-error external-write durable tools need idempotency keys.
+      // @ts-expect-error declared effects must be keyed or repeatable.
       activity: { kind: 'external-write' },
       execute: () => 'missing',
     });
 
-    expect(readTool.metadata?.activity).toEqual({ kind: 'external-read' });
+    expect(readTool.metadata?.activity).toEqual({ repeatable: true });
     expect(writeTool.metadata?.activity).toEqual({
-      kind: 'external-write',
       idempotencyKey: 'write:tool',
+      kind: 'external-write',
       retry: { maxAttempts: 2 },
     });
     expect(missingKeyTool.metadata?.activity).toEqual({
