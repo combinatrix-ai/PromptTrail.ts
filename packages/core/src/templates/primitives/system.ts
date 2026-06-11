@@ -33,4 +33,12 @@ export class System<
     };
     return validSession.addMessage(message);
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'System',
+      contentSource: this.contentSource,
+    };
+  }
 }

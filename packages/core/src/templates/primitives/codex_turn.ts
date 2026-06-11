@@ -35,6 +35,7 @@ import {
 } from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
 import type { ResolvedExecutionCommand } from '../../execution';
+import { manifestConfigDigest } from '../../graph';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -44,6 +45,23 @@ export class CodexTurn<
 > extends TemplateBase<TAttrs, TVars> {
   constructor(private readonly options: CodexTurnOptions<TAttrs, TVars>) {
     super();
+  }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'CodexTurn',
+      options: {
+        ...this.options,
+        client: objectStandIn(this.options.client),
+        // Arbitrary config bags can carry secrets (transport env, raw
+        // thread/turn params); the manifest is persisted with the run, so
+        // reduce them to edit-detecting digests instead of plaintext.
+        transport: manifestConfigDigest(this.options.transport),
+        threadStart: manifestConfigDigest(this.options.threadStart),
+        turnStart: manifestConfigDigest(this.options.turnStart),
+      },
+    };
   }
 
   async execute(
@@ -630,5 +648,18 @@ function summarizeTextPreview(text: string | undefined): {
     preview: text.slice(0, 500),
     truncated: true,
     fullLength: text.length,
+  };
+}
+
+function objectStandIn(value: unknown): unknown {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return {
+    kind: 'object',
+    ctor:
+      typeof value === 'object'
+        ? value.constructor?.name || undefined
+        : undefined,
   };
 }

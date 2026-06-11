@@ -30,6 +30,14 @@ export class GenerateMessages<
     return this.generateMessages;
   }
 
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'GenerateMessages',
+      generateMessages: this.generateMessages,
+    };
+  }
+
   async execute(
     session?: Session<TVars, TAttrs>,
   ): Promise<Session<TVars, TAttrs>> {

@@ -1,6 +1,7 @@
 // structured.ts
 import { z } from 'zod';
 import type { ExecutionRuntimeState } from '../../interceptors';
+import { zodToJsonSchema } from '../../json_schema';
 import type { SchemaGenerationMode } from '../../llm_types';
 import type { Session } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
@@ -17,6 +18,10 @@ export class Structured<
   TVars extends Vars = Vars,
 > extends TemplateBase<TAttrs, TVars> {
   private source: Source<ModelOutput>;
+  private readonly schema: z.ZodType;
+  private readonly mode?: SchemaGenerationMode;
+  private readonly functionName?: string;
+  private readonly maxAttempts?: number;
 
   constructor(options: {
     source?: Source<ModelOutput>;
@@ -26,6 +31,10 @@ export class Structured<
     maxAttempts?: number;
   }) {
     super();
+    this.schema = options.schema;
+    this.mode = options.mode;
+    this.functionName = options.functionName;
+    this.maxAttempts = options.maxAttempts;
 
     if (options.source) {
       // If source is provided, check if it's an LlmSource and configure schema
@@ -136,6 +145,18 @@ export class Structured<
       throw new Error(`Structured template execution failed: ${err.message}`);
     }
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Structured',
+      source: this.source,
+      schema: zodSchemaDescriptor(this.schema),
+      mode: this.mode,
+      functionName: this.functionName,
+      maxAttempts: this.maxAttempts,
+    };
+  }
 }
 
 /**
@@ -150,4 +171,22 @@ export class Structured<
 export interface SchemaType {
   properties: Record<string, { type: string; description: string }>;
   required?: string[];
+}
+
+function zodSchemaDescriptor(schema: z.ZodType): unknown {
+  try {
+    return {
+      kind: 'jsonSchema',
+      schema: zodToJsonSchema(schema, { unsupported: 'strip' }),
+    };
+  } catch {
+    const definition = (schema as { _def?: { typeName?: unknown } })._def;
+    return {
+      kind: 'zodSchema',
+      typeName:
+        typeof definition?.typeName === 'string'
+          ? definition.typeName
+          : schema.constructor?.name || undefined,
+    };
+  }
 }

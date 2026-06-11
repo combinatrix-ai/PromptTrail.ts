@@ -247,4 +247,16 @@ export class Assistant<
       | string
       | ModelOutput;
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Assistant',
+      contentSource: this.contentSource,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+      validator: this.validator,
+      isStaticContent: this.isStaticContent,
+    };
+  }
 }

@@ -69,6 +69,13 @@ export abstract class TemplateBase<
             );
             return { content: interpolatedContent };
           },
+          getManifestDescriptor() {
+            return {
+              kind: 'source',
+              sourceType: 'StaticModelSource',
+              config: { content: input },
+            };
+          },
         } as Source<ModelOutput>;
       } else {
         return new LiteralSource(input);

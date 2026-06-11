@@ -176,6 +176,16 @@ export class Parallel<
     return this.strategy;
   }
 
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Parallel',
+      sources: this.sources,
+      scoringFunction: this.scoringFunction,
+      strategy: this.strategy,
+    };
+  }
+
   /**
    * Execute all sources in parallel and aggregate the results.
    *

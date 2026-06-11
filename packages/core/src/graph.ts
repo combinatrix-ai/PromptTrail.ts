@@ -170,6 +170,22 @@ export function validateAgentGraph(
   }
 }
 
+/**
+ * Creates the durable/app version manifest for an agent graph.
+ *
+ * The manifest hash covers the graph name/version, flattened node paths,
+ * node ids/types, serializable node `data` (including template manifest
+ * descriptors such as prompt text, provider-turn options, and structured
+ * schemas), edges, tool names/activity declarations, and stable middleware /
+ * hook ids. Non-serializable values are reduced to stable stand-ins such as
+ * function names or object constructor names.
+ *
+ * WARNING: no manifest hash can detect edits inside a JavaScript closure body
+ * when its name and surrounding graph data stay the same. Durable runs that
+ * span code edits are unsupported in v1: edit the graph/configuration and
+ * resume will fail fast when the manifest changes; edit an opaque closure body
+ * and PromptTrail cannot prove it changed.
+ */
 export function createAgentGraphManifest(
   graph: AgentGraph,
 ): AgentGraphManifest {
@@ -370,6 +386,24 @@ function isManifestDescribable(value: object): value is ManifestDescribable {
     typeof (value as { getManifestDescriptor?: unknown })
       .getManifestDescriptor === 'function'
   );
+}
+
+/**
+ * Reduces an arbitrary configuration value to an edit-detecting digest for
+ * manifest descriptors. Use this for option bags that may carry secrets
+ * (transport env, raw SDK options): the manifest is persisted with the run,
+ * so their plaintext must not appear in it, but an edit still has to
+ * invalidate resume. The digest is lossy (fnv1a over the stable manifest
+ * serialization) — it cannot be reversed into the original values.
+ */
+export function manifestConfigDigest(value: unknown): unknown {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return {
+    kind: 'configDigest',
+    digest: stableHash(toManifestValue(value)),
+  };
 }
 
 function stableHash(value: unknown): string {

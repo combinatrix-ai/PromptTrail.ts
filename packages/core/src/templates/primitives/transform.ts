@@ -40,6 +40,14 @@ export class Transform<
     return this.transformFn;
   }
 
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Transform',
+      transform: this.transformFn,
+    };
+  }
+
   // Update execute signature
   async execute(
     session?: Session<TVars, TAttrs>,

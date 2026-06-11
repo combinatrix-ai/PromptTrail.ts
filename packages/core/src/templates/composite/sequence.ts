@@ -35,4 +35,14 @@ export class Sequence<
     this.loopCondition = condition;
     return this;
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Sequence',
+      templates: this.templates,
+      loopIf: this.loopCondition,
+      maxIterations: this.maxIterations,
+    };
+  }
 }

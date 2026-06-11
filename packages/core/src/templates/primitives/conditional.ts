@@ -44,6 +44,16 @@ export class Conditional<
     return this.elseTemplate;
   }
 
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Conditional',
+      condition: this.condition,
+      thenTemplate: this.thenTemplate,
+      elseTemplate: this.elseTemplate,
+    };
+  }
+
   async execute(
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,

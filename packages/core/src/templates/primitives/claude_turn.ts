@@ -26,6 +26,7 @@ import {
 } from '../../interceptors';
 import type { ExecutionEvent } from '../../execution';
 import type { ResolvedExecutionCommand } from '../../execution';
+import { manifestConfigDigest } from '../../graph';
 import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
@@ -35,6 +36,21 @@ export class ClaudeTurn<
 > extends TemplateBase<TAttrs, TVars> {
   constructor(private readonly options: ClaudeTurnOptions<TAttrs, TVars>) {
     super();
+  }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'ClaudeTurn',
+      options: {
+        ...this.options,
+        client: objectStandIn(this.options.client),
+        // sdkOptions is an arbitrary config bag that can carry secrets (env,
+        // MCP server credentials); the manifest is persisted with the run, so
+        // reduce it to an edit-detecting digest instead of plaintext.
+        sdkOptions: manifestConfigDigest(this.options.sdkOptions),
+      },
+    };
   }
 
   async execute(
@@ -492,4 +508,17 @@ function summarizeClaudeAgentEvents(events: readonly unknown[]) {
           : undefined,
     };
   });
+}
+
+function objectStandIn(value: unknown): unknown {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return {
+    kind: 'object',
+    ctor:
+      typeof value === 'object'
+        ? value.constructor?.name || undefined
+        : undefined,
+  };
 }

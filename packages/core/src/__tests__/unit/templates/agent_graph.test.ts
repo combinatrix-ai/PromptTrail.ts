@@ -11,7 +11,7 @@ import type {
   CodexThreadStartResult,
   CodexTurnStartParams,
 } from '../../../codex_app_server';
-import { memoryStore } from '../../../durable';
+import { PromptTrail, memoryStore } from '../../../durable';
 import {
   AgentGraphVersionError,
   createAgentGraphManifest,
@@ -683,6 +683,182 @@ describe('Agent graph authoring', () => {
       ['assistant/codex', 'codexTurn'],
       ['assistant/claude', 'claudeTurn'],
     ]);
+  });
+
+  it('changes the manifest when CodexTurn options change', () => {
+    const build = (model = 'gpt-test') =>
+      Agent.create('assistant')
+        .codex('codex', {
+          client: new GraphFakeCodexClient(),
+          model,
+          cwd: '/workspace',
+          sandboxPolicy: { mode: 'workspace-write' },
+          threadStart: { effort: 'medium' },
+          turnStart: { approval: 'never' },
+          onUnresumable: 'restart',
+          restartNotice: 'Restart from checkpoint.',
+          maxRestarts: 2,
+        })
+        .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(build());
+
+    expect(manifest.hash).toBe(createAgentGraphManifest(build()).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(build('gpt-other')).hash,
+    );
+  });
+
+  it('changes the manifest when ClaudeTurn options change', () => {
+    const build = (model = 'claude-test') =>
+      Agent.create('assistant')
+        .claude('claude', {
+          client: new GraphFakeClaudeAgentClient(),
+          model,
+          cwd: '/workspace',
+          allowedTools: ['Read'],
+          disallowedTools: ['Write'],
+          permissionMode: 'acceptEdits',
+          settingSources: ['project'],
+          skills: ['planner'],
+          retainMessages: false,
+          attrsKey: 'claude',
+          onUnresumable: 'restart',
+          restartNotice: 'Restart from checkpoint.',
+          maxRestarts: 2,
+          sdkOptions: { maxTurns: 3 },
+        })
+        .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(build());
+
+    expect(manifest.hash).toBe(createAgentGraphManifest(build()).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(build('claude-other')).hash,
+    );
+  });
+
+  it('digests secret-bearing config bags instead of persisting plaintext', () => {
+    const codexHash = (env: Record<string, string>) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .codex('codex', {
+            client: new GraphFakeCodexClient(),
+            transport: {
+              kind: 'stdio',
+              command: 'codex',
+              env,
+            },
+          })
+          .toGraph('v1'),
+      );
+    const claudeHash = (sdkOptions: Record<string, unknown>) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .claude('claude', {
+            client: new GraphFakeClaudeAgentClient(),
+            sdkOptions,
+          })
+          .toGraph('v1'),
+      );
+
+    const codexManifest = codexHash({ OPENAI_API_KEY: 'sk-super-secret' });
+    const claudeManifest = claudeHash({ apiKey: 'sk-ant-super-secret' });
+
+    expect(JSON.stringify(codexManifest)).not.toContain('sk-super-secret');
+    expect(JSON.stringify(claudeManifest)).not.toContain('sk-ant-super-secret');
+    expect(codexManifest.hash).not.toBe(
+      codexHash({ OPENAI_API_KEY: 'sk-rotated' }).hash,
+    );
+    expect(claudeManifest.hash).not.toBe(
+      claudeHash({ apiKey: 'sk-ant-rotated' }).hash,
+    );
+  });
+
+  it('changes the manifest when graph content or structured schemas change', () => {
+    const systemHash = (content: string) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .system('system', content)
+          .assistant('reply', 'ok')
+          .toGraph('v1'),
+      ).hash;
+    const structuredHash = (schema: z.ZodType) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .structured('reply', Structured.withSchema(schema))
+          .toGraph('v1'),
+      ).hash;
+
+    expect(systemHash('Be concise.')).not.toBe(systemHash('Be detailed.'));
+    expect(structuredHash(z.object({ ok: z.boolean() }))).not.toBe(
+      structuredHash(z.object({ ok: z.boolean(), reason: z.string() })),
+    );
+  });
+
+  it('does not detect closure body edits when function names are unchanged', () => {
+    const namedHandler = (content: string) =>
+      Object.defineProperty(() => content, 'name', {
+        value: 'sameHandler',
+      }) as () => string;
+    const hash = (content: string) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .assistant('reply', namedHandler(content))
+          .toGraph('v1'),
+      ).hash;
+
+    expect(hash('old body result')).toBe(hash('new body result'));
+  });
+
+  it('does not change the manifest when only provider client instances change', () => {
+    const codexHash = (client: GraphFakeCodexClient) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .codex('codex', { client, model: 'gpt-test' })
+          .toGraph('v1'),
+      ).hash;
+    const claudeHash = (client: GraphFakeClaudeAgentClient) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .claude('claude', { client, model: 'claude-test' })
+          .toGraph('v1'),
+      ).hash;
+
+    expect(codexHash(new GraphFakeCodexClient())).toBe(
+      codexHash(new GraphFakeCodexClient()),
+    );
+    expect(claudeHash(new GraphFakeClaudeAgentClient())).toBe(
+      claudeHash(new GraphFakeClaudeAgentClient()),
+    );
+  });
+
+  it('fails app checkpoint resume when a provider option edit changes the manifest', async () => {
+    const store = memoryStore();
+    const app = PromptTrail.app({ store });
+    const runId = 'app-provider-version';
+
+    await app.executeCheckpointRun({
+      agent: Agent.create('assistant')
+        .codex('codex', {
+          client: new GraphFakeCodexClient(),
+          model: 'gpt-test',
+        })
+        .assistant('reply', 'done'),
+      runId,
+    });
+
+    await expect(
+      app.executeCheckpointRun({
+        agent: Agent.create('assistant')
+          .codex('codex', {
+            client: new GraphFakeCodexClient(),
+            model: 'gpt-other',
+          })
+          .assistant('reply', 'done'),
+        runId,
+      }),
+    ).rejects.toThrow(AgentGraphVersionError);
   });
 
   it('executes graph Codex and Claude turn nodes without template adapter entrypoints', async () => {

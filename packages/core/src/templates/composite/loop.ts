@@ -77,4 +77,14 @@ export class Loop<
     this.maxIterations = maxIterations;
     return this;
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Loop',
+      bodyTemplates: this.templates,
+      loopIf: this.loopCondition,
+      maxIterations: this.maxIterations,
+    };
+  }
 }

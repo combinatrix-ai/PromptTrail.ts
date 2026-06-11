@@ -192,15 +192,27 @@ edit is author responsibility. A silent half-old/half-new run (edited suffix
 runs new content against a prefix checkpointed under old content) is worse than
 a fail-fast.
 
-- [ ] **2.1 Hash structure + serializable content.** Keep
+- [x] **2.1 Hash structure + serializable content.** Keep
       `createAgentGraphManifest` hashing node `data` where serializable (system
       text, source configuration) **plus** `path`, `id`, `type`, edges, tool names
   - effect declarations, handler ids. For non-serializable members (closures,
     handlers, provider clients) hash a stable id stand-in. Document that
     closure-body edits are undetectable by any hash. (`graph.ts`)
-- [ ] **2.2 Keep fail-fast on mismatch**; migrations/force-continue stay out of
+    Done: the gap was Template instances inside node `data` collapsing to
+    `{ctor}` stand-ins — every embeddable template
+    (CodexTurn/ClaudeTurn/System/User/Assistant/Structured/Loop/Conditional/
+    Subroutine/Sequence/Parallel/Transform/GenerateMessages) now exposes
+    `getManifestDescriptor()`. Provider clients stay constructor stand-ins
+    (instance swap ≠ edit); secret-bearing config bags (Codex
+    `transport`/`threadStart`/`turnStart`, Claude `sdkOptions`) reduce to
+    edit-detecting fnv digests so their plaintext never enters the persisted
+    manifest. Closure-body limitation documented on
+    `createAgentGraphManifest` and pinned by a test.
+- [x] **2.2 Keep fail-fast on mismatch**; migrations/force-continue stay out of
       scope (explicit migration = later, the Temporal `patched` analog).
       (`durable.ts`)
+      Done: `assertGraphRunManifest` → `AgentGraphVersionError` was already in
+      place; resume-after-option-edit now covered end-to-end by a test.
 
 ## 3. Agent DSL: one form, optional ids, layering
 

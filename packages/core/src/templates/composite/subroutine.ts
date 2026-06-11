@@ -172,4 +172,17 @@ export class Subroutine<
     this.squashFunction = fn;
     return this;
   }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Subroutine',
+      id: this.id,
+      templates: this.templates,
+      initWith: this.initFunction,
+      squashWith: this.squashFunction,
+      retainMessages: this.retainMessages,
+      isolatedContext: this.isolatedContext,
+    };
+  }
 }
