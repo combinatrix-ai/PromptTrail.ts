@@ -21,3 +21,4 @@ dogfooding/visualizer/
 scratchpad.ts
 packages/core/tsconfig.tsbuildinfo
 references/
+*.tsbuildinfo
