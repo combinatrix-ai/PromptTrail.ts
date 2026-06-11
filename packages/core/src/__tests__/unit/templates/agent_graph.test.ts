@@ -1199,7 +1199,7 @@ describe('Agent graph authoring', () => {
     const manifest = createAgentGraphManifest(graph);
 
     expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
-      ['assistant/draft', 'subroutine'],
+      ['assistant/draft', 'scope'],
       ['assistant/draft/prompt', 'user'],
       ['assistant/draft/reply', 'assistant'],
     ]);
@@ -1245,11 +1245,10 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
-  it('compiles named graph sequences into stable sequential subgraphs', () => {
+  it('compiles implicit graph sequences into stable sequential nodes', () => {
     const graph = Agent.create('assistant')
-      .sequence('draft', (step) =>
-        step.user('prompt', 'Draft').assistant('reply', 'ok'),
-      )
+      .user('prompt', 'Draft')
+      .assistant('reply', 'ok')
       .toGraph('v1');
     const manifest = createAgentGraphManifest(graph);
 
@@ -1275,9 +1274,6 @@ describe('Agent graph authoring', () => {
     expect(() =>
       graphStarted().subroutine((sub) => sub.assistant('legacy')),
     ).toThrow(/Graph Agent\.subroutine/);
-    expect(() =>
-      graphStarted().sequence((step) => step.assistant('legacy')),
-    ).toThrow(/Graph Agent\.sequence/);
   });
 
   it('rejects mixing legacy leaf methods after graph authoring starts', () => {

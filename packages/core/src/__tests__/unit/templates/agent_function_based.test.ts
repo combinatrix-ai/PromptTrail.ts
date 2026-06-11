@@ -191,16 +191,13 @@ describe('Agent Function-Based Templates', () => {
     });
   });
 
-  describe('Function-based sequence', () => {
-    it('should support sequence with builder function', async () => {
+  describe('Implicit sequencing', () => {
+    it('should execute chained templates in order', async () => {
       const agent = Agent.quick()
         .system('Main')
-        .sequence((s) =>
-          s
-            .user('First in sequence')
-            .assistant('First response')
-            .user('Second in sequence'),
-        )
+        .user('First in sequence')
+        .assistant('First response')
+        .user('Second in sequence')
         .assistant('Final response');
 
       const session = await agent.execute();
@@ -269,9 +266,8 @@ describe('Agent Function-Based Templates', () => {
             retainMessages: true,
           },
         )
-        .sequence((seq) =>
-          seq.user('In sequence').assistant('Sequence response'),
-        );
+        .user('In sequence')
+        .assistant('Sequence response');
 
       const session = await agent.execute();
 

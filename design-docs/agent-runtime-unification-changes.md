@@ -586,9 +586,14 @@ the §3 DSL work; do them as part of §3.
       identical pre-condition loops). (`templates/agent.ts`)
       Done: confirmed both compiled to the same `loop` node and runtime path;
       `loop(id, builder, condition, options)` signature kept.
-- [ ] **9.4 Remove the authoring `sequence` node; rename the IR container to
+- [x] **9.4 Remove the authoring `sequence` node; rename the IR container to
       `scope`.** Top level and all builders are implicit sequences. `subroutine`
       compiles to `scope` + session policy. (`graph.ts`, `graph_executor.ts`)
+      Done: `Agent.sequence(...)` deleted (bodies inline); `'subroutine'` node
+      type replaced by `'scope'` — with session-policy data it behaves as the
+      old subroutine (defaults unchanged until §9.5), without it it just runs
+      its children. The `legacySequence` transform marker dissolved into plain
+      `scope`. Paths keep their ids; only node types changed in manifests.
 - [ ] **9.5 Fix `subroutine` defaults to actually isolate** (current defaults
       `retainMessages: true` + `isolatedContext: false` make it a sequence).
       Options become entry projection (`init`) / exit projection (`squash`) +

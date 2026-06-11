@@ -373,22 +373,19 @@ describe('Agent interceptors', () => {
 
   it('threads direct execution context into nested agents', async () => {
     const session = await Agent.quick()
-      .sequence((agent) =>
-        agent
-          .use(
-            Middleware.create({
-              name: 'nestedContext',
-              beforeModel: ({ context }) => ({
-                session: {
-                  vars: {
-                    userId: context?.userId,
-                  },
-                },
-              }),
-            }),
-          )
-          .assistant('reply'),
+      .use(
+        Middleware.create({
+          name: 'nestedContext',
+          beforeModel: ({ context }) => ({
+            session: {
+              vars: {
+                userId: context?.userId,
+              },
+            },
+          }),
+        }),
       )
+      .assistant('reply')
       .execute({ context: { userId: 'U1' } });
 
     expect(session.getVarsObject()).toEqual({ userId: 'U1' });
@@ -593,31 +590,23 @@ describe('Agent interceptors', () => {
     ]);
   });
 
-  it('emits nested agent events to nested observers under a parent runtime', async () => {
+  it('emits chained agent events to observers under a runtime', async () => {
     const parentEvents: string[] = [];
-    const nestedEvents: string[] = [];
+    const childEvents: string[] = [];
 
     const session = await Agent.quick()
       .observe((event) => {
         parentEvents.push(`${event.seq}:${event.type}`);
       })
-      .sequence((agent) =>
-        agent
-          .observe((event) => {
-            nestedEvents.push(`${event.seq}:${event.type}`);
-          })
-          .user('nested hello'),
-      )
+      .observe((event) => {
+        childEvents.push(`${event.seq}:${event.type}`);
+      })
+      .user('nested hello')
       .execute();
 
     expect(session.getLastMessage()?.content).toBe('nested hello');
-    expect(parentEvents).toEqual([
-      '0:run.started',
-      '1:run.started',
-      '2:run.completed',
-      '3:run.completed',
-    ]);
-    expect(nestedEvents).toEqual(['1:run.started', '2:run.completed']);
+    expect(parentEvents).toEqual(['0:run.started', '1:run.completed']);
+    expect(childEvents).toEqual(['0:run.started', '1:run.completed']);
   });
 
   it('rejects unsupported direct execution commands', async () => {
@@ -721,22 +710,19 @@ describe('Agent interceptors', () => {
     expect(session.getVarsObject()).toEqual({ afterModel: true });
   });
 
-  it('preserves interceptors when nested builders are built', async () => {
+  it('preserves interceptors in implicit sequence order', async () => {
     const session = await Agent.quick()
-      .sequence((agent) =>
-        agent
-          .use(
-            Middleware.create({
-              name: 'nested',
-              beforeAgent: () => ({
-                session: {
-                  vars: { nestedMiddleware: true },
-                },
-              }),
-            }),
-          )
-          .user('nested hello'),
+      .use(
+        Middleware.create({
+          name: 'nested',
+          beforeAgent: () => ({
+            session: {
+              vars: { nestedMiddleware: true },
+            },
+          }),
+        }),
       )
+      .user('nested hello')
       .execute();
 
     expect(session.getVarsObject()).toEqual({ nestedMiddleware: true });
@@ -753,7 +739,7 @@ describe('Agent interceptors', () => {
           }),
         }),
       )
-      .sequence((agent) => agent.assistant('nested original'))
+      .assistant('nested original')
       .execute();
 
     expect(session.getLastMessage()?.content).toBe('parent rewritten');

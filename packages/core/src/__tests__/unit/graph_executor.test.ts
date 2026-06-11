@@ -171,11 +171,10 @@ describe('GraphExecutor', () => {
     expect(session.getVar('count')).toBe(3);
   });
 
-  it('executes named graph sequences in child order', async () => {
+  it('executes implicit graph sequences in child order', async () => {
     const graph = Agent.create('assistant')
-      .sequence('draft', (step) =>
-        step.user('prompt', 'Draft').assistant('reply', 'ok'),
-      )
+      .user('prompt', 'Draft')
+      .assistant('reply', 'ok')
       .assistant('after', 'done')
       .toGraph();
 
@@ -472,7 +471,7 @@ describe('GraphExecutor', () => {
         { id: 'before', type: 'user', data: { content: 'before' } },
         {
           id: 'draft',
-          type: 'subroutine',
+          type: 'scope',
           data: { isolatedContext: true, retainMessages: false },
           children: [
             { id: 'inbound', type: 'inbox' },

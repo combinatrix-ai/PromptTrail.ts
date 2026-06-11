@@ -417,8 +417,8 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'goal':
       await executeGoalNode(node, nodePath, state);
       return;
-    case 'subroutine':
-      await executeSubroutineNode(node, nodePath, state);
+    case 'scope':
+      await executeScopeNode(node, nodePath, state);
       return;
     case 'loop':
       await executeLoopNode(node, nodePath, state);
@@ -626,12 +626,16 @@ async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeSubroutineNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
+  if (!hasSessionPolicy(data)) {
+    await executeChildren(node.children ?? [], nodePath, state);
+    return;
+  }
   const parentSession = state.session;
   const initWith = data.initWith;
   const subroutineInitial =
@@ -799,10 +803,6 @@ async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
-  if (data.kind === 'legacySequence') {
-    await executeChildren(node.children ?? [], nodePath, state);
-    return;
-  }
   const handler = data.handler;
   if (typeof handler === 'function') {
     const result = await handler(state.session);
@@ -1017,6 +1017,15 @@ function defaultSubroutineInitialSession<
     initial = initial.addMessage(message);
   }
   return initial;
+}
+
+function hasSessionPolicy(data: GraphNodeData): boolean {
+  return (
+    data.initWith !== undefined ||
+    data.squashWith !== undefined ||
+    data.retainMessages !== undefined ||
+    data.isolatedContext !== undefined
+  );
 }
 
 async function squashSubroutineSession<

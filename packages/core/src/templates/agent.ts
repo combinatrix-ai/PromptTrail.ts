@@ -144,7 +144,7 @@ export interface AgentExecuteOptions<
  * allowing for the addition of system, user, and assistant messages,
  * as well as the ability to define loops and subroutines.
  * It serves as a builder for complex template compositions.
- * The templates can be executed in a sequence or as part of a subroutine,
+ * The templates can be executed in order or as part of a subroutine,
  * enabling flexible and reusable template structures.
  * The class also supports the addition of custom exit conditions for loops
  * and the ability to retain messages or isolate context in subroutines.
@@ -791,8 +791,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       const builtAgent = builderFn(innerAgent);
       this.graphNodes.push({
         id: idOrBuilderFn,
-        type: 'subroutine',
-        data: maybeOptions,
+        type: 'scope',
+        data: graphSubroutineScopeData(maybeOptions),
         children: builtAgent.graphNodes,
       });
       return this;
@@ -811,36 +811,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     const subroutineTemplate = builtAgent.build();
 
     this.root.add(new Subroutine(subroutineTemplate, opts));
-    return this;
-  }
-
-  sequence(
-    id: string,
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-  ): this;
-  sequence(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>): this;
-  sequence(
-    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
-    maybeBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-  ): this {
-    if (typeof idOrBuilderFn === 'string') {
-      if (!maybeBuilderFn) {
-        throw new Error('Graph Agent.sequence requires sequence(id, builder).');
-      }
-      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
-      const builtAgent = maybeBuilderFn(innerAgent);
-      this.graphNodes.push(...builtAgent.graphNodes);
-      return this;
-    }
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.sequence requires sequence(id, builder).');
-    }
-    const builderFn = idOrBuilderFn;
-    const innerAgent = Agent.quick<TC, TM>();
-    const builtAgent = builderFn(innerAgent);
-    const sequenceTemplate = builtAgent.build();
-
-    this.root.add(sequenceTemplate);
     return this;
   }
 
@@ -1199,8 +1169,7 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
   if (template instanceof Sequence) {
     return {
       id: nextLegacyNodeId(state, 'sequence'),
-      type: 'transform',
-      data: { kind: 'legacySequence' },
+      type: 'scope',
       children: compileLegacyCompositeChildren(template, state),
     };
   }
@@ -1246,7 +1215,7 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
       id: isStableLegacyNodeId(template.id)
         ? template.id
         : nextLegacyNodeId(state, 'subroutine'),
-      type: 'subroutine',
+      type: 'scope',
       data: compactGraphData({
         initWith: template.getInitFunction(),
         squashWith: template.getSquashFunction(),
@@ -1483,6 +1452,16 @@ function compactGraphData(
     Object.entries(data).filter(([, value]) => value !== undefined),
   );
   return Object.keys(compact).length > 0 ? compact : undefined;
+}
+
+function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(
+  options: ISubroutineTemplateOptions<TM, TC> | undefined,
+): Record<string, unknown> {
+  return {
+    ...((options ?? {}) as Record<string, unknown>),
+    retainMessages: options?.retainMessages ?? true,
+    isolatedContext: options?.isolatedContext ?? false,
+  };
 }
 
 function compactGraphChildren(
