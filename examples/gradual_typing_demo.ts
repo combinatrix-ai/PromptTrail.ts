@@ -1,7 +1,7 @@
 /**
  * Gradual Typing API Demo
  *
- * This example demonstrates the new gradual typing API for Session creation.
+ * This example demonstrates the gradual typing API for Session creation.
  * It shows how to specify types explicitly when inference is not enough.
  */
 

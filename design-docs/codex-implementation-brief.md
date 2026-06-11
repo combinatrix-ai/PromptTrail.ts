@@ -87,7 +87,7 @@ this brief, the Decision Update / this brief win.
   the `turn` node is removed (`inbox`/`awaitInput`/`tools` are ordinary
   nodes); `repeat` is removed (`loop` only); the authoring `sequence` node is
   removed (implicit everywhere; IR container = `scope`); `subroutine` defaults
-  fixed to actually isolate; `Agent.run` does not exist (`execute` only).
+  fixed to actually isolate; direct execution uses `execute({ input })`.
   Run-per-event is the standard long-running shape (no infinite graph loops;
   `awaitInput` is mid-flow only). Renames: `ctx.once`,
   `app.gateway()`, `Trigger<TEvent>`, `.checkpoint(...)` overrides,
@@ -164,7 +164,7 @@ Do the sections in this order; each must land green before the next.
   model-effect journaling, `journaled`/sequence-position validation,
   `ctx.durable.*` as public API (replaced by `ctx.once`), the
   `external-read`/`external-write`/`compute` kind taxonomy as a required
-  declaration, `Agent.quick()`, `Agent.run`, `codexTurn`/`claudeTurn`
+  declaration, `Agent.quick()`, `codexTurn`/`claudeTurn`
   authoring methods, the `turn`/`repeat`/`sequence`/`patch`/`messages`
   authoring nodes, `app.source()`/`app.activity()` (renamed
   `gateway`/`presence`), the closed binding-event union, or `.bind(...)` app

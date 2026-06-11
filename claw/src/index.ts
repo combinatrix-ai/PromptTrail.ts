@@ -1,14 +1,12 @@
 import 'dotenv/config';
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
+import { Agent, PromptTrail, memoryStore } from '@prompttrail/core';
+import type { Session } from '@prompttrail/core';
 import {
-  PromptTrail,
-  agent,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
-  memoryStore,
-} from '@prompttrail/core';
-import type { Session } from '@prompttrail/core';
+} from '@prompttrail/core/codex_app_server';
 import { discord, discordGateway } from '@prompttrail/discord';
 
 interface ClawConfig {
@@ -27,9 +25,9 @@ interface ClawConfig {
 
 const config = readConfig();
 
-const mainAgent = agent('main').chat('chat', async (session) => ({
-  content: await generateReply(session),
-}));
+const mainAgent = Agent.create('main').assistant('reply', async (session) =>
+  generateReply(session),
+);
 
 const runtime = PromptTrail.app({
   name: 'claw-discord',

@@ -1,21 +1,18 @@
 /**
  * Interactive Coding Agent Example
  *
- * This example demonstrates how to create an interactive coding agent using PromptTrail.
- * The agent can execute shell commands, read and write files, and maintain a conversation.
+ * This example demonstrates an interactive coding agent using PromptTrail.
+ * The agent can execute shell commands, read and write files, and maintain a
+ * conversation.
  */
 
-// Import PromptTrail core components
 import { Agent, CLISource, Session, Source, Tool } from '@prompttrail/core';
-
-// Import Tool namespace from PromptTrail
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-
-// Node.js modules for file and command operations
 import { exec } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
 import { promisify } from 'util';
-// Convert exec to promise-based for async/await usage
+
 const execAsync = promisify(exec);
 
 // Define shell command tool
@@ -24,6 +21,7 @@ const shellCommandTool = Tool.create({
   inputSchema: z.object({
     command: z.string().describe('Shell command to execute'),
   }),
+  activity: { repeatable: true },
   execute: async (input) => {
     try {
       console.log(`[Debug] Executing command: ${input.command}`);
@@ -42,6 +40,7 @@ const readFileTool = Tool.create({
   inputSchema: z.object({
     path: z.string().describe('Path to the file to read'),
   }),
+  activity: { repeatable: true },
   execute: async (input) => {
     try {
       const content = await readFile(input.path, 'utf-8');
@@ -65,6 +64,12 @@ const writeFileTool = Tool.create({
     path: z.string().describe('Path to write the file'),
     content: z.string().describe('Content to write to the file'),
   }),
+  activity: {
+    idempotencyKey: (input) => {
+      const { path, content } = input as { path: string; content: string };
+      return `write-file:${path}:${content.length}`;
+    },
+  },
   execute: async (input) => {
     try {
       console.log(
@@ -104,10 +109,8 @@ export class CodingAgent {
       write_file: writeFileTool,
     };
 
-    // Configure the LLM with tools using the fluent API
     let llmSource = Source.llm();
 
-    // Configure provider
     if (config.provider === 'openai') {
       llmSource = llmSource.openai({
         apiKey: config.apiKey,
@@ -120,7 +123,6 @@ export class CodingAgent {
       });
     }
 
-    // Add temperature and tools
     this.llm = llmSource.temperature(0.7).withTools(this.tools);
   }
 
@@ -133,10 +135,8 @@ export class CodingAgent {
       '\nStarting interactive coding agent (type "exit" to end)...\n',
     );
 
-    // Create interactive input source
     const userCliSource = new CLISource('Your request (type "exit" to end): ');
 
-    // Create session with console output
     const session = Session.debug();
 
     const systemPrompt =
@@ -145,14 +145,12 @@ export class CodingAgent {
     const agent = Agent.create('coding-agent')
       .system(systemPrompt)
       .conditional(
-        (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
-        // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
+        () => initialPrompt !== undefined && initialPrompt.trim() !== '',
         (agent) => agent.user(initialPrompt as string).assistant(this.llm),
-        // Otherwise, this is interactive mode
         (agent) =>
           agent.loop(
             (innerAgent) => innerAgent.user(userCliSource).assistant(this.llm),
-            (session) => {
+            ({ session }) => {
               const lastUserMessage = session
                 .getMessagesByType('user')
                 .slice(-1)[0];
@@ -161,7 +159,6 @@ export class CodingAgent {
           ),
       );
 
-    // Execute the interactive template
     await agent.execute({ session });
     console.log('\nCoding agent session ended. Goodbye!\n');
   }
@@ -172,19 +169,19 @@ export class CodingAgent {
   async runExample(): Promise<void> {
     // Example 1: Basic file listing
     console.log('\n=== Example 1: List files ===\n');
-    this.run(
+    await this.run(
       'List the files in the current directory and tell me what you see.',
     );
 
     // Example 2: File creation and reading
     console.log('\n=== Example 2: Create and read a file ===\n');
-    this.run(
+    await this.run(
       'Create a file named example.txt with some interesting content, then read it back and explain what you wrote.',
     );
 
     // Example 3: Create and run a script
     console.log('\n=== Example 3: Advanced task ===\n');
-    this.run(
+    await this.run(
       'Create a simple Node.js script that prints "Hello, World!" and run it.',
     );
     console.log('\n=== Examples completed ===\n');
@@ -196,7 +193,6 @@ export class CodingAgent {
  */
 const runAgent = async (): Promise<void> => {
   try {
-    // Get configuration from environment variables
     const provider = (process.env.AI_PROVIDER || 'openai') as
       | 'openai'
       | 'anthropic';
@@ -212,15 +208,12 @@ const runAgent = async (): Promise<void> => {
       process.exit(1);
     }
 
-    // Initialize the agent
     const agent = new CodingAgent({ provider, apiKey });
 
-    // Run examples or interactive mode
     if (process.argv.includes('--test')) {
       console.log('Running example tests...');
       await agent.runExample();
     } else {
-      // Start interactive session
       await agent.run();
     }
   } catch (error) {
@@ -228,8 +221,10 @@ const runAgent = async (): Promise<void> => {
   }
 };
 
-// Auto-run when executed directly
-if (require.main === module) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   runAgent()
     .then(() => {
       console.log('Agent completed successfully.');

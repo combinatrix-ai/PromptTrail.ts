@@ -408,13 +408,13 @@ that replay systems get for free.
 
 Maps to Codex item: _README/examples の全面更新_.
 
-- [ ] **7.1 Rewrite README** around the final API (checkpoint durability,
+- [x] **7.1 Rewrite README** around the final API (checkpoint durability,
       id-optional authoring, `goal`-first, `app.on(...)`).
-- [ ] **7.2 Update examples** to id-optional `Agent.create`, `goal`/`turn`
+- [x] **7.2 Update examples** to id-optional `Agent.create`, `goal`/`turn`
       layering, and the new app/event API. (`examples/*.ts`)
-- [ ] **7.3 Migration notes** only where genuinely useful (no compatibility
+- [x] **7.3 Migration notes** only where genuinely useful (no compatibility
       guarantee).
-- [ ] **7.4 Document the binding / routing DSL model** as its own section
+- [x] **7.4 Document the binding / routing DSL model** as its own section
       (README + a design doc). A binding is a **pure transform from a platform event
       to a normalized routing decision**; the fluent chain fills slots of a record,
       it is not an ordered pipeline. Cover:
@@ -675,11 +675,11 @@ the §3 DSL work; do them as part of §3.
       rather than aliased. Defaults: enter a fresh empty session (system
       prompts must be re-established inside or via `init`), exit by appending
       sub-added messages to the parent with parent vars kept.
-- [ ] **9.6 Document run-per-event as the standard shape.** Event-driven
+- [x] **9.6 Document run-per-event as the standard shape.** Event-driven
       agents end after one inbound event; continuity = app-layer conversation
       resume. No infinite graph loops; `awaitInput` is mid-flow only. (README,
       examples)
-- [ ] **9.7 Remove `Agent.run` references** (doc phantom; `execute({ input })`
+- [x] **9.7 Remove `Agent.run` references** (doc phantom; `execute({ input })`
       only).
 - [x] **9.8 Consistency renames:** `ctx.durable.*` →
       `ctx.once` (scope option per §8.5); `app.source()` → `app.gateway()`; event-source
@@ -687,3 +687,28 @@ the §3 DSL work; do them as part of §3.
       `.durable(...)` overrides → `.checkpoint(...)`; `app.activity()` →
       `app.presence()`. (`durable.ts`, `runtime_bindings.ts`, `runtime_discord.ts`,
       exports)
+
+---
+
+## 10. Post-sweep follow-ups (noted while writing the final docs)
+
+All checklist items above are done. Small API frictions surfaced by the §7
+documentation pass, left for a future polish round:
+
+- `Tool.create` still names its effect declaration `activity:`, while wrapper
+  middleware/hooks and effect transforms use `effect:` for the same
+  `ExecutionEffectDeclaration` — pick one (likely `effect`) and rename.
+- Graph assistant function handlers require `assistant(id, handler)`; the
+  single-argument function form does not typecheck (only string content has
+  the id-less overload). Consider an id-less handler overload.
+- Loop conditions type more cleanly as `({ session }) => ...` than the
+  prototype-bridged `(session) => ...` compatibility shape — consider
+  retiring the bridge once examples/docs only show the destructured form.
+- Direct checkpoint `Agent.execute` returns a `Session`, not run metadata, so
+  callers must track `runId` separately; `PromptTrail.app` paths return
+  `{ status, runId, session }`. Consider unifying.
+- `RuntimeDispatchContext.channelPrompt` is channel-shaped terminology left in
+  core after the §5.2 platform split — rename when next touching dispatch.
+- `e2e_real_api.test.ts` (off-limits real-API suite) still references the
+  removed `Agent.quick` at two sites; fix when that file is next touched with
+  API keys available.

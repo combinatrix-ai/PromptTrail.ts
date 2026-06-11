@@ -12,6 +12,7 @@ const searchDocumentation = Tool.create({
     query: z.string(),
     depth: z.enum(['shallow', 'deep']).default('shallow'),
   }),
+  activity: { repeatable: true },
   execute: async ({ query, depth }) => ({
     query,
     depth,
@@ -31,6 +32,7 @@ const inspectCode = Tool.create({
   inputSchema: z.object({
     subsystem: z.string(),
   }),
+  activity: { repeatable: true },
   execute: async ({ subsystem }) => ({
     subsystem,
     files: [`src/${subsystem}/index.ts`, `src/${subsystem}/service.ts`],
@@ -40,23 +42,20 @@ const inspectCode = Tool.create({
 
 export function createAutonomousResearcher() {
   return Agent.create('autonomousResearcher')
-    .system(
-      'system',
-      'You are a code research assistant. Research thoroughly before answering.',
-    )
+    .system('You are a code research assistant. Research before answering.')
     .tool('searchDocumentation', searchDocumentation)
     .tool('inspectCode', inspectCode)
-    .goal('collectQuestion', "Get the user's research question.", {
+    .goal("Get the user's research question.", {
       interaction: 'required',
     })
-    .goal('researchTopic', 'Gather enough evidence to answer the question.', {
+    .goal('Gather enough evidence to answer the question.', {
       maxAttempts: 6,
       tools: ['searchDocumentation', 'inspectCode'],
       model: () => 'Use the registered research tools, then assess coverage.',
       isSatisfied: ({ session }) =>
         session.getMessagesByType('tool_result').length >= 2,
     })
-    .goal('finalAnswer', 'Provide a comprehensive answer with citations.');
+    .goal('Provide a comprehensive answer with citations.');
 }
 
 export async function showAutonomousResearcherGraph() {
