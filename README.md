@@ -1,23 +1,52 @@
 # PromptTrail.ts
 
-PromptTrail.ts is a TypeScript framework for structured LLM conversations and
-event-driven agents. The public authoring surface is `Agent.create('name')`,
-immutable `Session` state, `Source` content providers, `Tool` declarations, and
-the `PromptTrail.app(...)` runtime for checkpointed event handling.
+PromptTrail.ts is a TypeScript framework for building LLM conversations and
+event-driven agents that survive restarts. You describe a conversation as a
+typed, composable graph; PromptTrail executes it, checkpoints progress at node
+boundaries, and resumes interrupted runs — with an honest durability contract
+(at-least-once plus remote deduplication, never a false promise of
+exactly-once).
 
-## Packages
+What that buys you:
+
+- **One authoring model.** `Agent.create('name')` builds everything from a
+  three-line prompt chain to a multi-agent event-driven app. Node ids are
+  optional; state is an immutable, typed `Session`.
+- **Durability you can reason about.** `checkpoint:` runs persist session
+  deltas, suspend mid-flow (`awaitInput`), and resume forward. Tools declare
+  whether they are safe to re-run or carry an idempotency key — and the
+  registration gate refuses checkpoint agents that stay silent about it.
+- **An app runtime for real surfaces.** `PromptTrail.app(...)` routes platform
+  events (Discord, cron, your own triggers) to agents through a declarative
+  binding DSL, with delivery, presence, and conversation resume handled by the
+  runtime.
+- **Vendor agents as graph nodes.** `.codex(...)` and `.claude(...)` embed
+  Codex App Server and Claude Agent SDK turns, including provider-session
+  reconnect on resume.
+
+Sections: [Installation](#installation) · [Quick Start](#quick-start) ·
+[Sessions](#sessions) · [Agent Authoring](#agent-authoring) ·
+[Tools and Effects](#tools-and-effects) ·
+[Checkpoint Durability](#checkpoint-durability) ·
+[Vendor Tool Loops](#vendor-tool-loops) · [Transforms](#transforms) ·
+[Goals and Tool Loops](#goals-and-tool-loops) ·
+[Structured Output](#structured-output) · [Subroutines](#subroutines) ·
+[Provider Turns](#provider-turns) · [App Runtime](#app-runtime) ·
+[Run Per Event](#run-per-event) ·
+[Binding and Routing DSL](#binding-and-routing-dsl) ·
+[Version Gate](#version-gate) · [Examples](#examples) ·
+[Development](#development) · [Migration](#migration)
+
+## Installation
 
 ```bash
-pnpm add @prompttrail/core
-pnpm add @prompttrail/discord
-pnpm add @prompttrail/cron
+pnpm add @prompttrail/core      # agents, sessions, sources, tools, checkpoint runtime
+pnpm add @prompttrail/discord   # Discord trigger, delivery, presence, test adapters
+pnpm add @prompttrail/cron      # cron trigger and test helpers
 ```
 
-- `@prompttrail/core` contains agents, sessions, sources, tools, checkpoint
-  runtime, bindings, and runtime server primitives.
-- `@prompttrail/discord` contains Discord triggers, routing helpers, delivery,
-  presence, and test adapters.
-- `@prompttrail/cron` contains cron triggers and test helpers.
+Platform packages implement core's generic `Trigger<TEvent>` contract — adding
+a new platform does not require editing core.
 
 ## Quick Start
 
@@ -33,12 +62,10 @@ const session = await assistant.execute();
 console.log(session.getLastMessage()?.content);
 ```
 
-For one inbound value, pass it to `execute({ input })` and consume it with an
-`inbox` node:
+To feed runtime input instead of hardcoding the user message, consume it with
+an `inbox` node:
 
 ```ts
-import { Agent, Source } from '@prompttrail/core';
-
 const assistant = Agent.create('support')
   .system('Answer the latest inbound user message.')
   .inbox()
@@ -49,12 +76,33 @@ const session = await assistant.execute({
 });
 ```
 
-Use `execute({ input })` for direct execution with inbound content.
+## Sessions
+
+A `Session` is the immutable conversation value: messages plus typed `vars`.
+Every change returns a new session, so handlers can never corrupt shared
+state:
+
+```ts
+import { Session, type Vars } from '@prompttrail/core';
+
+const session = Session.create<Vars<{ userId: string }>>({
+  vars: { userId: 'u-1' },
+});
+const next = session.withVar('plan', 'pro'); // new session; original untouched
+next.getVar('userId'); // typed: string
+```
+
+Type the vars on the agent when handlers read them —
+`Agent.create<Vars<{ userId: string }>>('name')` — and `session.getVar(...)`
+stays checked end to end. Sessions also carry a monotonic `version` used
+internally as the checkpoint delta pointer and the default effect-memo
+dependency.
 
 ## Agent Authoring
 
 Node ids are optional. A single string passed to `.system(...)`, `.user(...)`,
-`.assistant(...)`, or `.goal(...)` is content, not an id:
+`.assistant(...)`, or `.goal(...)` is content, not an id; a single function or
+`Source` is the content provider:
 
 ```ts
 const triage = Agent.create('triage')
@@ -72,30 +120,33 @@ const triage = Agent.create('triage')
   .assistant('draft', Source.llm());
 ```
 
-Derived ids are based on structural position. Inserting, removing, or reordering
-nodes can shift derived ids and invalidate checkpoint resume. Use explicit ids
-for long-lived checkpoint runs, loops, and mid-flow suspend points.
+Derived ids follow structural position (`assistant-1`, `assistant-1-loop`,
+...). Inserting, removing, or reordering nodes shifts them — which
+intentionally invalidates checkpoint resume through the version gate. Write
+explicit ids for long-lived checkpoint runs, loops, and suspend points; the
+runtime warns at registration when a resume-sensitive node (such as
+`awaitInput`) has a derived id.
 
-The final authoring vocabulary is:
+The full vocabulary:
 
-- Leaf/protocol nodes: `system`, `user`, `assistant`, `transform`, `inbox`,
+- Leaf nodes: `system`, `user`, `assistant`, `transform`, `inbox`,
   `awaitInput`, `tools`, `structured`
 - Containers: `loop`, `conditional`, `subroutine`, `parallel`
 - Intent and provider turns: `goal`, `codex`, `claude`
 
-Removed authoring words include `quick`, `turn`, `repeat`, `sequence`, `patch`,
-`messages`, and old `codexTurn` / `claudeTurn` method names.
+If you knew an earlier API (`quick`, `turn`, `repeat`, `sequence`, `patch`,
+`messages`, ...), see [MIGRATION.md](MIGRATION.md).
 
-## Tools And Effects
+## Tools and Effects
 
-Tools are model-callable effect boundaries. Under normal ephemeral execution,
-effect declarations are optional. Under checkpoint execution, every author tool
-must declare one of two forms:
+Tools are model-callable effect boundaries. A tool declares one of two things
+about its effect:
 
 ```ts
 import { Tool } from '@prompttrail/core';
 import { z } from 'zod';
 
+// Safe to re-run: reads, pure computation, idempotent calls.
 const searchDocs = Tool.create({
   name: 'searchDocs',
   description: 'Search documentation.',
@@ -104,6 +155,7 @@ const searchDocs = Tool.create({
   execute: async ({ query }) => searchDocumentation(query),
 });
 
+// Must be deduplicated: the key may depend on the input.
 const chargeCard = Tool.create({
   name: 'chargeCard',
   description: 'Charge a card for an order.',
@@ -117,89 +169,99 @@ const chargeCard = Tool.create({
 });
 ```
 
-`{ repeatable: true }` says the tool can be safely re-run. `{ idempotencyKey }`
-says the tool performs an effect that must be deduplicated. The resolved key is
-passed to the tool as `ctx.idempotencyKey`; forward it to the remote system.
+The axis is _must-dedup_ versus _repeatable_, not read versus write — an
+idempotent PUT is repeatable; a counter increment must be deduplicated. For
+keyed tools the resolved key becomes the local memo identity and arrives in
+the tool body as `ctx.idempotencyKey`; forward it to the remote system, which
+is where effective-once is actually enforced.
 
-The property is named `effect` on `Tool.create(...)` for the current API. It
-stores an `ExecutionEffectDeclaration`.
-
-Vendor tool loops need one more checkpoint decision. `.codex(...)`,
-`.claude(...)`, and native OpenAI Responses, Anthropic Messages, and Gemini
-sources with tools let the vendor own the loop. Tool effects in that loop sit
-outside PromptTrail's `once` memo, and an interrupted turn may re-run on resume;
-this is a best-effort/self-heal posture, not a durable local tool boundary.
-`ctx.idempotencyKey` still flows into PromptTrail tool bodies, so forward it to
-remote systems for deduplication. Under checkpoint execution, native adapter
-sources with tools must explicitly acknowledge this with
-`toolLoop: 'vendor'`, or use `adapter: 'ai-sdk'` for graph-visible tool calls
-and results.
+Under ephemeral execution declarations are optional. Under checkpoint
+execution they are required: registering a checkpoint agent whose tool
+declares neither form is a hard error at registration time, not a surprise at
+resume time.
 
 ## Checkpoint Durability
 
-Checkpoint execution persists session progress at node boundaries and resumes
-forward from the stored checkpoint:
+A checkpoint run persists progress at node boundaries and can suspend mid-flow
+and resume later — across process restarts, given a persistent store:
 
 ```ts
 import { Agent, Source, memoryStore } from '@prompttrail/core';
 
 const store = memoryStore();
 
-const assistant = Agent.create('support')
-  .system('Answer the inbound request.')
-  .inbox('request')
-  .assistant('reply', Source.llm())
-  .checkpoint(store);
+const support = Agent.create('support')
+  .system('Collect the order id, then resolve the issue.')
+  .inbox('issue')
+  .assistant('clarify', Source.llm())
+  .awaitInput('order-id')
+  .assistant('resolve', Source.llm());
 
-const runId = 'support:conversation:42';
-
-const first = await assistant.execute({
-  runId,
-  input: 'Can you help with billing?',
+const first = await support.execute({
+  runId: 'ticket-42',
+  input: 'My order never arrived.',
   checkpoint: store,
 });
+// first.status === 'suspended', first.awaiting === 'support/order-id'
 
-const resumed = await assistant.execute({
-  runId,
+const done = await support.execute({
+  runId: 'ticket-42',
+  input: 'Order #1234',
   checkpoint: store,
 });
-
-console.log(first.status, resumed.session.getLastMessage()?.content);
+// done.status === 'done'; done.session has the full conversation
 ```
 
-You can also pass the store per execution:
-
-```ts
-const result = await assistant.execute({
-  runId: 'support:conversation:42',
-  input: 'Can you help with billing?',
-  checkpoint: store,
-});
-
-console.log(result.session.messages.length);
-```
-
-`checkpoint: true` uses the app's ambient store. Direct
-`Agent.execute({ checkpoint: true })` without an ambient store fails; pass
-`checkpoint: store` or configure the app.
+With a `checkpoint` option, `execute` returns the run envelope
+`{ status, runId, session, awaiting? }`; without one it returns the `Session`
+directly. `checkpoint: true` uses the ambient app store (and fails fast with
+guidance when there is none). Stores persist session _deltas_ — appended
+messages and var diffs — not full-session rewrites.
 
 The guarantee is honest and intentionally limited:
 
-- PromptTrail provides checkpoint resume with at-least-once effect execution.
-- Completed nodes are skipped on resume; incomplete nodes may re-run.
-- Local `ctx.once(...)` memoization is best-effort over crash windows.
-- Effective-once external writes require the remote system to honor the
-  idempotency key.
+- Checkpoint resume gives **at-least-once** effect execution: completed nodes
+  are skipped on resume, incomplete nodes may re-run.
+- Keyed tools are memoized locally (`once`) after the effect commits, but the
+  crash window between a remote commit and the local persist cannot be closed
+  locally. **Effective-once requires the remote system to honor the
+  idempotency key.**
+- The runtime orders effect → memo → persist and awaits persistence at effect
+  boundaries, so a committed write is never silently dropped — but the local
+  store and a remote service are never atomically coordinated.
 - PromptTrail does not provide exactly-once delivery or exactly-once external
-  effects.
+  effects. Nothing does without the remote system's cooperation.
 
-The runtime orders external write, memo record, and checkpoint persistence for
-at-least-once behavior. This avoids silently dropping a committed write, but it
-cannot atomically coordinate the local store and a remote service.
+## Vendor Tool Loops
 
-## Transform Nodes
+Some surfaces let the _vendor_ own the tool loop: `.codex(...)`,
+`.claude(...)`, and the native provider adapters (OpenAI Responses, Anthropic
+Messages, Gemini) when the source carries tools. Inside a vendor loop, tool
+calls execute within the provider turn — they do not appear on the session as
+`toolCalls`/`tool_result` messages, and they sit outside the local `once`
+memo. An interrupted turn re-runs wholesale on resume: best-effort and
+self-healing, not a durable local boundary. `ctx.idempotencyKey` still reaches
+tool bodies, so remote deduplication keeps working.
 
-Use pure synchronous transforms for session-only logic:
+Under checkpoint execution this trade-off must be explicit. A native-adapter
+source with tools fails registration unless you either acknowledge it:
+
+```ts
+Source.llm().openai().toolLoop('vendor').addTool('searchDocs', searchDocs);
+```
+
+or switch to the ai-sdk adapter, which surfaces tool calls and results on the
+session where the graph (and the checkpoint machinery) can see them:
+
+```ts
+Source.llm().openai({ adapter: 'ai-sdk' }).addTool('searchDocs', searchDocs);
+```
+
+## Transforms
+
+`transform` is the single programmatic node. The pure form is synchronous by
+type — IO cannot be awaited into an undeclared step, and a handler returning a
+Promise throws:
 
 ```ts
 const agent = Agent.create('with-vars')
@@ -207,10 +269,14 @@ const agent = Agent.create('with-vars')
   .assistant('Ready.');
 ```
 
-Async transforms must declare an effect:
+Declaring an effect unlocks the async form, with `ctx.once` and
+`ctx.idempotencyKey` available — this is the graph-invoked effect step (tools
+remain model-invoked):
 
 ```ts
-const agent = Agent.create('fetch-profile').transform(
+import { type Vars } from '@prompttrail/core';
+
+const agent = Agent.create<Vars<{ userId: string }>>('fetch-profile').transform(
   { effect: { repeatable: true } },
   async (session) => {
     const profile = await fetchProfile(session.getVar('userId'));
@@ -219,14 +285,14 @@ const agent = Agent.create('fetch-profile').transform(
 );
 ```
 
-Decision handlers such as `conditional`, `loop`, and `goal.isSatisfied` are
-synchronous. Fetch in a tool or declared effect transform, store the result in
-the session, then branch synchronously.
+Decision handlers — `conditional` and `loop` conditions, `goal.isSatisfied` —
+are synchronous for the same reason. Fetch in a tool or an effect transform,
+store the result in the session, then branch.
 
-## Goals And Tool Loops
+## Goals and Tool Loops
 
-`goal(...)` is the intent-level API. Registered tools and goal tools compile to
-ordinary graph nodes; PromptTrail owns the loop.
+`goal(...)` is the intent-level API: state what must be achieved and let the
+compiled graph loop tools and model turns until satisfied.
 
 ```ts
 const researcher = Agent.create('researcher')
@@ -241,19 +307,47 @@ const researcher = Agent.create('researcher')
   .goal('Write the final answer.');
 ```
 
-A top-level `assistant(...)` with registered tools also gets automatic
-tool-loop sugar. The manual layer is to write `loop(...)` and `tools(...)`
-yourself when you need direct control.
+A top-level `assistant(...)` on an agent with registered tools gets the same
+treatment automatically: it compiles to `assistant` plus a tool loop with
+deterministic node ids. PromptTrail owns the loop — there is no hidden
+provider-internal looping on this path. When you need direct control, write
+`loop(...)` and `tools(...)` yourself; the sugar steps aside if a manual loop
+follows.
+
+## Structured Output
+
+`structured` nodes validate the model's answer against a schema and expose the
+parsed value:
+
+```ts
+import { Structured } from '@prompttrail/core';
+import { z } from 'zod';
+
+const classifier = Agent.create('classifier')
+  .inbox()
+  .structured(
+    Structured.withSchema(
+      z.object({ category: z.string(), urgent: z.boolean() }),
+    ),
+  );
+
+const session = await classifier.execute({
+  input: 'My payment failed twice!',
+});
+const parsed = session.getLastMessage()?.structuredContent;
+```
 
 ## Subroutines
 
 `subroutine(...)` is an isolation boundary. By default it enters with a fresh
-sub-session and appends subroutine messages back to the parent on exit while
-keeping parent vars unchanged. Use `init` and `squash` to project state in and
-out explicitly:
+session and, on exit, appends the subroutine's messages to the parent while
+keeping parent vars unchanged — re-establish system prompts inside, or project
+state explicitly with `init` and `squash`:
 
 ```ts
-const agent = Agent.create('review').subroutine(
+import { type Vars } from '@prompttrail/core';
+
+const agent = Agent.create<Vars<{ draft: string }>>('review').subroutine(
   'draft-review',
   (draft) =>
     draft
@@ -261,10 +355,7 @@ const agent = Agent.create('review').subroutine(
       .user('Please check tone and clarity.')
       .assistant(Source.llm()),
   {
-    init: (parent) =>
-      parent.withVars({
-        draft: parent.getVar('draft'),
-      }),
+    init: (parent) => parent.withVars({ draft: parent.getVar('draft') }),
     squash: (parent, sub) =>
       parent.withVar('review', sub.getLastMessage()?.content ?? ''),
   },
@@ -273,14 +364,15 @@ const agent = Agent.create('review').subroutine(
 
 ## Provider Turns
 
-Use `.codex(...)` for Codex App Server turns and `.claude(...)` for Claude Agent
-SDK turns. In these nodes the provider owns its internal loop, so PromptTrail
-cannot checkpoint inside the provider turn.
+`.codex(...)` runs a Codex App Server turn; `.claude(...)` runs a Claude Agent
+SDK turn. The provider owns its internal loop, so PromptTrail cannot
+checkpoint inside the turn. Instead, under checkpoint execution the provider
+thread/session id is persisted the moment the provider returns it, and resume
+reconnects to the same provider session.
 
-Under checkpoint execution, PromptTrail persists provider thread/session ids as
-soon as the provider returns them and tries to reconnect on resume. If reconnect
-is impossible, the default is fail-fast. Opt into a best-effort restart only
-when re-running the provider turn is acceptable:
+When reconnect is impossible (expired thread, refused resume), the default is
+fail-fast. Restarting the whole turn re-runs any vendor-internal tool side
+effects, so it is opt-in:
 
 ```ts
 const agent = Agent.create('coding').codex({
@@ -293,13 +385,10 @@ const agent = Agent.create('coding').codex({
 });
 ```
 
-Vendor-internal tool side effects are outside PromptTrail's idempotency memo;
-use the same `toolLoop: 'vendor'` acknowledgement when a checkpointed native
-adapter source carries tools.
-
 ## App Runtime
 
-Apps connect triggers to agents. Defaults are constructor-only:
+Apps connect triggers to agents. Defaults are constructor-only; per-binding
+needs are expressed on the binding, not by mutating app state:
 
 ```ts
 import { Agent, PromptTrail, Source, memoryStore } from '@prompttrail/core';
@@ -313,14 +402,8 @@ const support = Agent.create('support')
 const app = PromptTrail.app({
   name: 'support-bot',
   store: memoryStore(),
-  defaults: {
-    checkpoint: true,
-  },
-  adapters: [
-    discordGateway({
-      token: process.env.DISCORD_TOKEN,
-    }),
-  ],
+  defaults: { checkpoint: true },
+  adapters: [discordGateway({ token: process.env.DISCORD_TOKEN })],
   presence: { kind: 'typing' },
 })
   .agent(support)
@@ -336,26 +419,26 @@ const app = PromptTrail.app({
 await app.start();
 ```
 
-Use `app.gateway(...)` for custom inbound gateways, `app.delivery(...)` for
-delivery drivers, and `app.presence(...)` for typing or processing indicators.
-`app.on(trigger, builder)` is the binding API.
+`app.on(trigger, builder)` wires an event source to an agent;
+`app.gateway(...)` registers custom inbound gateways, `app.delivery(...)`
+delivery drivers, and `app.presence(...)` typing/processing indicators.
 
 ## Run Per Event
 
-The standard event-driven shape is one run per inbound event. An agent handles
-one event, reaches the end of its graph, and stops. Continuity comes from the
-app layer: the binding's `.conversation(...)` resolver maps related events to
-the same conversation/run id, so the next event resumes the checkpointed
+The standard event-driven shape is one run per inbound event: an agent handles
+one event, reaches the end of its graph, and stops. Continuity lives in the
+app layer — the binding's `.conversation(...)` resolver maps related events to
+the same conversation id, so the next event resumes the checkpointed
 conversation.
 
 Do not model a chat bot as an infinite graph loop that waits forever. Use
-`awaitInput` only for mid-flow suspension, such as a goal that needs a specific
-clarifying answer before the current event flow can continue.
+`awaitInput` only for mid-flow suspension, such as a clarifying answer the
+current flow needs before it can finish.
 
-## Binding And Routing DSL
+## Binding and Routing DSL
 
 A binding is a pure transform from a platform event to a normalized routing
-decision. The fluent chain fills slots in a record; it is not an ordered
+decision. The fluent chain fills slots in a record — it is not an ordered
 pipeline:
 
 ```ts
@@ -370,51 +453,48 @@ app.on(discord.messages(), (b) =>
 );
 ```
 
-The chain compiles to a `RuntimeBinding` and then to a `RuntimeBundle` IR. The
-IR is inspectable and testable:
+Slots hold resolvers — `(event) => value` projections evaluated per event.
+Platform factories such as `discord.sessionKey(...)` and `cron.schedule(...)`
+produce those resolvers, so platform knowledge stays in the platform package.
+The chain compiles to a `RuntimeBinding` and into the `RuntimeBundle` IR,
+which is inspectable and testable:
 
 ```ts
 const bundle = app.bundle();
 console.log(bundle.bindings[0].agent);
 ```
 
-Slots hold resolvers, not literals. A resolver is an `(event) => value`
-projection evaluated for each event. Platform packages provide factories such
-as `discord.sessionKey(...)`, `discord.replyToOriginThread()`, and
-`cron.schedule(...)` so platform-specific event knowledge stays in the package,
-not in core.
-
-Inbound and outbound routing are symmetric:
-
-- `.conversation(...)` projects the inbound event to a conversation id, which
-  becomes the run id that selects the checkpoint to resume.
-- `.reply(...)` projects the same event to a delivery description. Sending is
-  performed later by the app delivery driver and outbox, so bindings remain
-  side-effect free.
-
-The mental model is an HTTP router whose route slots are event projections
-instead of fixed path strings.
+Inbound and outbound routing are symmetric: `.conversation(...)` projects the
+event to the conversation id that selects the checkpoint to resume;
+`.reply(...)` projects the same event to a delivery description, executed
+later by the delivery driver and outbox so bindings stay side-effect free. The
+mental model is an HTTP router whose route slots are event projections instead
+of fixed path strings.
 
 ## Version Gate
 
-Checkpoint resume is invalidated by graph edits. The manifest covers graph
-structure and serializable node content such as prompt text and source
-configuration. Non-serializable members, including closures and provider
-clients, are represented by stable stand-ins.
+Checkpoint resume is invalidated by graph edits — a silent half-old/half-new
+run is worse than failing fast. The manifest hash covers graph structure and
+serializable node content (prompt text, source configuration, effect
+declarations); non-serializable members such as closures and provider clients
+are represented by stable stand-ins, and secret-bearing config reduces to
+edit-detecting digests rather than plaintext.
 
-Closure-body edits are not detectable by the manifest hash. Durable runs that
-span code edits are unsupported unless the application owns a migration path.
+One documented limit: closure-body edits are invisible to any hash. Durable
+runs that span code edits are unsupported unless the application owns a
+migration path.
 
 ## Examples
 
 ```bash
-pnpm -C examples build
-tsx examples/chat.ts
-tsx examples/autonomous_researcher.ts
+bun run examples/chat.ts
+bun run examples/autonomous_researcher.ts
+bun run examples/coding_agent.ts
 ```
 
-The examples directory contains direct execution examples. The Discord and cron
-packages include runtime tests and platform-specific helpers.
+[examples/readme_snippets.ts](examples/readme_snippets.ts) mirrors the code
+blocks in this README and is typechecked by `pnpm -C examples typecheck` —
+update both together.
 
 ## Development
 
@@ -427,3 +507,10 @@ pnpm -C packages/core vitest run src/__tests__/unit
 
 Public APIs are exported from package roots or documented subpaths such as
 `@prompttrail/core/codex_app_server` and `@prompttrail/core/runtime_server`.
+Design decisions live in `design-docs/`, including the binding/routing model
+(`design-docs/binding-routing-dsl.md`).
+
+## Migration
+
+There is no backward-compatibility layer. [MIGRATION.md](MIGRATION.md) lists
+every rename and removal from earlier APIs, one line each.
