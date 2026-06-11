@@ -40,7 +40,7 @@ const runtime = PromptTrail.app({
   },
 })
   .agent('main', mainAgent)
-  .bind(discord.messages(), (binding) =>
+  .on(discord.messages(), (binding) =>
     binding
       .where(discord.notBot())
       .toAgent('main')
@@ -50,8 +50,8 @@ const runtime = PromptTrail.app({
           threadSessionsPerUser: false,
         }),
       )
+      .reply(discord.replyToOriginThread())
       .defaults({
-        delivery: discord.replyToOriginThread(),
         behavior: {
           allowedChannels: config.allowedChannels,
           freeResponseChannels: config.freeResponseChannels,
@@ -69,7 +69,7 @@ const codexThreadIds = new Map<string, string>();
 const server = PromptTrail.server({
   bundle,
   runtime,
-  activity: { kind: 'typing' },
+  presence: { kind: 'typing' },
   errorMessage: 'Claw failed to handle that message.',
   adapters: [
     discordGateway({

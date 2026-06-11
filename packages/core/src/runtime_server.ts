@@ -12,11 +12,12 @@ import {
 } from './execution';
 import type { Message } from './message';
 import type { Attrs } from './session';
-import type { DeliveryTarget, RuntimeBindingEvent } from './runtime_bindings';
+import type { DeliveryTarget, TriggerEvent } from './runtime_bindings';
 import {
   AssistantDeliveryTracker,
-  dispatchRuntimeBindingEvent,
+  dispatchRuntimeEvent,
   findRuntimeBinding,
+  isDiscordMessageEvent,
   mergeBindingDefaults,
   passesDiscordBehavior,
   resolveRuntimeDelivery,
@@ -24,37 +25,37 @@ import {
 } from './runtime_dispatch';
 import type { RuntimeBundle } from './runtime_bindings';
 
-export interface RuntimeActivity {
+export interface RuntimePresence {
   kind: string;
 }
 
-export interface RuntimeActivityHandle {
+export interface RuntimePresenceHandle {
   stop(): Promise<void> | void;
 }
 
-export interface RuntimeSourceEmitOptions {
+export interface RuntimeGatewayEmitOptions {
   content?: string;
   attrs?: Record<string, unknown>;
 }
 
-export interface RuntimeSourceContext<
-  TEvent extends RuntimeBindingEvent = RuntimeBindingEvent,
+export interface RuntimeGatewayContext<
+  TEvent extends TriggerEvent = TriggerEvent,
 > {
-  emit(event: TEvent, options?: RuntimeSourceEmitOptions): Promise<void>;
+  emit(event: TEvent, options?: RuntimeGatewayEmitOptions): Promise<void>;
 }
 
-export interface RuntimeSourceDriver<
-  TEvent extends RuntimeBindingEvent = RuntimeBindingEvent,
+export interface RuntimeGatewayDriver<
+  TEvent extends TriggerEvent = TriggerEvent,
 > {
   type: string;
-  start(ctx: RuntimeSourceContext<TEvent>): Promise<void> | void;
+  start(ctx: RuntimeGatewayContext<TEvent>): Promise<void> | void;
   stop?(): Promise<void> | void;
 }
 
 export interface RuntimeDeliveryContext {
   conversationId: string;
   idempotencyKey: string;
-  event: RuntimeBindingEvent;
+  event: TriggerEvent;
   delivery: DeliveryTarget;
   platformBinding?: unknown;
 }
@@ -70,36 +71,36 @@ export interface RuntimeDeliveryDriver<
   ): Promise<unknown> | unknown;
 }
 
-export interface RuntimeActivityContext {
-  event: RuntimeBindingEvent;
+export interface RuntimePresenceContext {
+  event: TriggerEvent;
   delivery: DeliveryTarget;
 }
 
-export interface RuntimeActivityDriver<
+export interface RuntimePresenceDriver<
   TTarget extends DeliveryTarget = DeliveryTarget,
 > {
   platform: string;
   start(
-    ctx: RuntimeActivityContext,
+    ctx: RuntimePresenceContext,
     target: TTarget,
-    activity: RuntimeActivity,
+    presence: RuntimePresence,
   ):
-    | Promise<RuntimeActivityHandle | undefined>
-    | RuntimeActivityHandle
+    | Promise<RuntimePresenceHandle | undefined>
+    | RuntimePresenceHandle
     | undefined;
 }
 
 export interface RuntimeAdapter {
   name: string;
-  sources?: readonly RuntimeSourceDriver[];
+  gateways?: readonly RuntimeGatewayDriver[];
   deliveries?: readonly RuntimeDeliveryDriver[];
-  activities?: readonly RuntimeActivityDriver[];
+  presences?: readonly RuntimePresenceDriver[];
   observers?: readonly ObserverLike[];
 }
 
 export interface RuntimeServerErrorContext {
-  sourceType: string;
-  event: RuntimeBindingEvent;
+  triggerType: string;
+  event: TriggerEvent;
   delivery: DeliveryTarget | undefined;
   error: unknown;
 }
@@ -108,7 +109,7 @@ export interface RuntimeServerOptions {
   bundle: RuntimeBundle;
   runtime: PromptTrailApp;
   adapters: readonly RuntimeAdapter[];
-  activity?: RuntimeActivity | false;
+  presence?: RuntimePresence | false;
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
@@ -138,9 +139,9 @@ export class RuntimeServer {
   private readonly runtimeObservers: ObserverLike[];
   private readonly runtimeObserverDisposers: Array<() => void> = [];
   private readonly conversationLocks = new Map<string, Promise<void>>();
-  private readonly sources: RuntimeSourceDriver[] = [];
+  private readonly gateways: RuntimeGatewayDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
-  private readonly activities = new Map<string, RuntimeActivityDriver>();
+  private readonly presences = new Map<string, RuntimePresenceDriver>();
   private readonly eventSeqByConversation = new Map<string, number>();
 
   constructor(private readonly options: RuntimeServerOptions) {
@@ -155,12 +156,12 @@ export class RuntimeServer {
       ...options.observerDeliveryBindings,
     });
     for (const adapter of options.adapters) {
-      this.sources.push(...(adapter.sources ?? []));
+      this.gateways.push(...(adapter.gateways ?? []));
       for (const delivery of adapter.deliveries ?? []) {
         this.deliveries.set(delivery.platform, delivery);
       }
-      for (const activity of adapter.activities ?? []) {
-        this.activities.set(activity.platform, activity);
+      for (const presence of adapter.presences ?? []) {
+        this.presences.set(presence.platform, presence);
       }
     }
   }
@@ -168,27 +169,27 @@ export class RuntimeServer {
   async start(): Promise<void> {
     this.registerRuntimeObservers();
     await this.retryPendingDeliveries();
-    for (const source of this.sources) {
-      await source.start({
+    for (const gateway of this.gateways) {
+      await gateway.start({
         emit: (event, emitOptions) =>
-          this.dispatch(source.type, event, emitOptions),
+          this.dispatch(gateway.type, event, emitOptions),
       });
     }
   }
 
   async stop(): Promise<void> {
-    for (const source of this.sources) {
-      await source.stop?.();
+    for (const gateway of this.gateways) {
+      await gateway.stop?.();
     }
     this.unregisterRuntimeObservers();
   }
 
   async dispatch(
-    sourceType: string,
-    event: RuntimeBindingEvent,
-    emitOptions: RuntimeSourceEmitOptions = {},
+    triggerType: string,
+    event: TriggerEvent,
+    emitOptions: RuntimeGatewayEmitOptions = {},
   ): Promise<void> {
-    const binding = findRuntimeBinding(this.options.bundle, sourceType, event);
+    const binding = findRuntimeBinding(this.options.bundle, triggerType, event);
     if (!binding) {
       return;
     }
@@ -198,7 +199,7 @@ export class RuntimeServer {
       binding.defaults,
     );
     if (
-      event.source === 'discord' &&
+      isDiscordMessageEvent(event) &&
       !passesDiscordBehavior(event, defaults.behavior)
     ) {
       return;
@@ -207,10 +208,10 @@ export class RuntimeServer {
     const delivery = resolveRuntimeDelivery(defaults.delivery, event);
     const conversationId = binding.conversation(event);
     await this.withConversationLock(conversationId, async () => {
-      const activityHandle = await this.startActivity(event, delivery);
+      const presenceHandle = await this.startPresence(event, delivery);
 
       try {
-        const dispatched = await dispatchRuntimeBindingEvent({
+        const dispatched = await dispatchRuntimeEvent({
           app: this.options.runtime,
           binding,
           event,
@@ -221,7 +222,7 @@ export class RuntimeServer {
         await this.deliverAssistantMessages(event, dispatched);
       } catch (error) {
         await this.deliverError(
-          sourceType,
+          triggerType,
           conversationId,
           event,
           delivery,
@@ -234,7 +235,7 @@ export class RuntimeServer {
           throw error;
         }
       } finally {
-        await activityHandle?.stop();
+        await presenceHandle?.stop();
       }
     });
   }
@@ -285,27 +286,27 @@ export class RuntimeServer {
     }
   }
 
-  private async startActivity(
-    event: RuntimeBindingEvent,
+  private async startPresence(
+    event: TriggerEvent,
     delivery: DeliveryTarget | undefined,
-  ): Promise<RuntimeActivityHandle | undefined> {
-    if (!delivery || this.options.activity === false) {
+  ): Promise<RuntimePresenceHandle | undefined> {
+    if (!delivery || this.options.presence === false) {
       return undefined;
     }
-    const driver = this.activities.get(delivery.platform);
+    const driver = this.presences.get(delivery.platform);
     if (!driver) {
       return undefined;
     }
-    const activityDelivery = cloneEventRawValue(delivery);
+    const presenceDelivery = cloneEventRawValue(delivery);
     return driver.start(
       { event, delivery: cloneEventRawValue(delivery) },
-      activityDelivery,
-      this.options.activity ?? { kind: 'processing' },
+      presenceDelivery,
+      this.options.presence ?? { kind: 'processing' },
     );
   }
 
   private async deliverAssistantMessages(
-    event: RuntimeBindingEvent,
+    event: TriggerEvent,
     dispatched: RuntimeDispatchResult,
   ): Promise<void> {
     if (!dispatched.delivery) {
@@ -480,7 +481,7 @@ export class RuntimeServer {
   private async emitDeliveryEvent(
     type: 'delivery.pending' | 'delivery.completed' | 'delivery.failed',
     options: {
-      event: RuntimeBindingEvent;
+      event: TriggerEvent;
       conversationId: string;
       delivery: DeliveryTarget;
       deliveryAttempt: {
@@ -556,14 +557,14 @@ export class RuntimeServer {
   }
 
   private async deliverError(
-    sourceType: string,
+    triggerType: string,
     conversationId: string,
-    event: RuntimeBindingEvent,
+    event: TriggerEvent,
     delivery: DeliveryTarget | undefined,
     error: unknown,
   ): Promise<void> {
     const message = this.resolveErrorMessage({
-      sourceType,
+      triggerType,
       event,
       delivery,
       error,
@@ -580,7 +581,7 @@ export class RuntimeServer {
       {
         conversationId,
         idempotencyKey: runtimeErrorDeliveryKey(
-          sourceType,
+          triggerType,
           conversationId,
           event,
         ),
@@ -651,7 +652,7 @@ function pendingDeliveriesByRun(
   return [...grouped.entries()];
 }
 
-function retryDeliveryEvent(runId: string): RuntimeBindingEvent {
+function retryDeliveryEvent(runId: string): TriggerEvent {
   // Startup retries do not have the original source event in memory. Delivery
   // drivers must use the persisted delivery target for routing on this path.
   return {
@@ -665,13 +666,13 @@ function retryDeliveryEvent(runId: string): RuntimeBindingEvent {
 }
 
 function runtimeErrorDeliveryKey(
-  sourceType: string,
+  triggerType: string,
   conversationId: string,
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): string {
   return `runtime-error:${fnv1a(
     stableStringify({
-      sourceType,
+      triggerType,
       conversationId,
       event,
     }),

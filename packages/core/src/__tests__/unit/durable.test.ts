@@ -3,7 +3,7 @@ import {
   createCheckpointOnceBoundary,
   createCheckpointOnceMemoStore,
 } from '../../checkpoint_continuation';
-import { PromptTrail, manualSource, memoryStore } from '../../durable';
+import { PromptTrail, manualGateway, memoryStore } from '../../durable';
 import type {
   AssistantDeliveryOutboxEntry,
   DurableRunStore,
@@ -906,10 +906,10 @@ describe('checkpoint app runtime', () => {
     ).toHaveLength(1);
   });
 
-  it('uses app checkpoint defaults for send and source-created runs', async () => {
+  it('uses app checkpoint defaults for send and gateway-created runs', async () => {
     const defaultStore = memoryStore();
     const disabledStore = memoryStore();
-    const source = manualSource();
+    const source = manualGateway();
     const assistant = Agent.create('send-default')
       .inbox('inbound')
       .assistant('reply', () => 'hello');
@@ -922,7 +922,7 @@ describe('checkpoint app runtime', () => {
     });
     const ephemeralApp = PromptTrail.app({
       agents: { assistant },
-      sources: { manual: source },
+      gateways: { manual: source },
       store: disabledStore,
     });
 
@@ -983,8 +983,8 @@ describe('checkpoint app runtime', () => {
     ]);
   });
 
-  it('routes events from app sources into checkpoint runs', async () => {
-    const source = manualSource();
+  it('routes events from app gateways into checkpoint runs', async () => {
+    const source = manualGateway();
     const assistant = Agent.create('assistant')
       .system('system', 'System')
       .inbox('inbox')
@@ -995,7 +995,7 @@ describe('checkpoint app runtime', () => {
       .awaitInput('next');
     const app = PromptTrail.app({
       agents: { assistant },
-      sources: { manual: source },
+      gateways: { manual: source },
       store: memoryStore(),
     });
 

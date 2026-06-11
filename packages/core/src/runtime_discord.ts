@@ -15,9 +15,9 @@ import type {
 } from './runtime_bindings';
 import { isConcreteDiscordDeliveryTarget } from './runtime_dispatch';
 import type {
-  RuntimeActivityHandle,
+  RuntimePresenceHandle,
   RuntimeAdapter,
-  RuntimeSourceContext,
+  RuntimeGatewayContext,
 } from './runtime_server';
 
 export interface DiscordGatewayOptions {
@@ -81,7 +81,7 @@ export function discordGateway(options: DiscordGatewayOptions): RuntimeAdapter {
   const client = options.client ?? createDiscordClient(options.clientOptions);
   return {
     name: 'discord',
-    sources: [
+    gateways: [
       {
         type: 'discord.messages',
         async start(ctx) {
@@ -125,13 +125,13 @@ export function discordGateway(options: DiscordGatewayOptions): RuntimeAdapter {
         },
       },
     ],
-    activities: [
+    presences: [
       {
         platform: 'discord',
-        async start(_ctx, target, activity) {
+        async start(_ctx, target, presence) {
           if (
             !isConcreteDiscordDeliveryTarget(target) ||
-            (activity.kind !== 'typing' && activity.kind !== 'processing')
+            (presence.kind !== 'typing' && presence.kind !== 'processing')
           ) {
             return undefined;
           }
@@ -212,7 +212,7 @@ export function discordProgressObserver(
 }
 
 export async function handleDiscordMessage(
-  ctx: RuntimeSourceContext<DiscordMessageEvent>,
+  ctx: RuntimeGatewayContext<DiscordMessageEvent>,
   message: DiscordMessage,
   options: Pick<DiscordGatewayOptions, 'stripBotMention'> = {},
 ): Promise<void> {
@@ -277,7 +277,7 @@ export async function resolveDiscordDeliveryChannel(
 export async function startDiscordTyping(
   client: Client,
   delivery: ConcreteDiscordDeliveryTarget,
-): Promise<RuntimeActivityHandle | undefined> {
+): Promise<RuntimePresenceHandle | undefined> {
   const target = await resolveDiscordDeliveryChannel(client, delivery).catch(
     () => undefined,
   );

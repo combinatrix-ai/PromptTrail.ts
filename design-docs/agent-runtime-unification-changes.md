@@ -356,24 +356,24 @@ that replay systems get for free.
 
 ## 5. App / sources: generic events, name disambiguation
 
-- [ ] **5.1 Generic `Trigger<TEvent>` for event sources** (renamed from the
+- [x] **5.1 Generic `Trigger<TEvent>` for event sources** (renamed from the
       earlier `Source<TEvent>` plan — §9.8) and infer `TEvent` in the binding
       builder. Remove the closed
       `RuntimeBindingEvent = DiscordMessageEvent | CronEvent` union. (`runtime_bindings.ts`)
 - [ ] **5.2 Move platform sources to packages.** `discord` / `cron` become the
       first event-source packages, not core unions; `slack`/`github` add without
       editing core. (`runtime_bindings.ts`, `runtime_discord.ts`)
-- [ ] **5.3 Resolve the "source" name collision.** Node content stays
+- [x] **5.3 Resolve the "source" name collision.** Node content stays
       `Source.llm()`; app event wiring is **`app.on(eventSource, builder)`**
       (decided — rename the existing `.bind(...)` to `.on(...)`). The binding's
       delivery setter is `.reply(...)`. (`durable.ts`, `runtime_bindings.ts`,
       exports)
-- [ ] **5.4 App `defaults` are constructor-only (decided).** Accept `defaults`
+- [x] **5.4 App `defaults` are constructor-only (decided).** Accept `defaults`
       (durable, delivery, ...) only in `PromptTrail.app({ defaults })`; no mutable
       `.defaults(...)` setter. Resolution order: binding override > app defaults >
       built-in. Per-binding needs are met by binding-level overrides (`.durable(...)`,
       `.reply(...)`), not by mutating app state. (`durable.ts`)
-- [ ] **5.5 Defer binding-level middleware/hooks (decided).** v1 ships agent +
+- [x] **5.5 Defer binding-level middleware/hooks (decided).** v1 ships agent +
       app handler layers only; the ordering model keeps the binding slot reserved for
       a later release. Do not implement binding-level handler injection now.
       (`durable.ts`, `runtime_bindings.ts`)
@@ -664,7 +664,7 @@ the §3 DSL work; do them as part of §3.
       examples)
 - [ ] **9.7 Remove `Agent.run` references** (doc phantom; `execute({ input })`
       only).
-- [ ] **9.8 Consistency renames:** `ctx.durable.*` →
+- [x] **9.8 Consistency renames:** `ctx.durable.*` →
       `ctx.once` (scope option per §8.5); `app.source()` → `app.gateway()`; event-source
       type = `Trigger<TEvent>` (not `Source<TEvent>`/`EventSource`);
       `.durable(...)` overrides → `.checkpoint(...)`; `app.activity()` →

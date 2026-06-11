@@ -4,10 +4,11 @@ import type { Attrs, Vars } from './session';
 import type {
   BindingDefaults,
   ConcreteDiscordDeliveryTarget,
+  CronEvent,
   DeliveryTarget,
   DiscordMessageEvent,
   RuntimeBinding,
-  RuntimeBindingEvent,
+  TriggerEvent,
   RuntimeBundle,
 } from './runtime_bindings';
 import { assistantDeliveryKey } from './runtime_delivery_keys';
@@ -24,7 +25,7 @@ export interface RuntimeDispatchContext extends Record<string, unknown> {
   channelPrompt?: string;
 }
 
-export interface RuntimeDispatchOptions<TEvent extends RuntimeBindingEvent> {
+export interface RuntimeDispatchOptions<TEvent extends TriggerEvent> {
   app: PromptTrailApp;
   binding: RuntimeBinding<TEvent>;
   event: TEvent;
@@ -53,14 +54,14 @@ export interface PendingAssistantDelivery<TAttrs extends Attrs = Attrs> {
   target?: DeliveryTarget;
 }
 
-export function findRuntimeBinding<TEvent extends RuntimeBindingEvent>(
+export function findRuntimeBinding<TEvent extends TriggerEvent>(
   bundle: RuntimeBundle,
-  sourceType: string,
+  triggerType: string,
   event: TEvent,
 ): RuntimeBinding<TEvent> | undefined {
   return bundle.bindings.find(
     (binding) =>
-      binding.source.type === sourceType &&
+      binding.trigger.type === triggerType &&
       binding.filters.every((filter) =>
         (filter as (candidate: TEvent) => boolean)(event),
       ),
@@ -79,7 +80,7 @@ export function mergeBindingDefaults(
   };
 }
 
-export function resolveRuntimeInput<TEvent extends RuntimeBindingEvent>(
+export function resolveRuntimeInput<TEvent extends TriggerEvent>(
   binding: RuntimeBinding<TEvent>,
   event: TEvent,
 ): string {
@@ -89,12 +90,16 @@ export function resolveRuntimeInput<TEvent extends RuntimeBindingEvent>(
   if (typeof binding.input === 'string') {
     return binding.input;
   }
-  return 'content' in event ? event.content : event.job.name;
+  if (typeof event.content === 'string') {
+    return event.content;
+  }
+  if (isCronEvent(event)) {
+    return event.job.name;
+  }
+  return '';
 }
 
-export function resolveRuntimeBindingContext<
-  TEvent extends RuntimeBindingEvent,
->(
+export function resolveRuntimeBindingContext<TEvent extends TriggerEvent>(
   binding: RuntimeBinding<TEvent>,
   event: TEvent,
 ): Record<string, unknown> | undefined {
@@ -108,19 +113,19 @@ export function resolveRuntimeBindingContext<
 
 export function resolveRuntimeDelivery(
   delivery: DeliveryTarget | undefined,
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): DeliveryTarget | undefined {
   if (!delivery) {
     return undefined;
   }
   if (delivery.platform === 'origin') {
-    if (event.source === 'cron') {
+    if (isCronEvent(event)) {
       return event.job.origin;
     }
-    return discordOrigin(event);
+    return isDiscordMessageEvent(event) ? discordOrigin(event) : undefined;
   }
   if (delivery.platform === 'discord' && 'kind' in delivery) {
-    return event.source === 'discord' ? discordOrigin(event) : undefined;
+    return isDiscordMessageEvent(event) ? discordOrigin(event) : undefined;
   }
   return delivery;
 }
@@ -129,7 +134,7 @@ export function runtimeContextFromDefaults(
   conversationId: string,
   defaults: BindingDefaults,
   delivery: DeliveryTarget | undefined,
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): RuntimeDispatchContext {
   const channelPrompt = resolveChannelPrompt(defaults, event);
   const skills = resolveChannelSkills(defaults, event);
@@ -145,8 +150,8 @@ export function runtimeContextFromDefaults(
   };
 }
 
-export async function dispatchRuntimeBindingEvent<
-  TEvent extends RuntimeBindingEvent,
+export async function dispatchRuntimeEvent<
+  TEvent extends TriggerEvent,
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
 >(
@@ -270,9 +275,9 @@ export function isConcreteDiscordDeliveryTarget(
 }
 
 export function runtimeEventAttrs(
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): Record<string, unknown> {
-  if (event.source === 'discord') {
+  if (isDiscordMessageEvent(event)) {
     return {
       author: event.author,
       authorId: event.authorId,
@@ -281,10 +286,13 @@ export function runtimeEventAttrs(
       thread: event.thread,
     };
   }
-  return {
-    job: event.job.name,
-    jobId: event.job.id,
-  };
+  if (isCronEvent(event)) {
+    return {
+      job: event.job.name,
+      jobId: event.job.id,
+    };
+  }
+  return {};
 }
 
 export class AssistantDeliveryTracker {
@@ -332,9 +340,9 @@ function discordOrigin(
 
 function resolveChannelPrompt(
   defaults: BindingDefaults,
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): string | undefined {
-  if (event.source !== 'discord') {
+  if (!isDiscordMessageEvent(event)) {
     return undefined;
   }
   const prompts = defaults.context?.channelPrompts as
@@ -352,9 +360,9 @@ function resolveChannelPrompt(
 
 function resolveChannelSkills(
   defaults: BindingDefaults,
-  event: RuntimeBindingEvent,
+  event: TriggerEvent,
 ): readonly string[] | undefined {
-  if (event.source !== 'discord') {
+  if (!isDiscordMessageEvent(event)) {
     return defaults.skills;
   }
   const bindings = defaults.context?.channelSkillBindings as
@@ -371,4 +379,25 @@ function resolveChannelSkills(
       binding.channel === event.channel || binding.channel === event.channelId,
   );
   return exactThread?.skills ?? parent?.skills ?? defaults.skills;
+}
+
+export function isDiscordMessageEvent(
+  event: TriggerEvent,
+): event is DiscordMessageEvent {
+  return (
+    event.source === 'discord' &&
+    typeof event.channel === 'string' &&
+    typeof event.channelId === 'string'
+  );
+}
+
+export function isCronEvent(event: TriggerEvent): event is CronEvent {
+  const job = event.job as { id?: unknown; name?: unknown } | undefined;
+  return (
+    event.source === 'cron' &&
+    typeof job === 'object' &&
+    job !== null &&
+    typeof job.id === 'string' &&
+    typeof job.name === 'string'
+  );
 }

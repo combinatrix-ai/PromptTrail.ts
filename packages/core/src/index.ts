@@ -26,9 +26,9 @@ export { MemoryRunStore, PromptTrail, memoryStore } from './durable';
 export type {
   AssistantDeliveryOutboxEntry,
   AssistantDeliveryOutboxInput,
+  AppGateway,
   DurableRunResult,
   DurableRunStore,
-  EventSource,
   Inbound,
   InboundKind,
   InboundRuntimeEvent,
@@ -63,17 +63,17 @@ export type {
   CodexTurnResult,
 } from './codex_app_server';
 export type {
-  RuntimeActivity,
-  RuntimeActivityContext,
-  RuntimeActivityDriver,
-  RuntimeActivityHandle,
+  RuntimePresence,
+  RuntimePresenceContext,
+  RuntimePresenceDriver,
+  RuntimePresenceHandle,
   RuntimeAdapter,
   RuntimeDeliveryContext,
   RuntimeDeliveryDriver,
   RuntimeServerErrorContext,
-  RuntimeSourceContext,
-  RuntimeSourceDriver,
-  RuntimeSourceEmitOptions,
+  RuntimeGatewayContext,
+  RuntimeGatewayDriver,
+  RuntimeGatewayEmitOptions,
 } from './runtime_server';
 export { Agent, Parallel, Structured } from './templates';
 export type {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PromptTrail } from '../../durable';
 import { Agent } from '../../templates';
-import { Delivery, bind, cron, discord } from '../../runtime_bindings';
+import { Delivery, on, cron, discord } from '../../runtime_bindings';
 import {
   deterministicAssistant,
   mockCron,
@@ -27,7 +27,7 @@ function workroomFixture() {
       checkpoint: true,
     },
     bindings: [
-      bind(discord.messages())
+      on(discord.messages())
         .where(discord.notBot())
         .where(discord.inChannels(['general', 'cloud-lab', 'news']))
         .toAgent('main')
@@ -37,7 +37,7 @@ function workroomFixture() {
             threadSessionsPerUser: false,
           }),
         )
-        .delivery(discord.replyToOriginThread())
+        .reply(discord.replyToOriginThread())
         .toolsets([
           'web',
           'terminal',
@@ -65,20 +65,20 @@ function workroomFixture() {
           threadRequireMention: false,
         }),
 
-      bind(cron.schedule('every 360m'))
+      on(cron.schedule('every 360m'))
         .name('HN top100 digest')
         .toAgent('main')
         .conversation(({ job }) => `cron:${job.id}`)
         .input((event) => String(event.scriptOutput ?? event.job.name))
-        .delivery(discord.channel('news'))
+        .reply(discord.channel('news'))
         .toolsets(['web', 'terminal', 'delegation']),
 
-      bind(cron.schedule('0 20 * * *'))
+      on(cron.schedule('0 20 * * *'))
         .name('Supplier earnings calendar daily update')
         .toAgent('main')
         .conversation(({ job }) => `cron:${job.id}`)
         .input('Maintain the supplier earnings calendar.')
-        .delivery(Delivery.origin())
+        .reply(Delivery.origin())
         .skills(['supplier-research', 'api-change-watchers'])
         .toolsets(['terminal', 'file', 'web'])
         .workdir('/home/user/notes/Work/suppliers'),
@@ -114,7 +114,7 @@ function mentionGatedFixture() {
     name: 'mention-gated',
     agents: { main },
     bindings: [
-      bind(discord.messages())
+      on(discord.messages())
         .where(discord.notBot())
         .toAgent('main')
         .conversation(
@@ -162,7 +162,7 @@ function threadPerUserFixture() {
     name: 'thread-per-user',
     agents: { main },
     bindings: [
-      bind(discord.messages())
+      on(discord.messages())
         .where(discord.notBot())
         .where(discord.inChannels(['cloud-lab']))
         .toAgent('main')
@@ -208,7 +208,7 @@ function channelContextFixture() {
     name: 'channel-context',
     agents: { main },
     bindings: [
-      bind(discord.messages())
+      on(discord.messages())
         .where(discord.notBot())
         .where(discord.inChannels(['cloud-lab']))
         .toAgent('main')
@@ -259,7 +259,7 @@ function channelContextFixture() {
 
 describe('runtime bindings with mock Discord and cron', () => {
   it('merges fluent binding behavior defaults across calls', () => {
-    const built = bind(discord.messages())
+    const built = on(discord.messages())
       .toAgent('main')
       .conversation(() => 'discord:test')
       .behavior({

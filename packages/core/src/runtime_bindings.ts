@@ -1,6 +1,11 @@
 import type { PromptTrailRegisteredAgent, RunStore } from './durable';
 
-export interface DiscordMessageEvent {
+export interface TriggerEvent {
+  source: string;
+  [key: string]: unknown;
+}
+
+export interface DiscordMessageEvent extends TriggerEvent {
   source: 'discord';
   guild: string;
   channel: string;
@@ -14,7 +19,7 @@ export interface DiscordMessageEvent {
   isDM?: boolean;
 }
 
-export interface CronEvent {
+export interface CronEvent extends TriggerEvent {
   source: 'cron';
   job: {
     id: string;
@@ -25,21 +30,19 @@ export interface CronEvent {
   payload?: Record<string, unknown>;
 }
 
-export type RuntimeBindingEvent = DiscordMessageEvent | CronEvent;
-
-export type RuntimeFilter<TEvent extends RuntimeBindingEvent> = (
+export type RuntimeFilter<TEvent extends TriggerEvent> = (
   event: TEvent,
 ) => boolean;
 
-export type ConversationResolver<TEvent extends RuntimeBindingEvent> = (
+export type ConversationResolver<TEvent extends TriggerEvent> = (
   event: TEvent,
 ) => string;
 
-export type InputResolver<TEvent extends RuntimeBindingEvent> =
+export type InputResolver<TEvent extends TriggerEvent> =
   | string
   | ((event: TEvent & Record<string, unknown>) => string);
 
-export type RuntimeContextResolver<TEvent extends RuntimeBindingEvent> =
+export type RuntimeContextResolver<TEvent extends TriggerEvent> =
   | Record<string, unknown>
   | ((event: TEvent & Record<string, unknown>) => Record<string, unknown>);
 
@@ -91,13 +94,13 @@ export interface DiscordBindingBehavior {
   maxAttachmentBytes?: number;
 }
 
-export interface RuntimeSource<_TEvent extends RuntimeBindingEvent> {
+export interface Trigger<_TEvent extends TriggerEvent = TriggerEvent> {
   type: string;
   schedule?: string;
 }
 
-export interface RuntimeBinding<TEvent extends RuntimeBindingEvent> {
-  source: RuntimeSource<TEvent>;
+export interface RuntimeBinding<TEvent extends TriggerEvent> {
+  trigger: Trigger<TEvent>;
   filters: RuntimeFilter<TEvent>[];
   agent: string;
   conversation: ConversationResolver<TEvent>;
@@ -107,7 +110,7 @@ export interface RuntimeBinding<TEvent extends RuntimeBindingEvent> {
   name?: string;
 }
 
-export type RuntimeBindingLike<TEvent extends RuntimeBindingEvent> =
+export type RuntimeBindingLike<TEvent extends TriggerEvent> =
   | RuntimeBinding<TEvent>
   | BindingBuilder<TEvent>;
 
@@ -117,7 +120,7 @@ export interface RuntimeBundle {
   name: string;
   agents: Record<string, PromptTrailRegisteredAgent<any, any>>;
   defaults: BindingDefaults;
-  bindings: RuntimeBinding<RuntimeBindingEvent>[];
+  bindings: RuntimeBinding<TriggerEvent>[];
 }
 
 export interface RuntimeBundleOptions {
@@ -127,7 +130,7 @@ export interface RuntimeBundleOptions {
   bindings?: RuntimeBindingLike<any>[];
 }
 
-export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
+export class BindingBuilder<TEvent extends TriggerEvent> {
   private filters: RuntimeFilter<TEvent>[] = [];
   private agentName?: string;
   private agentRef?: RuntimeAgentRef;
@@ -137,7 +140,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
   private bindingDefaults: BindingDefaults = {};
   private bindingName?: string;
 
-  constructor(private readonly source: RuntimeSource<TEvent>) {}
+  constructor(private readonly trigger: Trigger<TEvent>) {}
 
   where(filter: RuntimeFilter<TEvent>): this {
     this.filters.push(filter);
@@ -164,7 +167,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
     return this;
   }
 
-  delivery(delivery: DeliveryTarget): this {
+  reply(delivery: DeliveryTarget): this {
     return this.defaults({ delivery });
   }
 
@@ -232,7 +235,7 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
       throw new Error('Runtime binding is missing .conversation(...)');
     }
     return {
-      source: this.source,
+      trigger: this.trigger,
       filters: [...this.filters],
       agent: this.agentName,
       conversation: this.conversationResolver,
@@ -244,10 +247,10 @@ export class BindingBuilder<TEvent extends RuntimeBindingEvent> {
   }
 }
 
-export function bind<TEvent extends RuntimeBindingEvent>(
-  source: RuntimeSource<TEvent>,
+export function on<TEvent extends TriggerEvent>(
+  trigger: Trigger<TEvent>,
 ): BindingBuilder<TEvent> {
-  return new BindingBuilder(source);
+  return new BindingBuilder(trigger);
 }
 
 function resolveRuntimeAgentName(agentRef: RuntimeAgentRef): string {
@@ -287,7 +290,7 @@ function channelMatches(
 }
 
 export const discord = {
-  messages(): RuntimeSource<DiscordMessageEvent> {
+  messages(): Trigger<DiscordMessageEvent> {
     return { type: 'discord.messages' };
   },
 
@@ -333,7 +336,7 @@ export const discord = {
 };
 
 export const cron = {
-  schedule(schedule: string): RuntimeSource<CronEvent> {
+  schedule(schedule: string): Trigger<CronEvent> {
     return { type: 'cron.schedule', schedule };
   },
 };
@@ -359,7 +362,7 @@ export function runtimeBundle(options: RuntimeBundleOptions): RuntimeBundle {
   };
 }
 
-function isBindingBuilder<TEvent extends RuntimeBindingEvent>(
+function isBindingBuilder<TEvent extends TriggerEvent>(
   bindingLike: RuntimeBindingLike<TEvent>,
 ): bindingLike is BindingBuilder<TEvent> {
   return typeof (bindingLike as { build?: unknown }).build === 'function';

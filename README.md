@@ -265,13 +265,13 @@ const support = Agent.create('support')
 const app = PromptTrail.app({ store: memoryStore() })
   .agent(support)
   .adapter(discordGateway({ token: process.env.DISCORD_TOKEN }))
-  .bind(discord.messages(), (binding) =>
+  .on(discord.messages(), (binding) =>
     binding
       .where(discord.notBot())
       .to(support)
       .conversation(discord.sessionKey({ threadSessionsPerUser: true }))
       .checkpoint()
-      .delivery(discord.replyToOriginThread()),
+      .reply(discord.replyToOriginThread()),
   );
 
 const bundle = app.bundle('support-runtime'); // structural runtime IR

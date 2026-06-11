@@ -10,25 +10,25 @@ import {
 import type { HookDefinition, MiddlewareDefinition } from './interceptors';
 import { assistantDeliveryKey } from './runtime_delivery_keys';
 import {
-  bind as createRuntimeBindingBuilder,
+  on as createRuntimeBindingBuilder,
   runtimeBundle as createRuntimeBundle,
   type BindingDefaults,
   type DeliveryTarget,
   type RuntimeBinding,
-  type RuntimeBindingEvent,
+  type TriggerEvent,
   type RuntimeBindingLike,
   type RuntimeBundle,
-  type RuntimeSource,
+  type Trigger,
 } from './runtime_bindings';
 import {
   server,
-  type RuntimeActivity,
-  type RuntimeActivityDriver,
+  type RuntimePresence,
+  type RuntimePresenceDriver,
   type RuntimeAdapter,
   type RuntimeDeliveryDriver,
   type RuntimeServer,
   type RuntimeServerErrorContext,
-  type RuntimeSourceDriver,
+  type RuntimeGatewayDriver,
 } from './runtime_server';
 import { Session, type Attrs, type Vars } from './session';
 import {
@@ -216,7 +216,7 @@ export interface InboundRuntimeEvent {
   attrs?: Attrs;
 }
 
-export interface EventSource {
+export interface AppGateway {
   start(
     emit: (event: InboundRuntimeEvent) => Promise<void>,
   ): Promise<void> | void;
@@ -367,14 +367,14 @@ export interface PromptTrailAppOptions {
   store?: DurableRunStore;
   defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
-  sources?: Record<string, EventSource>;
+  gateways?: Record<string, AppGateway>;
   middleware?: readonly MiddlewareDefinition<any, any>[];
   hooks?: readonly HookDefinition<any, any>[];
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
   adapters?: readonly RuntimeAdapter[];
-  activity?: RuntimeActivity | false;
+  presence?: RuntimePresence | false;
   errorMessage?:
     | string
     | ((ctx: RuntimeServerErrorContext) => string | undefined);
@@ -384,8 +384,8 @@ export class PromptTrailApp {
   private readonly name: string;
   private readonly store: DurableRunStore;
   private readonly agents = new Map<string, Agent<any, any>>();
-  private readonly sources = new Map<string, EventSource>();
-  private readonly runtimeBindings: RuntimeBinding<RuntimeBindingEvent>[] = [];
+  private readonly gateways = new Map<string, AppGateway>();
+  private readonly runtimeBindings: RuntimeBinding<TriggerEvent>[] = [];
   private readonly runtimeDefaults: BindingDefaults;
   private readonly middleware: readonly MiddlewareDefinition<any, any>[];
   private readonly hooks: readonly HookDefinition<any, any>[];
@@ -398,7 +398,7 @@ export class PromptTrailApp {
   private nextObserverBusIndex = 0;
   private readonly defaultCheckpoint?: CheckpointOption;
   private readonly runtimeAdapters: RuntimeAdapter[] = [];
-  private readonly runtimeActivity: RuntimeActivity | false | undefined;
+  private readonly runtimePresence: RuntimePresence | false | undefined;
   private readonly runtimeErrorMessage:
     | string
     | ((ctx: RuntimeServerErrorContext) => string | undefined)
@@ -433,7 +433,7 @@ export class PromptTrailApp {
     this.strictObservers = options.strictObservers;
     this.observerDeliveryBindingOptions = options.observerDeliveryBindings;
     this.runtimeAdapters.push(...(options.adapters ?? []));
-    this.runtimeActivity = options.activity;
+    this.runtimePresence = options.presence;
     this.runtimeErrorMessage = options.errorMessage;
     this.observerBus = new ObserverBus(options.observers ?? [], {
       strictObservers: options.strictObservers,
@@ -448,8 +448,8 @@ export class PromptTrailApp {
     )) {
       this.agent(name, registeredAgent);
     }
-    for (const [name, source] of Object.entries(options.sources ?? {})) {
-      this.sources.set(name, source);
+    for (const [name, gateway] of Object.entries(options.gateways ?? {})) {
+      this.gateways.set(name, gateway);
     }
   }
 
@@ -478,22 +478,22 @@ export class PromptTrailApp {
     return this;
   }
 
-  source(source: RuntimeSourceDriver): this;
-  source(name: string, source: EventSource): this;
-  source(
-    nameOrSource: string | RuntimeSourceDriver,
-    maybeSource?: EventSource,
+  gateway(gateway: RuntimeGatewayDriver): this;
+  gateway(name: string, gateway: AppGateway): this;
+  gateway(
+    nameOrGateway: string | RuntimeGatewayDriver,
+    maybeGateway?: AppGateway,
   ): this {
-    if (typeof nameOrSource !== 'string') {
+    if (typeof nameOrGateway !== 'string') {
       return this.adapter({
-        name: `source:${nameOrSource.type}`,
-        sources: [nameOrSource],
+        name: `gateway:${nameOrGateway.type}`,
+        gateways: [nameOrGateway],
       });
     }
-    if (!maybeSource) {
-      throw new Error('PromptTrail.app.source requires an EventSource.');
+    if (!maybeGateway) {
+      throw new Error('PromptTrail.app.gateway requires an AppGateway.');
     }
-    this.sources.set(nameOrSource, maybeSource);
+    this.gateways.set(nameOrGateway, maybeGateway);
     return this;
   }
 
@@ -504,10 +504,10 @@ export class PromptTrailApp {
     });
   }
 
-  activity(driver: RuntimeActivityDriver): this {
+  presence(driver: RuntimePresenceDriver): this {
     return this.adapter({
-      name: `activity:${driver.platform}`,
-      activities: [driver],
+      name: `presence:${driver.platform}`,
+      presences: [driver],
     });
   }
 
@@ -516,13 +516,13 @@ export class PromptTrailApp {
     return this;
   }
 
-  bind<TEvent extends RuntimeBindingEvent>(
-    source: RuntimeSource<TEvent>,
+  on<TEvent extends TriggerEvent>(
+    trigger: Trigger<TEvent>,
     configure: (
       binding: ReturnType<typeof createRuntimeBindingBuilder<TEvent>>,
     ) => RuntimeBindingLike<TEvent> | void,
   ): this {
-    const builder = createRuntimeBindingBuilder(source);
+    const builder = createRuntimeBindingBuilder(trigger);
     const bindingLike = configure(builder) ?? builder;
     const compiled = createRuntimeBundle({
       name: this.name,
@@ -659,7 +659,7 @@ export class PromptTrailApp {
           bundle: this.bundle(),
           runtime: this,
           adapters: this.runtimeAdapters,
-          activity: this.runtimeActivity,
+          presence: this.runtimePresence,
           strictObservers: this.strictObservers,
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           errorMessage: this.runtimeErrorMessage,
@@ -667,16 +667,16 @@ export class PromptTrailApp {
       }
       await this.runtimeServer.start();
     }
-    for (const source of this.sources.values()) {
-      await source.start((event) => this.handleEvent(event));
+    for (const gateway of this.gateways.values()) {
+      await gateway.start((event) => this.handleEvent(event));
     }
   }
 
   async stop(): Promise<void> {
     await this.runtimeServer?.stop();
     this.runtimeServer = undefined;
-    for (const source of this.sources.values()) {
-      await source.stop?.();
+    for (const gateway of this.gateways.values()) {
+      await gateway.stop?.();
     }
   }
 
@@ -1582,7 +1582,7 @@ export function app(options: PromptTrailAppOptions = {}): PromptTrailApp {
   return new PromptTrailApp(options);
 }
 
-export function manualSource(): EventSource & {
+export function manualGateway(): AppGateway & {
   emit(event: InboundRuntimeEvent): Promise<void>;
 } {
   let emitEvent: ((event: InboundRuntimeEvent) => Promise<void>) | undefined;
@@ -1592,7 +1592,7 @@ export function manualSource(): EventSource & {
     },
     async emit(event) {
       if (!emitEvent) {
-        throw new Error('Manual source has not been started');
+        throw new Error('Manual gateway has not been started');
       }
       await emitEvent(event);
     },

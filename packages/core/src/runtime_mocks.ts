@@ -8,13 +8,13 @@ import {
   type DeliveryTarget,
   type DiscordMessageEvent,
   type RuntimeBinding,
-  type RuntimeBindingEvent,
+  type TriggerEvent,
   type RuntimeBundle,
 } from './runtime_bindings';
 import {
   AssistantDeliveryTracker,
   assistantDeliveryKey,
-  dispatchRuntimeBindingEvent,
+  dispatchRuntimeEvent,
   findRuntimeBinding,
   isConcreteDiscordDeliveryTarget,
   mergeBindingDefaults,
@@ -364,7 +364,7 @@ class MockRuntimeFixture {
   ): Promise<void> {
     const binding = this.options.bundle.bindings.find(
       (candidate) =>
-        candidate.source.type === 'cron.schedule' && candidate.name === name,
+        candidate.trigger.type === 'cron.schedule' && candidate.name === name,
     );
     if (!binding) {
       throw new Error(`Unknown mock cron job: ${name}`);
@@ -374,7 +374,7 @@ class MockRuntimeFixture {
       job: {
         id: slug(name),
         name,
-        schedule: binding.source.schedule ?? '',
+        schedule: binding.trigger.schedule ?? '',
         origin: this.cron.origin(name),
       },
       payload,
@@ -387,12 +387,12 @@ class MockRuntimeFixture {
     );
   }
 
-  private async dispatch<TEvent extends RuntimeBindingEvent>(
+  private async dispatch<TEvent extends TriggerEvent>(
     binding: RuntimeBinding<TEvent>,
     event: TEvent,
     defaults: BindingDefaults,
   ): Promise<void> {
-    const { conversationId, result } = await dispatchRuntimeBindingEvent({
+    const { conversationId, result } = await dispatchRuntimeEvent({
       app: this.app,
       binding,
       event,

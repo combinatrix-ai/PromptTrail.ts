@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PromptTrail, memoryStore } from '../../durable';
 import { Middleware } from '../../interceptors';
 import {
-  bind,
+  Delivery,
+  on,
   discord,
   type DeliveryTarget,
   type DiscordMessageEvent,
@@ -10,12 +11,12 @@ import {
 import { Agent } from '../../templates';
 import {
   assistantDeliveryKey,
-  dispatchRuntimeBindingEvent,
+  dispatchRuntimeEvent,
   mergeBindingDefaults,
 } from '../../runtime_dispatch';
 import {
   type RuntimeAdapter,
-  type RuntimeSourceContext,
+  type RuntimeGatewayContext,
 } from '../../runtime_server';
 import type { ObserverDeliveryBindingStore } from '../../execution';
 
@@ -62,8 +63,8 @@ describe('RuntimeServer', () => {
     ).toBe(assistantDeliveryKey(conversationId, 0, roundTrippedTarget));
   });
 
-  it('routes adapter source events through bindings and delivery drivers', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+  it('routes adapter gateway events through bindings and delivery drivers', async () => {
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const observerEvents: string[] = [];
@@ -107,7 +108,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -122,7 +123,7 @@ describe('RuntimeServer', () => {
     });
     const adapter: RuntimeAdapter = {
       name: 'test-discord',
-      sources: [
+      gateways: [
         {
           type: 'discord.messages',
           start(ctx) {
@@ -141,7 +142,7 @@ describe('RuntimeServer', () => {
           },
         },
       ],
-      activities: [
+      presences: [
         {
           platform: 'discord',
           start() {
@@ -158,7 +159,7 @@ describe('RuntimeServer', () => {
     const server = PromptTrail.server({
       bundle,
       runtime: app,
-      activity: { kind: 'typing' },
+      presence: { kind: 'typing' },
       observerDeliveryBindings: {
         deliveryBindingStore: observerDeliveryBindingStore,
       },
@@ -335,7 +336,7 @@ describe('RuntimeServer', () => {
       name: 'graph-runtime',
       defaults: {},
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .to(main)
           .conversation(() => 'discord:graph'),
       ],
@@ -343,7 +344,7 @@ describe('RuntimeServer', () => {
     const app = PromptTrail.app({
       agents: bundle.agents,
     });
-    const result = await dispatchRuntimeBindingEvent({
+    const result = await dispatchRuntimeEvent({
       app,
       binding: bundle.bindings[0]!,
       event: {
@@ -375,10 +376,10 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'binding-agent-registration',
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .to(main)
           .conversation(() => 'discord:graph'),
-        bind(discord.messages())
+        on(discord.messages())
           .to(durable)
           .conversation(() => 'discord:durable'),
       ],
@@ -402,19 +403,20 @@ describe('RuntimeServer', () => {
       name: 'graph-runtime-app',
       defaults: {
         context: { appScope: 'runtime-app' },
+        delivery: Delivery.origin(),
       },
-    }).bind(discord.messages(), (binding) => {
+    }).on(discord.messages(), (binding) => {
       binding
         .to(main)
         .conversation(() => 'discord:graph')
-        .delivery(discord.channel('general'))
+        .reply(discord.channel('general'))
         .context((event) => ({
           bindingScope: 'discord-message',
           channelId: event.channelId,
         }));
     });
     const bundle = app.bundle();
-    const result = await dispatchRuntimeBindingEvent({
+    const result = await dispatchRuntimeEvent({
       app,
       binding: bundle.bindings[0]!,
       event: {
@@ -439,6 +441,7 @@ describe('RuntimeServer', () => {
     expect(bundle.bindings[0]!.defaults.delivery).toEqual(
       discord.channel('general'),
     );
+    expect(result.delivery).toEqual(discord.channel('general'));
     expect(result.context).toEqual(
       expect.objectContaining({
         appScope: 'runtime-app',
@@ -452,8 +455,8 @@ describe('RuntimeServer', () => {
     ).toEqual(['hello', 'reply:hello']);
   });
 
-  it('starts runtime adapter sources from app instances', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+  it('starts runtime adapter gateways from app instances', async () => {
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const sourceEvents: string[] = [];
@@ -468,7 +471,7 @@ describe('RuntimeServer', () => {
       name: 'app-start-runtime',
       defaults: {},
     })
-      .source({
+      .gateway({
         type: 'discord.messages',
         start(ctx) {
           sourceEvents.push('start');
@@ -484,7 +487,7 @@ describe('RuntimeServer', () => {
           deliveries.push(`${target.channel}:${message.content}`);
         },
       })
-      .activity({
+      .presence({
         platform: 'discord',
         start(_ctx, target) {
           activityEvents.push(`start:${target.channel}`);
@@ -510,11 +513,11 @@ describe('RuntimeServer', () => {
           },
         ],
       })
-      .bind(discord.messages(), (binding) =>
+      .on(discord.messages(), (binding) =>
         binding
           .to(main)
           .conversation(() => 'discord:app-start')
-          .delivery(discord.channel('general')),
+          .reply(discord.channel('general')),
       )
       .observe((event) => {
         if (
@@ -613,7 +616,7 @@ describe('RuntimeServer', () => {
         delivery: discord.replyToOriginThread(),
       },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .toAgent('main')
           .conversation(() => 'discord:graph'),
       ],
@@ -637,13 +640,13 @@ describe('RuntimeServer', () => {
       bundle.defaults,
       bundle.bindings[0]!.defaults,
     );
-    const first = await dispatchRuntimeBindingEvent({
+    const first = await dispatchRuntimeEvent({
       app,
       binding: bundle.bindings[0]!,
       event,
       defaults,
     });
-    const second = await dispatchRuntimeBindingEvent({
+    const second = await dispatchRuntimeEvent({
       app,
       binding: bundle.bindings[0]!,
       event: { ...event, content: 'again' },
@@ -669,15 +672,15 @@ describe('RuntimeServer', () => {
   it('accepts Agent instances in runtime bindings', () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
     const durable = Agent.create('durable');
-    const binding = bind(discord.messages())
+    const binding = on(discord.messages())
       .to(main)
       .conversation(() => 'discord:graph')
       .build();
-    const aliasBinding = bind(discord.messages())
+    const aliasBinding = on(discord.messages())
       .toAgent(main)
       .conversation(() => 'discord:graph')
       .build();
-    const durableBinding = bind(discord.messages())
+    const durableBinding = on(discord.messages())
       .to(durable)
       .conversation(() => 'discord:durable')
       .build();
@@ -688,7 +691,7 @@ describe('RuntimeServer', () => {
   });
 
   it('allocates delivery event sequence numbers per conversation', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveryEvents: string[] = [];
     const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
@@ -698,7 +701,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -732,7 +735,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -783,7 +786,7 @@ describe('RuntimeServer', () => {
   });
 
   it('uses stable idempotency keys for runtime error delivery', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const main = chatAgent('main', () => {
       throw new Error('handler failed');
@@ -793,7 +796,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: {},
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -816,7 +819,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -860,7 +863,7 @@ describe('RuntimeServer', () => {
   });
 
   it('threads runtime binding context into durable middleware', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const middlewareDelivery: unknown[] = [];
     const observerDelivery: unknown[] = [];
@@ -879,7 +882,7 @@ describe('RuntimeServer', () => {
         },
       },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -894,7 +897,7 @@ describe('RuntimeServer', () => {
     });
     const adapter: RuntimeAdapter = {
       name: 'test-discord',
-      sources: [
+      gateways: [
         {
           type: 'discord.messages',
           start(ctx) {
@@ -968,7 +971,7 @@ describe('RuntimeServer', () => {
   });
 
   it('persists completed final deliveries across server restarts', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
@@ -978,7 +981,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -997,7 +1000,7 @@ describe('RuntimeServer', () => {
     });
     const adapter: RuntimeAdapter = {
       name: 'test-discord',
-      sources: [
+      gateways: [
         {
           type: 'discord.messages',
           start(ctx) {
@@ -1073,7 +1076,7 @@ describe('RuntimeServer', () => {
   });
 
   it('serializes concurrent dispatches for the same conversation', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const order: string[] = [];
     let releaseFirst: (() => void) | undefined;
     let firstStarted: (() => void) | undefined;
@@ -1097,7 +1100,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1119,7 +1122,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -1177,7 +1180,7 @@ describe('RuntimeServer', () => {
   });
 
   it('runs concurrent dispatches for different conversations independently', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const order: string[] = [];
     let releaseFirst: (() => void) | undefined;
     let firstStarted: (() => void) | undefined;
@@ -1208,7 +1211,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1230,7 +1233,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -1293,14 +1296,14 @@ describe('RuntimeServer', () => {
   });
 
   it('surfaces observer failures when strictObservers is enabled', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-observer-test',
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1333,7 +1336,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -1369,7 +1372,7 @@ describe('RuntimeServer', () => {
   });
 
   it('does not roll back completed delivery when strict observer fails on completion', async () => {
-    let emit: RuntimeSourceContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
     let deliveries = 0;
     const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
@@ -1377,7 +1380,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1411,7 +1414,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start(ctx) {
@@ -1465,7 +1468,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1495,7 +1498,7 @@ describe('RuntimeServer', () => {
     };
     const binding = bundle.bindings[0];
 
-    await dispatchRuntimeBindingEvent({
+    await dispatchRuntimeEvent({
       app,
       binding,
       event,
@@ -1594,7 +1597,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        bind(discord.messages())
+        on(discord.messages())
           .where(discord.notBot())
           .toAgent('main')
           .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
@@ -1624,8 +1627,8 @@ describe('RuntimeServer', () => {
     const binding = bundle.bindings[0];
     const defaults = mergeBindingDefaults(bundle.defaults, binding.defaults);
 
-    await dispatchRuntimeBindingEvent({ app, binding, event, defaults });
-    const dispatched = await dispatchRuntimeBindingEvent({
+    await dispatchRuntimeEvent({ app, binding, event, defaults });
+    const dispatched = await dispatchRuntimeEvent({
       app,
       binding,
       event,
@@ -1785,7 +1788,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start() {
@@ -1957,7 +1960,7 @@ describe('RuntimeServer', () => {
       adapters: [
         {
           name: 'test-discord',
-          sources: [
+          gateways: [
             {
               type: 'discord.messages',
               start() {
