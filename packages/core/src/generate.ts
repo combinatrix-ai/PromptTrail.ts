@@ -99,49 +99,65 @@ export function convertSessionToAiSdkMessages(
           : msg.content,
       });
     } else if (msg.type === 'assistant') {
-      const assistantMsg: {
-        role: string;
-        content: unknown;
-        tool_calls?: Array<unknown>;
-      } = {
-        role: 'assistant',
-        content: msg.contentParts
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        // ai-sdk CoreMessages carry tool calls/results as typed content
+        // parts, not OpenAI-style tool_calls/tool_call_id fields — the
+        // string form fails ai-sdk's prompt validation on the next turn.
+        const parts: unknown[] = [];
+        const text = msg.contentParts
           ? contentPartsToAiSdkContent(msg.contentParts)
-          : msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
-      };
+          : msg.content;
+        if (Array.isArray(text)) {
+          parts.push(...text);
+        } else if (typeof text === 'string' && text.trim()) {
+          parts.push({ type: 'text', text });
+        }
+        for (const toolCall of msg.toolCalls) {
+          parts.push({
+            type: 'tool-call',
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments,
+          });
+        }
+        messages.push({ role: 'assistant', content: parts });
 
-      // Add tool calls if present
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: JSON.stringify(tc.arguments),
-          },
-        }));
-      }
-
-      messages.push(assistantMsg);
-
-      // Immediately add tool results for this assistant message
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        const resultParts: unknown[] = [];
         for (const toolCall of msg.toolCalls) {
           const toolResult = toolResultsMap.get(toolCall.id);
-          if (toolResult) {
-            messages.push({
-              role: 'tool',
-              content: toolResult,
-              tool_call_id: toolCall.id,
+          if (toolResult !== undefined) {
+            resultParts.push({
+              type: 'tool-result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              result: parseToolResultContent(toolResult),
             });
           }
         }
+        if (resultParts.length > 0) {
+          messages.push({ role: 'tool', content: resultParts });
+        }
+      } else {
+        messages.push({
+          role: 'assistant',
+          content: msg.contentParts
+            ? contentPartsToAiSdkContent(msg.contentParts)
+            : msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
+        });
       }
     }
     // Skip tool_result messages as they're handled above
   }
 
   return messages;
+}
+
+function parseToolResultContent(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return content;
+  }
 }
 
 /**

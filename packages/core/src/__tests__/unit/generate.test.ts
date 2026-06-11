@@ -104,6 +104,60 @@ describe('convertSessionToAiSdkMessages', () => {
       },
     ]);
   });
+
+  it('converts tool-call history to CoreMessage parts for ai-sdk path', () => {
+    const messages = convertSessionToAiSdkMessages(
+      Session.create({
+        messages: [
+          { type: 'user', content: 'Where is ORD-1001?' },
+          {
+            type: 'assistant',
+            content: ' ',
+            toolCalls: [
+              {
+                id: 'call-1',
+                name: 'lookupOrder',
+                arguments: { orderId: 'ORD-1001' },
+              },
+            ],
+          },
+          {
+            type: 'tool_result',
+            content: JSON.stringify({ found: true, status: 'shipped' }),
+            attrs: { toolCallId: 'call-1' },
+          },
+          { type: 'user', content: 'Refund it please.' },
+        ],
+      }),
+    );
+
+    expect(messages).toEqual([
+      { role: 'user', content: 'Where is ORD-1001?' },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'call-1',
+            toolName: 'lookupOrder',
+            args: { orderId: 'ORD-1001' },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call-1',
+            toolName: 'lookupOrder',
+            result: { found: true, status: 'shipped' },
+          },
+        ],
+      },
+      { role: 'user', content: 'Refund it please.' },
+    ]);
+  });
 });
 
 describe('native schema/tool guard', () => {
