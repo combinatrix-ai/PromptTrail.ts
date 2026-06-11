@@ -241,11 +241,17 @@ structured/codex/claude/goal`).
       time without a resolvable declaration under checkpoint mode fails the run at
       discovery — the gate is never silently bypassed (Decision Update 2, point 6).
       (`durable.ts`, `graph.ts`, `capabilities.ts`)
-- [ ] **3.4 Intent-layer auto tool-loop.** A top-level `assistant(...)` and every
+- [x] **3.4 Intent-layer auto tool-loop.** A top-level `assistant(...)` and every
       `goal(...)` auto-loops by compiling to `assistant` + `loop(tools, assistant)`.
       Pure sugar; no provider-internal loop. The manual layer is writing the
       `loop` yourself (the `turn` container is removed — §9.2). (`templates/agent.ts`)
-- [~] **3.5 Decompose remaining compatibility template nodes** into native graph
+      Done: compile-time expansion at `toGraph()` when registered tools exist
+      and no manual `tools`/`loop` immediately follows; generated ids are
+      deterministic (`<id>-loop`, `<id>-tools`) and the loop condition is the
+      named `hasPendingToolCalls`, so checkpoint paths and the version gate
+      stay stable. Goals gained the same inner tool loop per satisfaction
+      attempt.
+- [x] **3.5 Decompose remaining compatibility template nodes** into native graph
   nodes so nothing routes through the generic legacy `template` adapter node.
   (`graph_executor.ts`, `templates/agent.ts`)
   Done: the whole-tree `{ type: 'template' }` wrapper and the `'template'`
@@ -253,10 +259,11 @@ structured/codex/claude/goal`).
   (loop/conditional/subroutine/user/messages/transform/structured/parallel/
   codexTurn/claudeTurn) with legacy lifecycle preserved via node metadata
   (`legacyTemplateLifecycle`, sibling-halt, warn-on-max-iterations).
-  Remaining: `System` and `Assistant` leaves still delegate to
-  `template.execute` through a `transform` node (runtime Source resolution
-  and validator/retry semantics); fold them into native nodes together
-  with §3.4's assistant auto tool-loop work.
+  Completed with §3.4: `System` and `Assistant` leaves now compile to native
+  `system`/`assistant` nodes — the executor carries the Source resolution,
+  model middleware, validator retry, `raiseError`, and tool-result handling
+  the templates had. The generic transform fallback survives only for
+  unknown template types.
 - [x] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
       **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
       **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
@@ -617,11 +624,16 @@ the §3 DSL work; do them as part of §3.
       old subroutine (defaults unchanged until §9.5), without it it just runs
       its children. The `legacySequence` transform marker dissolved into plain
       `scope`. Paths keep their ids; only node types changed in manifests.
-- [ ] **9.5 Fix `subroutine` defaults to actually isolate** (current defaults
+- [x] **9.5 Fix `subroutine` defaults to actually isolate** (current defaults
       `retainMessages: true` + `isolatedContext: false` make it a sequence).
       Options become entry projection (`init`) / exit projection (`squash`) +
       shortcuts; proposed defaults: enter fresh, append sub-messages on exit.
       (`templates/agent.ts`, `graph_executor.ts`)
+      Done: options are exactly `init?`/`squash?` — the old
+      retainMessages/isolatedContext/initWith/squashWith shortcuts removed
+      rather than aliased. Defaults: enter a fresh empty session (system
+      prompts must be re-established inside or via `init`), exit by appending
+      sub-added messages to the parent with parent vars kept.
 - [ ] **9.6 Document run-per-event as the standard shape.** Event-driven
       agents end after one inbound event; continuity = app-layer conversation
       resume. No infinite graph loops; `awaitInput` is mid-flow only. (README,

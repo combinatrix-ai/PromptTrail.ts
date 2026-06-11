@@ -518,7 +518,7 @@ describe('GraphExecutor', () => {
     );
   });
 
-  it('executes graph subroutines and merges new messages and vars', async () => {
+  it('executes graph subroutines with isolated vars by default', async () => {
     const graph = Agent.create('assistant')
       .user('before', 'before')
       .transform('parentVar', (session) => session.withVar('parent', true))
@@ -539,10 +539,10 @@ describe('GraphExecutor', () => {
       'ok',
       'after',
     ]);
-    expect(session.getVarsObject()).toEqual({ parent: true, sub: true });
+    expect(session.getVarsObject()).toEqual({ parent: true });
   });
 
-  it('supports isolated graph subroutines without retaining messages', async () => {
+  it('supports graph subroutines with custom squash projections', async () => {
     const graph = Agent.create('assistant')
       .user('before', 'before')
       .transform('parentVar', (session) => session.withVar('parent', true))
@@ -552,7 +552,7 @@ describe('GraphExecutor', () => {
           sub
             .user('prompt', 'inside')
             .transform('subVar', (session) => session.withVar('sub', true)),
-        { isolatedContext: true, retainMessages: false },
+        { squash: (parent) => parent },
       )
       .assistant('after', 'after')
       .toGraph();
@@ -574,8 +574,8 @@ describe('GraphExecutor', () => {
         (sub) =>
           sub.transform('subVar', (session) => session.withVar('sub', true)),
         {
-          initWith: () => Session.create({ vars: { seed: 'custom' } }),
-          squashWith: (parent, subroutine) =>
+          init: () => Session.create({ vars: { seed: 'custom' } }),
+          squash: (parent, subroutine) =>
             parent.withVar('summary', subroutine.getVar('seed')),
         },
       )
@@ -597,7 +597,7 @@ describe('GraphExecutor', () => {
         {
           id: 'draft',
           type: 'scope',
-          data: { isolatedContext: true, retainMessages: false },
+          data: { sessionPolicy: true, squash: (parent: Session) => parent },
           children: [
             { id: 'inbound', type: 'inbox' },
             { id: 'wait', type: 'awaitInput' },

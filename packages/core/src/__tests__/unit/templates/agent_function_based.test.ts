@@ -143,8 +143,7 @@ describe('Agent Function-Based Templates', () => {
         .subroutine(
           (s) => s.user('Subroutine message').assistant('Subroutine response'),
           {
-            retainMessages: false,
-            isolatedContext: true,
+            squash: (parent) => parent,
           },
         )
         .user('Back to main');
@@ -169,14 +168,13 @@ describe('Agent Function-Based Templates', () => {
       const agent = Agent.quick()
         .system('Main')
         .subroutine((s) => s.user('Process data').assistant('Result: 42'), {
-          squashWith: (parent, sub) => {
+          squash: (parent, sub) => {
             const lastMessage = sub.getLastMessage();
             if (lastMessage?.content.includes('42')) {
               return parent.withVars({ result: 42 });
             }
             return parent;
           },
-          retainMessages: false,
         })
         .assistant(
           Source.callback(({ context }) => `The result is ${context.result}`),
@@ -263,7 +261,13 @@ describe('Agent Function-Based Templates', () => {
                   .length < 2,
             ),
           {
-            retainMessages: true,
+            squash: (parent, sub) => {
+              let next = parent;
+              for (const message of sub.messages) {
+                next = next.addMessage(message);
+              }
+              return next;
+            },
           },
         )
         .user('In sequence')

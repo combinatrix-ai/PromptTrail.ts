@@ -38,6 +38,7 @@ import {
   type PromptTrailTool,
 } from './tool';
 import type { ProviderSessionBinding } from './provider_session';
+import type { IValidator } from './validators';
 
 export interface GraphExecutionOptions<
   TVars extends Vars = Vars,
@@ -423,7 +424,7 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
   }
   switch (node.type) {
     case 'system':
-      addMessageFromNode(state, node, 'system');
+      await executeSystemNode(node, nodePath, state);
       return;
     case 'user':
       await executeUserNode(node, nodePath, state);
@@ -651,10 +652,10 @@ async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
     return;
   }
   const parentSession = state.session;
-  const initWith = data.initWith;
+  const init = data.init;
   const subroutineInitial =
-    typeof initWith === 'function'
-      ? await initWith(parentSession)
+    typeof init === 'function'
+      ? await init(parentSession)
       : defaultSubroutineInitialSession(parentSession, data);
   if (!(subroutineInitial instanceof Session)) {
     throw new Error(`Graph node ${nodePath} returned an invalid init session.`);
@@ -751,6 +752,28 @@ async function executeUserNode<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
+async function executeSystemNode<TVars extends Vars, TAttrs extends Attrs>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+): Promise<void> {
+  const data = graphNodeData(node);
+  const input = data.input ?? data.content;
+  if (input === undefined) {
+    return;
+  }
+  const content = await resolveGraphContent(
+    input,
+    nodePath,
+    state.session,
+    state.runtime,
+  );
+  if (typeof content !== 'string') {
+    throw new Error(`Graph node ${nodePath} expected system string content.`);
+  }
+  state.session = state.session.addMessage(Message.system(content));
+}
+
 async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
   nodePath: string,
@@ -763,21 +786,73 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
       `Graph node ${nodePath} requires an assistant source or handler.`,
     );
   }
-  const modelCall = await executeRuntimeModelCall<
-    TVars,
-    TAttrs,
-    string | ModelOutput
-  >(
-    state.runtime,
-    state.session,
-    (modelSession) =>
-      resolveGraphAssistantInput(input, nodePath, modelSession, state),
-    `Graph node ${nodePath} model execution`,
-  );
-  state.session = modelCall.session;
-  const result = modelCall.result;
-  state.session = state.session.addMessage(
-    normalizeAssistantResult(result, nodePath),
+  const options = graphAssistantExecutionOptions(data, input);
+  let validSession = state.session;
+  let attempts = 0;
+  let lastError: Error | undefined;
+  let lastOutput: ModelOutput | undefined;
+
+  while (attempts < options.maxAttempts) {
+    attempts++;
+    try {
+      const modelCall = await executeRuntimeModelCall<
+        TVars,
+        TAttrs,
+        string | ModelOutput
+      >(
+        state.runtime,
+        validSession,
+        (modelSession) =>
+          resolveGraphAssistantInput(input, nodePath, modelSession, state),
+        `Graph node ${nodePath} model execution`,
+      );
+      validSession = modelCall.session;
+      const output = normalizeAssistantOutput(modelCall.result, nodePath);
+      lastOutput = output;
+
+      if (options.validator) {
+        const validationResult = await options.validator.validate(
+          output.content,
+          validSession,
+        );
+        if (!validationResult.isValid) {
+          throw new Error(
+            options.isStaticContent
+              ? 'Assistant content validation failed'
+              : 'Assistant response validation failed',
+          );
+        }
+      }
+
+      state.session = addAssistantOutputMessages(validSession, output);
+      return;
+    } catch (error) {
+      lastError = error as Error;
+      if (attempts < options.maxAttempts) {
+        console.warn(
+          `Attempt ${attempts} failed: ${lastError.message}. Retrying...`,
+        );
+        continue;
+      }
+      if (options.raiseError) {
+        return Promise.reject(lastError);
+      }
+      console.warn(
+        `Validation failed after ${attempts} attempts. raiseError is false, returning last output.`,
+      );
+      break;
+    }
+  }
+
+  if (!options.raiseError && lastError && lastOutput) {
+    state.session = validSession.addMessage(
+      assistantMessageFromOutput(lastOutput),
+    );
+    return;
+  }
+
+  throw new Error(
+    `Graph node ${nodePath} assistant execution finished in an unexpected state.`,
   );
 }
 
@@ -1036,27 +1111,17 @@ function defaultSubroutineInitialSession<
   TVars extends Vars,
   TAttrs extends Attrs,
 >(
-  parentSession: Session<TVars, TAttrs>,
-  data: GraphNodeData,
+  _parentSession: Session<TVars, TAttrs>,
+  _data: GraphNodeData,
 ): Session<TVars, TAttrs> {
-  if (data.isolatedContext === true) {
-    return Session.create<TVars, TAttrs>();
-  }
-  let initial = Session.create<TVars, TAttrs>({
-    vars: parentSession.getVarsObject(),
-  });
-  for (const message of parentSession.messages) {
-    initial = initial.addMessage(message);
-  }
-  return initial;
+  return Session.create<TVars, TAttrs>();
 }
 
 function hasSessionPolicy(data: GraphNodeData): boolean {
   return (
-    data.initWith !== undefined ||
-    data.squashWith !== undefined ||
-    data.retainMessages !== undefined ||
-    data.isolatedContext !== undefined
+    data.sessionPolicy === true ||
+    data.init !== undefined ||
+    data.squash !== undefined
   );
 }
 
@@ -1070,9 +1135,9 @@ async function squashSubroutineSession<
   initialSession: Session<TVars, TAttrs>,
   subroutineSession: Session<TVars, TAttrs>,
 ): Promise<Session<TVars, TAttrs>> {
-  const squashWith = data.squashWith;
-  if (typeof squashWith === 'function') {
-    const result = await squashWith(parentSession, subroutineSession);
+  const squash = data.squash;
+  if (typeof squash === 'function') {
+    const result = await squash(parentSession, subroutineSession);
     if (result instanceof Session) {
       return result as Session<TVars, TAttrs>;
     }
@@ -1081,21 +1146,13 @@ async function squashSubroutineSession<
     );
   }
 
-  const retainMessages = data.retainMessages !== false;
-  const isolatedContext = data.isolatedContext === true;
-  const messages = retainMessages
-    ? [
-        ...parentSession.messages,
-        ...subroutineSession.messages.slice(initialSession.messages.length),
-      ]
-    : [...parentSession.messages];
-  const vars = isolatedContext
-    ? parentSession.getVarsObject()
-    : {
-        ...parentSession.getVarsObject(),
-        ...subroutineSession.getVarsObject(),
-      };
-  let merged = Session.create<TVars, TAttrs>({ vars: vars as TVars });
+  const messages = [
+    ...parentSession.messages,
+    ...subroutineSession.messages.slice(initialSession.messages.length),
+  ];
+  let merged = Session.create<TVars, TAttrs>({
+    vars: parentSession.getVarsObject() as TVars,
+  });
   for (const message of messages) {
     merged = merged.addMessage(message);
   }
@@ -1244,19 +1301,6 @@ function isPromptTrailToolRecord(
   return Object.values(value).every(isPromptTrailTool);
 }
 
-function addMessageFromNode<TVars extends Vars, TAttrs extends Attrs>(
-  state: GraphExecutionState<TVars, TAttrs>,
-  node: AgentGraphNode,
-  type: 'system',
-): void {
-  const data = graphNodeData(node);
-  const content = stringValue(data.content);
-  if (content === undefined) {
-    return;
-  }
-  state.session = state.session.addMessage(Message.create(type, content));
-}
-
 function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
 ): ConsumedInboxKind {
@@ -1384,6 +1428,9 @@ async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
   if (input instanceof Source) {
     return input.getContent(session, runtime);
   }
+  if (isGraphContentSource(input)) {
+    return input.getContent(session, runtime);
+  }
   if (typeof input === 'string') {
     return input;
   }
@@ -1393,28 +1440,99 @@ async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
   throw new Error(`Graph node ${nodePath} has unsupported content input.`);
 }
 
-function normalizeAssistantResult<TAttrs extends Attrs>(
+function isGraphContentSource(input: unknown): input is {
+  getContent: (
+    session: Session<any, any>,
+    runtime?: ExecutionRuntimeState<any, any>,
+  ) => Promise<string | ModelOutput> | string | ModelOutput;
+} {
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    typeof (input as { getContent?: unknown }).getContent === 'function'
+  );
+}
+
+interface GraphAssistantExecutionOptions {
+  validator?: IValidator;
+  maxAttempts: number;
+  raiseError: boolean;
+  isStaticContent: boolean;
+}
+
+function graphAssistantExecutionOptions(
+  data: GraphNodeData,
+  input: unknown,
+): GraphAssistantExecutionOptions {
+  return {
+    validator: isValidator(data.validator) ? data.validator : undefined,
+    maxAttempts: positiveInteger(data.maxAttempts) ?? 1,
+    raiseError: data.raiseError !== false,
+    isStaticContent:
+      typeof data.isStaticContent === 'boolean'
+        ? data.isStaticContent
+        : typeof input === 'string',
+  };
+}
+
+function isValidator(value: unknown): value is IValidator {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { validate?: unknown }).validate === 'function'
+  );
+}
+
+function normalizeAssistantOutput(
   result: unknown,
   nodePath: string,
-): AssistantMessage<TAttrs> {
+): ModelOutput {
   if (typeof result === 'string') {
-    return Message.assistant(result) as AssistantMessage<TAttrs>;
+    return { content: result };
   }
   if (isAssistantMessage(result)) {
-    return result as AssistantMessage<TAttrs>;
-  }
-  if (isModelOutput(result)) {
     return {
-      type: 'assistant',
       content: result.content,
       toolCalls: result.toolCalls,
-      structuredContent: result.structuredOutput,
-      attrs: result.metadata as TAttrs | undefined,
+      metadata: result.attrs,
+      structuredOutput: result.structuredContent,
     };
+  }
+  if (isModelOutput(result)) {
+    return result;
   }
   throw new Error(
     `Graph node ${nodePath} returned an invalid assistant result.`,
   );
+}
+
+function addAssistantOutputMessages<TVars extends Vars, TAttrs extends Attrs>(
+  session: Session<TVars, TAttrs>,
+  output: ModelOutput,
+): Session<TVars, TAttrs> {
+  let updatedSession = session.addMessage(assistantMessageFromOutput(output));
+  for (const toolResult of output.toolResults ?? []) {
+    updatedSession = updatedSession.addMessage({
+      type: 'tool_result',
+      content: JSON.stringify(toolResult.result),
+      attrs: {
+        toolCallId: toolResult.toolCallId,
+      } as unknown as TAttrs,
+    });
+  }
+  return updatedSession;
+}
+
+function assistantMessageFromOutput<TAttrs extends Attrs>(
+  output: ModelOutput,
+): AssistantMessage<TAttrs> {
+  return {
+    type: 'assistant',
+    content: output.content,
+    toolCalls: output.toolCalls,
+    attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
+    structuredContent: output.structuredOutput,
+  };
 }
 
 function normalizeGraphInbox<TAttrs extends Attrs>(

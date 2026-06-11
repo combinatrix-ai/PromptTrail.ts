@@ -273,13 +273,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     if (!this.graphName) {
       throw new Error('Agent.toGraph requires Agent.create(name).');
     }
+    const rawNodes =
+      this.graphNodes.length > 0
+        ? this.graphNodes
+        : compileLegacyRootTemplate(this.root as Composite<TM, TC>);
     return createAgentGraph({
       name: this.graphName,
       version,
-      nodes:
-        this.graphNodes.length > 0
-          ? this.graphNodes
-          : compileLegacyRootTemplate(this.root as Composite<TM, TC>),
+      nodes: expandIntentToolLoops(
+        rawNodes,
+        Object.keys(this.graphTools).length > 0,
+        true,
+      ),
       tools: this.graphTools,
       middleware: this.middleware,
       hooks: this.hooks,
@@ -953,7 +958,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return {
       name: 'direct-agent',
       version: 'legacy-template',
-      nodes: compileLegacyRootTemplate(this.root as Composite<TM, TC>),
+      nodes: expandIntentToolLoops(
+        compileLegacyRootTemplate(this.root as Composite<TM, TC>),
+        Object.keys(this.graphTools).length > 0,
+        true,
+      ),
       edges: [],
       tools: this.graphTools,
       middleware: this.middleware,
@@ -1174,21 +1183,18 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
         : nextLegacyNodeId(state, 'subroutine'),
       type: 'scope',
       data: compactGraphData({
-        initWith: template.getInitFunction(),
-        squashWith: template.getSquashFunction(),
-        retainMessages: template.getRetainMessages(),
-        isolatedContext: template.getIsolatedContext(),
+        init: template.getInitFunction(),
+        squash: template.getSquashFunction(),
+        sessionPolicy: true,
       }),
       children: compileLegacyCompositeChildren(template, state),
     };
   }
   if (template instanceof System) {
-    // Route through transform → executeTemplateNode so the runtime Source is
-    // resolved and the system message is added exactly as the legacy path did.
     return {
       id: nextLegacyNodeId(state, 'system'),
-      type: 'transform',
-      data: { template },
+      type: 'system',
+      data: { input: template.getContentSource() },
     };
   }
   if (template instanceof User) {
@@ -1202,12 +1208,17 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
     };
   }
   if (template instanceof Assistant) {
-    // Route through transform → executeTemplateNode so validator / retry
-    // semantics and the full runtime are preserved.
+    const descriptor = template.getManifestDescriptor();
     return {
       id: nextLegacyNodeId(state, 'assistant'),
-      type: 'transform',
-      data: { template },
+      type: 'assistant',
+      data: compactGraphData({
+        input: descriptor.contentSource,
+        validator: descriptor.validator,
+        maxAttempts: descriptor.maxAttempts,
+        raiseError: descriptor.raiseError,
+        isStaticContent: descriptor.isStaticContent,
+      }),
     };
   }
   if (template instanceof GenerateMessages) {
@@ -1423,10 +1434,154 @@ function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(
   options: ISubroutineTemplateOptions<TM, TC> | undefined,
 ): Record<string, unknown> {
   return {
-    ...((options ?? {}) as Record<string, unknown>),
-    retainMessages: options?.retainMessages ?? true,
-    isolatedContext: options?.isolatedContext ?? false,
+    init: options?.init,
+    squash: options?.squash,
+    sessionPolicy: true,
   };
+}
+
+function expandIntentToolLoops(
+  nodes: readonly AgentGraphNode[],
+  hasRegisteredTools: boolean,
+  topLevel: boolean,
+): AgentGraphNode[] {
+  return nodes.flatMap((node, index) => {
+    const childExpanded =
+      node.children === undefined
+        ? node
+        : {
+            ...node,
+            children: expandIntentToolLoops(
+              node.children,
+              hasRegisteredTools,
+              false,
+            ),
+          };
+    const goalExpanded =
+      childExpanded.type === 'goal'
+        ? expandGoalToolLoop(childExpanded, hasRegisteredTools)
+        : childExpanded;
+
+    if (
+      topLevel &&
+      goalExpanded.type === 'assistant' &&
+      hasRegisteredTools &&
+      !isManualToolLoopFollower(nodes[index + 1])
+    ) {
+      return createAutoToolLoopNodes(goalExpanded);
+    }
+
+    return [goalExpanded];
+  });
+}
+
+function createAutoToolLoopNodes(
+  assistantNode: AgentGraphNode,
+): AgentGraphNode[] {
+  return [
+    assistantNode,
+    {
+      id: `${assistantNode.id}-loop`,
+      type: 'loop',
+      data: { condition: hasPendingToolCalls },
+      children: [
+        {
+          id: `${assistantNode.id}-tools`,
+          type: 'tools',
+        },
+        {
+          ...assistantNode,
+          children: assistantNode.children,
+        },
+      ],
+    },
+  ];
+}
+
+function expandGoalToolLoop(
+  goalNode: AgentGraphNode,
+  hasRegisteredTools: boolean,
+): AgentGraphNode {
+  if (!hasRegisteredTools && !goalHasToolConfig(goalNode)) {
+    return goalNode;
+  }
+  return {
+    ...goalNode,
+    children: (goalNode.children ?? []).map((child) => {
+      if (child.id !== 'attempts' || child.type !== 'loop') {
+        return child;
+      }
+      const children = child.children ?? [];
+      const modelIndex = children.findIndex(
+        (candidate) =>
+          candidate.id === 'model' && candidate.type === 'assistant',
+      );
+      const toolsIndex = children.findIndex(
+        (candidate) => candidate.id === 'tools' && candidate.type === 'tools',
+      );
+      if (
+        modelIndex === -1 ||
+        toolsIndex === -1 ||
+        children.some((candidate) => candidate.id === 'model-loop')
+      ) {
+        return child;
+      }
+      const modelNode = children[modelIndex];
+      const toolsNode = children[toolsIndex];
+      return {
+        ...child,
+        children: [
+          ...children.slice(0, modelIndex + 1),
+          {
+            id: 'model-loop',
+            type: 'loop',
+            data: { condition: hasPendingToolCalls },
+            children: [
+              {
+                ...toolsNode,
+                id: 'model-tools',
+              },
+              modelNode,
+            ],
+          },
+          ...children.slice(modelIndex + 1).filter((_, childIndex) => {
+            return childIndex + modelIndex + 1 !== toolsIndex;
+          }),
+        ],
+      };
+    }),
+  };
+}
+
+function goalHasToolConfig(goalNode: AgentGraphNode): boolean {
+  return (goalNode.children ?? []).some(
+    (child) =>
+      child.id === 'attempts' &&
+      child.type === 'loop' &&
+      (child.children ?? []).some((attemptChild) => {
+        return (
+          attemptChild.id === 'tools' &&
+          attemptChild.type === 'tools' &&
+          graphDataHasKey(attemptChild.data, 'tools')
+        );
+      }),
+  );
+}
+
+function graphDataHasKey(data: unknown, key: string): boolean {
+  return typeof data === 'object' && data !== null && key in data;
+}
+
+function isManualToolLoopFollower(node: AgentGraphNode | undefined): boolean {
+  return node?.type === 'tools' || node?.type === 'loop';
+}
+
+function hasPendingToolCalls<TC extends Vars, TM extends Attrs>({
+  session,
+}: {
+  session: Session<TC, TM>;
+}): boolean {
+  return session.hasToolCalls();
 }
 
 function compactGraphChildren(

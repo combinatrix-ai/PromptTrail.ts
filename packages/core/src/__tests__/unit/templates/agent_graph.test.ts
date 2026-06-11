@@ -178,6 +178,60 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
+  it('does not expand top-level assistant nodes without registered tools', () => {
+    const graph = Agent.create('assistant')
+      .assistant('reply', Source.literal('ok'))
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['reply', 'assistant'],
+    ]);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/reply', 'assistant'],
+    ]);
+  });
+
+  it('auto-loops top-level assistants over registered tools', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+    let modelCalls = 0;
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant('reply', (session) => {
+        modelCalls++;
+        const toolResult = session.getMessagesByType('tool_result').at(-1);
+        return toolResult
+          ? `final:${toolResult.content}`
+          : {
+              content: 'need lookup',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            };
+      });
+
+    const session = await agent.execute();
+    const manifest = createAgentGraphManifest(agent.toGraph('v1'));
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'need lookup',
+      'value:1',
+      'final:value:1',
+    ]);
+    expect(modelCalls).toBe(2);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/reply', 'assistant'],
+      ['assistant/reply-loop', 'loop'],
+      ['assistant/reply-loop/reply-tools', 'tools'],
+      ['assistant/reply-loop/reply', 'assistant'],
+    ]);
+  });
+
   it('executes graph-authored agents through GraphExecutor', async () => {
     const session = await Agent.create('assistant')
       .system('system', 'You are concise.')
@@ -1188,6 +1242,52 @@ describe('Agent graph authoring', () => {
     )?.data;
     expect(checkData).toMatchObject({ kind: 'goalSatisfaction' });
     expect(checkData).not.toHaveProperty('durability');
+  });
+
+  it('auto-loops goal model nodes over registered tools', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+    const agent = Agent.create('research')
+      .tool('lookup', lookup)
+      .goal('researchTopic', 'Research the topic', {
+        model: (session) => {
+          const toolResult = session.getMessagesByType('tool_result').at(-1);
+          return toolResult
+            ? `final:${toolResult.content}`
+            : {
+                content: 'need lookup',
+                toolCalls: [
+                  { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+                ],
+              };
+        },
+        isSatisfied: ({ session }) =>
+          session.getLastMessage()?.content === 'final:value:1',
+      });
+
+    const session = await agent.execute();
+    const manifest = createAgentGraphManifest(agent.toGraph('v1'));
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Research the topic',
+      'need lookup',
+      'value:1',
+      'final:value:1',
+    ]);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['research/researchTopic', 'goal'],
+      ['research/researchTopic/prompt', 'user'],
+      ['research/researchTopic/attempts', 'loop'],
+      ['research/researchTopic/attempts/model', 'assistant'],
+      ['research/researchTopic/attempts/model-loop', 'loop'],
+      ['research/researchTopic/attempts/model-loop/model-tools', 'tools'],
+      ['research/researchTopic/attempts/model-loop/model', 'assistant'],
+      ['research/researchTopic/attempts/check', 'transform'],
+    ]);
   });
 
   it('compiles named graph subroutines into a stable subgraph', () => {

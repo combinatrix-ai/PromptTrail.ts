@@ -174,7 +174,8 @@ describe('Agent interceptors', () => {
         }),
       )
       .subroutine((agent) => agent.user('hidden').assistant('should not run'), {
-        retainMessages: false,
+        squash: (parent, subroutine) =>
+          parent.withVars(subroutine.getVarsObject()),
       })
       .assistant('outer')
       .execute();
@@ -994,7 +995,7 @@ describe('Agent interceptors', () => {
         .assistant('original')
         .execute(),
     ).rejects.toThrow(
-      'Assistant.execute does not support execution command suspend yet.',
+      'Graph node direct-agent/assistant0 model execution does not support execution command suspend yet.',
     );
   });
 
