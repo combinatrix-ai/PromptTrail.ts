@@ -1,10 +1,31 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { Source } from '@prompttrail/core';
+import { Source, type ModelOutput } from '@prompttrail/core';
 import {
   createSupportRuntime,
   getRefundRecords,
+  getReturnTransformInspections,
   resetSupportDemoRecords,
 } from '../lib/support-agent';
+
+const returnChoicesPayload = {
+  reply: 'Which order should I return?',
+  choices: [
+    { id: 'ORD-1001', label: 'ORD-1001 - Trail Runner Backpack' },
+    { id: 'ORD-1002', label: 'ORD-1002 - Insulated Camp Mug' },
+    { id: 'ORD-1003', label: 'ORD-1003 - Warranty Replacement Strap' },
+  ],
+};
+
+function returnChoicesSource() {
+  return new (class extends Source<ModelOutput> {
+    async getContent(): Promise<ModelOutput> {
+      return {
+        content: returnChoicesPayload.reply,
+        structuredOutput: returnChoicesPayload,
+      };
+    }
+  })();
+}
 
 describe('customer support chat runtime', () => {
   beforeEach(() => {
@@ -117,5 +138,81 @@ describe('customer support chat runtime', () => {
         idempotencyKey: 'refund:ORD-1002',
       },
     ]);
+  });
+
+  it('suspends the return wizard with projected order choices', async () => {
+    const runtime = createSupportRuntime(
+      Source.llm().mock(),
+      returnChoicesSource(),
+    );
+
+    const result = await runtime.handleMessage(
+      'returns-turn-1',
+      'I need to return an order.',
+      'returns',
+    );
+
+    expect(result.status).toBe('suspended');
+    expect(result.awaiting).toBe('returns/order-choice');
+    expect(result.messages.at(-1)).toMatchObject({
+      type: 'assistant',
+      content: returnChoicesPayload.reply,
+      structuredContent: returnChoicesPayload,
+    });
+  });
+
+  it('issues a keyed refund once for an eligible return choice', async () => {
+    const runtime = createSupportRuntime(
+      Source.llm().mock(),
+      returnChoicesSource(),
+    );
+
+    await runtime.handleMessage(
+      'returns-eligible',
+      'The mug is not needed.',
+      'returns',
+    );
+    const result = await runtime.handleMessage(
+      'returns-eligible',
+      'ORD-1002',
+      'returns',
+    );
+
+    expect(result.status).toBe('done');
+    expect(getRefundRecords()).toEqual([
+      {
+        orderId: 'ORD-1002',
+        reason: 'The mug is not needed.',
+        idempotencyKey: 'refund:ORD-1002',
+      },
+    ]);
+    expect(getReturnTransformInspections()).toEqual([
+      { type: 'user', content: 'ORD-1002' },
+    ]);
+    expect(result.messages.at(-1)?.content).toContain('RF-ORD-1002');
+  });
+
+  it('denies an ineligible return choice without recording a refund', async () => {
+    const runtime = createSupportRuntime(
+      Source.llm().mock(),
+      returnChoicesSource(),
+    );
+
+    await runtime.handleMessage(
+      'returns-ineligible',
+      'The replacement is wrong.',
+      'returns',
+    );
+    const result = await runtime.handleMessage(
+      'returns-ineligible',
+      'ORD-1003',
+      'returns',
+    );
+
+    expect(result.status).toBe('done');
+    expect(getRefundRecords()).toEqual([]);
+    expect(result.messages.at(-1)?.content).toBe(
+      'ORD-1003 is not eligible for a refund.',
+    );
   });
 });

@@ -69,6 +69,37 @@ input {
   padding: 22px clamp(18px, 4vw, 34px);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 260px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdfa;
+}
+
+.mode-toggle button {
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.mode-toggle button[aria-pressed='true'] {
+  background: var(--ink);
+  color: #fffaf0;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
@@ -161,10 +192,44 @@ h1 {
 }
 
 .message-row.tool_result .message-bubble {
-  background: var(--tool);
-  color: #4c3a05;
+  background: transparent;
+  color: var(--muted);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 0.82rem;
+}
+
+.choice-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 16px clamp(18px, 4vw, 34px);
+}
+
+.choice-panel p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choice-list button {
+  min-height: 42px;
+  border: 1px solid var(--user);
+  border-radius: 8px;
+  background: #fffdfa;
+  color: var(--user);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 14px;
+}
+
+.choice-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .error-banner {
@@ -237,6 +302,16 @@ h1 {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .mode-toggle {
+    min-width: 0;
   }
 
   .run-pill {

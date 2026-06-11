@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { handleMessage } from '@/lib/support-agent';
+import { handleMessage, type SupportAgentName } from '@/lib/support-agent';
 
 interface ChatRequest {
   conversationId?: unknown;
   message?: unknown;
+  agent?: unknown;
 }
 
 export async function POST(req: Request) {
@@ -19,6 +20,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await handleMessage(body.conversationId, body.message);
+  const agent =
+    body.agent === 'returns' || body.agent === 'support'
+      ? (body.agent as SupportAgentName)
+      : 'support';
+
+  const result = await handleMessage(body.conversationId, body.message, agent);
   return NextResponse.json(result);
 }

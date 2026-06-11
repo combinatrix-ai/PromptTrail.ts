@@ -2,26 +2,37 @@ import {
   Agent,
   PromptTrail,
   Source,
+  Structured,
   Tool,
   memoryStore,
   type MessageType,
   type ModelOutput,
+  type Session,
+  type Vars,
 } from '@prompttrail/core';
 import { z } from 'zod';
 
+export type SupportAgentName = 'support' | 'returns';
 type SupportMessageType = Exclude<MessageType['type'], 'system'>;
 
 export interface SupportChatMessage {
   type: SupportMessageType;
   content: string;
+  structuredContent?: unknown;
 }
 
 export interface SupportChatResponse {
   status: 'done' | 'suspended';
+  awaiting?: string;
   messages: SupportChatMessage[];
 }
 
 type SupportModelSource = Source<ModelOutput> | Source<string>;
+type ReturnsModelSource = Source<ModelOutput>;
+type ReturnWizardVars = Vars<{
+  refundedOrderId?: string;
+  refundId?: string;
+}>;
 
 interface OrderRecord {
   orderId: string;
@@ -36,6 +47,11 @@ export interface RefundRecord {
   orderId: string;
   reason: string;
   idempotencyKey: string | undefined;
+}
+
+export interface ReturnTransformInspection {
+  type: MessageType['type'];
+  content: string;
 }
 
 const orders: Record<string, OrderRecord> = {
@@ -66,6 +82,17 @@ const orders: Record<string, OrderRecord> = {
 };
 
 const refundRecords: RefundRecord[] = [];
+const returnTransformInspections: ReturnTransformInspection[] = [];
+
+const returnChoiceSchema = z.object({
+  reply: z.string(),
+  choices: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+    }),
+  ),
+});
 
 const lookupOrder = Tool.create({
   name: 'lookupOrder',
@@ -128,6 +155,22 @@ function defaultSupportModelSource(): SupportModelSource {
     .addTool('issueRefund', issueRefund);
 }
 
+function defaultReturnsModelSource(): ReturnsModelSource {
+  return Source.llm().openai({ adapter: 'ai-sdk' });
+}
+
+function orderChoices() {
+  return Object.values(orders).map((order) => ({
+    id: order.orderId,
+    label: `${order.orderId} - ${order.item}`,
+  }));
+}
+
+function selectedOrderIdFromSession(session: Session): string {
+  const selected = session.getLastMessage()?.content;
+  return typeof selected === 'string' ? selected.trim() : '';
+}
+
 export function createSupportAgent(
   modelSource: SupportModelSource = defaultSupportModelSource(),
 ) {
@@ -146,20 +189,107 @@ export function createSupportAgent(
     .assistant('reply', modelSource);
 }
 
+export function createReturnsAgent(
+  modelSource: ReturnsModelSource = defaultReturnsModelSource(),
+) {
+  return Agent.create<ReturnWizardVars>('returns')
+    .system(
+      'policy',
+      [
+        'You are the Trail Supply return wizard.',
+        'The customer is choosing from these demo orders:',
+        'ORD-1001 Trail Runner Backpack is refundable.',
+        'ORD-1002 Insulated Camp Mug is refundable.',
+        'ORD-1003 Warranty Replacement Strap is not refundable.',
+        `Emit exactly these choices: ${orderChoices()
+          .map((choice) => `${choice.id} (${choice.label})`)
+          .join(', ')}.`,
+        'Ask the customer to choose one order and emit choices for every demo order.',
+      ].join(' '),
+    )
+    .inbox('reason')
+    .structured(
+      'ask-order',
+      Structured.withSource(modelSource, returnChoiceSchema),
+    )
+    .awaitInput('order-choice')
+    .conditional(
+      'eligible',
+      ({ session }) => {
+        const orderId = selectedOrderIdFromSession(session);
+        return orders[orderId]?.refundable === true;
+      },
+      (approve) =>
+        approve
+          .transform(
+            'issue-refund',
+            {
+              effect: {
+                idempotencyKey: (session) =>
+                  `refund:${selectedOrderIdFromSession(session as Session)}`,
+              },
+            },
+            async (session, ctx) => {
+              const lastMessage = session.getLastMessage();
+              returnTransformInspections.push({
+                type: lastMessage?.type ?? 'user',
+                content: lastMessage?.content ?? '',
+              });
+
+              const orderId = selectedOrderIdFromSession(session);
+              const record = {
+                orderId,
+                reason:
+                  session.getMessagesByType('user').at(0)?.content ??
+                  'Return requested.',
+                idempotencyKey: ctx.idempotencyKey,
+              };
+              refundRecords.push(record);
+
+              return session.withVars({
+                refundedOrderId: orderId,
+                refundId: `RF-${orderId}`,
+              });
+            },
+          )
+          .assistant('confirmation', (session) => {
+            const refundId = session.getVar('refundId', 'RF-UNKNOWN');
+            const orderId = session.getVar('refundedOrderId', 'that order');
+            return `Refund ${refundId} has been issued for ${orderId}.`;
+          }),
+      (deny) =>
+        deny.assistant('ineligible', (session) => {
+          const orderId = selectedOrderIdFromSession(session);
+          const order = orders[orderId];
+          if (!order) {
+            return 'I could not find that order in the demo return list.';
+          }
+          return `${order.orderId} is not eligible for a refund.`;
+        }),
+    );
+}
+
 export function getRefundRecords(): readonly RefundRecord[] {
   return refundRecords;
 }
 
+export function getReturnTransformInspections(): readonly ReturnTransformInspection[] {
+  return returnTransformInspections;
+}
+
 export function resetSupportDemoRecords(): void {
   refundRecords.length = 0;
+  returnTransformInspections.length = 0;
 }
 
 export function createSupportRuntime(
   modelSource: SupportModelSource = defaultSupportModelSource(),
+  returnsModelSource: ReturnsModelSource = defaultReturnsModelSource(),
 ) {
   const support = createSupportAgent(modelSource);
+  const returns = createReturnsAgent(returnsModelSource);
   const app = PromptTrail.app({
-    agents: { support },
+    agents: { support, returns },
     store: memoryStore(),
     defaults: { checkpoint: true },
   });
@@ -167,15 +297,20 @@ export function createSupportRuntime(
   return {
     app,
     support,
-    handleMessage: (conversationId: string, message: string) =>
-      handleMessageWithApp(app, conversationId, message),
+    returns,
+    handleMessage: (
+      conversationId: string,
+      message: string,
+      agent: SupportAgentName = 'support',
+    ) => handleMessageWithApp(app, conversationId, message, agent),
   };
 }
 
 const support = createSupportAgent();
+const returns = createReturnsAgent();
 
 export const app = PromptTrail.app({
-  agents: { support },
+  agents: { support, returns },
   store: memoryStore(),
   defaults: { checkpoint: true },
 });
@@ -183,30 +318,42 @@ export const app = PromptTrail.app({
 export async function handleMessage(
   conversationId: string,
   message: string,
+  agent: SupportAgentName = 'support',
 ): Promise<SupportChatResponse> {
-  return handleMessageWithApp(app, conversationId, message);
+  return handleMessageWithApp(app, conversationId, message, agent);
 }
 
 async function handleMessageWithApp(
   runtime: ReturnType<typeof PromptTrail.app>,
   conversationId: string,
   message: string,
+  agent: SupportAgentName,
 ): Promise<SupportChatResponse> {
   const result = await runtime.send({
-    agent: 'support',
+    agent,
     runId: conversationId,
     input: message,
   });
 
   return {
     status: result.status,
+    awaiting: result.awaiting,
     messages: result.session.messages
       .filter((item): item is MessageType & { type: SupportMessageType } => {
         return item.type !== 'system';
       })
-      .map((item) => ({
-        type: item.type,
-        content: item.content,
-      })),
+      .map((item) => {
+        const projected: SupportChatMessage = {
+          type: item.type,
+          content: item.content,
+        };
+        if (
+          'structuredContent' in item &&
+          item.structuredContent !== undefined
+        ) {
+          projected.structuredContent = item.structuredContent;
+        }
+        return projected;
+      }),
   };
 }
