@@ -163,7 +163,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].content).toBeDefined();
     expect(messages[2].content).toContain('123456789');
 
-    const agent = Agent.quick()
+    const agent = Agent.create('e2e-add-templates')
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
       .add(new Assistant(openAILLMSource));
@@ -283,7 +283,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
     // Each have system, user, assistant, conditional
-    const sequence = Agent.quick()
+    const sequence = Agent.create('e2e-builder-methods')
       .system('This is automated API testing. Repeat what user says.')
       .user('123456789')
       .assistant(openAILLMSource)
