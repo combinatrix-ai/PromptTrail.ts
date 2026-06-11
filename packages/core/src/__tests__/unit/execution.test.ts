@@ -432,12 +432,12 @@ describe('observer bus', () => {
     const writes: string[] = [];
     const bus = new ObserverBus([
       {
-        name: 'discord-progress',
+        name: 'chat-progress',
         async handle(event, context) {
           await context.deliveryBindings?.checkWrite(
             String(event.idempotencyKey),
             async () => {
-              writes.push(`discord:${event.idempotencyKey}`);
+              writes.push(`chat:${event.idempotencyKey}`);
             },
           );
         },
@@ -463,7 +463,7 @@ describe('observer bus', () => {
       idempotencyKey: 'progress:1',
     });
 
-    expect(writes).toEqual(['discord:progress:1', 'metrics:progress:1']);
+    expect(writes).toEqual(['chat:progress:1', 'metrics:progress:1']);
   });
 
   it('uses unambiguous observer delivery binding namespace keys', async () => {

@@ -118,8 +118,8 @@ describe('execution interceptors', () => {
       phase: 'beforeModel',
       session: createSession(),
       context: {
-        channelPrompt: 'discord channel policy',
-        delivery: { platform: 'discord', channelId: 'C1' },
+        channelPrompt: 'fake-chat channel policy',
+        delivery: { platform: 'fake-chat', channelId: 'C1' },
         deliveryBindings: { checkWrite: async () => undefined },
         observerDeliveryBindings: { checkWrite: async () => undefined },
         platformBinding: { messageId: 'M1' },
@@ -144,8 +144,8 @@ describe('execution interceptors', () => {
     });
 
     expect(seen).toEqual([
-      { channelPrompt: 'discord channel policy' },
-      { channelPrompt: 'discord channel policy' },
+      { channelPrompt: 'fake-chat channel policy' },
+      { channelPrompt: 'fake-chat channel policy' },
     ]);
   });
 
@@ -157,8 +157,8 @@ describe('execution interceptors', () => {
       session: createSession(),
       request: { prompt: 'original' },
       context: {
-        channelPrompt: 'discord channel policy',
-        delivery: { platform: 'discord', channelId: 'C1' },
+        channelPrompt: 'fake-chat channel policy',
+        delivery: { platform: 'fake-chat', channelId: 'C1' },
         deliveryBindings: { checkWrite: async () => undefined },
         observerDeliveryBindings: { checkWrite: async () => undefined },
         platformBinding: { messageId: 'M1' },
@@ -176,7 +176,7 @@ describe('execution interceptors', () => {
       call: () => 'reply',
     });
 
-    expect(seen).toEqual([{ channelPrompt: 'discord channel policy' }]);
+    expect(seen).toEqual([{ channelPrompt: 'fake-chat channel policy' }]);
   });
 
   it('rejects hook request and result patches at runtime', async () => {

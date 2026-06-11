@@ -5,31 +5,6 @@ export interface TriggerEvent {
   [key: string]: unknown;
 }
 
-export interface DiscordMessageEvent extends TriggerEvent {
-  source: 'discord';
-  guild: string;
-  channel: string;
-  channelId: string;
-  thread?: string;
-  author: string;
-  authorId: string;
-  authorBot: boolean;
-  content: string;
-  mentionsBot?: boolean;
-  isDM?: boolean;
-}
-
-export interface CronEvent extends TriggerEvent {
-  source: 'cron';
-  job: {
-    id: string;
-    name: string;
-    schedule: string;
-    origin?: DeliveryTarget;
-  };
-  payload?: Record<string, unknown>;
-}
-
 export type RuntimeFilter<TEvent extends TriggerEvent> = (
   event: TEvent,
 ) => boolean;
@@ -50,27 +25,12 @@ export interface OriginDeliveryTarget {
   platform: 'origin';
 }
 
-export interface DiscordOriginThreadDeliveryTarget {
-  platform: 'discord';
-  kind: 'originThread';
+export interface DeliveryTarget {
+  platform: string;
+  [key: string]: unknown;
 }
 
-export interface DiscordChannelDeliveryTarget {
-  platform: 'discord';
-  channel: string;
-}
-
-export interface ConcreteDiscordDeliveryTarget {
-  platform: 'discord';
-  channel: string;
-  thread?: string;
-}
-
-export type DeliveryTarget =
-  | OriginDeliveryTarget
-  | DiscordOriginThreadDeliveryTarget
-  | DiscordChannelDeliveryTarget
-  | ConcreteDiscordDeliveryTarget;
+export type RuntimeDeliveryTarget = DeliveryTarget | OriginDeliveryTarget;
 
 export interface BindingDefaults {
   checkpoint?: true | RunStore | { store?: RunStore };
@@ -79,24 +39,24 @@ export interface BindingDefaults {
   skills?: readonly string[];
   workdir?: string;
   context?: Record<string, unknown>;
-  behavior?: DiscordBindingBehavior;
+  behavior?: unknown;
 }
 
-export interface DiscordBindingBehavior {
-  allowedChannels?: readonly string[];
-  freeResponseChannels?: readonly string[];
-  threadResponseChannels?: readonly string[];
-  requireMention?: boolean;
-  autoThread?: boolean;
-  threadRequireMention?: boolean;
-  reactions?: boolean;
-  allowAnyAttachment?: boolean;
-  maxAttachmentBytes?: number;
-}
-
-export interface Trigger<_TEvent extends TriggerEvent = TriggerEvent> {
+export interface Trigger<TEvent extends TriggerEvent = TriggerEvent> {
   type: string;
-  schedule?: string;
+  defaultInput?: (event: TEvent) => string | undefined;
+  eventAttrs?: (event: TEvent) => Record<string, unknown> | undefined;
+  resolveDelivery?: (
+    delivery: DeliveryTarget,
+    event: TEvent,
+  ) => DeliveryTarget | undefined;
+  resolveContext?: (options: {
+    conversationId: string;
+    defaults: BindingDefaults;
+    delivery: DeliveryTarget | undefined;
+    event: TEvent;
+  }) => Record<string, unknown> | undefined;
+  shouldDispatch?: (event: TEvent, defaults: BindingDefaults) => boolean;
 }
 
 export interface RuntimeBinding<TEvent extends TriggerEvent> {
@@ -188,14 +148,19 @@ export class BindingBuilder<TEvent extends TriggerEvent> {
   }
 
   /**
-   * Shallow-merge Discord behavior defaults. Nested arrays such as
-   * allowedChannels are replaced by later calls, not concatenated.
+   * Shallow-merge platform behavior defaults. Nested arrays are replaced by
+   * later calls, not concatenated.
    */
-  behavior(behavior: DiscordBindingBehavior): this {
+  behavior(behavior: Record<string, unknown>): this {
+    const previous =
+      this.bindingDefaults.behavior &&
+      typeof this.bindingDefaults.behavior === 'object'
+        ? this.bindingDefaults.behavior
+        : {};
     this.bindingDefaults = {
       ...this.bindingDefaults,
       behavior: {
-        ...(this.bindingDefaults.behavior ?? {}),
+        ...previous,
         ...behavior,
       },
     };
@@ -278,66 +243,6 @@ export const Delivery = {
 
   replyToOrigin(): OriginDeliveryTarget {
     return { platform: 'origin' };
-  },
-};
-
-function channelMatches(
-  eventChannel: string,
-  eventChannelId: string,
-  id: string,
-) {
-  return eventChannel === id || eventChannelId === id;
-}
-
-export const discord = {
-  messages(): Trigger<DiscordMessageEvent> {
-    return { type: 'discord.messages' };
-  },
-
-  notBot(): RuntimeFilter<DiscordMessageEvent> {
-    return (event) => !event.authorBot;
-  },
-
-  inChannels(channels: readonly string[]): RuntimeFilter<DiscordMessageEvent> {
-    return (event) =>
-      channels.some((channel) =>
-        channelMatches(event.channel, event.channelId, channel),
-      );
-  },
-
-  sessionKey(options: {
-    groupSessionsPerUser?: boolean;
-    threadSessionsPerUser?: boolean;
-  }): ConversationResolver<DiscordMessageEvent> {
-    return (event) => {
-      if (event.isDM) {
-        return `discord:dm:${event.authorId}`;
-      }
-      if (event.thread) {
-        const base = `discord:guild:${event.guild}:thread:${event.thread}`;
-        return options.threadSessionsPerUser
-          ? `${base}:user:${event.authorId}`
-          : base;
-      }
-      const base = `discord:guild:${event.guild}:channel:${event.channelId}`;
-      return options.groupSessionsPerUser
-        ? `${base}:user:${event.authorId}`
-        : base;
-    };
-  },
-
-  replyToOriginThread(): DiscordOriginThreadDeliveryTarget {
-    return { platform: 'discord', kind: 'originThread' };
-  },
-
-  channel(channel: string): DiscordChannelDeliveryTarget {
-    return { platform: 'discord', channel };
-  },
-};
-
-export const cron = {
-  schedule(schedule: string): Trigger<CronEvent> {
-    return { type: 'cron.schedule', schedule };
   },
 };
 

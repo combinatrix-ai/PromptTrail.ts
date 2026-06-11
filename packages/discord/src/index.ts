@@ -7,18 +7,132 @@ import {
   type ClientOptions,
   type Message as DiscordMessage,
 } from 'discord.js';
-import type { ExecutionEvent, Observer, ObserverContext } from './execution';
 import type {
-  ConcreteDiscordDeliveryTarget,
+  BindingDefaults,
+  ConversationResolver,
   DeliveryTarget,
-  DiscordMessageEvent,
-} from './runtime_bindings';
-import { isConcreteDiscordDeliveryTarget } from './runtime_dispatch';
-import type {
+  ExecutionEvent,
+  Observer,
+  ObserverContext,
   RuntimePresenceHandle,
   RuntimeAdapter,
+  RuntimeFilter,
   RuntimeGatewayContext,
-} from './runtime_server';
+  Trigger,
+  TriggerEvent,
+} from '@prompttrail/core';
+
+export interface DiscordMessageEvent extends TriggerEvent {
+  source: 'discord';
+  guild: string;
+  channel: string;
+  channelId: string;
+  thread?: string;
+  author: string;
+  authorId: string;
+  authorBot: boolean;
+  content: string;
+  mentionsBot?: boolean;
+  isDM?: boolean;
+}
+
+export interface DiscordOriginThreadDeliveryTarget extends DeliveryTarget {
+  platform: 'discord';
+  kind: 'originThread';
+}
+
+export interface DiscordChannelDeliveryTarget extends DeliveryTarget {
+  platform: 'discord';
+  channel: string;
+}
+
+export interface ConcreteDiscordDeliveryTarget extends DeliveryTarget {
+  platform: 'discord';
+  channel: string;
+  thread?: string;
+}
+
+export interface DiscordBindingBehavior {
+  allowedChannels?: readonly string[];
+  freeResponseChannels?: readonly string[];
+  threadResponseChannels?: readonly string[];
+  requireMention?: boolean;
+  autoThread?: boolean;
+  threadRequireMention?: boolean;
+  reactions?: boolean;
+  allowAnyAttachment?: boolean;
+  maxAttachmentBytes?: number;
+}
+
+export const discord = {
+  messages(): Trigger<DiscordMessageEvent> {
+    return {
+      type: 'discord.messages',
+      eventAttrs: (event) => ({
+        author: event.author,
+        authorId: event.authorId,
+        channel: event.channel,
+        channelId: event.channelId,
+        thread: event.thread,
+      }),
+      resolveDelivery: (delivery, event) => {
+        if (delivery.platform === 'origin') {
+          return discordOrigin(event);
+        }
+        if (isDiscordOriginThreadDeliveryTarget(delivery)) {
+          return discordOrigin(event);
+        }
+        return delivery;
+      },
+      resolveContext: ({ defaults, event }) => ({
+        channelPrompt: resolveChannelPrompt(defaults, event),
+        skills: resolveChannelSkills(defaults, event),
+      }),
+      shouldDispatch: (event, defaults) =>
+        passesDiscordBehavior(event, defaults.behavior),
+    };
+  },
+
+  notBot(): RuntimeFilter<DiscordMessageEvent> {
+    return (event) => !event.authorBot;
+  },
+
+  inChannels(channels: readonly string[]): RuntimeFilter<DiscordMessageEvent> {
+    return (event) =>
+      channels.some((channel) =>
+        channelMatches(event.channel, event.channelId, channel),
+      );
+  },
+
+  sessionKey(options: {
+    groupSessionsPerUser?: boolean;
+    threadSessionsPerUser?: boolean;
+  }): ConversationResolver<DiscordMessageEvent> {
+    return (event) => {
+      if (event.isDM) {
+        return `discord:dm:${event.authorId}`;
+      }
+      if (event.thread) {
+        const base = `discord:guild:${event.guild}:thread:${event.thread}`;
+        return options.threadSessionsPerUser
+          ? `${base}:user:${event.authorId}`
+          : base;
+      }
+      const base = `discord:guild:${event.guild}:channel:${event.channelId}`;
+      return options.groupSessionsPerUser
+        ? `${base}:user:${event.authorId}`
+        : base;
+    };
+  },
+
+  replyToOriginThread(): DiscordOriginThreadDeliveryTarget {
+    return { platform: 'discord', kind: 'originThread' };
+  },
+
+  channel(channel: string): DiscordChannelDeliveryTarget {
+    return { platform: 'discord', channel };
+  },
+};
 
 export interface DiscordGatewayOptions {
   token?: string;
@@ -398,6 +512,127 @@ function discordMessageId(sent: unknown): string | undefined {
     return typeof id === 'string' ? id : undefined;
   }
   return undefined;
+}
+
+export function isConcreteDiscordDeliveryTarget(
+  delivery: DeliveryTarget | undefined,
+): delivery is ConcreteDiscordDeliveryTarget {
+  return (
+    delivery?.platform === 'discord' &&
+    'channel' in delivery &&
+    !('kind' in delivery)
+  );
+}
+
+export function passesDiscordBehavior(
+  event: DiscordMessageEvent,
+  behavior: BindingDefaults['behavior'],
+): boolean {
+  if (!isDiscordBindingBehavior(behavior)) {
+    return true;
+  }
+  if (
+    behavior.allowedChannels &&
+    !behavior.allowedChannels.some((channel) =>
+      matchesDiscordChannel(event, channel),
+    )
+  ) {
+    return false;
+  }
+  if (event.thread) {
+    const threadCanRespond =
+      behavior.threadResponseChannels?.some((channel) =>
+        matchesDiscordChannel(event, channel),
+      ) ?? true;
+    if (threadCanRespond && behavior.threadRequireMention === false) {
+      return true;
+    }
+  }
+  if (
+    behavior.freeResponseChannels?.some((channel) =>
+      matchesDiscordChannel(event, channel),
+    )
+  ) {
+    return true;
+  }
+  if (behavior.requireMention === false) {
+    return true;
+  }
+  return event.mentionsBot === true;
+}
+
+export function matchesDiscordChannel(
+  event: DiscordMessageEvent,
+  channel: string,
+): boolean {
+  return channelMatches(event.channel, event.channelId, channel);
+}
+
+function isDiscordBindingBehavior(
+  behavior: BindingDefaults['behavior'],
+): behavior is DiscordBindingBehavior {
+  return !!behavior && typeof behavior === 'object';
+}
+
+function isDiscordOriginThreadDeliveryTarget(
+  delivery: DeliveryTarget,
+): delivery is DiscordOriginThreadDeliveryTarget {
+  return delivery.platform === 'discord' && delivery.kind === 'originThread';
+}
+
+function discordOrigin(
+  event: DiscordMessageEvent,
+): ConcreteDiscordDeliveryTarget {
+  return {
+    platform: 'discord',
+    channel: event.channel,
+    thread: event.thread,
+  };
+}
+
+function channelMatches(
+  eventChannel: string,
+  eventChannelId: string,
+  id: string,
+) {
+  return eventChannel === id || eventChannelId === id;
+}
+
+function resolveChannelPrompt(
+  defaults: BindingDefaults,
+  event: DiscordMessageEvent,
+): string | undefined {
+  const prompts = defaults.context?.channelPrompts as
+    | Record<string, string>
+    | undefined;
+  if (!prompts) {
+    return undefined;
+  }
+  return (
+    (event.thread ? prompts[event.thread] : undefined) ??
+    prompts[event.channel] ??
+    prompts[event.channelId]
+  );
+}
+
+function resolveChannelSkills(
+  defaults: BindingDefaults,
+  event: DiscordMessageEvent,
+): readonly string[] | undefined {
+  const bindings = defaults.context?.channelSkillBindings as
+    | Array<{ channel: string; skills: readonly string[] }>
+    | undefined;
+  if (!bindings) {
+    return defaults.skills;
+  }
+  const exactThread = event.thread
+    ? bindings.find((binding) => binding.channel === event.thread)
+    : undefined;
+  const parent = bindings.find(
+    (binding) =>
+      binding.channel === event.channel || binding.channel === event.channelId,
+  );
+  return exactThread?.skills ?? parent?.skills ?? defaults.skills;
 }
 
 function isDeliveryTarget(value: unknown): value is DeliveryTarget {

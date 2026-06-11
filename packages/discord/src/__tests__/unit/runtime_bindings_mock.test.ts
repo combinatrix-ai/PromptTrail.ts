@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { PromptTrail } from '../../durable';
-import { Agent } from '../../templates';
-import { Delivery, on, cron, discord } from '../../runtime_bindings';
+import { Agent, Delivery, PromptTrail, on } from '@prompttrail/core';
+import { cron } from '@prompttrail/cron';
+import { mockCron } from '@prompttrail/cron/testing';
+import { discord } from '../../index';
 import {
   deterministicAssistant,
-  mockCron,
   mockDiscord,
   mockRuntimeFixture,
-} from '../../runtime_mocks';
-import { assistantDeliveryKey } from '../../runtime_dispatch';
+} from '../../testing';
+import { assistantDeliveryKey } from '@prompttrail/core/runtime_dispatch';
 
 function discordDeliveryTarget(channel: string, thread?: string) {
   return {

@@ -6,11 +6,10 @@ import {
   agent,
   collectCodexTurnResult,
   createCodexAppServerWebSocketClient,
-  discord,
-  discordGateway,
   memoryStore,
 } from '@prompttrail/core';
 import type { Session } from '@prompttrail/core';
+import { discord, discordGateway } from '@prompttrail/discord';
 
 interface ClawConfig {
   token: string;

@@ -201,7 +201,7 @@ describe('public API surface', () => {
     expect(prompttrail).not.toHaveProperty('dispatchRuntimeBindingEvent');
     expect(prompttrail).not.toHaveProperty('AssistantDeliveryTracker');
     expect(prompttrail).not.toHaveProperty('mockRuntimeFixture');
-    expect(prompttrail).not.toHaveProperty('mockDiscord');
+    expect(prompttrail).not.toHaveProperty('mockPlatformConnector');
     expect(prompttrail.PromptTrail).toHaveProperty('server');
   });
 

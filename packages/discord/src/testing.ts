@@ -1,25 +1,29 @@
-import { app, MemoryRunStore } from './durable';
-import type { Message } from './message';
-import type { Attrs } from './session';
-import { Agent } from './templates';
 import {
+  Agent,
+  MemoryRunStore,
+  PromptTrail,
+  type Attrs,
   type BindingDefaults,
-  type CronEvent,
   type DeliveryTarget,
-  type DiscordMessageEvent,
+  type Message,
   type RuntimeBinding,
-  type TriggerEvent,
   type RuntimeBundle,
-} from './runtime_bindings';
+  type TriggerEvent,
+} from '@prompttrail/core';
 import {
   AssistantDeliveryTracker,
   assistantDeliveryKey,
   dispatchRuntimeEvent,
   findRuntimeBinding,
-  isConcreteDiscordDeliveryTarget,
   mergeBindingDefaults,
+} from '@prompttrail/core/runtime_dispatch';
+import { type CronEvent, type CronTrigger } from '@prompttrail/cron';
+import type { MockCronConnector } from '@prompttrail/cron/testing';
+import {
+  type DiscordMessageEvent,
+  isConcreteDiscordDeliveryTarget,
   passesDiscordBehavior,
-} from './runtime_dispatch';
+} from './index';
 
 export interface MockChannel {
   id: string;
@@ -89,11 +93,6 @@ type DiscordReceiveHandler = (
   message: MockDiscordReceiveOptions,
 ) => Promise<void>;
 
-type CronTickHandler = (
-  name: string,
-  payload?: Record<string, unknown>,
-) => Promise<void>;
-
 export class MockDiscordConnector {
   private receiveHandler?: DiscordReceiveHandler;
   private readonly sent: MockDiscordDelivery[] = [];
@@ -154,36 +153,6 @@ export class MockDiscordConnector {
   }
 }
 
-export class MockCronConnector {
-  private tickHandler?: CronTickHandler;
-  private readonly origins = new Map<string, DeliveryTarget>();
-  private readonly runNames: string[] = [];
-
-  attach(handler: CronTickHandler): void {
-    this.tickHandler = handler;
-  }
-
-  async tick(name: string, payload?: Record<string, unknown>): Promise<void> {
-    if (!this.tickHandler) {
-      throw new Error('Mock Cron connector is not attached to a fixture');
-    }
-    this.runNames.push(name);
-    await this.tickHandler(name, payload);
-  }
-
-  setOrigin(name: string, origin: DeliveryTarget): void {
-    this.origins.set(name, origin);
-  }
-
-  origin(name: string): DeliveryTarget | undefined {
-    return this.origins.get(name);
-  }
-
-  runs(): string[] {
-    return [...this.runNames];
-  }
-}
-
 export interface MockRuntimeFixtureOptions {
   bundle: RuntimeBundle;
   connectors: {
@@ -201,10 +170,6 @@ export interface MockConversationSummary {
 
 export function mockDiscord(options: MockDiscordOptions): MockDiscordConnector {
   return new MockDiscordConnector(options);
-}
-
-export function mockCron(): MockCronConnector {
-  return new MockCronConnector();
 }
 
 export function deterministicAssistant(): MockAssistantHandler {
@@ -230,7 +195,7 @@ export function mockRuntimeFixture(options: MockRuntimeFixtureOptions) {
 
 class MockRuntimeFixture {
   readonly store = new MemoryRunStore();
-  readonly app: ReturnType<typeof app>;
+  readonly app: ReturnType<typeof PromptTrail.app>;
   readonly discord: MockDiscordConnector;
   readonly cron: MockCronConnector;
   readonly runtime: {
@@ -248,7 +213,7 @@ class MockRuntimeFixture {
   private readonly effectEntries: EffectJournalEntry[] = [];
 
   constructor(private readonly options: MockRuntimeFixtureOptions) {
-    this.app = app({
+    this.app = PromptTrail.app({
       store: this.store,
       agents: this.buildAgents(),
     });
@@ -344,11 +309,8 @@ class MockRuntimeFixture {
     if (!passesDiscordBehavior(event, defaults.behavior)) {
       return;
     }
-    if (
-      defaults.behavior?.autoThread &&
-      !event.thread &&
-      message.autoThread !== false
-    ) {
+    const behavior = defaults.behavior as { autoThread?: boolean } | undefined;
+    if (behavior?.autoThread && !event.thread && message.autoThread !== false) {
       event = {
         ...event,
         thread: this.discord.createThread(channel.name),
@@ -374,7 +336,7 @@ class MockRuntimeFixture {
       job: {
         id: slug(name),
         name,
-        schedule: binding.trigger.schedule ?? '',
+        schedule: (binding.trigger as CronTrigger).schedule ?? '',
         origin: this.cron.origin(name),
       },
       payload,

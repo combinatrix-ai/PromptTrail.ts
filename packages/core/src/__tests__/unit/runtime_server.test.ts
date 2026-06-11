@@ -4,9 +4,8 @@ import { Middleware } from '../../interceptors';
 import {
   Delivery,
   on,
-  discord,
   type DeliveryTarget,
-  type DiscordMessageEvent,
+  type TriggerEvent,
 } from '../../runtime_bindings';
 import { Agent } from '../../templates';
 import {
@@ -20,12 +19,169 @@ import {
 } from '../../runtime_server';
 import type { ObserverDeliveryBindingStore } from '../../execution';
 
-function discordDeliveryTarget(channel: string, thread?: string) {
+interface FakeMessageEvent extends TriggerEvent {
+  source: 'fake-chat';
+  guild: string;
+  channel: string;
+  channelId: string;
+  thread?: string;
+  author: string;
+  authorId: string;
+  authorBot: boolean;
+  content: string;
+  mentionsBot?: boolean;
+  isDM?: boolean;
+}
+
+interface FakeChatBehavior {
+  allowedChannels?: readonly string[];
+  freeResponseChannels?: readonly string[];
+  threadResponseChannels?: readonly string[];
+  requireMention?: boolean;
+  threadRequireMention?: boolean;
+}
+
+function fakeChatDeliveryTarget(channel: string, thread?: string) {
   return {
-    platform: 'discord' as const,
+    platform: 'fake-chat' as const,
     channel,
     thread,
   };
+}
+
+const fakeChat = {
+  messages() {
+    return {
+      type: 'fake-chat.messages',
+      eventAttrs: (event: FakeMessageEvent) => ({
+        author: event.author,
+        authorId: event.authorId,
+        channel: event.channel,
+        channelId: event.channelId,
+        thread: event.thread,
+      }),
+      resolveDelivery: (delivery: DeliveryTarget, event: FakeMessageEvent) => {
+        if (
+          delivery.platform === 'origin' ||
+          (delivery.platform === 'fake-chat' &&
+            delivery.kind === 'originThread')
+        ) {
+          return fakeChatDeliveryTarget(event.channel, event.thread);
+        }
+        return delivery;
+      },
+      shouldDispatch: (
+        event: FakeMessageEvent,
+        defaults: { behavior?: unknown },
+      ) => passesFakeChatBehavior(event, defaults.behavior),
+      resolveContext: ({
+        defaults,
+        event,
+      }: {
+        defaults: {
+          context?: Record<string, unknown>;
+          skills?: readonly string[];
+        };
+        event: FakeMessageEvent;
+      }) => ({
+        channelPrompt: resolveFakeChatChannelPrompt(defaults, event),
+        skills: resolveFakeChatChannelSkills(defaults, event),
+      }),
+    };
+  },
+  notBot() {
+    return (event: FakeMessageEvent) => !event.authorBot;
+  },
+  sessionKey(options: {
+    groupSessionsPerUser?: boolean;
+    threadSessionsPerUser?: boolean;
+  }) {
+    return (event: FakeMessageEvent) => {
+      if (event.isDM) {
+        return `fake-chat:dm:${event.authorId}`;
+      }
+      if (event.thread) {
+        const base = `fake-chat:guild:${event.guild}:thread:${event.thread}`;
+        return options.threadSessionsPerUser
+          ? `${base}:user:${event.authorId}`
+          : base;
+      }
+      const base = `fake-chat:guild:${event.guild}:channel:${event.channelId}`;
+      return options.groupSessionsPerUser
+        ? `${base}:user:${event.authorId}`
+        : base;
+    };
+  },
+  replyToOriginThread() {
+    return { platform: 'fake-chat', kind: 'originThread' };
+  },
+  channel(channel: string) {
+    return { platform: 'fake-chat', channel };
+  },
+};
+
+function passesFakeChatBehavior(
+  event: FakeMessageEvent,
+  behavior: unknown,
+): boolean {
+  if (!behavior || typeof behavior !== 'object') {
+    return true;
+  }
+  const chatBehavior = behavior as FakeChatBehavior;
+  if (
+    chatBehavior.allowedChannels &&
+    !chatBehavior.allowedChannels.includes(event.channel) &&
+    !chatBehavior.allowedChannels.includes(event.channelId)
+  ) {
+    return false;
+  }
+  if (
+    chatBehavior.freeResponseChannels?.includes(event.channel) ||
+    chatBehavior.freeResponseChannels?.includes(event.channelId)
+  ) {
+    return true;
+  }
+  if (chatBehavior.requireMention === false) {
+    return true;
+  }
+  return event.mentionsBot === true;
+}
+
+function resolveFakeChatChannelPrompt(
+  defaults: { context?: Record<string, unknown> },
+  event: FakeMessageEvent,
+): string | undefined {
+  const prompts = defaults.context?.channelPrompts as
+    | Record<string, string>
+    | undefined;
+  if (!prompts) {
+    return undefined;
+  }
+  return (
+    (event.thread ? prompts[event.thread] : undefined) ??
+    prompts[event.channel] ??
+    prompts[event.channelId]
+  );
+}
+
+function resolveFakeChatChannelSkills(
+  defaults: { context?: Record<string, unknown>; skills?: readonly string[] },
+  event: FakeMessageEvent,
+): readonly string[] | undefined {
+  const bindings = defaults.context?.channelSkillBindings as
+    | Array<{ channel: string; skills: readonly string[] }>
+    | undefined;
+  if (!bindings) {
+    return defaults.skills;
+  }
+  const exactThread = event.thread
+    ? bindings.find((binding) => binding.channel === event.thread)
+    : undefined;
+  const parent = bindings.find(
+    (binding) =>
+      binding.channel === event.channel || binding.channel === event.channelId,
+  );
+  return exactThread?.skills ?? parent?.skills ?? defaults.skills;
 }
 
 function chatAgent(name: string, handler: any): Agent {
@@ -34,14 +190,14 @@ function chatAgent(name: string, handler: any): Agent {
 
 describe('RuntimeServer', () => {
   it('includes stable delivery targets in assistant delivery keys', () => {
-    const conversationId = 'discord:guild:workroom:channel:C_general';
-    const target = discordDeliveryTarget('general', 'T_debug');
+    const conversationId = 'fake-chat:guild:workroom:channel:C_general';
+    const target = fakeChatDeliveryTarget('general', 'T_debug');
     const reorderedTarget = {
       thread: 'T_debug',
       channel: 'general',
-      platform: 'discord',
+      platform: 'fake-chat',
     } as DeliveryTarget;
-    const otherTarget = discordDeliveryTarget('cloud-lab', 'T_debug');
+    const otherTarget = fakeChatDeliveryTarget('cloud-lab', 'T_debug');
 
     expect(assistantDeliveryKey(conversationId, 0, target)).toBe(
       assistantDeliveryKey(conversationId, 0, reorderedTarget),
@@ -52,8 +208,8 @@ describe('RuntimeServer', () => {
   });
 
   it('keeps assistant delivery keys stable across JSON target round-trips', () => {
-    const conversationId = 'discord:guild:workroom:channel:C_general';
-    const targetWithUndefinedThread = discordDeliveryTarget('general');
+    const conversationId = 'fake-chat:guild:workroom:channel:C_general';
+    const targetWithUndefinedThread = fakeChatDeliveryTarget('general');
     const roundTrippedTarget = JSON.parse(
       JSON.stringify(targetWithUndefinedThread),
     ) as DeliveryTarget;
@@ -64,7 +220,7 @@ describe('RuntimeServer', () => {
   });
 
   it('routes adapter gateway events through bindings and delivery drivers', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const observerEvents: string[] = [];
@@ -108,12 +264,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -122,10 +278,10 @@ describe('RuntimeServer', () => {
       ],
     });
     const adapter: RuntimeAdapter = {
-      name: 'test-discord',
+      name: 'test-fake-chat',
       gateways: [
         {
-          type: 'discord.messages',
+          type: 'fake-chat.messages',
           start(ctx) {
             emit = ctx.emit;
           },
@@ -133,18 +289,18 @@ describe('RuntimeServer', () => {
       ],
       deliveries: [
         {
-          platform: 'discord',
+          platform: 'fake-chat',
           deliver(_ctx, target, message) {
-            const discordTarget = target as { channel: string };
-            deliveries.push(`${discordTarget.channel}:${message.content}`);
-            discordTarget.channel = 'driver-mutated';
+            const fakeChatTarget = target as { channel: string };
+            deliveries.push(`${fakeChatTarget.channel}:${message.content}`);
+            fakeChatTarget.channel = 'driver-mutated';
             return returnedBinding;
           },
         },
       ],
       presences: [
         {
-          platform: 'discord',
+          platform: 'fake-chat',
           start() {
             activityEvents.push('start');
             return {
@@ -239,7 +395,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -250,17 +406,17 @@ describe('RuntimeServer', () => {
     });
 
     const conversationId =
-      'discord:guild:workroom:channel:C_general:user:U_alice';
+      'fake-chat:guild:workroom:channel:C_general:user:U_alice';
     const finalDeliveryKey = assistantDeliveryKey(
       conversationId,
       0,
-      discordDeliveryTarget('general'),
+      fakeChatDeliveryTarget('general'),
     );
 
     expect(activityEvents).toEqual(['start', 'stop']);
     expect(deliveries).toEqual(['general:reply:hello']);
     expect(observerEvents).toEqual([
-      '1:model.started:discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started',
+      '1:model.started:fake-chat:guild:workroom:channel:C_general:user:U_alice:model:1:model.started',
       `0:delivery.pending:${finalDeliveryKey}`,
       `1:delivery.completed:${finalDeliveryKey}`,
     ]);
@@ -310,17 +466,17 @@ describe('RuntimeServer', () => {
       {
         platformBinding: { messageId: 'M_reply' },
         target: expect.objectContaining({
-          platform: 'discord',
+          platform: 'fake-chat',
           channel: 'general',
         }),
       },
     ]);
     expect(await app.pendingAssistantDeliveryOutbox()).toEqual([]);
     expect(observerWrites).toEqual([
-      'claim:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
-      'complete:["runtimeObserver:0","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app',
-      'claim:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
-      'complete:["runtimeObserver:1","discord:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app-second',
+      'claim:["runtimeObserver:0","fake-chat:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
+      'complete:["runtimeObserver:0","fake-chat:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app',
+      'claim:["runtimeObserver:1","fake-chat:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:undefined',
+      'complete:["runtimeObserver:1","fake-chat:guild:workroom:channel:C_general:user:U_alice:model:1:model.started"]:app-second',
       `claim:["runtimeObserver:0","${finalDeliveryKey}"]:undefined`,
       `complete:["runtimeObserver:0","${finalDeliveryKey}"]:server`,
     ]);
@@ -336,9 +492,9 @@ describe('RuntimeServer', () => {
       name: 'graph-runtime',
       defaults: {},
       bindings: [
-        on(discord.messages())
+        on(fakeChat.messages())
           .to(main)
-          .conversation(() => 'discord:graph'),
+          .conversation(() => 'fake-chat:graph'),
       ],
     });
     const app = PromptTrail.app({
@@ -348,7 +504,7 @@ describe('RuntimeServer', () => {
       app,
       binding: bundle.bindings[0]!,
       event: {
-        source: 'discord',
+        source: 'fake-chat',
         guild: 'workroom',
         channel: 'general',
         channelId: 'C_general',
@@ -364,7 +520,7 @@ describe('RuntimeServer', () => {
     });
 
     expect(result.result.status).toBe('done');
-    expect(result.result.runId).toBe('discord:graph');
+    expect(result.result.runId).toBe('fake-chat:graph');
     expect(
       result.result.session.messages.map((message) => message.content),
     ).toEqual(['hello', 'reply:hello']);
@@ -376,12 +532,12 @@ describe('RuntimeServer', () => {
     const bundle = PromptTrail.runtimeBundle({
       name: 'binding-agent-registration',
       bindings: [
-        on(discord.messages())
+        on(fakeChat.messages())
           .to(main)
-          .conversation(() => 'discord:graph'),
-        on(discord.messages())
+          .conversation(() => 'fake-chat:graph'),
+        on(fakeChat.messages())
           .to(durable)
-          .conversation(() => 'discord:durable'),
+          .conversation(() => 'fake-chat:durable'),
       ],
     });
 
@@ -405,13 +561,13 @@ describe('RuntimeServer', () => {
         context: { appScope: 'runtime-app' },
         delivery: Delivery.origin(),
       },
-    }).on(discord.messages(), (binding) => {
+    }).on(fakeChat.messages(), (binding) => {
       binding
         .to(main)
-        .conversation(() => 'discord:graph')
-        .reply(discord.channel('general'))
+        .conversation(() => 'fake-chat:graph')
+        .reply(fakeChat.channel('general'))
         .context((event) => ({
-          bindingScope: 'discord-message',
+          bindingScope: 'fake-chat-message',
           channelId: event.channelId,
         }));
     });
@@ -420,7 +576,7 @@ describe('RuntimeServer', () => {
       app,
       binding: bundle.bindings[0]!,
       event: {
-        source: 'discord',
+        source: 'fake-chat',
         guild: 'workroom',
         channel: 'general',
         channelId: 'C_general',
@@ -439,15 +595,15 @@ describe('RuntimeServer', () => {
     expect(bundle.agents.main).toBe(main);
     expect(bundle.bindings[0]!.agent).toBe('main');
     expect(bundle.bindings[0]!.defaults.delivery).toEqual(
-      discord.channel('general'),
+      fakeChat.channel('general'),
     );
-    expect(result.delivery).toEqual(discord.channel('general'));
+    expect(result.delivery).toEqual(fakeChat.channel('general'));
     expect(result.context).toEqual(
       expect.objectContaining({
         appScope: 'runtime-app',
-        bindingScope: 'discord-message',
+        bindingScope: 'fake-chat-message',
         channelId: 'C_general',
-        delivery: discord.channel('general'),
+        delivery: fakeChat.channel('general'),
       }),
     );
     expect(
@@ -456,7 +612,7 @@ describe('RuntimeServer', () => {
   });
 
   it('starts runtime adapter gateways from app instances', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const activityEvents: string[] = [];
     const sourceEvents: string[] = [];
@@ -472,7 +628,7 @@ describe('RuntimeServer', () => {
       defaults: {},
     })
       .gateway({
-        type: 'discord.messages',
+        type: 'fake-chat.messages',
         start(ctx) {
           sourceEvents.push('start');
           emit = ctx.emit;
@@ -482,13 +638,13 @@ describe('RuntimeServer', () => {
         },
       })
       .delivery({
-        platform: 'discord',
+        platform: 'fake-chat',
         deliver(_ctx, target, message) {
           deliveries.push(`${target.channel}:${message.content}`);
         },
       })
       .presence({
-        platform: 'discord',
+        platform: 'fake-chat',
         start(_ctx, target) {
           activityEvents.push(`start:${target.channel}`);
           return {
@@ -513,11 +669,11 @@ describe('RuntimeServer', () => {
           },
         ],
       })
-      .on(discord.messages(), (binding) =>
+      .on(fakeChat.messages(), (binding) =>
         binding
           .to(main)
-          .conversation(() => 'discord:app-start')
-          .reply(discord.channel('general')),
+          .conversation(() => 'fake-chat:app-start')
+          .reply(fakeChat.channel('general')),
       )
       .observe((event) => {
         if (
@@ -535,7 +691,7 @@ describe('RuntimeServer', () => {
       throw new Error('Runtime source did not start.');
     }
     await emit({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -613,12 +769,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: {
         checkpoint: true,
-        delivery: discord.replyToOriginThread(),
+        delivery: fakeChat.replyToOriginThread(),
       },
       bindings: [
-        on(discord.messages())
+        on(fakeChat.messages())
           .toAgent('main')
-          .conversation(() => 'discord:graph'),
+          .conversation(() => 'fake-chat:graph'),
       ],
     });
     const app = PromptTrail.app({
@@ -627,7 +783,7 @@ describe('RuntimeServer', () => {
     });
 
     const event = {
-      source: 'discord' as const,
+      source: 'fake-chat' as const,
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -660,29 +816,31 @@ describe('RuntimeServer', () => {
       second.result.session.messages.map((message) => message.content),
     ).toEqual(['SYS', 'hello', 'reply:hello', 'again', 'reply:again']);
 
-    const run = store.get('discord:graph')!;
+    const run = store.get('fake-chat:graph')!;
     expect(run).toMatchObject({
       status: 'done',
       graphCursor: 2,
     });
     expect(run.inbox).toHaveLength(2);
-    expect(await app.assistantDeliveryOutbox('discord:graph')).toHaveLength(2);
+    expect(await app.assistantDeliveryOutbox('fake-chat:graph')).toHaveLength(
+      2,
+    );
   });
 
   it('accepts Agent instances in runtime bindings', () => {
     const main = Agent.create('main').assistant('reply', () => 'reply');
     const durable = Agent.create('durable');
-    const binding = on(discord.messages())
+    const binding = on(fakeChat.messages())
       .to(main)
-      .conversation(() => 'discord:graph')
+      .conversation(() => 'fake-chat:graph')
       .build();
-    const aliasBinding = on(discord.messages())
+    const aliasBinding = on(fakeChat.messages())
       .toAgent(main)
-      .conversation(() => 'discord:graph')
+      .conversation(() => 'fake-chat:graph')
       .build();
-    const durableBinding = on(discord.messages())
+    const durableBinding = on(fakeChat.messages())
       .to(durable)
-      .conversation(() => 'discord:durable')
+      .conversation(() => 'fake-chat:durable')
       .build();
 
     expect(binding.agent).toBe('main');
@@ -691,7 +849,7 @@ describe('RuntimeServer', () => {
   });
 
   it('allocates delivery event sequence numbers per conversation', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveryEvents: string[] = [];
     const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
@@ -701,12 +859,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -734,10 +892,10 @@ describe('RuntimeServer', () => {
       ],
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -745,7 +903,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver() {
                 return { messageId: 'sent' };
               },
@@ -757,7 +915,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -767,7 +925,7 @@ describe('RuntimeServer', () => {
       content: 'hello alice',
     });
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -778,15 +936,15 @@ describe('RuntimeServer', () => {
     });
 
     expect(deliveryEvents).toEqual([
-      'discord:guild:workroom:channel:C_general:user:U_alice:0:delivery.pending',
-      'discord:guild:workroom:channel:C_general:user:U_alice:1:delivery.completed',
-      'discord:guild:workroom:channel:C_general:user:U_bob:0:delivery.pending',
-      'discord:guild:workroom:channel:C_general:user:U_bob:1:delivery.completed',
+      'fake-chat:guild:workroom:channel:C_general:user:U_alice:0:delivery.pending',
+      'fake-chat:guild:workroom:channel:C_general:user:U_alice:1:delivery.completed',
+      'fake-chat:guild:workroom:channel:C_general:user:U_bob:0:delivery.pending',
+      'fake-chat:guild:workroom:channel:C_general:user:U_bob:1:delivery.completed',
     ]);
   });
 
   it('uses stable idempotency keys for runtime error delivery', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const main = chatAgent('main', () => {
       throw new Error('handler failed');
@@ -796,12 +954,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: {},
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -818,10 +976,10 @@ describe('RuntimeServer', () => {
       errorMessage: 'Something failed.',
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -829,7 +987,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(ctx, _target, message) {
                 deliveries.push(
                   `${ctx.conversationId}:${ctx.idempotencyKey}:${message.content}`,
@@ -840,8 +998,8 @@ describe('RuntimeServer', () => {
         },
       ],
     });
-    const event: DiscordMessageEvent = {
-      source: 'discord',
+    const event: FakeMessageEvent = {
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -858,12 +1016,12 @@ describe('RuntimeServer', () => {
     expect(deliveries).toHaveLength(2);
     expect(deliveries[0]).toBe(deliveries[1]);
     expect(deliveries[0]).toMatch(
-      /^discord:guild:workroom:channel:C_general:user:U_alice:runtime-error:[0-9a-f]{8}:Something failed\.$/,
+      /^fake-chat:guild:workroom:channel:C_general:user:U_alice:runtime-error:[0-9a-f]{8}:Something failed\.$/,
     );
   });
 
   it('threads runtime binding context into durable middleware', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const middlewareDelivery: unknown[] = [];
     const observerDelivery: unknown[] = [];
@@ -882,12 +1040,12 @@ describe('RuntimeServer', () => {
         },
       },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -896,10 +1054,10 @@ describe('RuntimeServer', () => {
       ],
     });
     const adapter: RuntimeAdapter = {
-      name: 'test-discord',
+      name: 'test-fake-chat',
       gateways: [
         {
-          type: 'discord.messages',
+          type: 'fake-chat.messages',
           start(ctx) {
             emit = ctx.emit;
           },
@@ -907,7 +1065,7 @@ describe('RuntimeServer', () => {
       ],
       deliveries: [
         {
-          platform: 'discord',
+          platform: 'fake-chat',
           deliver(_ctx, _target, message) {
             deliveries.push(message.content);
           },
@@ -953,7 +1111,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -966,12 +1124,12 @@ describe('RuntimeServer', () => {
     expect(deliveries).toEqual(['reply:General channel prompt']);
     expect(middlewareDelivery).toEqual([undefined]);
     expect(observerDelivery).toEqual([
-      { platform: 'discord', channel: 'general', thread: undefined },
+      { platform: 'fake-chat', channel: 'general', thread: undefined },
     ]);
   });
 
   it('persists completed final deliveries across server restarts', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const deliveries: string[] = [];
     const main = chatAgent('main', (session) => ({
       content: `reply:${session.getLastMessage()?.content ?? ''}`,
@@ -981,12 +1139,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -999,10 +1157,10 @@ describe('RuntimeServer', () => {
       agents: bundle.agents,
     });
     const adapter: RuntimeAdapter = {
-      name: 'test-discord',
+      name: 'test-fake-chat',
       gateways: [
         {
-          type: 'discord.messages',
+          type: 'fake-chat.messages',
           start(ctx) {
             emit = ctx.emit;
           },
@@ -1010,7 +1168,7 @@ describe('RuntimeServer', () => {
       ],
       deliveries: [
         {
-          platform: 'discord',
+          platform: 'fake-chat',
           deliver(_ctx, _target, message) {
             deliveries.push(message.content);
           },
@@ -1025,7 +1183,7 @@ describe('RuntimeServer', () => {
 
     await firstServer.start();
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1043,7 +1201,7 @@ describe('RuntimeServer', () => {
 
     await secondServer.start();
     await emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1054,8 +1212,8 @@ describe('RuntimeServer', () => {
     });
 
     const conversationId =
-      'discord:guild:workroom:channel:C_general:user:U_alice';
-    const target = discordDeliveryTarget('general');
+      'fake-chat:guild:workroom:channel:C_general:user:U_alice';
+    const target = fakeChatDeliveryTarget('general');
 
     expect(deliveries).toEqual(['reply:first', 'reply:second']);
     expect(
@@ -1076,7 +1234,7 @@ describe('RuntimeServer', () => {
   });
 
   it('serializes concurrent dispatches for the same conversation', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const order: string[] = [];
     let releaseFirst: (() => void) | undefined;
     let firstStarted: (() => void) | undefined;
@@ -1100,12 +1258,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1121,10 +1279,10 @@ describe('RuntimeServer', () => {
       }),
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -1132,7 +1290,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(_ctx, _target, message) {
                 order.push(`deliver:${message.content}`);
               },
@@ -1144,7 +1302,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
     const first = emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1155,7 +1313,7 @@ describe('RuntimeServer', () => {
     });
     await firstHandlerStarted;
     const second = emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1180,7 +1338,7 @@ describe('RuntimeServer', () => {
   });
 
   it('runs concurrent dispatches for different conversations independently', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const order: string[] = [];
     let releaseFirst: (() => void) | undefined;
     let firstStarted: (() => void) | undefined;
@@ -1211,12 +1369,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1232,10 +1390,10 @@ describe('RuntimeServer', () => {
       }),
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -1243,7 +1401,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(_ctx, _target, message) {
                 order.push(`deliver:${message.content}`);
               },
@@ -1255,7 +1413,7 @@ describe('RuntimeServer', () => {
 
     await server.start();
     const first = emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1266,7 +1424,7 @@ describe('RuntimeServer', () => {
     });
     await firstHandlerStarted;
     const second = emit?.({
-      source: 'discord',
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1296,19 +1454,19 @@ describe('RuntimeServer', () => {
   });
 
   it('surfaces observer failures when strictObservers is enabled', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-strict-observer-test',
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1335,10 +1493,10 @@ describe('RuntimeServer', () => {
       ],
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -1346,7 +1504,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver() {
                 // delivery.pending observer fails before the delivery driver.
               },
@@ -1359,7 +1517,7 @@ describe('RuntimeServer', () => {
     await server.start();
     await expect(
       emit?.({
-        source: 'discord',
+        source: 'fake-chat',
         guild: 'workroom',
         channel: 'general',
         channelId: 'C_general',
@@ -1372,7 +1530,7 @@ describe('RuntimeServer', () => {
   });
 
   it('does not roll back completed delivery when strict observer fails on completion', async () => {
-    let emit: RuntimeGatewayContext<DiscordMessageEvent>['emit'] | undefined;
+    let emit: RuntimeGatewayContext<FakeMessageEvent>['emit'] | undefined;
     let deliveries = 0;
     const main = chatAgent('main', () => 'reply');
     const bundle = PromptTrail.runtimeBundle({
@@ -1380,12 +1538,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1413,10 +1571,10 @@ describe('RuntimeServer', () => {
       ],
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start(ctx) {
                 emit = ctx.emit;
               },
@@ -1424,7 +1582,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver() {
                 deliveries++;
               },
@@ -1437,7 +1595,7 @@ describe('RuntimeServer', () => {
     await server.start();
     await expect(
       emit?.({
-        source: 'discord',
+        source: 'fake-chat',
         guild: 'workroom',
         channel: 'general',
         channelId: 'C_general',
@@ -1452,7 +1610,7 @@ describe('RuntimeServer', () => {
     expect(
       (
         await app.assistantDeliveryOutbox(
-          'discord:guild:workroom:channel:C_general:user:U_alice',
+          'fake-chat:guild:workroom:channel:C_general:user:U_alice',
         )
       ).map((entry) => entry.status),
     ).toEqual(['delivered']);
@@ -1468,12 +1626,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1486,8 +1644,8 @@ describe('RuntimeServer', () => {
       store,
       agents: bundle.agents,
     });
-    const event: DiscordMessageEvent = {
-      source: 'discord',
+    const event: FakeMessageEvent = {
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1505,11 +1663,11 @@ describe('RuntimeServer', () => {
       defaults: mergeBindingDefaults(bundle.defaults, binding.defaults),
     });
 
-    const runId = 'discord:guild:workroom:channel:C_general:user:U_alice';
+    const runId = 'fake-chat:guild:workroom:channel:C_general:user:U_alice';
     const deliveryKey = assistantDeliveryKey(
       runId,
       0,
-      discordDeliveryTarget('general'),
+      fakeChatDeliveryTarget('general'),
     );
     expect(
       (await app.assistantDeliveryOutbox(runId)).map((entry) => ({
@@ -1545,10 +1703,10 @@ describe('RuntimeServer', () => {
       runtime: app,
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(ctx, _target, message) {
                 deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
                 return { messageId: `sent:${ctx.idempotencyKey}` };
@@ -1597,12 +1755,12 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: { checkpoint: true },
       bindings: [
-        on(discord.messages())
-          .where(discord.notBot())
+        on(fakeChat.messages())
+          .where(fakeChat.notBot())
           .toAgent('main')
-          .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+          .conversation(fakeChat.sessionKey({ groupSessionsPerUser: true }))
           .defaults({
-            delivery: discord.replyToOriginThread(),
+            delivery: fakeChat.replyToOriginThread(),
             behavior: {
               allowedChannels: ['general'],
               requireMention: false,
@@ -1614,8 +1772,8 @@ describe('RuntimeServer', () => {
       store: memoryStore(),
       agents: bundle.agents,
     });
-    const event: DiscordMessageEvent = {
-      source: 'discord',
+    const event: FakeMessageEvent = {
+      source: 'fake-chat',
       guild: 'workroom',
       channel: 'general',
       channelId: 'C_general',
@@ -1641,16 +1799,16 @@ describe('RuntimeServer', () => {
       delivery.channel = 'caller-mutated';
     }
 
-    const runId = 'discord:guild:workroom:channel:C_general:user:U_alice';
+    const runId = 'fake-chat:guild:workroom:channel:C_general:user:U_alice';
     const deliveryKey = assistantDeliveryKey(
       runId,
       0,
-      discordDeliveryTarget('general'),
+      fakeChatDeliveryTarget('general'),
     );
     const secondDeliveryKey = assistantDeliveryKey(
       runId,
       1,
-      discordDeliveryTarget('general'),
+      fakeChatDeliveryTarget('general'),
     );
     expect(
       (await app.pendingAssistantDeliveryOutbox()).map(({ entry }) => ({
@@ -1661,14 +1819,14 @@ describe('RuntimeServer', () => {
       {
         idempotencyKey: deliveryKey,
         target: expect.objectContaining({
-          platform: 'discord',
+          platform: 'fake-chat',
           channel: 'general',
         }),
       },
       {
         idempotencyKey: secondDeliveryKey,
         target: expect.objectContaining({
-          platform: 'discord',
+          platform: 'fake-chat',
           channel: 'general',
         }),
       },
@@ -1682,9 +1840,9 @@ describe('RuntimeServer', () => {
       store,
       agents: { main },
     });
-    const runId = 'discord:guild:workroom:channel:C_general';
-    const otherRunId = 'discord:guild:workroom:channel:C_other';
-    const target = discord.channel('general');
+    const runId = 'fake-chat:guild:workroom:channel:C_general';
+    const otherRunId = 'fake-chat:guild:workroom:channel:C_other';
+    const target = fakeChat.channel('general');
     const deliveryKey = assistantDeliveryKey(runId, 0, target);
     const otherDeliveryKey = assistantDeliveryKey(otherRunId, 0, target);
 
@@ -1755,8 +1913,8 @@ describe('RuntimeServer', () => {
       store: memoryStore(),
       agents: bundle.agents,
     });
-    const runId = 'discord:guild:workroom:channel:C_general';
-    const target = discord.channel('general');
+    const runId = 'fake-chat:guild:workroom:channel:C_general';
+    const target = fakeChat.channel('general');
     const deliveryKey = assistantDeliveryKey(runId, 0, target);
     await app.run({
       agent: 'main',
@@ -1787,10 +1945,10 @@ describe('RuntimeServer', () => {
       runtime: app,
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start() {
                 order.push('source-start');
               },
@@ -1798,7 +1956,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(ctx, target, message) {
                 order.push('deliver');
                 (target as { channel?: string }).channel = 'retry-mutated';
@@ -1846,7 +2004,7 @@ describe('RuntimeServer', () => {
           content: 'retry me',
         },
         target: expect.objectContaining({
-          platform: 'discord',
+          platform: 'fake-chat',
           channel: 'general',
         }),
       },
@@ -1866,8 +2024,8 @@ describe('RuntimeServer', () => {
       store: memoryStore(),
       agents: bundle.agents,
     });
-    const runId = 'discord:guild:workroom:channel:C_general';
-    const target = discord.channel('general');
+    const runId = 'fake-chat:guild:workroom:channel:C_general';
+    const target = fakeChat.channel('general');
     const deliveryKey = assistantDeliveryKey(runId, 0, target);
     await app.run({
       agent: 'main',
@@ -1892,10 +2050,10 @@ describe('RuntimeServer', () => {
       runtime: app,
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(ctx, _target, message) {
                 deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
               },
@@ -1930,8 +2088,8 @@ describe('RuntimeServer', () => {
       store: memoryStore(),
       agents: bundle.agents,
     });
-    const runId = 'discord:guild:workroom:channel:C_general';
-    const target = discord.channel('general');
+    const runId = 'fake-chat:guild:workroom:channel:C_general';
+    const target = fakeChat.channel('general');
     const firstDeliveryKey = assistantDeliveryKey(runId, 0, target);
     const secondDeliveryKey = assistantDeliveryKey(runId, 1, target);
     await app.run({
@@ -1959,10 +2117,10 @@ describe('RuntimeServer', () => {
       runtime: app,
       adapters: [
         {
-          name: 'test-discord',
+          name: 'test-fake-chat',
           gateways: [
             {
-              type: 'discord.messages',
+              type: 'fake-chat.messages',
               start() {
                 order.push('source-start');
               },
@@ -1970,7 +2128,7 @@ describe('RuntimeServer', () => {
           ],
           deliveries: [
             {
-              platform: 'discord',
+              platform: 'fake-chat',
               deliver(ctx) {
                 order.push(`deliver:${ctx.idempotencyKey}`);
                 throw new Error('delivery failed');

@@ -360,9 +360,18 @@ that replay systems get for free.
       earlier `Source<TEvent>` plan — §9.8) and infer `TEvent` in the binding
       builder. Remove the closed
       `RuntimeBindingEvent = DiscordMessageEvent | CronEvent` union. (`runtime_bindings.ts`)
-- [ ] **5.2 Move platform sources to packages.** `discord` / `cron` become the
+- [x] **5.2 Move platform sources to packages.** `discord` / `cron` become the
       first event-source packages, not core unions; `slack`/`github` add without
       editing core. (`runtime_bindings.ts`, `runtime_discord.ts`)
+      Done: `@prompttrail/discord` (trigger/gateway, delivery driver, progress
+      observer, typing presence, `./testing` mocks; owns `discord.js`) and
+      `@prompttrail/cron` (`cron.schedule`, `./testing`). Core gained generic
+      Trigger hooks (`defaultInput`/`eventAttrs`/`resolveDelivery`/
+      `resolveContext`/`shouldDispatch`), an open `DeliveryTarget`
+      (`platform: string`), and lost `runtime_discord`/`runtime_mocks` and the
+      `discord.js` dependency; core binding coverage now runs on a generic
+      fake trigger. Note: `claw` build was already broken by pre-§5.2 branch
+      drift (imports the §1.1-deleted `agent` factory) — fix with §7.
 - [x] **5.3 Resolve the "source" name collision.** Node content stays
       `Source.llm()`; app event wiring is **`app.on(eventSource, builder)`**
       (decided — rename the existing `.bind(...)` to `.on(...)`). The binding's

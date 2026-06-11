@@ -17,9 +17,7 @@ import {
   AssistantDeliveryTracker,
   dispatchRuntimeEvent,
   findRuntimeBinding,
-  isDiscordMessageEvent,
   mergeBindingDefaults,
-  passesDiscordBehavior,
   resolveRuntimeDelivery,
   type RuntimeDispatchResult,
 } from './runtime_dispatch';
@@ -198,14 +196,11 @@ export class RuntimeServer {
       this.options.bundle.defaults,
       binding.defaults,
     );
-    if (
-      isDiscordMessageEvent(event) &&
-      !passesDiscordBehavior(event, defaults.behavior)
-    ) {
+    if (binding.trigger.shouldDispatch?.(event, defaults) === false) {
       return;
     }
 
-    const delivery = resolveRuntimeDelivery(defaults.delivery, event);
+    const delivery = resolveRuntimeDelivery(defaults.delivery, binding, event);
     const conversationId = binding.conversation(event);
     await this.withConversationLock(conversationId, async () => {
       const presenceHandle = await this.startPresence(event, delivery);
@@ -656,12 +651,8 @@ function retryDeliveryEvent(runId: string): TriggerEvent {
   // Startup retries do not have the original source event in memory. Delivery
   // drivers must use the persisted delivery target for routing on this path.
   return {
-    source: 'cron',
-    job: {
-      id: 'runtime-outbox-retry',
-      name: `Runtime outbox retry for ${runId}`,
-      schedule: '',
-    },
+    source: 'runtime.retry',
+    runId,
   };
 }
 

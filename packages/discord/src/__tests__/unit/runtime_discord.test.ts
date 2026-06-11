@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { discordProgressObserver } from '../../runtime_discord';
-import type { ConcreteDiscordDeliveryTarget } from '../../runtime_bindings';
+import {
+  discordProgressObserver,
+  type ConcreteDiscordDeliveryTarget,
+} from '../../index';
 
 describe('discord runtime adapter', () => {
   it('renders tool progress events to the Discord delivery target', async () => {

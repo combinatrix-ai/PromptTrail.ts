@@ -3,10 +3,7 @@ import type { Message } from './message';
 import type { Attrs, Vars } from './session';
 import type {
   BindingDefaults,
-  ConcreteDiscordDeliveryTarget,
-  CronEvent,
   DeliveryTarget,
-  DiscordMessageEvent,
   RuntimeBinding,
   TriggerEvent,
   RuntimeBundle,
@@ -93,10 +90,7 @@ export function resolveRuntimeInput<TEvent extends TriggerEvent>(
   if (typeof event.content === 'string') {
     return event.content;
   }
-  if (isCronEvent(event)) {
-    return event.job.name;
-  }
-  return '';
+  return binding.trigger.defaultInput?.(event) ?? '';
 }
 
 export function resolveRuntimeBindingContext<TEvent extends TriggerEvent>(
@@ -113,19 +107,14 @@ export function resolveRuntimeBindingContext<TEvent extends TriggerEvent>(
 
 export function resolveRuntimeDelivery(
   delivery: DeliveryTarget | undefined,
+  binding: RuntimeBinding<TriggerEvent>,
   event: TriggerEvent,
 ): DeliveryTarget | undefined {
   if (!delivery) {
     return undefined;
   }
-  if (delivery.platform === 'origin') {
-    if (isCronEvent(event)) {
-      return event.job.origin;
-    }
-    return isDiscordMessageEvent(event) ? discordOrigin(event) : undefined;
-  }
-  if (delivery.platform === 'discord' && 'kind' in delivery) {
-    return isDiscordMessageEvent(event) ? discordOrigin(event) : undefined;
+  if (binding.trigger.resolveDelivery) {
+    return binding.trigger.resolveDelivery(delivery, event);
   }
   return delivery;
 }
@@ -134,19 +123,16 @@ export function runtimeContextFromDefaults(
   conversationId: string,
   defaults: BindingDefaults,
   delivery: DeliveryTarget | undefined,
-  event: TriggerEvent,
+  _event: TriggerEvent,
 ): RuntimeDispatchContext {
-  const channelPrompt = resolveChannelPrompt(defaults, event);
-  const skills = resolveChannelSkills(defaults, event);
   return {
     ...(defaults.context ?? {}),
     conversationId,
     delivery,
     toolsets: defaults.toolsets,
-    skills,
+    skills: defaults.skills,
     workdir: defaults.workdir,
     historyBackfill: defaults.context?.historyBackfill,
-    channelPrompt,
   };
 }
 
@@ -167,6 +153,7 @@ export async function dispatchRuntimeEvent<
     : options.defaults;
   const resolvedDelivery = resolveRuntimeDelivery(
     defaults.delivery,
+    options.binding as RuntimeBinding<TriggerEvent>,
     options.event,
   );
   const contextDelivery = cloneRuntimeDispatchValue(resolvedDelivery);
@@ -177,6 +164,15 @@ export async function dispatchRuntimeEvent<
     contextDelivery,
     options.event,
   );
+  const triggerContext = options.binding.trigger.resolveContext?.({
+    conversationId,
+    defaults,
+    delivery: contextDelivery,
+    event: options.event,
+  });
+  if (triggerContext) {
+    Object.assign(context, triggerContext);
+  }
   const content =
     options.content ?? resolveRuntimeInput(options.binding, options.event);
   const result = await options.app.send<TVars, TAttrs>({
@@ -188,6 +184,7 @@ export async function dispatchRuntimeEvent<
       attrs: {
         source: options.event.source,
         ...runtimeEventAttrs(options.event),
+        ...(options.binding.trigger.eventAttrs?.(options.event) ?? {}),
         ...(options.attrs ?? {}),
         runtimeContext: context,
       },
@@ -220,78 +217,9 @@ function cloneRuntimeDispatchValue<T>(value: T): T {
   }
 }
 
-export function passesDiscordBehavior(
-  event: DiscordMessageEvent,
-  behavior: BindingDefaults['behavior'],
-): boolean {
-  if (!behavior) {
-    return true;
-  }
-  if (
-    behavior.allowedChannels &&
-    !behavior.allowedChannels.some((channel) =>
-      matchesDiscordChannel(event, channel),
-    )
-  ) {
-    return false;
-  }
-  if (event.thread) {
-    const threadCanRespond =
-      behavior.threadResponseChannels?.some((channel) =>
-        matchesDiscordChannel(event, channel),
-      ) ?? true;
-    if (threadCanRespond && behavior.threadRequireMention === false) {
-      return true;
-    }
-  }
-  if (
-    behavior.freeResponseChannels?.some((channel) =>
-      matchesDiscordChannel(event, channel),
-    )
-  ) {
-    return true;
-  }
-  if (behavior.requireMention === false) {
-    return true;
-  }
-  return event.mentionsBot === true;
-}
-
-export function matchesDiscordChannel(
-  event: DiscordMessageEvent,
-  channel: string,
-): boolean {
-  return event.channel === channel || event.channelId === channel;
-}
-
-export function isConcreteDiscordDeliveryTarget(
-  delivery: DeliveryTarget | undefined,
-): delivery is ConcreteDiscordDeliveryTarget {
-  return (
-    delivery?.platform === 'discord' &&
-    'channel' in delivery &&
-    !('kind' in delivery)
-  );
-}
-
 export function runtimeEventAttrs(
-  event: TriggerEvent,
+  _event: TriggerEvent,
 ): Record<string, unknown> {
-  if (isDiscordMessageEvent(event)) {
-    return {
-      author: event.author,
-      authorId: event.authorId,
-      channel: event.channel,
-      channelId: event.channelId,
-      thread: event.thread,
-    };
-  }
-  if (isCronEvent(event)) {
-    return {
-      job: event.job.name,
-      jobId: event.job.id,
-    };
-  }
   return {};
 }
 
@@ -326,78 +254,4 @@ export class AssistantDeliveryTracker {
   has(idempotencyKey: string): boolean {
     return this.deliveredKeys.has(idempotencyKey);
   }
-}
-
-function discordOrigin(
-  event: DiscordMessageEvent,
-): ConcreteDiscordDeliveryTarget {
-  return {
-    platform: 'discord',
-    channel: event.channel,
-    thread: event.thread,
-  };
-}
-
-function resolveChannelPrompt(
-  defaults: BindingDefaults,
-  event: TriggerEvent,
-): string | undefined {
-  if (!isDiscordMessageEvent(event)) {
-    return undefined;
-  }
-  const prompts = defaults.context?.channelPrompts as
-    | Record<string, string>
-    | undefined;
-  if (!prompts) {
-    return undefined;
-  }
-  return (
-    (event.thread ? prompts[event.thread] : undefined) ??
-    prompts[event.channel] ??
-    prompts[event.channelId]
-  );
-}
-
-function resolveChannelSkills(
-  defaults: BindingDefaults,
-  event: TriggerEvent,
-): readonly string[] | undefined {
-  if (!isDiscordMessageEvent(event)) {
-    return defaults.skills;
-  }
-  const bindings = defaults.context?.channelSkillBindings as
-    | Array<{ channel: string; skills: readonly string[] }>
-    | undefined;
-  if (!bindings) {
-    return defaults.skills;
-  }
-  const exactThread = event.thread
-    ? bindings.find((binding) => binding.channel === event.thread)
-    : undefined;
-  const parent = bindings.find(
-    (binding) =>
-      binding.channel === event.channel || binding.channel === event.channelId,
-  );
-  return exactThread?.skills ?? parent?.skills ?? defaults.skills;
-}
-
-export function isDiscordMessageEvent(
-  event: TriggerEvent,
-): event is DiscordMessageEvent {
-  return (
-    event.source === 'discord' &&
-    typeof event.channel === 'string' &&
-    typeof event.channelId === 'string'
-  );
-}
-
-export function isCronEvent(event: TriggerEvent): event is CronEvent {
-  const job = event.job as { id?: unknown; name?: unknown } | undefined;
-  return (
-    event.source === 'cron' &&
-    typeof job === 'object' &&
-    job !== null &&
-    typeof job.id === 'string' &&
-    typeof job.name === 'string'
-  );
 }

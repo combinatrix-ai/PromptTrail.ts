@@ -566,7 +566,7 @@ describe('checkpoint app runtime', () => {
       checkpoint: true,
       context: {
         delivery: {
-          platform: 'discord',
+          platform: 'fake-chat',
           channel: 'C_general',
         },
       },
