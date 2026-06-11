@@ -137,7 +137,7 @@ describe('public API surface', () => {
   });
 
   it('types direct agent execution input option', async () => {
-    const session = await prompttrail.Agent.quick()
+    const session = await prompttrail.Agent.create('public-api')
       .assistant('reply')
       .execute({ input: 'hello from options' });
 
@@ -148,7 +148,7 @@ describe('public API surface', () => {
   });
 
   it('rejects positional Agent.execute arguments at runtime', async () => {
-    const agent = prompttrail.Agent.quick().user('hello');
+    const agent = prompttrail.Agent.create('public-api').user('hello');
 
     await expect(
       (
@@ -227,7 +227,7 @@ describe('public API surface', () => {
     expect(Agent).not.toHaveProperty('system');
     expect(Agent).not.toHaveProperty('user');
     expect(Agent).not.toHaveProperty('assistant');
-    expect(prompttrail.Agent.quick).toBeTypeOf('function');
+    expect(Agent).not.toHaveProperty('quick');
   });
 
   it('does not expose Scenario as a public authoring API', () => {

@@ -24,7 +24,7 @@ describe('Agent Function-Based Templates', () => {
     it('should support loop with builder function', async () => {
       let counter = 0;
 
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('You are a helpful assistant.')
         .user('Start the loop')
         .loop(
@@ -57,7 +57,7 @@ describe('Agent Function-Based Templates', () => {
       let iterations = 0;
 
       // Test loopForever helper
-      const _agent = Agent.quick()
+      const _agent = Agent.create('agent-function-based')
         .system('Forever loop test')
         .loopForever((l) => {
           iterations++;
@@ -67,12 +67,11 @@ describe('Agent Function-Based Templates', () => {
       // Since loopForever creates an infinite loop, we need to test with a condition
       // Let's test a regular loop with true condition
       iterations = 0;
-      const limitedAgent = Agent.quick()
+      const limitedAgent = Agent.create('agent-function-based')
         .system('Limited forever loop')
         .loop(
           (l) => l.user('Loop message'),
-          () => true, // Always true
-          5, // maxIterations
+          () => iterations++ < 5,
         );
 
       const session = await limitedAgent.execute();
@@ -84,24 +83,22 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support boolean loopIf parameter', async () => {
-      let counter = 0;
+      const counter = 0;
 
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Boolean loop test')
         .loop(
-          (l) => {
-            counter++;
-            return l.user(`Count: ${counter}`);
-          },
+          (l) => l.user('Count'),
           counter < 3, // This is evaluated once at build time!
+          1,
         );
 
-      const _session = await agent.execute();
+      await expect(agent.execute()).rejects.toThrow(/exceeded max iterations/);
 
       // Since boolean is evaluated at build time when counter is 0,
       // it will be true and loop forever (or until maxIterations)
       // Let's use a function that returns false immediately
-      const agent2 = Agent.quick()
+      const agent2 = Agent.create('agent-function-based')
         .system('Boolean loop test')
         .loop((l) => l.user('Should execute once'), false);
 
@@ -113,7 +110,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Function-based subroutine', () => {
     it('should support subroutine with builder function', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Main conversation')
         .user('Start main')
         .subroutine((s) =>
@@ -137,7 +134,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support subroutine with options', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Main conversation')
         .user('Start main')
         .subroutine(
@@ -165,7 +162,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should support custom squash function in subroutine', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Main')
         .subroutine((s) => s.user('Process data').assistant('Result: 42'), {
           squash: (parent, sub) => {
@@ -191,7 +188,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Implicit sequencing', () => {
     it('should execute chained templates in order', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Main')
         .user('First in sequence')
         .assistant('First response')
@@ -215,7 +212,7 @@ describe('Agent Function-Based Templates', () => {
       let outerCounter = 0;
       let innerCounter = 0;
 
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Nested loops')
         .loop(
           (outer) =>
@@ -224,33 +221,26 @@ describe('Agent Function-Based Templates', () => {
                 innerCounter++;
                 return inner.user(`Inner ${innerCounter}`);
               },
-              () => innerCounter < 2,
-              10, // maxIterations for inner loop
+              () => innerCounter++ < 2,
             ),
           () => {
-            outerCounter++;
             innerCounter = 0;
-            return outerCounter < 2;
+            return outerCounter++ < 1;
           },
-          2, // maxIterations for outer loop
         );
 
       const session = await agent.execute();
 
       const messages = Array.from(session.messages);
-      // 1 system + (1 outer + 10 inner) * 1 outer iteration = 1 + 11 = 12
-      expect(messages).toHaveLength(12);
+      expect(messages).toHaveLength(4);
       expect(messages[0].content).toBe('Nested loops');
       expect(messages[1].content).toBe('Outer 1');
       expect(messages[2].content).toBe('Inner 1');
-      // With inner loop hitting max iterations (10), we don't get the expected pattern
-      // Let's just verify the start of the sequence
-      expect(messages[1].content).toBe('Outer 1');
-      expect(messages[2].content).toBe('Inner 1');
+      expect(messages[3].content).toBe('Inner 1');
     });
 
     it('should support mixed nested templates', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Mixed nesting')
         .subroutine(
           (sub) =>
@@ -288,7 +278,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Short method names', () => {
     it('should support short method names without add prefix', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('Test short methods')
         .user('User message')
         .assistant('Assistant response');
@@ -303,7 +293,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should work in function builders with short names', async () => {
-      const agent = Agent.quick().loop(
+      const agent = Agent.create('agent-function-based').loop(
         (l) => l.user('Question').assistant(Source.literal('Answer')),
         (s) => s.messages.length < 4, // Stop after 2 iterations
       );
@@ -317,7 +307,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('Quick factory content-first methods', () => {
     it('should create quick agent with system content', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .system('System prompt')
         .user('User message')
         .assistant('Response');
@@ -330,7 +320,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should create quick agent with user content', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .user('First user message')
         .assistant('Response')
         .user('Second user message');
@@ -344,7 +334,7 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should create quick agent with assistant content', async () => {
-      const agent = Agent.quick()
+      const agent = Agent.create('agent-function-based')
         .assistant('Initial assistant message')
         .user('User response');
 
@@ -357,7 +347,9 @@ describe('Agent Function-Based Templates', () => {
     });
 
     it('should create empty agent with Agent.create', async () => {
-      const agent = Agent.quick().system('Added system').user('Added user');
+      const agent = Agent.create('agent-function-based')
+        .system('Added system')
+        .user('Added user');
 
       const session = await agent.execute();
 
@@ -368,7 +360,7 @@ describe('Agent Function-Based Templates', () => {
 
   describe('README examples', () => {
     it('should work with the first README example', async () => {
-      const _agent = Agent.quick()
+      const _agent = Agent.create('agent-function-based')
         .system('You are a helpful assistant.')
         .loop(
           (l) => l.user().assistant(), // Use CLI for user input, LLM for assistant
@@ -377,7 +369,7 @@ describe('Agent Function-Based Templates', () => {
 
       // Since we can't actually test CLI input and forever loops,
       // let's test a simplified version
-      const testableAgent = Agent.quick()
+      const testableAgent = Agent.create('agent-function-based')
         .system('You are a helpful assistant.')
         .loop(
           (l) => l.user('Test input').assistant('Test response'),
@@ -395,7 +387,7 @@ describe('Agent Function-Based Templates', () => {
 
     it('should work with loopForever helper', async () => {
       let counter = 0;
-      const _agent = Agent.quick()
+      const _agent = Agent.create('agent-function-based')
         .system('You are a helpful assistant.')
         .loopForever((l) => {
           counter++;
@@ -408,15 +400,11 @@ describe('Agent Function-Based Templates', () => {
 
       // Test with limited loop
       counter = 0;
-      const testableAgent = Agent.quick()
+      const testableAgent = Agent.create('agent-function-based')
         .system('You are a helpful assistant.')
         .loop(
-          (l) => {
-            counter++;
-            return l.user(`Message ${counter}`);
-          },
-          () => counter < 3,
-          3, // maxIterations
+          (l) => l.user('Message'),
+          () => counter++ < 3,
         );
 
       const session = await testableAgent.execute();
@@ -425,10 +413,9 @@ describe('Agent Function-Based Templates', () => {
       expect(messages).toHaveLength(4); // 1 system + 3 user messages
       // Check all messages
       expect(messages[0].type).toBe('system');
-      // All messages will be 'Message 1' because counter increments after the message is built
-      expect(messages[1].content).toBe('Message 1');
-      expect(messages[2].content).toBe('Message 1');
-      expect(messages[3].content).toBe('Message 1');
+      expect(messages[1].content).toBe('Message');
+      expect(messages[2].content).toBe('Message');
+      expect(messages[3].content).toBe('Message');
     });
   });
 });

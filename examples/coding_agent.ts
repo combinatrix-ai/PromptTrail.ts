@@ -142,7 +142,7 @@ export class CodingAgent {
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = Agent.quick()
+    const agent = Agent.create('coding-agent')
       .system(systemPrompt)
       .conditional(
         (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',

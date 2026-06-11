@@ -137,6 +137,12 @@ export interface AgentExecuteOptions<
   TM extends Attrs = Attrs,
 > extends AgentGraphExecutionOptions<TC, TM> {}
 
+type AgentGraphNodeDraft = Omit<AgentGraphNode, 'id' | 'children'> & {
+  id?: string;
+  children?: readonly AgentGraphNodeDraft[];
+  deriveType?: string;
+};
+
 /**
  * Agent class for building and executing templates
  * @template TAttrs - The metadata type.
@@ -158,7 +164,7 @@ export interface AgentExecuteOptions<
  * It is a key component of the template system, enabling the creation
  * of dynamic and interactive conversational experiences.
  * @example
- * const agent = Agent.quick()
+ * const agent = Agent.create('assistant')
  *   .system('System message')
  *   .user('User message')
  *   .assistant('Assistant message')
@@ -169,10 +175,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   private constructor(
     private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
     private readonly graphName?: string,
-    private readonly quickMode = false,
   ) {}
 
-  private readonly graphNodes: AgentGraphNode[] = [];
+  private readonly graphNodes: AgentGraphNodeDraft[] = [];
   private readonly graphTools: Record<string, PromptTrailTool<any, any>> = {};
   private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
   private readonly hooks: HookDefinition<TC, TM>[] = [];
@@ -230,20 +235,15 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return new Agent<TC, TM>(new Sequence<TM, TC>(), name);
   }
 
-  static quick<TC extends Vars = Vars, TM extends Attrs = Attrs>(): Agent<
-    TC,
-    TM
-  > {
-    return new Agent<TC, TM>(new Sequence<TM, TC>(), undefined, true);
-  }
-
   /** fluent helpers -------------------------------------------------- */
 
   add(t: Template<TM, TC>) {
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.add does not support legacy templates after graph authoring starts.',
-      );
+      this.graphNodes.push({
+        type: 'transform',
+        data: { template: t },
+      });
+      return this;
     }
     this.root.add(t);
     return this;
@@ -275,7 +275,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     }
     const rawNodes =
       this.graphNodes.length > 0
-        ? this.graphNodes
+        ? finalizeGraphNodeIds(this.graphNodes, {
+            legacyLifecycle: this.hasInterceptors(),
+          })
         : compileLegacyRootTemplate(this.root as Composite<TM, TC>);
     return createAgentGraph({
       name: this.graphName,
@@ -293,9 +295,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   checkpoint(options: AgentCheckpointOption = true) {
-    if (this.quickMode) {
-      throw new Error('Agent.quick() does not support checkpoint execution.');
-    }
     this.directCheckpointOptions = options;
     const checkpointStore = checkpointOptionStore(options);
     if (checkpointStore) {
@@ -308,13 +307,10 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   system(id: string, content: string): this;
   system(idOrContent: string, content?: string) {
     if (this.graphName) {
-      if (content === undefined) {
-        throw new Error('Graph Agent.system requires system(id, content).');
-      }
       this.graphNodes.push({
-        id: idOrContent,
+        id: content === undefined ? undefined : idOrContent,
         type: 'system',
-        data: { content },
+        data: { content: content ?? idOrContent },
       });
       return this;
     }
@@ -342,11 +338,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ) {
     if (this.graphName) {
       this.graphNodes.push({
-        id: idOrContentOrSource as string,
+        id:
+          contentOrSource === undefined
+            ? undefined
+            : (idOrContentOrSource as string),
         type: 'user',
         data:
           contentOrSource === undefined
-            ? undefined
+            ? compactGraphData({ input: idOrContentOrSource })
             : { input: contentOrSource },
       });
       return this;
@@ -388,12 +387,26 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       maybeOptions !== undefined ||
       isGraphAssistantInput(validatorOrOptions)
     ) {
+      const hasAuthoredId =
+        maybeOptions !== undefined || isGraphAssistantInput(validatorOrOptions);
+      const validationOptions = hasAuthoredId
+        ? undefined
+        : (validatorOrOptions as IValidator | ValidationOptions | undefined);
       this.graphNodes.push({
-        id: contentOrSource as string,
+        id: this.graphName
+          ? hasAuthoredId
+            ? (contentOrSource as string)
+            : undefined
+          : (contentOrSource as string),
         type: 'assistant',
         data: compactGraphData({
-          input: validatorOrOptions,
+          input: this.graphName
+            ? hasAuthoredId
+              ? validatorOrOptions
+              : (contentOrSource ?? Source.llm())
+            : validatorOrOptions,
           options: maybeOptions,
+          ...graphAssistantValidationData(contentOrSource, validationOptions),
         }),
       });
       return this;
@@ -412,27 +425,73 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  goal(id: string, goal: string, options: AgentGoalOptions<TC, TM> = {}): this {
-    this.graphNodes.push(createGoalGraphNode(id, goal, options));
+  goal(goal: string, options?: AgentGoalOptions<TC, TM>): this;
+  goal(id: string, goal: string, options?: AgentGoalOptions<TC, TM>): this;
+  goal(
+    idOrGoal: string,
+    goalOrOptions?: string | AgentGoalOptions<TC, TM>,
+    maybeOptions: AgentGoalOptions<TC, TM> = {},
+  ): this {
+    const hasAuthoredId = typeof goalOrOptions === 'string';
+    this.graphNodes.push(
+      createGoalGraphNode(
+        hasAuthoredId ? idOrGoal : undefined,
+        hasAuthoredId ? goalOrOptions : idOrGoal,
+        hasAuthoredId
+          ? maybeOptions
+          : ((goalOrOptions as AgentGoalOptions<TC, TM> | undefined) ?? {}),
+      ),
+    );
     return this;
   }
 
-  inbox(id: string, options?: Record<string, unknown>): this {
-    this.graphNodes.push({ id, type: 'inbox', data: options });
+  inbox(options?: Record<string, unknown>): this;
+  inbox(id: string, options?: Record<string, unknown>): this;
+  inbox(
+    idOrOptions?: string | Record<string, unknown>,
+    maybeOptions?: Record<string, unknown>,
+  ): this {
+    this.graphNodes.push({
+      id: typeof idOrOptions === 'string' ? idOrOptions : undefined,
+      type: 'inbox',
+      data: typeof idOrOptions === 'string' ? maybeOptions : idOrOptions,
+    });
     return this;
   }
 
-  tools(id: string, options?: Record<string, unknown>): this {
-    this.graphNodes.push({ id, type: 'tools', data: options });
+  tools(options?: Record<string, unknown>): this;
+  tools(id: string, options?: Record<string, unknown>): this;
+  tools(
+    idOrOptions?: string | Record<string, unknown>,
+    maybeOptions?: Record<string, unknown>,
+  ): this {
+    this.graphNodes.push({
+      id: typeof idOrOptions === 'string' ? idOrOptions : undefined,
+      type: 'tools',
+      data: typeof idOrOptions === 'string' ? maybeOptions : idOrOptions,
+    });
     return this;
   }
 
-  awaitInput(id: string, options?: Record<string, unknown>): this {
-    this.graphNodes.push({ id, type: 'awaitInput', data: options });
+  awaitInput(options?: Record<string, unknown>): this;
+  awaitInput(id: string, options?: Record<string, unknown>): this;
+  awaitInput(
+    idOrOptions?: string | Record<string, unknown>,
+    maybeOptions?: Record<string, unknown>,
+  ): this {
+    this.graphNodes.push({
+      id: typeof idOrOptions === 'string' ? idOrOptions : undefined,
+      type: 'awaitInput',
+      data: typeof idOrOptions === 'string' ? maybeOptions : idOrOptions,
+    });
     return this;
   }
 
   transform(transform: AgentGraphPureTransformHandler<TC, TM>): this;
+  transform(
+    options: AgentGraphTransformEffectOptions,
+    transform: AgentGraphEffectTransformHandler<TC, TM>,
+  ): this;
   transform(
     id: string,
     transform: AgentGraphPureTransformHandler<TC, TM>,
@@ -443,10 +502,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     transform: AgentGraphEffectTransformHandler<TC, TM>,
   ): this;
   transform(
-    idOrTransform: string | AgentGraphPureTransformHandler<TC, TM>,
+    idOrTransform:
+      | string
+      | AgentGraphPureTransformHandler<TC, TM>
+      | AgentGraphTransformEffectOptions,
     optionsOrTransform?:
       | AgentGraphTransformEffectOptions
-      | AgentGraphPureTransformHandler<TC, TM>,
+      | AgentGraphPureTransformHandler<TC, TM>
+      | AgentGraphEffectTransformHandler<TC, TM>,
     maybeTransform?: AgentGraphEffectTransformHandler<TC, TM>,
   ) {
     if (typeof idOrTransform === 'string') {
@@ -470,10 +533,29 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       });
       return this;
     }
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.transform requires transform(id, handler).');
+    if (
+      typeof idOrTransform === 'object' &&
+      typeof optionsOrTransform === 'function'
+    ) {
+      this.graphNodes.push({
+        type: 'transform',
+        data: {
+          handler: optionsOrTransform,
+          effect: idOrTransform.effect,
+        },
+      });
+      return this;
     }
-    this.root.add(new Transform(idOrTransform));
+    if (this.isGraphAuthoringMode()) {
+      this.graphNodes.push({
+        type: 'transform',
+        data: { handler: idOrTransform },
+      });
+      return this;
+    }
+    this.root.add(
+      new Transform(idOrTransform as AgentGraphPureTransformHandler<TC, TM>),
+    );
     return this;
   }
 
@@ -485,7 +567,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
-        throw new Error('Graph Agent.codex requires codex(id, options).');
+        throw new Error('Agent.codex(id, options) requires options.');
       }
       this.graphNodes.push({
         id: idOrOptions,
@@ -495,7 +577,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.codex requires codex(id, options).');
+      this.graphNodes.push({
+        type: 'codexTurn',
+        deriveType: 'codex',
+        data: { template: new CodexTurn(idOrOptions) },
+      });
+      return this;
     }
     this.root.add(new CodexTurn(idOrOptions));
     return this;
@@ -509,7 +596,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
-        throw new Error('Graph Agent.claude requires claude(id, options).');
+        throw new Error('Agent.claude(id, options) requires options.');
       }
       this.graphNodes.push({
         id: idOrOptions,
@@ -519,7 +606,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.claude requires claude(id, options).');
+      this.graphNodes.push({
+        type: 'claudeTurn',
+        deriveType: 'claude',
+        data: { template: new ClaudeTurn(idOrOptions) },
+      });
+      return this;
     }
     this.root.add(new ClaudeTurn(idOrOptions));
     return this;
@@ -533,9 +625,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ) {
     if (typeof idOrTemplate === 'string') {
       if (!maybeTemplate) {
-        throw new Error(
-          'Graph Agent.parallel requires parallel(id, template).',
-        );
+        throw new Error('Agent.parallel(id, template) requires template.');
       }
       this.graphNodes.push({
         id: idOrTemplate,
@@ -545,7 +635,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.parallel requires parallel(id, template).');
+      this.graphNodes.push({
+        type: 'parallel',
+        data: { template: idOrTemplate },
+      });
+      return this;
     }
     this.root.add(idOrTemplate);
     return this;
@@ -559,9 +653,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ) {
     if (typeof idOrTemplate === 'string') {
       if (!maybeTemplate) {
-        throw new Error(
-          'Graph Agent.structured requires structured(id, template).',
-        );
+        throw new Error('Agent.structured(id, template) requires template.');
       }
       this.graphNodes.push({
         id: idOrTemplate,
@@ -571,9 +663,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.structured requires structured(id, template).',
-      );
+      this.graphNodes.push({
+        type: 'structured',
+        data: { template: idOrTemplate },
+      });
+      return this;
     }
     this.root.add(idOrTemplate);
     return this;
@@ -589,12 +683,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   ): this;
   loop(
     builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    loopIf: boolean | ((s: Session<TC, TM>) => boolean),
-    maxIterations?: number,
+    loopIf?: AgentGraphCondition<TC, TM> | boolean,
+    options?: AgentGraphLoopOptions | number,
   ): this;
   loop(
     idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
-    builderOrLoopIf:
+    builderOrLoopIf?:
       | ((agent: Agent<TC, TM>) => Agent<TC, TM>)
       | boolean
       | ((s: Session<TC, TM>) => boolean)
@@ -603,7 +697,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | AgentGraphCondition<TC, TM>
       | boolean
       | ((s: Session<TC, TM>) => boolean)
-      | number,
+      | number
+      | AgentGraphLoopOptions,
     maybeOptions?: AgentGraphLoopOptions,
   ): this {
     if (typeof idOrBuilderFn === 'string') {
@@ -619,21 +714,36 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           condition: loopIfOrMaxIterations as AgentGraphCondition<TC, TM>,
           maxIterations: maybeOptions?.maxIterations,
         }),
-        children: builtAgent.graphNodes,
+        children: finalizeGraphNodeIds(builtAgent.graphNodes),
       });
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.loop requires loop(id, builder, condition).',
-      );
+      const builderFn = idOrBuilderFn;
+      const innerAgent = Agent.create<TC, TM>('loop');
+      const builtAgent = builderFn(innerAgent);
+      const maxIterations =
+        typeof loopIfOrMaxIterations === 'number'
+          ? loopIfOrMaxIterations
+          : isAgentGraphLoopOptions(loopIfOrMaxIterations)
+            ? loopIfOrMaxIterations.maxIterations
+            : undefined;
+      this.graphNodes.push({
+        type: 'loop',
+        data: compactGraphData({
+          condition: builderOrLoopIf as AgentGraphCondition<TC, TM> | undefined,
+          maxIterations,
+        }),
+        children: finalizeGraphNodeIds(builtAgent.graphNodes),
+      });
+      return this;
     }
     const builderFn = idOrBuilderFn;
     const loopIf = builderOrLoopIf as
       | boolean
       | ((s: Session<TC, TM>) => boolean);
     const maxIterations = loopIfOrMaxIterations as number | undefined;
-    const innerAgent = Agent.quick<TC, TM>();
+    const innerAgent = Agent.create<TC, TM>('loop');
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
 
@@ -683,39 +793,74 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       const elseChildren = maybeElseBuilder
         ? maybeElseBuilder(Agent.create<TC, TM>('else')).graphNodes
         : undefined;
+      const children = finalizeGraphNodeIds([
+        ...thenChildren,
+        ...(elseChildren ?? []),
+      ]);
+      const thenCount = thenChildren.length;
+      const thenIds = children.slice(0, thenCount).map((child) => child.id);
+      const elseIds =
+        elseChildren === undefined
+          ? undefined
+          : children.slice(thenCount).map((child) => child.id);
       this.graphNodes.push({
         id: idOrCondition,
         type: 'conditional',
         data: compactGraphData({
           condition: conditionOrThenBuilder,
           branches: compactGraphData({
-            then: thenChildren.map((child) => child.id),
-            else: elseChildren?.map((child) => child.id),
+            then: thenIds,
+            else: elseIds,
           }),
         }),
-        children: compactGraphChildren([
-          ...thenChildren,
-          ...(elseChildren ?? []),
-        ]),
+        children,
       });
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.conditional requires conditional(id, condition, thenBuilder).',
-      );
+      const condition = idOrCondition as AgentGraphCondition<TC, TM>;
+      const thenBuilderFn = conditionOrThenBuilder as (
+        agent: Agent<TC, TM>,
+      ) => Agent<TC, TM>;
+      const elseBuilderFn = thenOrElseBuilder;
+      const thenChildren = thenBuilderFn(
+        Agent.create<TC, TM>('then'),
+      ).graphNodes;
+      const elseChildren = elseBuilderFn
+        ? elseBuilderFn(Agent.create<TC, TM>('else')).graphNodes
+        : undefined;
+      const children = finalizeGraphNodeIds([
+        ...thenChildren,
+        ...(elseChildren ?? []),
+      ]);
+      const thenCount = thenChildren.length;
+      this.graphNodes.push({
+        type: 'conditional',
+        data: compactGraphData({
+          condition,
+          branches: compactGraphData({
+            then: children.slice(0, thenCount).map((child) => child.id),
+            else:
+              elseChildren === undefined
+                ? undefined
+                : children.slice(thenCount).map((child) => child.id),
+          }),
+        }),
+        children,
+      });
+      return this;
     }
     const condition = idOrCondition as (s: Session<TC, TM>) => boolean;
     const thenBuilderFn = conditionOrThenBuilder as (
       agent: Agent<TC, TM>,
     ) => Agent<TC, TM>;
     const elseBuilderFn = thenOrElseBuilder;
-    const thenAgent = Agent.quick<TC, TM>();
+    const thenAgent = Agent.create<TC, TM>('then');
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
     let elseTemplate: Template<TM, TC> | undefined;
     if (elseBuilderFn) {
-      const elseAgent = Agent.quick<TC, TM>();
+      const elseAgent = Agent.create<TC, TM>('else');
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
@@ -754,21 +899,32 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       this.graphNodes.push({
         id: idOrBuilderFn,
         type: 'scope',
+        deriveType: 'subroutine',
         data: graphSubroutineScopeData(maybeOptions),
-        children: builtAgent.graphNodes,
+        children: finalizeGraphNodeIds(builtAgent.graphNodes),
       });
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      throw new Error(
-        'Graph Agent.subroutine requires subroutine(id, builder).',
-      );
+      const builderFn = idOrBuilderFn;
+      const opts = builderOrOptions as
+        | ISubroutineTemplateOptions<TM, TC>
+        | undefined;
+      const innerAgent = Agent.create<TC, TM>('subroutine');
+      const builtAgent = builderFn(innerAgent);
+      this.graphNodes.push({
+        type: 'scope',
+        deriveType: 'subroutine',
+        data: graphSubroutineScopeData(opts),
+        children: finalizeGraphNodeIds(builtAgent.graphNodes),
+      });
+      return this;
     }
     const builderFn = idOrBuilderFn;
     const opts = builderOrOptions as
       | ISubroutineTemplateOptions<TM, TC>
       | undefined;
-    const innerAgent = Agent.quick<TC, TM>();
+    const innerAgent = Agent.create<TC, TM>('subroutine');
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
@@ -779,7 +935,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   /** -------------------------------------------------- */
 
   build(): Template<TM, TC> {
-    return this.hasInterceptors() ? this.asTemplate() : this.root;
+    return this.hasInterceptors() || this.isGraphAuthoringMode()
+      ? this.asTemplate()
+      : this.root;
   }
 
   async execute(
@@ -938,9 +1096,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       executionOptions?.checkpoint !== undefined
         ? executionOptions.checkpoint
         : this.directCheckpointOptions;
-    if (this.quickMode && authored !== undefined && authored !== false) {
-      throw new Error('Agent.quick() does not support checkpoint execution.');
-    }
     if (authored === undefined || authored === false) {
       return undefined;
     }
@@ -1430,6 +1585,130 @@ function compactGraphData(
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
 
+function finalizeGraphNodeIds(
+  nodes: readonly AgentGraphNodeDraft[],
+  options: { legacyLifecycle?: boolean } = {},
+): AgentGraphNode[] {
+  const authoredIds = new Set(
+    nodes.map((node) => node.id).filter((id): id is string => id !== undefined),
+  );
+  const usedIds = new Set(authoredIds);
+  const nextByType = new Map<string, number>();
+
+  return nodes.map((node, index) => {
+    const deriveType = graphNodeDeriveType(node);
+    let occurrence = (nextByType.get(deriveType) ?? 0) + 1;
+    nextByType.set(deriveType, occurrence);
+
+    const id =
+      node.id ??
+      (() => {
+        let candidate = `${deriveType}-${occurrence}`;
+        while (usedIds.has(candidate)) {
+          occurrence++;
+          candidate = `${deriveType}-${occurrence}`;
+        }
+        return candidate;
+      })();
+    usedIds.add(id);
+
+    const data =
+      options.legacyLifecycle &&
+      !graphDataHasKey(node.data, 'legacyTemplateLifecycle')
+        ? {
+            ...((node.data as Record<string, unknown> | undefined) ?? {}),
+            legacyTemplateLifecycle: {
+              templateIndex: index,
+              templateName: graphNodeTemplateName(node),
+            },
+          }
+        : node.data;
+
+    return {
+      id,
+      type: node.type,
+      data,
+      children:
+        node.children === undefined
+          ? undefined
+          : finalizeGraphNodeIds(node.children, options),
+    };
+  });
+}
+
+function graphNodeDeriveType(node: AgentGraphNodeDraft): string {
+  return node.deriveType ?? node.type;
+}
+
+function graphNodeTemplateName(node: AgentGraphNodeDraft): string {
+  switch (node.deriveType ?? node.type) {
+    case 'system':
+      return 'System';
+    case 'user':
+      return 'User';
+    case 'assistant':
+      return 'Assistant';
+    case 'loop':
+      return 'Loop';
+    case 'conditional':
+      return 'Conditional';
+    case 'subroutine':
+    case 'scope':
+      return 'Subroutine';
+    case 'parallel':
+      return 'Parallel';
+    case 'structured':
+      return 'Structured';
+    case 'codex':
+    case 'codexTurn':
+      return 'CodexTurn';
+    case 'claude':
+    case 'claudeTurn':
+      return 'ClaudeTurn';
+    case 'transform':
+      return 'Transform';
+    case 'tools':
+      return 'Tools';
+    case 'inbox':
+      return 'Inbox';
+    case 'awaitInput':
+      return 'AwaitInput';
+    case 'goal':
+      return 'Goal';
+    default:
+      return 'Template';
+  }
+}
+
+function graphAssistantValidationData(
+  contentOrSource: string | Source<ModelOutput> | Source<string> | undefined,
+  validatorOrOptions: IValidator | ValidationOptions | undefined,
+): Record<string, unknown> {
+  if (!validatorOrOptions) {
+    return {};
+  }
+  if ('validate' in validatorOrOptions) {
+    return {
+      validator: validatorOrOptions,
+      maxAttempts: 1,
+      raiseError: true,
+      isStaticContent: typeof contentOrSource === 'string',
+    };
+  }
+  return {
+    validator: validatorOrOptions.validator,
+    maxAttempts: validatorOrOptions.maxAttempts ?? 1,
+    raiseError: validatorOrOptions.raiseError ?? true,
+    isStaticContent: typeof contentOrSource === 'string',
+  };
+}
+
+function isAgentGraphLoopOptions(
+  value: unknown,
+): value is AgentGraphLoopOptions {
+  return typeof value === 'object' && value !== null;
+}
+
 function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(
   options: ISubroutineTemplateOptions<TM, TC> | undefined,
 ): Record<string, unknown> {
@@ -1603,10 +1882,10 @@ function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(
 }
 
 function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
-  id: string,
+  id: string | undefined,
   goal: string,
   options: AgentGoalOptions<TC, TM>,
-): AgentGraphNode {
+): AgentGraphNodeDraft {
   const interaction = options.interaction ?? 'none';
   const attemptChildren: AgentGraphNode[] = [
     {

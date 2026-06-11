@@ -34,7 +34,7 @@ describe('SubroutineTemplate', () => {
   it('should execute a simple subroutine and merge results by default', async () => {
     // Create a subroutine template with a simple sequence
     const subroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .system('You are a helpful assistant.')
         .user('What is your name?')
         .assistant('I am an AI assistant.'),
@@ -57,7 +57,7 @@ describe('SubroutineTemplate', () => {
   it('should keep parent context by default', async () => {
     // Create a subroutine that updates context
     const subroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Extract information')
         .assistant('Information extracted')
         .transform((session: Session<any>) => {
@@ -76,7 +76,7 @@ describe('SubroutineTemplate', () => {
 
   it('should support custom squash projections for messages', async () => {
     const hideMessagesSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .system('Internal system message')
         .user('Internal user message')
         .assistant('Internal assistant message'),
@@ -91,7 +91,7 @@ describe('SubroutineTemplate', () => {
     expect(hideMessages).toHaveLength(0); // Parent session was empty
 
     const showMessagesSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .system('Visible system message')
         .user('Visible user message')
         .assistant('Visible assistant message'),
@@ -120,7 +120,7 @@ describe('SubroutineTemplate', () => {
 
     // Create a subroutine that tries to use parent context.
     const subroutine = new Subroutine<Attrs, SharedContext>(
-      Agent.quick<SharedContext>()
+      Agent.create<SharedContext>('subroutine-template')
         .user(
           new (class extends Source<string> {
             async getContent(session: Session<SharedContext>) {
@@ -156,7 +156,7 @@ describe('SubroutineTemplate', () => {
 
     // Create a subroutine with a transformer *inside* the Sequence
     const subroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('What is the weather in Tokyo?')
         .assistant(Source.llm())
         .transform((session: Session<any>) => {
@@ -193,7 +193,7 @@ describe('SubroutineTemplate', () => {
   it('should handle nested subroutines (original style)', async () => {
     // Create an inner subroutine
     const innerSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Inner subroutine question')
         .assistant('Inner subroutine answer')
         .transform((session: Session<any>) => {
@@ -205,7 +205,7 @@ describe('SubroutineTemplate', () => {
 
     // Create an outer subroutine that includes the inner one
     const outerSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
         .user('Outer subroutine end')
@@ -239,7 +239,7 @@ describe('SubroutineTemplate', () => {
     });
 
     const isolatedSubroutine = new Subroutine<any, any>(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Testing isolated context')
         .transform((session: Session<any>) => {
           // Try to access parent context (should be undefined due to isolated context)
@@ -271,7 +271,7 @@ describe('SubroutineTemplate', () => {
 
     // --- Test explicit parent context projection ---
     const sharedSubroutine = new Subroutine<any, any>(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Testing shared context')
         .transform((session: Session<any>) => {
           // Try to access parent context (should be visible via default initWith)
@@ -321,7 +321,7 @@ describe('SubroutineTemplate', () => {
       .withVars({ sensitiveData: 'should not be copied' });
 
     const subroutine = new Subroutine(
-      Agent.quick().user(
+      Agent.create('subroutine-template').user(
         new (class extends Source<string> {
           async getContent(session: Session) {
             const userName = session.getVar('userName');
@@ -407,7 +407,7 @@ describe('SubroutineTemplate', () => {
       });
 
     const subroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Updating user profile')
         .transform((session: Session) => {
           // This context will be processed by squashWith
@@ -443,7 +443,7 @@ describe('SubroutineTemplate', () => {
 
   it('should support adding multiple templates via method chaining', async () => {
     // Create a subroutine template with method chaining
-    const subroutine = Agent.quick()
+    const subroutine = Agent.create('subroutine-template')
       .system('You are a helpful assistant.')
       .user('What is your name?')
       .assistant('I am an AI assistant.');
@@ -487,7 +487,7 @@ describe('SubroutineTemplate', () => {
   it('should support nested subroutines with method chaining', async () => {
     // Create an inner subroutine with method chaining
     const innerSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Inner subroutine question')
         .assistant('Inner subroutine answer')
         .transform((session: Session<any>) => {
@@ -497,7 +497,7 @@ describe('SubroutineTemplate', () => {
 
     // Create an outer subroutine that includes the inner one via method chaining
     const outerSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Outer subroutine start')
         .add(innerSubroutine) // Nest the subroutine
         .user('Outer subroutine end')
@@ -524,13 +524,13 @@ describe('SubroutineTemplate', () => {
   it('should support adding subroutines to LinearTemplate (Sequence)', async () => {
     // Create a subroutine
     const nestedSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Message from nested subroutine')
         .assistant('Response from nested subroutine'),
     );
 
     // Create a sequence that includes the subroutine
-    const sequence = Agent.quick()
+    const sequence = Agent.create('subroutine-template')
       .system('Main sequence system message')
       .add(nestedSubroutine) // Add the subroutine
       .user('Message after nested subroutine');
@@ -550,7 +550,7 @@ describe('SubroutineTemplate', () => {
   it('should support adding subroutines to LoopTemplate', async () => {
     // Create a subroutine to be used in the loop body
     const loopSubroutine = new Subroutine(
-      Agent.quick()
+      Agent.create('subroutine-template')
         .user('Message from loop subroutine')
         .transform((session: Session<any>) => {
           return session.withVars({

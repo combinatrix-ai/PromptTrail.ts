@@ -327,7 +327,7 @@ describe('RuntimeServer', () => {
 
   it('routes runtime bundle events to registered Agent graphs', async () => {
     const main = Agent.create('main')
-      .user('inbound')
+      .inbox('inbound')
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
@@ -394,7 +394,7 @@ describe('RuntimeServer', () => {
 
   it('compiles app bindings into runtime bundles', async () => {
     const main = Agent.create('main')
-      .user('inbound')
+      .inbox('inbound')
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
@@ -460,7 +460,7 @@ describe('RuntimeServer', () => {
     const observerEvents: string[] = [];
     const runtimeObserverEvents: string[] = [];
     const main = Agent.create('main')
-      .user('inbound')
+      .inbox('inbound')
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
@@ -563,7 +563,7 @@ describe('RuntimeServer', () => {
 
   it('registers named Agent instances directly on apps', async () => {
     const main = Agent.create('main')
-      .user('inbound')
+      .inbox('inbound')
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));
@@ -592,16 +592,16 @@ describe('RuntimeServer', () => {
   });
 
   it('rejects unnamed Agent instances registered directly on apps', () => {
-    expect(() => PromptTrail.app().agent(Agent.quick())).toThrow(
-      /Agent\.create\(name\)/,
-    );
+    expect(() =>
+      PromptTrail.app().agent((Agent.create as unknown as () => Agent)()),
+    ).toThrow(/Agent\.create\(name\)/);
   });
 
   it('runs runtime bundle Agent graph runs durably', async () => {
     const store = memoryStore();
     const main = Agent.create('main')
       .system('system', 'SYS')
-      .user('inbound')
+      .inbox('inbound')
       .assistant('reply', (session) => ({
         content: `reply:${session.getLastMessage()?.content ?? ''}`,
       }));

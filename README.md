@@ -204,8 +204,8 @@ const agent = Agent.create('support')
 ```
 
 For throwaway scripts and template-level utilities such as `Parallel`,
-`Structured`, `codex()`, and `claude()`, use `Agent.quick()`.
-Quick agents are ephemeral and cannot run checkpointed executions.
+`Structured`, `codex()`, and `claude()`, use `Agent.create('script-name')`.
+Node ids are optional; the agent name remains required for run identity.
 
 #### Agent Goals (Goal-Oriented Flow)
 
@@ -339,7 +339,7 @@ const role = typedSession.getVar('role'); // 'admin' | 'user' | 'guest'
 const theme = typedSession.getVar('preferences').theme; // 'light' | 'dark'
 
 // 7. Template with typed interpolation
-const typedAgent = Agent.quick<UserContext>()
+const typedAgent = Agent.create<UserContext>('typed-agent')
   .system('Welcome ${role} user ${userId}')
   .user('My theme is ${preferences.theme}')
   .assistant();
@@ -361,7 +361,7 @@ const weatherTool = Tool.create({
   },
 });
 
-const agent = Agent.quick()
+const agent = Agent.create('readme-agent')
   .system('You can check weather.')
   .user('Weather in SF?')
   .assistant(Source.llm().openai().addTool('weather', weatherTool));
@@ -379,7 +379,7 @@ const userSchema = z.object({
   interests: z.array(z.string()),
 });
 
-const agent = Agent.quick()
+const agent = Agent.create('readme-agent')
   .system('Extract user info from text.')
   .user("Hi, I'm Alice, 25, love coding and music.")
   .add(
@@ -421,7 +421,7 @@ const complexValidation = Source.llm()
   .withMaxAttempts(5);
 
 // Use in templates
-const agent = Agent.quick()
+const agent = Agent.create('readme-agent')
   .system('Explain concepts clearly with examples.')
   .user('What is TypeScript?')
   .assistant(complexValidation);
@@ -516,7 +516,7 @@ const agent = Agent.create('processor')
   );
 
 // Multi-LLM parallel processing
-const researchAgent = Agent.quick()
+const researchAgent = Agent.create('readme-agent')
   .system('Research assistant')
   .user('Compare machine learning frameworks')
   .add(

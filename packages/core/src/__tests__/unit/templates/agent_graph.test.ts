@@ -119,14 +119,8 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('requires system graph nodes to include content', () => {
-    expect(() => Agent.create('assistant').system('system')).toThrow(
-      /Graph Agent\.system/,
-    );
-  });
-
-  it('supports quick ephemeral content-first agents', async () => {
-    const session = await Agent.quick()
+  it('supports named content-first agents with optional node ids', async () => {
+    const session = await Agent.create('agent-graph')
       .system('You are concise.')
       .user('Hello')
       .assistant('Hi')
@@ -139,11 +133,10 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
-  it('rejects durable execution for quick agents', async () => {
-    expect(() => Agent.quick().checkpoint()).toThrow(/Agent\.quick/);
-    await expect(Agent.quick().execute({ checkpoint: true })).rejects.toThrow(
-      /Agent\.quick/,
-    );
+  it('keeps Agent.create(name) required for graph identity', async () => {
+    await expect(
+      Agent.create('agent-graph').execute({ checkpoint: true }),
+    ).rejects.toThrow(/requires checkpoint: store/);
   });
 
   it('requires a store for direct durable graph execution', async () => {
@@ -166,15 +159,96 @@ describe('Agent graph authoring', () => {
     );
   });
 
-  it('treats assistant(id) as a graph node for named agents', () => {
+  it('treats a single assistant string as content, not an id', () => {
     const graph = Agent.create('assistant').assistant('reply').toGraph();
 
     expect(graph.nodes).toEqual([
       {
-        id: 'reply',
+        id: 'assistant-1',
         type: 'assistant',
-        data: undefined,
+        data: { input: 'reply' },
       },
+    ]);
+  });
+
+  it('derives stable optional ids and shifts when same-type nodes are inserted', () => {
+    const first = Agent.create('assistant')
+      .system('System')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+    const second = Agent.create('assistant')
+      .system('System')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+    const inserted = Agent.create('assistant')
+      .system('System')
+      .assistant('Inserted')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+
+    expect(createAgentGraphManifest(first).hash).toBe(
+      createAgentGraphManifest(second).hash,
+    );
+    expect(first.nodes.map((node) => node.id)).toEqual([
+      'system-1',
+      'assistant-1',
+      'assistant-2',
+    ]);
+    expect(inserted.nodes.map((node) => node.id)).toEqual([
+      'system-1',
+      'assistant-1',
+      'assistant-2',
+      'assistant-3',
+    ]);
+  });
+
+  it('skips authored-id collisions when deriving optional ids', () => {
+    const graph = Agent.create('assistant')
+      .assistant('anonymous first')
+      .assistant('assistant-1', 'authored collision')
+      .assistant('anonymous second')
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      'assistant-2',
+      'assistant-1',
+      'assistant-3',
+    ]);
+  });
+
+  it('composes anonymous assistant ids with the auto tool-loop expansion', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => ({ id }),
+    });
+    const graph = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant(() => ({
+        content: 'checking',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { id: 'A' },
+          },
+        ],
+      }))
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['assistant-1', 'assistant'],
+      ['assistant-1-loop', 'loop'],
+    ]);
+    expect(
+      graph.nodes[1]?.children?.map((node) => [node.id, node.type]),
+    ).toEqual([
+      ['assistant-1-tools', 'tools'],
+      ['assistant-1', 'assistant'],
     ]);
   });
 
@@ -940,10 +1014,14 @@ describe('Agent graph authoring', () => {
     });
   });
 
-  it('requires explicit ids for named graph transform nodes', () => {
-    expect(() =>
-      Agent.create('assistant').transform((session) => session),
-    ).toThrow(/Graph Agent\.transform/);
+  it('derives ids for named graph transform nodes', () => {
+    const graph = Agent.create('assistant')
+      .transform((session) => session)
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['transform-1', 'transform'],
+    ]);
   });
 
   it('executes direct durable graph agents through the app runtime', async () => {
@@ -1312,9 +1390,10 @@ describe('Agent graph authoring', () => {
 
     expect(graph.nodes[0]?.children).toEqual([
       {
-        id: 'reply',
+        id: 'assistant-1',
         type: 'assistant',
-        data: undefined,
+        data: { input: 'reply' },
+        children: undefined,
       },
     ]);
   });
@@ -1359,55 +1438,97 @@ describe('Agent graph authoring', () => {
     expect(graph.nodes[0]?.id).toBe('prompt');
   });
 
-  it('rejects mixing legacy control-flow after graph authoring starts', () => {
-    const graphStarted = () => Agent.quick().assistant('reply', () => 'ok');
-
-    expect(() =>
-      graphStarted().loop((body) => body.assistant('legacy'), false),
-    ).toThrow(/Graph Agent\.loop/);
-    expect(() =>
-      graphStarted().conditional(
+  it('compiles optional-id forms for the full graph node vocabulary', () => {
+    const codexClient = new GraphFakeCodexClient();
+    const claudeClient = new GraphFakeClaudeAgentClient();
+    const graph = Agent.create('optional-sweep')
+      .system('System')
+      .user('User')
+      .assistant('Assistant')
+      .transform((session) => session.withVar('pure', true))
+      .transform({ effect: { repeatable: true } }, async (session) =>
+        session.withVar('effect', true),
+      )
+      .inbox()
+      .awaitInput({ required: false })
+      .tools()
+      .loop((body) => body.assistant('Loop'), false)
+      .conditional(
         () => true,
-        (then) => then.assistant('legacy'),
-      ),
-    ).toThrow(/Graph Agent\.conditional/);
-    expect(() =>
-      graphStarted().subroutine((sub) => sub.assistant('legacy')),
-    ).toThrow(/Graph Agent\.subroutine/);
+        (then) => then.assistant('Then'),
+        (otherwise) => otherwise.assistant('Else'),
+      )
+      .subroutine((sub) => sub.assistant('Sub'))
+      .parallel(new Parallel())
+      .structured(
+        Structured.withSource(
+          Source.literal({ content: '{"ok":true}' }),
+          z.object({ ok: z.boolean() }),
+        ),
+      )
+      .codex({ client: codexClient })
+      .claude({ client: claudeClient })
+      .goal('Complete a tiny goal', { maxAttempts: 1 })
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['system-1', 'system'],
+      ['user-1', 'user'],
+      ['assistant-1', 'assistant'],
+      ['transform-1', 'transform'],
+      ['transform-2', 'transform'],
+      ['inbox-1', 'inbox'],
+      ['awaitInput-1', 'awaitInput'],
+      ['tools-1', 'tools'],
+      ['loop-1', 'loop'],
+      ['conditional-1', 'conditional'],
+      ['subroutine-1', 'scope'],
+      ['parallel-1', 'parallel'],
+      ['structured-1', 'structured'],
+      ['codex-1', 'codexTurn'],
+      ['claude-1', 'claudeTurn'],
+      ['goal-1', 'goal'],
+    ]);
   });
 
-  it('rejects mixing legacy leaf methods after graph authoring starts', () => {
-    const graphStarted = () => Agent.quick().assistant('reply', () => 'ok');
+  it('executes representative optional-id graph node forms', async () => {
+    const session = await Agent.create('optional-execute')
+      .system('System')
+      .user('User')
+      .assistant('Assistant')
+      .transform((current) => current.withVar('count', 0))
+      .loop(
+        (body) =>
+          body
+            .assistant('Loop')
+            .transform((current) =>
+              current.withVar('count', Number(current.getVar('count')) + 1),
+            ),
+        ({ session: current }) => Number(current.getVar('count')) < 1,
+      )
+      .conditional(
+        ({ session: current }) => current.getVar('count') === 1,
+        (then) => then.assistant('Then'),
+        (otherwise) => otherwise.assistant('Else'),
+      )
+      .subroutine((sub) => sub.assistant('Sub'))
+      .awaitInput({ required: false })
+      .execute();
 
-    expect(() => graphStarted().system('legacy')).toThrow(
-      /Graph Agent\.system/,
-    );
-    expect(() => graphStarted().user('legacy')).toThrow(/Graph Agent\.user/);
-    expect(() => graphStarted().assistant()).toThrow(/Graph Agent\.assistant/);
-    expect(() => graphStarted().transform((session) => session)).toThrow(
-      /Graph Agent\.transform/,
-    );
-    expect(() =>
-      graphStarted().structured(Structured.withSchema(z.object({}))),
-    ).toThrow(/Graph Agent\.structured/);
-    expect(() => graphStarted().parallel(new Parallel())).toThrow(
-      /Graph Agent\.parallel/,
-    );
-    expect(() => graphStarted().codex({} as never)).toThrow(
-      /Graph Agent\.codex/,
-    );
-    expect(() => graphStarted().claude({} as never)).toThrow(
-      /Graph Agent\.claude/,
-    );
-    expect(() => graphStarted().add(Agent.quick().build())).toThrow(
-      /Graph Agent\.add/,
-    );
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'System',
+      'User',
+      'Assistant',
+      'Loop',
+      'Then',
+      'Sub',
+    ]);
   });
 });
 
-describe('Legacy agent compilation through GraphExecutor', () => {
-  it('executes a legacy system/user/assistant sequence via graph', async () => {
-    const session = await Agent.quick()
+describe('Content-first graph execution through GraphExecutor', () => {
+  it('executes a system/user/assistant sequence via graph', async () => {
+    const session = await Agent.create('agent-graph')
       .system('You are concise.')
       .user('Hello')
       .assistant('Hi there')
@@ -1420,8 +1541,8 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     ]);
   });
 
-  it('executes a legacy assistant with a Source-based content source', async () => {
-    const session = await Agent.quick()
+  it('executes an assistant with a Source-based content source', async () => {
+    const session = await Agent.create('agent-graph')
       .user('ping')
       .assistant(Source.literal('pong'))
       .execute();
@@ -1429,20 +1550,20 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     expect(session.getLastMessage()?.content).toBe('pong');
   });
 
-  it('executes a legacy loop that warns on max-iterations instead of throwing', async () => {
+  it('fails fast when a graph loop exceeds max iterations', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const session = await Agent.quick()
-        .loop(
-          (body) => body.user('tick'),
-          () => true, // never-ending condition
-          { maxIterations: 3 },
-        )
-        .execute();
+      await expect(
+        Agent.create('agent-graph')
+          .loop(
+            (body) => body.user('tick'),
+            () => true,
+            { maxIterations: 3 },
+          )
+          .execute(),
+      ).rejects.toThrow(/exceeded max iterations/);
 
-      // Legacy behaviour: warn and stop at max rather than throwing
-      expect(session.messages.length).toBeGreaterThanOrEqual(3);
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(warnSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('maximum iterations'),
       );
     } finally {
@@ -1450,15 +1571,16 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     }
   });
 
-  it('executes a legacy loop without a condition as a one-shot sequence with a warning', async () => {
+  it('fails fast when a graph loop has no condition', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const session = await Agent.quick()
-        .loop((body) => body.user('once'))
-        .execute();
+      await expect(
+        Agent.create('agent-graph')
+          .loop((body) => body.user('once'))
+          .execute(),
+      ).rejects.toThrow(/requires a condition/);
 
-      expect(session.messages.map((m) => m.content)).toEqual(['once']);
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(warnSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('loop condition'),
       );
     } finally {
@@ -1466,10 +1588,26 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     }
   });
 
+  it('executes a finite graph loop', async () => {
+    let count = 0;
+    const session = await Agent.create('agent-graph')
+      .loop(
+        (body) => body.user('tick'),
+        () => count++ < 3,
+      )
+      .execute();
+
+    expect(session.messages.map((m) => m.content)).toEqual([
+      'tick',
+      'tick',
+      'tick',
+    ]);
+  });
+
   it('fires beforeTemplate and afterTemplate hooks around each legacy child', async () => {
     const calls: string[] = [];
 
-    const session = await Agent.quick()
+    const session = await Agent.create('agent-graph')
       .hook(
         Hook.create({
           name: 'lifecycleHook',
@@ -1504,7 +1642,7 @@ describe('Legacy agent compilation through GraphExecutor', () => {
   });
 
   it('halts sibling execution when beforeTemplate hook returns halt', async () => {
-    const session = await Agent.quick()
+    const session = await Agent.create('agent-graph')
       .hook(
         Hook.create({
           name: 'haltHook',
@@ -1529,7 +1667,7 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     const calls: string[] = [];
     let iterations = 0;
 
-    await Agent.quick()
+    await Agent.create('agent-graph')
       .hook(
         Hook.create({
           name: 'loopLifecycleHook',
@@ -1555,28 +1693,21 @@ describe('Legacy agent compilation through GraphExecutor', () => {
       )
       .execute();
 
-    // Loop body builder wraps children in a Sequence (body template), so the
-    // graph hierarchy is: Loop → Sequence → User.  Each level gets lifecycle
-    // events.  Root fires before/after for the Loop node (index 0).  Each
-    // iteration fires before/after for the Sequence (index 0) and User
-    // (index 0) inside it.
+    // Graph-native loop bodies do not add the old Sequence wrapper; lifecycle
+    // hooks fire for the loop node and direct body nodes.
     expect(calls).toEqual([
       'before:0:Loop',
-      'before:0:Sequence',
       'before:0:User',
       'after:0:User',
-      'after:0:Sequence', // iter 1
-      'before:0:Sequence',
       'before:0:User',
       'after:0:User',
-      'after:0:Sequence', // iter 2
       'after:0:Loop',
     ]);
   });
 
-  it('executes a legacy conditional through the graph compiler', async () => {
+  it('executes a conditional through the graph compiler', async () => {
     const runAgent = async (condition: boolean) => {
-      const session = await Agent.quick()
+      const session = await Agent.create('agent-graph')
         .user('setup')
         .conditional(
           () => condition,
@@ -1594,7 +1725,7 @@ describe('Legacy agent compilation through GraphExecutor', () => {
   it('passes middleware runtime through nested legacy agents', async () => {
     const modelCalls: string[] = [];
 
-    const session = await Agent.quick()
+    const session = await Agent.create('agent-graph')
       .use(
         Middleware.create({
           name: 'trackMiddleware',
@@ -1614,8 +1745,8 @@ describe('Legacy agent compilation through GraphExecutor', () => {
     expect(session.getVar('fromMiddleware')).toBe(true);
   });
 
-  it('executes a legacy subroutine with isolated context through the graph compiler', async () => {
-    const session = await Agent.quick()
+  it('executes a subroutine with isolated context through the graph compiler', async () => {
+    const session = await Agent.create('agent-graph')
       .user('outer')
       .subroutine((sub) =>
         sub

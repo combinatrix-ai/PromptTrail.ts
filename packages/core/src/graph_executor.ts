@@ -1365,11 +1365,7 @@ function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
     return condition;
   }
   if (typeof condition === 'function') {
-    const result = condition({
-      session: state.session,
-      context: state.context,
-      signal: state.signal,
-    });
+    const result = condition(graphConditionContext(state));
     if (isThenable(result)) {
       throw new Error(
         `Graph node ${nodePath} condition returned a Promise; condition handlers must be synchronous.`,
@@ -1378,6 +1374,20 @@ function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
     return Boolean(result);
   }
   throw new Error(`Graph node ${nodePath} requires a condition.`);
+}
+
+function graphConditionContext<TVars extends Vars, TAttrs extends Attrs>(
+  state: GraphExecutionState<TVars, TAttrs>,
+): {
+  session: Session<TVars, TAttrs>;
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+} {
+  return Object.assign(Object.create(state.session), {
+    session: state.session,
+    context: state.context,
+    signal: state.signal,
+  });
 }
 
 const directExecutionBoundary: ExecutionDurableBoundary = {

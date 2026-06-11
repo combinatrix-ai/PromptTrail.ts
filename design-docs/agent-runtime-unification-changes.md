@@ -218,14 +218,26 @@ a fail-fast.
 
 Maps to Codex item: _compatibility template node をさらに個別 graph node へ分解_.
 
-- [ ] **3.1 Make node ids optional.** Auto-derive from structural path
+- [x] **3.1 Make node ids optional.** Auto-derive from structural path
       (parent scope + node type + occurrence index). Authored ids still win. Update
       every node builder overload (final set per §9: `system/user/assistant/
 transform/inbox/awaitInput/tools/loop/conditional/subroutine/parallel/
 structured/codex/claude/goal`).
       (`templates/agent.ts`, `graph.ts`)
-- [ ] **3.2 Delete `Agent.quick()`.** Id-optional `Agent.create('name')` replaces
+      Done: omitted id derives `<type>-<n>` (1-based per-type occurrence in
+      the parent scope, deterministic, skips authored collisions); composes
+      with the §3.4 expansion (`assistant-1-loop` etc.). Disambiguation rule:
+      a single string to `.system/.user/.assistant/.goal` is CONTENT, never an
+      id (ids need a second argument); `.inbox/.tools/.awaitInput` keep
+      single-string-as-id. Documented: inserting/removing nodes shifts derived
+      ids and intentionally invalidates resume — long-lived runs should use
+      explicit ids. Agent NAME stays required (run identity + manifest).
+- [x] **3.2 Delete `Agent.quick()`.** Id-optional `Agent.create('name')` replaces
       it. (`templates/agent.ts`, examples, exports)
+      Done: ~161 call sites migrated; one graph engine for everything.
+      Conditions accept both `(session) =>` and `({ session }) =>` shapes via
+      a prototype-bridging context arg. e2e_real_api.test.ts still references
+      quick at two sites (file is off-limits; fix when touched next).
 - [ ] **3.3 Registration-time durable gate (two gears, tied to run mode).**
       Ephemeral = loose: no declaration required (Temporal-style honor system).
       **Durable = strict automatically** (decided — no separate `strict` flag): each

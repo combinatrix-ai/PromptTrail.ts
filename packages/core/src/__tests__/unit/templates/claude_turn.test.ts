@@ -62,7 +62,7 @@ class RestartingClaudeAgentClient implements ClaudeAgentClient {
 describe('ClaudeTurn template', () => {
   it('runs a Claude Agent SDK turn and appends the final answer', async () => {
     const client = new FakeClaudeAgentClient();
-    const session = await Agent.quick()
+    const session = await Agent.create('claude-turn')
       .user('Review this')
       .claude({
         client,
@@ -253,7 +253,7 @@ describe('ClaudeTurn template', () => {
 
   it('supports metadata-only retention', async () => {
     const client = new FakeClaudeAgentClient();
-    const session = await Agent.quick()
+    const session = await Agent.create('claude-turn')
       .user('Continue')
       .claude({ client, retainMessages: false, retain: 'none' })
       .execute({ session: Session.create() });
@@ -269,7 +269,7 @@ describe('ClaudeTurn template', () => {
 
   it('passes direct execution context to input callbacks', async () => {
     const client = new FakeClaudeAgentClient();
-    await Agent.quick()
+    await Agent.create('claude-turn')
       .claude({
         client,
         sessionId: (_session, context) => `session-${context?.channel}`,
@@ -291,7 +291,7 @@ describe('ClaudeTurn template', () => {
   it('applies beforeModel session patches before resolving Claude input', async () => {
     const client = new FakeClaudeAgentClient();
 
-    await Agent.quick()
+    await Agent.create('claude-turn')
       .use(
         Middleware.create({
           name: 'claudeContext',
@@ -311,7 +311,7 @@ describe('ClaudeTurn template', () => {
 
   it('applies afterModel result and session patches to Claude turns', async () => {
     const client = new FakeClaudeAgentClient();
-    const session = await Agent.quick()
+    const session = await Agent.create('claude-turn')
       .use(
         Middleware.create({
           name: 'claudeResult',
@@ -337,7 +337,7 @@ describe('ClaudeTurn template', () => {
   it('allows wrapModelCall to short-circuit Claude provider calls', async () => {
     const client = new FakeClaudeAgentClient();
     const events: string[] = [];
-    const session = await Agent.quick()
+    const session = await Agent.create('claude-turn')
       .observe((event) => {
         if (event.type.startsWith('model.')) {
           events.push(event.type);
@@ -379,7 +379,7 @@ describe('ClaudeTurn template', () => {
 
   it('applies prepareModelInput as transient Claude input', async () => {
     const client = new FakeClaudeAgentClient();
-    const session = await Agent.quick()
+    const session = await Agent.create('claude-turn')
       .use(
         Middleware.create({
           name: 'claudePrepare',
@@ -407,7 +407,7 @@ describe('ClaudeTurn template', () => {
     const client = new FakeClaudeAgentClient();
 
     await expect(
-      Agent.quick()
+      Agent.create('claude-turn')
         .use(
           Middleware.create({
             name: 'badPrepare',
@@ -428,7 +428,7 @@ describe('ClaudeTurn template', () => {
     const client = new FakeClaudeAgentClient();
     const events: string[] = [];
 
-    await Agent.quick()
+    await Agent.create('claude-turn')
       .observe((event) => {
         if (event.type.startsWith('model.')) {
           events.push(
@@ -442,10 +442,10 @@ describe('ClaudeTurn template', () => {
 
     expect(events).toHaveLength(2);
     expect(events[0]).toMatch(
-      /^1:model\.started:claudeTurn:direct-agent:.+:model:1:model\.started$/,
+      /^1:model\.started:claudeTurn:graph-agent:.+:model:1:model\.started$/,
     );
     expect(events[1]).toMatch(
-      /^2:model\.completed:claudeTurn:direct-agent:.+:model:2:model\.completed$/,
+      /^2:model\.completed:claudeTurn:graph-agent:.+:model:2:model\.completed$/,
     );
   });
 
@@ -454,7 +454,7 @@ describe('ClaudeTurn template', () => {
     const events: string[] = [];
 
     await expect(
-      Agent.quick()
+      Agent.create('claude-turn')
         .observe((event) => {
           if (event.type.startsWith('model.')) {
             events.push(
@@ -469,22 +469,22 @@ describe('ClaudeTurn template', () => {
 
     expect(events).toHaveLength(2);
     expect(events[0]).toMatch(
-      /^1:model\.started:claudeTurn:direct-agent:.+:model:1:model\.started$/,
+      /^1:model\.started:claudeTurn:graph-agent:.+:model:1:model\.started$/,
     );
     expect(events[1]).toMatch(
-      /^2:model\.failed:claudeTurn:direct-agent:.+:model:2:model\.failed$/,
+      /^2:model\.failed:claudeTurn:graph-agent:.+:model:2:model\.failed$/,
     );
   });
 
   it('resumes a Claude Agent session when sessionId is auto', async () => {
     const originalClient = new FakeClaudeAgentClient();
-    const originalSession = await Agent.quick()
+    const originalSession = await Agent.create('claude-turn')
       .user('Original')
       .claude({ client: originalClient })
       .execute({ session: Session.create() });
     const client = new FakeClaudeAgentClient();
 
-    await Agent.quick()
+    await Agent.create('claude-turn')
       .claude({ client, sessionId: 'auto' })
       .execute({
         session: originalSession.addMessage({
@@ -506,7 +506,7 @@ describe('ClaudeTurn template', () => {
     const approvals: unknown[] = [];
 
     await expect(
-      Agent.quick()
+      Agent.create('claude-turn')
         .user('Use docs')
         .claude({
           client,
@@ -551,7 +551,7 @@ describe('ClaudeTurn template', () => {
     const approvals: unknown[] = [];
 
     await expect(
-      Agent.quick()
+      Agent.create('claude-turn')
         .user('Run a command')
         .claude({
           client,
@@ -587,7 +587,7 @@ describe('ClaudeTurn template', () => {
     const cwd = await mkdtemp(join(tmpdir(), 'prompttrail-claude-turn-'));
     const client = new FakeClaudeAgentClient();
     try {
-      await Agent.quick()
+      await Agent.create('claude-turn')
         .user('Review this')
         .claude({
           client,

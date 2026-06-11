@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     });
 
     // Create agent with system message using context interpolation
-    const agent = Agent.quick().system(
+    const agent = Agent.create('next-chat-route').system(
       'You are a helpful AI assistant that discusses the provided code context. Code context: ${codeContext}',
     );
 
