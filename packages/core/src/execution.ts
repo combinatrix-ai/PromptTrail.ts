@@ -164,6 +164,10 @@ export function applyResolvedExecutionTransition<
   const sessionVersion = isEmptySessionDelta(transition.session)
     ? session.version
     : session.version + 1;
+  const historyRewrittenAtVersion =
+    transition.session.messageOp.type === 'replace'
+      ? sessionVersion
+      : session.historyRewrittenAtVersion;
 
   return {
     session: new Session<TVars, TAttrs>(
@@ -171,10 +175,35 @@ export function applyResolvedExecutionTransition<
       vars,
       session.print,
       sessionVersion,
+      historyRewrittenAtVersion,
     ),
     middlewareState,
     command: transition.command,
   };
+}
+
+/**
+ * Re-derives a handler-returned session as a transition from the session it
+ * replaces. Handlers may construct a fresh `Session` (or fork one) instead of
+ * deriving from their input; adopting that object directly would reset or
+ * rewind the lineage identity (`version`, `historyRewrittenAtVersion`) that
+ * once-deps and checkpoint delta persistence key on. Diffing and re-applying
+ * keeps the content while continuing the previous lineage.
+ */
+export function adoptSessionResult<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+>(
+  previous: Session<TVars, TAttrs>,
+  returned: Session<TVars, TAttrs>,
+): Session<TVars, TAttrs> {
+  if (returned === previous) {
+    return returned;
+  }
+  return applyResolvedExecutionTransition(
+    previous,
+    resolveExecutionTransition(previous, { session: returned }),
+  ).session;
 }
 
 export interface ExecutionEventBase {

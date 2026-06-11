@@ -4,7 +4,15 @@ import {
   createCheckpointOnceMemoStore,
 } from '../../checkpoint_continuation';
 import { PromptTrail, manualSource, memoryStore } from '../../durable';
-import type { DurableRunStore, StoredRun } from '../../durable';
+import type {
+  AssistantDeliveryOutboxEntry,
+  DurableRunStore,
+  Inbound,
+  OnceScope,
+  SessionCheckpointDelta,
+  StoredRun,
+  StoredRunPatch,
+} from '../../durable';
 import { Session } from '../../session';
 import { Source } from '../../source';
 import { Agent } from '../../templates';
@@ -13,20 +21,22 @@ import { executePromptTrailTool, Tool } from '../../tool';
 class TrackingRunStore implements DurableRunStore {
   readonly runs = new Map<string, StoredRun<any, any>>();
   readonly snapshots: Array<{
+    type: string;
     runId: string;
-    status: StoredRun<any, any>['status'];
-    onceRunEntries: number;
+    status?: StoredRun<any, any>['status'];
+    onceRunEntries?: number;
     resultMessages?: number;
-    outbox: number;
+    outbox?: number;
   }> = [];
 
   get(runId: string): StoredRun<any, any> | undefined {
     return this.runs.get(runId);
   }
 
-  async set(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
     this.runs.set(runId, run);
     this.snapshots.push({
+      type: 'create',
       runId,
       status: run.status,
       onceRunEntries: run.once.run.size,
@@ -37,6 +47,89 @@ class TrackingRunStore implements DurableRunStore {
 
   has(runId: string): boolean {
     return this.runs.has(runId);
+  }
+
+  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    Object.assign(run, patch);
+    this.snapshots.push({
+      type: 'patch',
+      runId,
+      status: run.status,
+      onceRunEntries: run.once.run.size,
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
+  }
+
+  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run || run.inbox[inbound.offset]) {
+      return;
+    }
+    run.inbox.push(inbound);
+  }
+
+  async appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any, any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    applyDelta(run, delta);
+    this.snapshots.push({
+      type: 'appendSessionDelta',
+      runId,
+      status: run.status,
+      onceRunEntries: run.once.run.size,
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
+  }
+
+  async recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.once[scope].set(key, value);
+    this.snapshots.push({
+      type: 'recordOnce',
+      runId,
+      status: run.status,
+      onceRunEntries: run.once.run.size,
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
+  }
+
+  async upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry<any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    upsertOutbox(run, entry);
+    this.snapshots.push({
+      type: 'upsertOutbox',
+      runId,
+      status: run.status,
+      onceRunEntries: run.once.run.size,
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
   }
 
   async delete(runId: string): Promise<void> {
@@ -51,8 +144,8 @@ class TrackingRunStore implements DurableRunStore {
 class ControlledDelayRunStore implements DurableRunStore {
   readonly runs = new Map<string, StoredRun<any, any>>();
   readonly pending: Array<{
+    type: string;
     runId: string;
-    run: StoredRun<any, any>;
     snapshot: {
       status: StoredRun<any, any>['status'];
       onceRunEntries: number;
@@ -65,11 +158,11 @@ class ControlledDelayRunStore implements DurableRunStore {
     return this.runs.get(runId);
   }
 
-  set(runId: string, run: StoredRun<any, any>): Promise<void> {
+  create(runId: string, run: StoredRun<any, any>): Promise<void> {
     return new Promise((resolve) => {
       this.pending.push({
+        type: 'create',
         runId,
-        run,
         snapshot: {
           status: run.status,
           onceRunEntries: run.once.run.size,
@@ -87,6 +180,62 @@ class ControlledDelayRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
+  patch(runId: string, patch: StoredRunPatch): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    Object.assign(run, patch);
+    return this.delayWrite('patch', runId, run, () => {});
+  }
+
+  appendInbox(runId: string, inbound: Inbound): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run || run.inbox[inbound.offset]) {
+      return Promise.resolve();
+    }
+    run.inbox.push(inbound);
+    return this.delayWrite('appendInbox', runId, run, () => {});
+  }
+
+  appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any, any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    applyDelta(run, delta);
+    return this.delayWrite('appendSessionDelta', runId, run, () => {});
+  }
+
+  recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    run.once[scope].set(key, value);
+    return this.delayWrite('recordOnce', runId, run, () => {});
+  }
+
+  upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry<any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    upsertOutbox(run, entry);
+    return this.delayWrite('upsertOutbox', runId, run, () => {});
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -102,6 +251,147 @@ class ControlledDelayRunStore implements DurableRunStore {
     }
     pending.resolve();
     await Promise.resolve();
+  }
+
+  private delayWrite(
+    type: string,
+    runId: string,
+    run: StoredRun<any, any>,
+    apply: () => void,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      this.pending.push({
+        type,
+        runId,
+        snapshot: {
+          status: run.status,
+          onceRunEntries: run.once.run.size,
+          resultMessages: run.result?.messages.length,
+        },
+        resolve: () => {
+          apply();
+          resolve();
+        },
+      });
+    });
+  }
+}
+
+type RecordedWrite =
+  | {
+      type: 'create';
+      runId: string;
+      initialMessages: readonly string[];
+      resultMessages?: readonly string[];
+      initialVersion: number;
+    }
+  | { type: 'patch'; runId: string; patch: StoredRunPatch }
+  | { type: 'appendInbox'; runId: string; inbound: Inbound }
+  | {
+      type: 'appendSessionDelta';
+      runId: string;
+      delta: SessionCheckpointDelta<any, any>;
+    }
+  | { type: 'recordOnce'; runId: string; scope: OnceScope; key: string }
+  | {
+      type: 'upsertOutbox';
+      runId: string;
+      idempotencyKey: string;
+      message: string;
+    }
+  | { type: 'delete'; runId: string };
+
+class RecordingRunStore implements DurableRunStore {
+  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly writes: RecordedWrite[] = [];
+
+  get(runId: string): StoredRun<any, any> | undefined {
+    return this.runs.get(runId);
+  }
+
+  has(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  entries(): Iterable<[string, StoredRun<any, any>]> {
+    return this.runs.entries();
+  }
+
+  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
+    this.runs.set(runId, run);
+    this.writes.push({
+      type: 'create',
+      runId,
+      initialMessages: run.initial.messages.map((message) => message.content),
+      resultMessages: run.result?.messages.map((message) => message.content),
+      initialVersion: run.initial.version,
+    });
+  }
+
+  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    Object.assign(run, patch);
+    this.writes.push({ type: 'patch', runId, patch });
+  }
+
+  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run || run.inbox[inbound.offset]) {
+      return;
+    }
+    run.inbox.push(inbound);
+    this.writes.push({ type: 'appendInbox', runId, inbound });
+  }
+
+  async appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any, any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    applyDelta(run, delta);
+    this.writes.push({ type: 'appendSessionDelta', runId, delta });
+  }
+
+  async recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.once[scope].set(key, value);
+    this.writes.push({ type: 'recordOnce', runId, scope, key });
+  }
+
+  async upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry<any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    upsertOutbox(run, entry);
+    this.writes.push({
+      type: 'upsertOutbox',
+      runId,
+      idempotencyKey: entry.idempotencyKey,
+      message: entry.message.content,
+    });
+  }
+
+  async delete(runId: string): Promise<void> {
+    this.runs.delete(runId);
+    this.writes.push({ type: 'delete', runId });
   }
 }
 
@@ -270,6 +560,7 @@ describe('checkpoint app runtime', () => {
 
     await resolveUntilPendingWrite(store, (pending) => {
       return (
+        pending.type === 'recordOnce' &&
         pending.snapshot.status === 'open' &&
         pending.snapshot.onceRunEntries === 1
       );
@@ -291,10 +582,173 @@ describe('checkpoint app runtime', () => {
     expect(events).not.toContain('reported:done');
 
     await store.resolveNext();
+    await resolvePendingWritesUntil(
+      () => events.includes('reported:done'),
+      store,
+    );
     const result = await runPromise;
 
     expect(result.status).toBe('done');
     expect(events).toContain('reported:done');
+  });
+
+  it('persists session content only as deltas after initial create', async () => {
+    const store = new RecordingRunStore();
+    const assistant = Agent.create('delta-writes')
+      .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
+      .turn('wait', (turn) => turn.awaitInput('input'))
+      .assistant(
+        'reply',
+        (session) => `reply:${session.getLastMessage()?.content ?? ''}`,
+      );
+    const app = PromptTrail.app({
+      agents: { delta: assistant },
+      store,
+    });
+
+    const first = await app.run({
+      agent: 'delta',
+      runId: 'run-delta-writes',
+      checkpoint: true,
+      session: Session.create({
+        messages: [{ type: 'system', content: 'seed' }],
+      }),
+    });
+    const second = await app.send({
+      runId: 'run-delta-writes',
+      input: 'continue',
+    });
+
+    expect(first.status).toBe('suspended');
+    expect(second.status).toBe('done');
+    expect(store.writes[0]).toMatchObject({
+      type: 'create',
+      initialMessages: ['seed'],
+    });
+    expect(
+      store.writes.slice(1).filter((write) => write.type === 'create'),
+    ).toEqual([]);
+
+    const deltas = store.writes.filter(
+      (
+        write,
+      ): write is Extract<RecordedWrite, { type: 'appendSessionDelta' }> =>
+        write.type === 'appendSessionDelta',
+    );
+    expect(deltas[0]?.delta).toMatchObject({
+      appendedMessages: [],
+      varsSet: { stage: 'waiting' },
+    });
+    expect(
+      deltas[1]?.delta.appendedMessages.map((message) => message.content),
+    ).toEqual(['continue', 'reply:continue']);
+    expect(
+      deltas.some(
+        (write) =>
+          write.delta.appendedMessages
+            .map((message) => message.content)
+            .join('|') === 'seed|continue|reply:continue',
+      ),
+    ).toBe(false);
+  });
+
+  it('chains session deltas by contiguous session versions', async () => {
+    const store = new RecordingRunStore();
+    const assistant = Agent.create('delta-chain')
+      .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
+      .turn('wait', (turn) => turn.awaitInput('input'))
+      .assistant('reply', () => 'done');
+    const app = PromptTrail.app({
+      agents: { delta: assistant },
+      store,
+    });
+
+    await app.run({
+      agent: 'delta',
+      runId: 'run-delta-chain',
+      checkpoint: true,
+    });
+    await app.send({
+      runId: 'run-delta-chain',
+      input: 'continue',
+    });
+
+    const create = store.writes.find(
+      (write): write is Extract<RecordedWrite, { type: 'create' }> =>
+        write.type === 'create',
+    );
+    const deltas = store.writes.filter(
+      (
+        write,
+      ): write is Extract<RecordedWrite, { type: 'appendSessionDelta' }> =>
+        write.type === 'appendSessionDelta',
+    );
+
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas[0]?.delta.fromVersion).toBe(create?.initialVersion);
+    for (let index = 1; index < deltas.length; index++) {
+      expect(deltas[index]?.delta.fromVersion).toBe(
+        deltas[index - 1]?.delta.toVersion,
+      );
+    }
+  });
+
+  it('falls back to a rewrite delta when message history is replaced', async () => {
+    const store = new RecordingRunStore();
+    const assistant = Agent.create('rewriter')
+      .assistant('reply', () => 'draft')
+      .patch('redact', (session) =>
+        Session.create({
+          messages: session.messages.map((message) =>
+            message.type === 'assistant'
+              ? { ...message, content: 'redacted' }
+              : message,
+          ),
+          vars: { ...session.vars },
+        }),
+      )
+      .turn('wait', (turn) => turn.awaitInput('input'))
+      .assistant('after', () => 'done');
+    const app = PromptTrail.app({
+      agents: { rewriter: assistant },
+      store,
+    });
+
+    const first = await app.run({
+      agent: 'rewriter',
+      runId: 'run-rewrite-delta',
+      checkpoint: true,
+    });
+    const second = await app.send({
+      runId: 'run-rewrite-delta',
+      input: 'continue',
+    });
+
+    expect(first.status).toBe('suspended');
+    expect(second.status).toBe('done');
+
+    const deltas = store.writes.filter(
+      (
+        write,
+      ): write is Extract<RecordedWrite, { type: 'appendSessionDelta' }> =>
+        write.type === 'appendSessionDelta',
+    );
+    expect(deltas[0]?.delta.rewrite).toBe(true);
+    expect(
+      deltas[0]?.delta.appendedMessages.map((message) => message.content),
+    ).toEqual(['redacted']);
+    expect(deltas.slice(1).every((write) => !write.delta.rewrite)).toBe(true);
+    expect(deltas[1]?.delta.fromVersion).toBe(deltas[0]?.delta.toVersion);
+    expect(
+      deltas[1]?.delta.appendedMessages.map((message) => message.content),
+    ).toEqual(['continue', 'done']);
+    expect(
+      store.runs
+        .get('run-rewrite-delta')
+        ?.result?.messages.map(
+          (message: { content: string }) => message.content,
+        ),
+    ).toEqual(['redacted', 'continue', 'done']);
   });
 
   it('uses session version as the default checkpoint tool once dep', async () => {
@@ -512,6 +966,23 @@ async function resolveUntilPendingWrite(
   throw new Error('Timed out waiting for matching pending store write.');
 }
 
+async function resolvePendingWritesUntil(
+  predicate: () => boolean,
+  store: ControlledDelayRunStore,
+): Promise<void> {
+  for (let attempts = 0; attempts < 100; attempts++) {
+    if (predicate()) {
+      return;
+    }
+    if (store.pending.length > 0) {
+      await store.resolveNext();
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  throw new Error('Timed out resolving pending store writes.');
+}
+
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let attempts = 0; attempts < 100; attempts++) {
     if (predicate()) {
@@ -520,4 +991,49 @@ async function waitFor(predicate: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error('Timed out waiting for condition.');
+}
+
+function applyDelta(
+  run: StoredRun<any, any>,
+  delta: SessionCheckpointDelta<any, any>,
+): void {
+  const current = run.result ?? run.initial;
+  if (current.version >= delta.toVersion) {
+    return;
+  }
+  if (delta.rewrite) {
+    run.result = new Session(
+      [...delta.appendedMessages],
+      { ...(delta.varsSet ?? {}) },
+      current.print,
+      delta.toVersion,
+      delta.toVersion,
+    );
+    return;
+  }
+  const vars = { ...current.vars };
+  for (const key of delta.varsDeleted ?? []) {
+    delete vars[key];
+  }
+  Object.assign(vars, delta.varsSet);
+  run.result = new Session(
+    [...current.messages, ...delta.appendedMessages],
+    vars,
+    current.print,
+    delta.toVersion,
+  );
+}
+
+function upsertOutbox(
+  run: StoredRun<any, any>,
+  entry: AssistantDeliveryOutboxEntry<any>,
+): void {
+  const index = run.outbox.findIndex(
+    (candidate) => candidate.idempotencyKey === entry.idempotencyKey,
+  );
+  if (index >= 0) {
+    run.outbox[index] = entry;
+  } else {
+    run.outbox.push(entry);
+  }
 }

@@ -22,6 +22,12 @@ export interface CheckpointOnceMemoStore {
   conversation: Map<string, unknown>;
 }
 
+export interface CheckpointOnceMemoEntry {
+  scope: CheckpointOnceScope;
+  key: string;
+  value: unknown;
+}
+
 interface CheckpointGraphRunState<
   TVars extends Vars,
   TAttrs extends Attrs,
@@ -220,7 +226,7 @@ export function createCheckpointOnceMemoStore(): CheckpointOnceMemoStore {
 
 export function createCheckpointOnceBoundary(
   run: { once?: CheckpointOnceMemoStore },
-  persist: () => Promise<void>,
+  recordOnce: (entry: CheckpointOnceMemoEntry) => Promise<void>,
 ): CheckpointOnceBoundary {
   return {
     async once(name, dep, fn, options) {
@@ -232,7 +238,7 @@ export function createCheckpointOnceBoundary(
       }
       const result = await fn();
       memo.set(key, result);
-      await persist();
+      await recordOnce({ scope, key, value: result });
       return result;
     },
   };

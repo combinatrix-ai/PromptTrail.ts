@@ -40,7 +40,9 @@ export type {
   PromptTrailRunOptions,
   PromptTrailSendOptions,
   RunStore,
+  SessionCheckpointDelta,
   StoredRun,
+  StoredRunPatch,
   ToolCall,
 } from './durable';
 export type {

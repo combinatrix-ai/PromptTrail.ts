@@ -1,6 +1,7 @@
 import type { CallToolResult } from './capabilities';
 import {
   ObserverBus,
+  adoptSessionResult,
   type ExecutionEvent,
   type ObserverDeliveryBindingOptions,
   type ObserverLike,
@@ -635,12 +636,15 @@ async function executeSubroutineNode<TVars extends Vars, TAttrs extends Attrs>(
   try {
     await executeChildren(node.children ?? [], nodePath, subState);
     state.cursor = subState.cursor;
-    state.session = await squashSubroutineSession(
-      nodePath,
-      data,
+    state.session = adoptSessionResult(
       parentSession,
-      subroutineInitial as Session<TVars, TAttrs>,
-      subState.session,
+      await squashSubroutineSession(
+        nodePath,
+        data,
+        parentSession,
+        subroutineInitial as Session<TVars, TAttrs>,
+        subState.session,
+      ),
     );
   } catch (error) {
     state.cursor = subState.cursor;
@@ -765,7 +769,10 @@ async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
     signal: state.signal,
   });
   if (result instanceof Session) {
-    state.session = result as Session<TVars, TAttrs>;
+    state.session = adoptSessionResult(
+      state.session,
+      result as Session<TVars, TAttrs>,
+    );
     return;
   }
   if (result !== undefined) {
@@ -782,7 +789,10 @@ async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
   const handler = data.handler;
   if (typeof handler === 'function') {
     const result = await handler(state.session);
-    state.session = result as Session<TVars, TAttrs>;
+    state.session = adoptSessionResult(
+      state.session,
+      result as Session<TVars, TAttrs>,
+    );
     return;
   }
   await executeTemplateNode(node, nodePath, state);
@@ -828,7 +838,10 @@ async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
       );
     }
   }
-  state.session = template.aggregateResults(results, state.session);
+  state.session = adoptSessionResult(
+    state.session,
+    template.aggregateResults(results, state.session),
+  );
 }
 
 async function executeCodexTurnNode<TVars extends Vars, TAttrs extends Attrs>(

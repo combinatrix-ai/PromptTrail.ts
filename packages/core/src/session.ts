@@ -12,6 +12,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     public readonly vars: TVars,
     public readonly print: boolean = false,
     private readonly _version: number = 0,
+    private readonly _historyRewrittenAtVersion: number = 0,
   ) {
     this.messages = messages.map(makeMessagePersistenceSafe);
   }
@@ -27,6 +28,16 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
    */
   get version(): number {
     return this._version;
+  }
+
+  /**
+   * The version at which this lineage last rewrote (rather than appended to)
+   * its message history; 0 if it never did. Checkpoint delta persistence is
+   * append-only between versions, so a persister whose baseline is older than
+   * this watermark must fall back to a full rewrite of the stored history.
+   */
+  get historyRewrittenAtVersion(): number {
+    return this._historyRewrittenAtVersion;
   }
 
   /**
@@ -64,6 +75,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       { ...this.vars }, // Create a shallow copy of the context
       this.print,
       this.version + 1,
+      this.historyRewrittenAtVersion,
     );
   }
 
@@ -93,6 +105,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       newContext,
       this.print,
       this.version + 1,
+      this.historyRewrittenAtVersion,
     );
   }
 
@@ -105,6 +118,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       newContext,
       this.print,
       this.version + 1,
+      this.historyRewrittenAtVersion,
     );
   }
 
@@ -124,6 +138,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       { ...this.vars },
       this.print,
       this.version,
+      this.historyRewrittenAtVersion,
     );
   }
 
@@ -203,6 +218,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       context: this.vars,
       print: this.print,
       version: this.version,
+      historyRewrittenAtVersion: this.historyRewrittenAtVersion,
     };
   }
 
@@ -420,11 +436,25 @@ export namespace Session {
       );
     }
 
+    if (
+      json.historyRewrittenAtVersion !== undefined &&
+      (typeof json.historyRewrittenAtVersion !== 'number' ||
+        !Number.isInteger(json.historyRewrittenAtVersion) ||
+        json.historyRewrittenAtVersion < 0)
+    ) {
+      throw new ValidationError(
+        'Invalid session JSON: historyRewrittenAtVersion must be a non-negative integer',
+      );
+    }
+
     return new Session<Vars<TVars>, Attrs<TAttrs>>(
       json.messages as Message<Attrs<TAttrs>>[],
       (json.context ?? {}) as Vars<TVars>,
       json.print ? (json.print as boolean) : false,
       json.version === undefined ? 0 : (json.version as number),
+      json.historyRewrittenAtVersion === undefined
+        ? 0
+        : (json.historyRewrittenAtVersion as number),
     );
   }
 

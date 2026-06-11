@@ -53,6 +53,7 @@ import {
   recordCheckpointGraphSuspension,
   restoreCheckpointGraphCursor,
   type CheckpointOnceBoundary,
+  type CheckpointOnceMemoEntry,
   type CheckpointOnceMemoStore,
   type CheckpointOnceOptions,
   type CheckpointOnceScope,
@@ -143,6 +144,38 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
 }
 
+export interface SessionCheckpointDelta<
+  _TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  fromVersion: number;
+  toVersion: number;
+  appendedMessages: readonly PromptTrailMessage<TAttrs>[];
+  varsSet?: Record<string, unknown>;
+  varsDeleted?: readonly string[];
+  /**
+   * Set when the session rewrote (rather than appended to) its message
+   * history since the last persisted version — e.g. a hook or middleware
+   * patch with `replaceMessages`. The delta is then a full snapshot:
+   * `appendedMessages` REPLACES the stored history and `varsSet` carries the
+   * complete vars, so stores must not splice it onto previously stored
+   * messages.
+   */
+  rewrite?: boolean;
+}
+
+export type StoredRunPatch = Partial<
+  Pick<
+    StoredRun<any, any>,
+    | 'status'
+    | 'graphCursor'
+    | 'graphSuspendedAt'
+    | 'context'
+    | 'agentName'
+    | 'graphManifest'
+  >
+>;
+
 export type PromptTrailRegisteredAgent<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
@@ -195,10 +228,26 @@ export interface DurableRunStore {
    * run under the at-least-once checkpoint model.
    */
   get(runId: string): StoredRun<any, any> | undefined;
-  set(runId: string, run: StoredRun<any, any>): Promise<void>;
   has(runId: string): boolean;
-  delete(runId: string): Promise<void>;
   entries(): Iterable<[string, StoredRun<any, any>]>;
+  create(runId: string, run: StoredRun<any, any>): Promise<void>;
+  patch(runId: string, patch: StoredRunPatch): Promise<void>;
+  appendInbox(runId: string, inbound: Inbound): Promise<void>;
+  appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any, any>,
+  ): Promise<void>;
+  recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+  ): Promise<void>;
+  upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry<any>,
+  ): Promise<void>;
+  delete(runId: string): Promise<void>;
 }
 
 export type RunStore = DurableRunStore;
@@ -212,12 +261,74 @@ export class MemoryRunStore implements DurableRunStore {
     return this.runs.get(runId);
   }
 
-  async set(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
     this.runs.set(runId, run);
   }
 
   has(runId: string): boolean {
     return this.runs.has(runId);
+  }
+
+  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    Object.assign(run, patch);
+  }
+
+  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    if (run.inbox[inbound.offset]) {
+      return;
+    }
+    run.inbox.push(inbound);
+  }
+
+  async appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any, any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    applySessionCheckpointDelta(run, delta);
+  }
+
+  async recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.once[scope].set(key, value);
+  }
+
+  async upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry<any>,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    const outbox = (run.outbox ??= []);
+    const index = outbox.findIndex(
+      (candidate) => candidate.idempotencyKey === entry.idempotencyKey,
+    );
+    if (index >= 0) {
+      outbox[index] = entry;
+    } else {
+      outbox.push(entry);
+    }
   }
 
   async delete(runId: string): Promise<void> {
@@ -278,6 +389,14 @@ export class PromptTrailApp {
   // persisted; durable cross-restart sequencing is the async store's job
   // (change list §1.6).
   private readonly runEventSeqs = new Map<string, number>();
+  private readonly persistedSessions = new Map<
+    string,
+    {
+      version: number;
+      messageCount: number;
+      vars: Record<string, unknown>;
+    }
+  >();
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.name = options.name ?? 'app';
@@ -556,7 +675,9 @@ export class PromptTrailApp {
     if (existing) {
       existing.agent = options.agent;
       existing.agentName = options.agent.toGraph().name;
-      await this.store.set(options.runId, existing);
+      await this.store.patch(options.runId, {
+        agentName: existing.agentName,
+      });
     }
     if (!this.store.has(options.runId)) {
       return this.run<TVars, TAttrs>({
@@ -603,6 +724,9 @@ export class PromptTrailApp {
 
     if (options.context) {
       existing.context = cloneDurableRuntimeValue(options.context);
+      await this.store.patch(options.runId, {
+        context: existing.context,
+      });
     }
     if (
       existing.status === 'done' &&
@@ -653,15 +777,17 @@ export class PromptTrailApp {
         (entry) => entry.idempotencyKey === delivery.idempotencyKey,
       );
       if (!existing) {
-        outbox.push(createAssistantDeliveryOutboxEntry(runId, delivery));
+        const entry = createAssistantDeliveryOutboxEntry(runId, delivery);
+        outbox.push(entry);
+        await this.store.upsertOutbox(runId, entry);
       } else {
         Object.assign(
           existing,
           completeAssistantDeliveryOutboxMetadata(runId, existing),
         );
+        await this.store.upsertOutbox(runId, existing);
       }
     }
-    await this.store.set(runId, run);
     return outbox.filter(
       (entry) =>
         deliveries.some(
@@ -710,7 +836,7 @@ export class PromptTrailApp {
     if (platformBinding !== undefined) {
       entry.platformBinding = cloneDurableRuntimeValue(platformBinding);
     }
-    await this.store.set(runId, run);
+    await this.store.upsertOutbox(runId, entry);
   }
 
   async assistantDeliveryOutbox(
@@ -722,7 +848,7 @@ export class PromptTrailApp {
     }
     await this.materializeAssistantDeliveriesForRun(runId, run);
     if (this.backfillAssistantDeliveryOutboxMetadata(runId, run)) {
-      await this.store.set(runId, run);
+      await this.persistAssistantDeliveryOutbox(runId, run);
     }
     return run ? [...(run.outbox ?? [])] : [];
   }
@@ -740,7 +866,7 @@ export class PromptTrailApp {
         }
       }
       if (changed) {
-        await this.store.set(runId, run);
+        await this.persistAssistantDeliveryOutbox(runId, run);
       }
     }
     return pending;
@@ -842,7 +968,8 @@ export class PromptTrailApp {
         graphCursor: 0,
         context: cloneDurableRuntimeValue(options.context),
       };
-      await this.store.set(runId, run);
+      await this.store.create(runId, run);
+      this.setPersistedSessionBaseline(runId, run.initial);
       if (options.input !== undefined) {
         await this.append(runId, normalizeInbound(options.input));
       }
@@ -978,8 +1105,8 @@ export class PromptTrailApp {
           nextEventSeq: () => this.nextRunEventSeq(runId),
           durableToolExecution: (_context, execute) => {
             return execute(
-              createCheckpointOnceBoundary(run, () =>
-                this.persistRun(runId, run),
+              createCheckpointOnceBoundary(run, (entry) =>
+                this.recordOnce(runId, entry),
               ),
             );
           },
@@ -1079,21 +1206,100 @@ export class PromptTrailApp {
     message: Omit<Inbound, 'offset'>,
   ): Promise<void> {
     const run = this.getRun(runId);
-    run.inbox.push({ ...message, offset: run.inbox.length });
+    const inbound = { ...message, offset: run.inbox.length };
+    run.inbox.push(inbound);
+    await this.store.appendInbox(runId, inbound);
     if (run.status === 'done') {
       run.status = 'open';
+      await this.store.patch(runId, { status: run.status });
     }
-    await this.persistRun(runId, run);
   }
 
   private async persistRun<TVars extends Vars, TAttrs extends Attrs>(
     runId: string,
     run: StoredRun<TVars, TAttrs>,
   ): Promise<void> {
-    if (!this.store.has(runId)) {
-      return;
+    const delta = this.computeSessionCheckpointDelta(runId, run);
+    if (delta) {
+      await this.store.appendSessionDelta(runId, delta);
+      this.setPersistedSessionBaseline(runId, run.result ?? run.initial);
     }
-    await this.store.set(runId, run);
+    await this.store.patch(runId, {
+      status: run.status,
+      graphCursor: run.graphCursor,
+      graphSuspendedAt: run.graphSuspendedAt,
+      context: run.context,
+      agentName: run.agentName,
+      graphManifest: run.graphManifest,
+    });
+  }
+
+  private async recordOnce(
+    runId: string,
+    entry: CheckpointOnceMemoEntry,
+  ): Promise<void> {
+    await this.store.recordOnce(runId, entry.scope, entry.key, entry.value);
+  }
+
+  private async persistAssistantDeliveryOutbox<
+    TVars extends Vars,
+    TAttrs extends Attrs,
+  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
+    for (const entry of run.outbox ?? []) {
+      await this.store.upsertOutbox(runId, entry);
+    }
+  }
+
+  private computeSessionCheckpointDelta<
+    TVars extends Vars,
+    TAttrs extends Attrs,
+  >(
+    runId: string,
+    run: StoredRun<TVars, TAttrs>,
+  ): SessionCheckpointDelta<TVars, TAttrs> | undefined {
+    const session = run.result ?? run.initial;
+    const baseline =
+      this.persistedSessions.get(runId) ??
+      this.setPersistedSessionBaseline(runId, session);
+    if (session.version === baseline.version) {
+      return undefined;
+    }
+
+    if (session.historyRewrittenAtVersion > baseline.version) {
+      return {
+        fromVersion: baseline.version,
+        toVersion: session.version,
+        appendedMessages: session.messages,
+        varsSet: { ...session.vars },
+        rewrite: true,
+      };
+    }
+
+    const varsDiff = diffVars(baseline.vars, session.vars);
+    return {
+      fromVersion: baseline.version,
+      toVersion: session.version,
+      appendedMessages: session.messages.slice(baseline.messageCount),
+      ...(Object.keys(varsDiff.varsSet).length > 0
+        ? { varsSet: varsDiff.varsSet }
+        : {}),
+      ...(varsDiff.varsDeleted.length > 0
+        ? { varsDeleted: varsDiff.varsDeleted }
+        : {}),
+    };
+  }
+
+  private setPersistedSessionBaseline<TVars extends Vars, TAttrs extends Attrs>(
+    runId: string,
+    session: Session<TVars, TAttrs>,
+  ): { version: number; messageCount: number; vars: Record<string, unknown> } {
+    const baseline = {
+      version: session.version,
+      messageCount: session.messages.length,
+      vars: { ...session.vars },
+    };
+    this.persistedSessions.set(runId, baseline);
+    return baseline;
   }
 
   private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
@@ -1205,6 +1411,56 @@ function cloneDurableRuntimeValue<T>(value: T): T {
   }
 }
 
+function applySessionCheckpointDelta<TVars extends Vars, TAttrs extends Attrs>(
+  run: StoredRun<TVars, TAttrs>,
+  delta: SessionCheckpointDelta<TVars, TAttrs>,
+): void {
+  const current = run.result ?? run.initial;
+  if (current.version >= delta.toVersion) {
+    return;
+  }
+  if (delta.rewrite) {
+    run.result = new Session<TVars, TAttrs>(
+      [...delta.appendedMessages],
+      { ...(delta.varsSet ?? {}) } as TVars,
+      current.print,
+      delta.toVersion,
+      delta.toVersion,
+    );
+    return;
+  }
+  const vars = { ...current.vars } as Record<string, unknown>;
+  for (const key of delta.varsDeleted ?? []) {
+    delete vars[key];
+  }
+  Object.assign(vars, delta.varsSet);
+  run.result = new Session<TVars, TAttrs>(
+    [...current.messages, ...delta.appendedMessages],
+    vars as TVars,
+    current.print,
+    delta.toVersion,
+  );
+}
+
+function diffVars(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): { varsSet: Record<string, unknown>; varsDeleted: string[] } {
+  const varsSet: Record<string, unknown> = {};
+  const varsDeleted: string[] = [];
+  for (const key of Object.keys(previous)) {
+    if (!Object.prototype.hasOwnProperty.call(next, key)) {
+      varsDeleted.push(key);
+    }
+  }
+  for (const [key, value] of Object.entries(next)) {
+    if (!Object.is(previous[key], value)) {
+      varsSet[key] = value;
+    }
+  }
+  return { varsSet, varsDeleted };
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1264,8 +1520,13 @@ function isRunStore(value: unknown): value is RunStore {
     typeof value === 'object' &&
     value !== null &&
     'get' in value &&
-    'set' in value &&
     'has' in value &&
+    'create' in value &&
+    'patch' in value &&
+    'appendInbox' in value &&
+    'appendSessionDelta' in value &&
+    'recordOnce' in value &&
+    'upsertOutbox' in value &&
     'delete' in value &&
     'entries' in value
   );

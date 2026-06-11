@@ -118,16 +118,27 @@ execution first breaks that path. Tag the pre-deletion commit
       vars/attrs diff + pointer), not full-session rewrites. Persist provider
       thread/session ids for `.codex`/`.claude` nodes so resume reconnects
       (Decision Update 2, points 7/9). See §8.7/§8.8. (`durable.ts`)
-      Progress — async half done: `DurableRunStore.set`/`delete` return
-      `Promise<void>` (reads stay sync until the delta work), every persist is
-      awaited, and `createCheckpointOnceBoundary` awaits the memo persist
-      before `once()` returns (closes the §8.8 sync-persist gap); the
-      assistant-delivery outbox helpers became async public APIs. Ordering is
-      locked by a controlled-delay-store unit test. Remaining: session-delta
-      persistence + provider thread-id slot. Noted for the delta half: outbox
-      materialization writes whole runs from read paths, `persistRun` does a
-      sync `has` before async `set`, and `entries()` scans are sync — the
-      delta store contract should address all three.
+      Done in two halves. Async half: `DurableRunStore` writes return
+      `Promise<void>`, every persist is awaited, and
+      `createCheckpointOnceBoundary` awaits the memo persist before `once()`
+      returns (closes the §8.8 sync-persist gap); ordering is locked by a
+      controlled-delay-store test. Delta half: the store contract is
+      write-granular (`create`/`patch`/`appendInbox`/`appendSessionDelta`/
+      `recordOnce`/`upsertOutbox`; whole-run `set` removed), session content
+      reaches the store only as `SessionCheckpointDelta` (appended messages +
+      shallow vars diff, pointer = `Session.version`), and tests assert the
+      full history is never rewritten after `create` and that delta versions
+      chain contiguously. History REPLACEMENT (hook/middleware
+      `replaceMessages`, subroutine squash) is handled by a
+      `Session.historyRewrittenAtVersion` watermark: a persist whose baseline
+      predates it emits a full-snapshot delta with `rewrite: true`. Graph
+      patch/transform/squash/parallel-aggregate nodes now adopt
+      handler-returned sessions through `adoptSessionResult` (diff +
+      re-apply), so a handler that constructs a fresh `Session` can no longer
+      reset or rewind the lineage identity the once-deps and deltas key on.
+      Reads (`get`/`has`/`entries`) stay sync — deferred with async reads.
+      Provider thread/session-id persistence moved to §1.8 where resume
+      consumes it.
 - [x] **1.7 Introduce a session identity.** `Session` has no version field
       (`transitionVersion` is legacy replay state) and loop counters are
       executor-local. Add a monotonic session identity/version used as the default

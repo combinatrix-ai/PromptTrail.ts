@@ -1537,7 +1537,6 @@ describe('RuntimeServer', () => {
 
     const run = store.get(runId)!;
     run.outbox = [];
-    await store.set(runId, run);
     expect(store.get(runId)?.outbox).toEqual([]);
 
     const server = PromptTrail.server({
@@ -1699,29 +1698,25 @@ describe('RuntimeServer', () => {
       checkpoint: true,
     });
     const run = store.get(runId)!;
-    run.outbox = [
-      {
-        assistantIndex: 0,
-        idempotencyKey: deliveryKey,
-        message: { type: 'assistant', content: 'stored reply' },
-        target,
-        status: 'pending',
-        attempts: 0,
-      } as never,
-    ];
-    await store.set(runId, run);
+    run.outbox = [];
+    await store.upsertOutbox(runId, {
+      assistantIndex: 0,
+      idempotencyKey: deliveryKey,
+      message: { type: 'assistant', content: 'stored reply' },
+      target,
+      status: 'pending',
+      attempts: 0,
+    } as never);
     const otherRun = store.get(otherRunId)!;
-    otherRun.outbox = [
-      {
-        assistantIndex: 0,
-        idempotencyKey: otherDeliveryKey,
-        message: { type: 'assistant', content: 'stored reply' },
-        target,
-        status: 'pending',
-        attempts: 0,
-      } as never,
-    ];
-    await store.set(otherRunId, otherRun);
+    otherRun.outbox = [];
+    await store.upsertOutbox(otherRunId, {
+      assistantIndex: 0,
+      idempotencyKey: otherDeliveryKey,
+      message: { type: 'assistant', content: 'stored reply' },
+      target,
+      status: 'pending',
+      attempts: 0,
+    } as never);
 
     expect(await app.assistantDeliveryOutbox(runId)).toEqual([
       expect.objectContaining({

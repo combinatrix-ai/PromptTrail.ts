@@ -1210,8 +1210,13 @@ function isRunStore(value: unknown): value is RunStore {
     typeof value === 'object' &&
     value !== null &&
     'get' in value &&
-    'set' in value &&
     'has' in value &&
+    'create' in value &&
+    'patch' in value &&
+    'appendInbox' in value &&
+    'appendSessionDelta' in value &&
+    'recordOnce' in value &&
+    'upsertOutbox' in value &&
     'delete' in value &&
     'entries' in value
   );
