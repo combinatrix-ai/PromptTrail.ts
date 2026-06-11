@@ -112,7 +112,7 @@ execution first breaks that path. Tag the pre-deletion commit
       per run via an in-memory app counter so idempotency keys cannot collide
       across resumes within a process; durable cross-restart sequencing moves
       to §1.6.
-- [ ] **1.6 Make the run store async and persist deltas.**
+- [x] **1.6 Make the run store async and persist deltas.**
       `DurableRunStore.set`/`persist` become `Promise<void>` and are awaited at
       effect boundaries; checkpoints persist session deltas (appended messages +
       vars/attrs diff + pointer), not full-session rewrites. Persist provider
@@ -155,7 +155,7 @@ execution first breaks that path. Tag the pre-deletion commit
       version, so the default dep dedupes them — same behavior as the old
       whole-session dep; the strict gate's idempotencyKey remains the answer
       for must-dedup writes.
-- [ ] **1.8 Provider-session resume for `.codex`/`.claude` nodes.** The
+- [x] **1.8 Provider-session resume for `.codex`/`.claude` nodes.** The
       provider owns the loop, so a crash mid-turn cannot be checkpointed. Primary:
       persist the provider thread/session id in the checkpoint and reconnect on
       resume (build on the existing Codex thread binding and Claude Agent session
@@ -168,6 +168,20 @@ execution first breaks that path. Tag the pre-deletion commit
       Best-effort, documented as such; vendor-internal tool side effects sit
       outside the idempotency memo and the docs must say so loudly.
       (`durable.ts`, `codex_app_server.ts`, `claude_agent.ts`)
+      Done: `StoredRun.providerSessions` keyed by node path, written through
+      the granular `DurableRunStore.recordProviderSession`; the runtime
+      threads `providerSessions`/`recordProviderSession` from
+      `resumeAgentRun` into both turn primitives. Codex persists the thread
+      id right after `thread/start` (reconnect = existing `turn/start` with
+      `threadId`); Claude persists from the event stream the moment a
+      session id appears (reconnect = existing SDK `options.resume`).
+      A failure while using a checkpoint binding maps to
+      `ProviderTurnUnresumableError`; `onUnresumable: 'restart'` increments
+      the persisted restart counter first, then re-runs on a fresh provider
+      session with the notice prepended. Known gaps: real expired/refused
+      provider response shapes are unverified against live APIs, and a crash
+      before the first id write is indistinguishable from a fresh turn (no
+      turn-started marker) — both acceptable per the best-effort posture.
 
 ## 2. Version gate: edits invalidate resume (broad hash)
 

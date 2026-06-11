@@ -13,6 +13,7 @@ import type {
   StoredRun,
   StoredRunPatch,
 } from '../../durable';
+import type { ProviderSessionBinding } from '../../provider_session';
 import { Session } from '../../session';
 import { Source } from '../../source';
 import { Agent } from '../../templates';
@@ -132,6 +133,29 @@ class TrackingRunStore implements DurableRunStore {
     });
   }
 
+  async recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.providerSessions = {
+      ...(run.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
+    this.snapshots.push({
+      type: 'recordProviderSession',
+      runId,
+      status: run.status,
+      onceRunEntries: run.once.run.size,
+      resultMessages: run.result?.messages.length,
+      outbox: run.outbox.length,
+    });
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -236,6 +260,22 @@ class ControlledDelayRunStore implements DurableRunStore {
     return this.delayWrite('upsertOutbox', runId, run, () => {});
   }
 
+  recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    run.providerSessions = {
+      ...(run.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
+    return this.delayWrite('recordProviderSession', runId, run, () => {});
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -298,6 +338,12 @@ type RecordedWrite =
       runId: string;
       idempotencyKey: string;
       message: string;
+    }
+  | {
+      type: 'recordProviderSession';
+      runId: string;
+      nodePath: string;
+      binding: ProviderSessionBinding;
     }
   | { type: 'delete'; runId: string };
 
@@ -386,6 +432,27 @@ class RecordingRunStore implements DurableRunStore {
       runId,
       idempotencyKey: entry.idempotencyKey,
       message: entry.message.content,
+    });
+  }
+
+  async recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.providerSessions = {
+      ...(run.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
+    this.writes.push({
+      type: 'recordProviderSession',
+      runId,
+      nodePath,
+      binding,
     });
   }
 

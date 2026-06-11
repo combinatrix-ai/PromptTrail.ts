@@ -12,6 +12,7 @@ export * from './interceptors';
 export * from './json_schema';
 export * from './message';
 export * from './openai_responses';
+export * from './provider_session';
 export * from './provider_stream';
 export * from './replay_pins';
 export * from './runtime';

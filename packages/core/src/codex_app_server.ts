@@ -825,6 +825,27 @@ export interface CodexTurnOptions<
   approvalHandler?: ApprovalHandler;
   retainMessages?: boolean;
   attrsKey?: string;
+  /**
+   * Checkpoint-only policy for a persisted Codex thread that cannot be resumed.
+   *
+   * Default is `'fail'`. Opting into `'restart'` reruns the whole provider
+   * turn with a restart notice prepended to the turn input. WARNING:
+   * vendor-internal Codex tool side effects are outside PromptTrail's
+   * idempotency memo; restarting can rerun those side effects. Use restart only
+   * when that best-effort behavior is acceptable.
+   */
+  onUnresumable?: 'fail' | 'restart';
+  /**
+   * Checkpoint-only preamble injected before the turn input when
+   * `onUnresumable: 'restart'` reruns a provider turn.
+   */
+  restartNotice?: string;
+  /**
+   * Checkpoint-only cap for provider-turn restarts. Defaults to 1. WARNING:
+   * each restart reruns vendor-internal Codex tool side effects outside
+   * PromptTrail's idempotency memo.
+   */
+  maxRestarts?: number;
   threadStart?: Record<string, unknown>;
   turnStart?: Record<string, unknown>;
   squashWith?: (

@@ -9,7 +9,9 @@ import type {
 import { Agent } from '../../../templates';
 import { Session } from '../../../session';
 import { Tool } from '../../../tool';
-import { Middleware } from '../../../interceptors';
+import { Middleware, createExecutionRuntimeState } from '../../../interceptors';
+import { ProviderTurnUnresumableError } from '../../../provider_session';
+import { CodexTurn } from '../../../templates/primitives/codex_turn';
 import { z } from 'zod';
 
 class FakeCodexClient implements CodexAppServerClient {
@@ -66,6 +68,21 @@ class FailingCodexClient extends FakeCodexClient {
   }
 }
 
+class RestartingCodexClient extends FakeCodexClient {
+  override async startTurn(params: CodexTurnStartParams) {
+    this.turnStarts.push(params);
+    if (params.threadId === 'thread-old') {
+      throw new Error('thread expired');
+    }
+    return {
+      threadId: params.threadId,
+      turnId: 'turn-restarted',
+      status: 'completed',
+      finalAnswer: 'Restarted Codex result',
+    };
+  }
+}
+
 describe('CodexTurn template', () => {
   it('should start a thread, run a turn, and append the final answer', async () => {
     const client = new FakeCodexClient();
@@ -105,6 +122,139 @@ describe('CodexTurn template', () => {
         },
       },
     });
+  });
+
+  it('records a checkpoint provider thread immediately when Codex returns it', async () => {
+    const writes: string[] = [];
+    class AssertingCodexClient extends FakeCodexClient {
+      override async startTurn(params: CodexTurnStartParams) {
+        writes.push(`turn:${params.threadId}`);
+        expect(writes).toContain('record:test-agent/codex:thread-1:0');
+        return super.startTurn(params);
+      }
+    }
+    const client = new AssertingCodexClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {},
+      recordProviderSession: async (nodePath, binding) => {
+        writes.push(`record:${nodePath}:${binding.id}:${binding.restarts}`);
+      },
+    });
+
+    await new CodexTurn({ client }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/codex' },
+    );
+
+    expect(writes[0]).toBe('record:test-agent/codex:thread-1:0');
+  });
+
+  it('uses a checkpoint provider thread binding before configured Codex resolution', async () => {
+    const client = new FakeCodexClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/codex': {
+          provider: 'codex',
+          id: 'thread-checkpoint',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+
+    await new CodexTurn({ client, threadId: 'thread-configured' }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/codex' },
+    );
+
+    expect(client.threadStarts).toHaveLength(0);
+    expect(client.turnStarts[0].threadId).toBe('thread-checkpoint');
+  });
+
+  it('throws ProviderTurnUnresumableError when a checkpoint Codex thread cannot resume', async () => {
+    const client = new FailingCodexClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/codex': {
+          provider: 'codex',
+          id: 'thread-old',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+
+    await expect(
+      new CodexTurn({ client }).executeTurn(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        runtime,
+        { nodePath: 'test-agent/codex' },
+      ),
+    ).rejects.toBeInstanceOf(ProviderTurnUnresumableError);
+  });
+
+  it('restarts an unresumable checkpoint Codex turn with a preamble and max restart cap', async () => {
+    const writes: Array<{ id: string; restarts: number }> = [];
+    const client = new RestartingCodexClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/codex': {
+          provider: 'codex',
+          id: 'thread-old',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async (_nodePath, binding) => {
+        writes.push({ id: binding.id, restarts: binding.restarts });
+      },
+    });
+
+    await new CodexTurn({
+      client,
+      onUnresumable: 'restart',
+      restartNotice: 'Restart notice',
+    }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/codex' },
+    );
+
+    expect(client.turnStarts.map((turn) => turn.threadId)).toEqual([
+      'thread-old',
+      'thread-1',
+    ]);
+    expect(client.turnStarts[1].input).toEqual([
+      { type: 'text', text: 'Restart notice' },
+      { type: 'text', text: 'hello' },
+    ]);
+    expect(writes).toEqual([
+      { id: 'thread-old', restarts: 0 },
+      { id: 'thread-old', restarts: 1 },
+      { id: 'thread-1', restarts: 1 },
+    ]);
+
+    const cappedRuntime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/codex': {
+          provider: 'codex',
+          id: 'thread-old',
+          restarts: 1,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+    await expect(
+      new CodexTurn({
+        client: new FailingCodexClient(),
+        onUnresumable: 'restart',
+      }).executeTurn(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        cappedRuntime,
+        { nodePath: 'test-agent/codex' },
+      ),
+    ).rejects.toBeInstanceOf(ProviderTurnUnresumableError);
   });
 
   it('should reuse an existing thread and allow metadata-only retention', async () => {

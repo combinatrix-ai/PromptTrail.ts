@@ -8,7 +8,9 @@ import type {
 } from '../../../claude_agent';
 import { Session } from '../../../session';
 import { Agent } from '../../../templates';
-import { Middleware } from '../../../interceptors';
+import { Middleware, createExecutionRuntimeState } from '../../../interceptors';
+import { ProviderTurnUnresumableError } from '../../../provider_session';
+import { ClaudeTurn } from '../../../templates/primitives/claude_turn';
 
 class FakeClaudeAgentClient implements ClaudeAgentClient {
   queries: ClaudeAgentQueryParams[] = [];
@@ -36,6 +38,24 @@ class FailingClaudeAgentClient implements ClaudeAgentClient {
   async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
     this.queries.push(params);
     yield await Promise.reject(new Error('claude unavailable'));
+  }
+}
+
+class RestartingClaudeAgentClient implements ClaudeAgentClient {
+  queries: ClaudeAgentQueryParams[] = [];
+
+  async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
+    this.queries.push(params);
+    if (params.options.resume === 'session-old') {
+      throw new Error('session expired');
+    }
+    yield {
+      type: 'result',
+      id: 'result-restarted',
+      status: 'completed',
+      session_id: 'session-new',
+      result: 'Restarted Claude result',
+    };
   }
 }
 
@@ -89,6 +109,146 @@ describe('ClaudeTurn template', () => {
       status: 'completed',
       preview: 'Claude result',
     });
+  });
+
+  it('records a checkpoint provider session immediately when Claude returns it', async () => {
+    const writes: string[] = [];
+    class AssertingClaudeAgentClient implements ClaudeAgentClient {
+      queries: ClaudeAgentQueryParams[] = [];
+
+      async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
+        this.queries.push(params);
+        yield {
+          type: 'result',
+          id: 'result-1',
+          status: 'completed',
+          session_id: 'session-1',
+          result: 'Claude result',
+        };
+        expect(writes).toContain('record:test-agent/claude:session-1:0');
+      }
+    }
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {},
+      recordProviderSession: async (nodePath, binding) => {
+        writes.push(`record:${nodePath}:${binding.id}:${binding.restarts}`);
+      },
+    });
+
+    await new ClaudeTurn({
+      client: new AssertingClaudeAgentClient(),
+    }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/claude' },
+    );
+
+    expect(writes[0]).toBe('record:test-agent/claude:session-1:0');
+  });
+
+  it('uses a checkpoint provider session binding before configured Claude resolution', async () => {
+    const client = new FakeClaudeAgentClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/claude': {
+          provider: 'claude',
+          id: 'session-checkpoint',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+
+    await new ClaudeTurn({
+      client,
+      sessionId: 'session-configured',
+    }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/claude' },
+    );
+
+    expect(client.queries[0].options.resume).toBe('session-checkpoint');
+  });
+
+  it('throws ProviderTurnUnresumableError when a checkpoint Claude session cannot resume', async () => {
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/claude': {
+          provider: 'claude',
+          id: 'session-old',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+
+    await expect(
+      new ClaudeTurn({ client: new FailingClaudeAgentClient() }).executeTurn(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        runtime,
+        { nodePath: 'test-agent/claude' },
+      ),
+    ).rejects.toBeInstanceOf(ProviderTurnUnresumableError);
+  });
+
+  it('restarts an unresumable checkpoint Claude turn with a preamble and max restart cap', async () => {
+    const writes: Array<{ id: string; restarts: number }> = [];
+    const client = new RestartingClaudeAgentClient();
+    const runtime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/claude': {
+          provider: 'claude',
+          id: 'session-old',
+          restarts: 0,
+        },
+      },
+      recordProviderSession: async (_nodePath, binding) => {
+        writes.push({ id: binding.id, restarts: binding.restarts });
+      },
+    });
+
+    await new ClaudeTurn({
+      client,
+      onUnresumable: 'restart',
+      restartNotice: 'Restart notice',
+    }).executeTurn(
+      Session.create().addMessage({ type: 'user', content: 'hello' }),
+      runtime,
+      { nodePath: 'test-agent/claude' },
+    );
+
+    expect(client.queries.map((query) => query.options.resume)).toEqual([
+      'session-old',
+      undefined,
+    ]);
+    expect(client.queries[1].prompt).toBe('Restart notice\n\nhello');
+    expect(writes).toEqual([
+      { id: 'session-old', restarts: 0 },
+      { id: 'session-old', restarts: 1 },
+      { id: 'session-new', restarts: 1 },
+    ]);
+
+    const cappedRuntime = createExecutionRuntimeState({
+      providerSessions: {
+        'test-agent/claude': {
+          provider: 'claude',
+          id: 'session-old',
+          restarts: 1,
+        },
+      },
+      recordProviderSession: async () => {},
+    });
+    await expect(
+      new ClaudeTurn({
+        client: new FailingClaudeAgentClient(),
+        onUnresumable: 'restart',
+      }).executeTurn(
+        Session.create().addMessage({ type: 'user', content: 'hello' }),
+        cappedRuntime,
+        { nodePath: 'test-agent/claude' },
+      ),
+    ).rejects.toBeInstanceOf(ProviderTurnUnresumableError);
   });
 
   it('supports metadata-only retention', async () => {

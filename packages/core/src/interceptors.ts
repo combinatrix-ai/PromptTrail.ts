@@ -6,6 +6,7 @@ import {
   type ResolvedExecutionCommand,
   type ResolvedExecutionTransition,
 } from './execution';
+import type { ProviderSessionBinding } from './provider_session';
 import type { Session, Attrs, Vars } from './session';
 
 export type ExecutionLifecyclePhase =
@@ -316,6 +317,11 @@ export interface ExecutionRuntimeState<
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
   eventScopeId?: string;
+  providerSessions?: Record<string, ProviderSessionBinding>;
+  recordProviderSession?: (
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ) => Promise<void>;
 }
 
 export function createExecutionRuntimeState<
@@ -330,6 +336,11 @@ export function createExecutionRuntimeState<
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
   eventScopeId?: string;
+  providerSessions?: Record<string, ProviderSessionBinding>;
+  recordProviderSession?: (
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ) => Promise<void>;
 }): ExecutionRuntimeState<TVars, TAttrs> {
   return {
     middleware: options?.middleware ?? [],
@@ -342,6 +353,8 @@ export function createExecutionRuntimeState<
     emitEvent: options?.emitEvent,
     nextEventSeq: options?.nextEventSeq,
     eventScopeId: options?.eventScopeId,
+    providerSessions: options?.providerSessions,
+    recordProviderSession: options?.recordProviderSession,
   };
 }
 

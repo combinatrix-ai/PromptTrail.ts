@@ -36,6 +36,7 @@ import {
   isPromptTrailTool,
   type PromptTrailTool,
 } from './tool';
+import type { ProviderSessionBinding } from './provider_session';
 
 export interface GraphExecutionOptions<
   TVars extends Vars = Vars,
@@ -68,6 +69,11 @@ export interface GraphExecutionOptions<
     context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
     execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
   ) => Promise<T>;
+  providerSessions?: Record<string, ProviderSessionBinding>;
+  recordProviderSession?: (
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ) => Promise<void>;
   runEventSource?: ExecutionEvent['source'];
   unsupportedCommandLabel?: string;
 }
@@ -181,6 +187,8 @@ export async function executeAgentGraph<
         emitEvent,
         eventScopeId,
         nextEventSeq,
+        providerSessions: options.providerSessions,
+        recordProviderSession: options.recordProviderSession,
       });
   if (options.runtime) {
     runtime.context = context;
@@ -188,6 +196,10 @@ export async function executeAgentGraph<
     runtime.emitEvent = emitEvent;
     runtime.eventScopeId = eventScopeId;
     runtime.nextEventSeq = nextEventSeq;
+    runtime.providerSessions =
+      options.providerSessions ?? options.runtime.providerSessions;
+    runtime.recordProviderSession =
+      options.recordProviderSession ?? options.runtime.recordProviderSession;
   }
   const state: GraphExecutionState<TVars, TAttrs> = {
     graph,
@@ -853,7 +865,9 @@ async function executeCodexTurnNode<TVars extends Vars, TAttrs extends Attrs>(
   if (!(template instanceof CodexTurn)) {
     throw new Error(`Graph node ${nodePath} requires a CodexTurn template.`);
   }
-  state.session = await template.executeTurn(state.session, state.runtime);
+  state.session = await template.executeTurn(state.session, state.runtime, {
+    nodePath,
+  });
 }
 
 async function executeClaudeTurnNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -865,7 +879,9 @@ async function executeClaudeTurnNode<TVars extends Vars, TAttrs extends Attrs>(
   if (!(template instanceof ClaudeTurn)) {
     throw new Error(`Graph node ${nodePath} requires a ClaudeTurn template.`);
   }
-  state.session = await template.executeTurn(state.session, state.runtime);
+  state.session = await template.executeTurn(state.session, state.runtime, {
+    nodePath,
+  });
 }
 
 async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(

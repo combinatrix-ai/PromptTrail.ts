@@ -57,6 +57,28 @@ export interface ClaudeTurnOptions<
   retain?: RetainLevel;
   retainMessages?: boolean;
   attrsKey?: string;
+  /**
+   * Checkpoint-only policy for a persisted Claude Agent session that cannot be
+   * resumed.
+   *
+   * Default is `'fail'`. Opting into `'restart'` reruns the whole provider
+   * turn with a restart notice prepended to the prompt. WARNING:
+   * vendor-internal Claude Agent tool side effects are outside PromptTrail's
+   * idempotency memo; restarting can rerun those side effects. Use restart only
+   * when that best-effort behavior is acceptable.
+   */
+  onUnresumable?: 'fail' | 'restart';
+  /**
+   * Checkpoint-only preamble injected before the prompt when
+   * `onUnresumable: 'restart'` reruns a provider turn.
+   */
+  restartNotice?: string;
+  /**
+   * Checkpoint-only cap for provider-turn restarts. Defaults to 1. WARNING:
+   * each restart reruns vendor-internal Claude Agent tool side effects outside
+   * PromptTrail's idempotency memo.
+   */
+  maxRestarts?: number;
   onEvent?: (event: unknown) => void | Promise<void>;
   squashWith?: (
     session: Session<TVars, TAttrs>,
@@ -408,6 +430,7 @@ export function sanitizeClaudeSkillName(name: string): string {
 export async function collectClaudeAgentTurnResult(
   events: AsyncIterable<unknown>,
   onEvent?: (event: unknown) => void | Promise<void>,
+  onSessionId?: (sessionId: string) => void | Promise<void>,
 ): Promise<RuntimeTurnResult> {
   const retainedEvents: unknown[] = [];
   let finalAnswer = '';
@@ -418,7 +441,11 @@ export async function collectClaudeAgentTurnResult(
     retainedEvents.push(event);
     await onEvent?.(event);
     finalAnswer = extractClaudeAgentFinalAnswer(event) ?? finalAnswer;
-    sessionId = extractClaudeAgentSessionId(event) ?? sessionId;
+    const nextSessionId = extractClaudeAgentSessionId(event);
+    if (nextSessionId && nextSessionId !== sessionId) {
+      sessionId = nextSessionId;
+      await onSessionId?.(nextSessionId);
+    }
     status = extractClaudeAgentStatus(event) ?? status;
   }
 

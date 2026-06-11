@@ -41,6 +41,7 @@ import {
   createAgentGraphManifest,
   type AgentGraphManifest,
 } from './graph';
+import type { ProviderSessionBinding } from './provider_session';
 import type { Agent } from './templates/agent';
 import {
   beginCheckpointGraphExecution,
@@ -139,6 +140,7 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   once: OnceMemoStore;
   outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
   inbox: Inbound[];
+  providerSessions?: Record<string, ProviderSessionBinding>;
   graphCursor?: number;
   graphSuspendedAt?: string;
   context?: Record<string, unknown>;
@@ -247,6 +249,11 @@ export interface DurableRunStore {
     runId: string,
     entry: AssistantDeliveryOutboxEntry<any>,
   ): Promise<void>;
+  recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void>;
   delete(runId: string): Promise<void>;
 }
 
@@ -329,6 +336,21 @@ export class MemoryRunStore implements DurableRunStore {
     } else {
       outbox.push(entry);
     }
+  }
+
+  async recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    run.providerSessions = {
+      ...(run.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
   }
 
   async delete(runId: string): Promise<void> {
@@ -965,6 +987,7 @@ export class PromptTrailApp {
         once: createCheckpointOnceMemoStore(),
         outbox: [],
         inbox: [],
+        providerSessions: {},
         graphCursor: 0,
         context: cloneDurableRuntimeValue(options.context),
       };
@@ -1110,6 +1133,9 @@ export class PromptTrailApp {
               ),
             );
           },
+          providerSessions: run.providerSessions,
+          recordProviderSession: (nodePath, binding) =>
+            this.recordProviderSession(runId, run, nodePath, binding),
           observerDeliveryBindings: this.observerDeliveryBindingOptions,
           strictObservers: this.strictObservers,
           resumeFromNode: checkpoint.resumeFromNode,
@@ -1239,6 +1265,19 @@ export class PromptTrailApp {
     entry: CheckpointOnceMemoEntry,
   ): Promise<void> {
     await this.store.recordOnce(runId, entry.scope, entry.key, entry.value);
+  }
+
+  private async recordProviderSession<TVars extends Vars, TAttrs extends Attrs>(
+    runId: string,
+    run: StoredRun<TVars, TAttrs>,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    run.providerSessions = {
+      ...(run.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
+    await this.store.recordProviderSession(runId, nodePath, binding);
   }
 
   private async persistAssistantDeliveryOutbox<

@@ -18,6 +18,11 @@ import {
   createConversationHistoryFingerprint,
   deriveConversationBinding,
 } from '../../conversation';
+import {
+  DEFAULT_PROVIDER_TURN_RESTART_NOTICE,
+  ProviderTurnUnresumableError,
+  type ProviderSessionBinding,
+} from '../../provider_session';
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session } from '../../session';
@@ -58,6 +63,7 @@ export class CodexTurn<
   async executeTurn(
     session?: Session<TVars, TAttrs>,
     runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+    options: { nodePath?: string } = {},
   ): Promise<Session<TVars, TAttrs>> {
     let currentSession = this.ensureSession(session);
     if (runtime) {
@@ -158,14 +164,20 @@ export class CodexTurn<
           client,
           rawRuntimeSkills,
         );
-        const resolvedThreadId = await this.resolveThreadId(
-          request.session,
-          runtime?.context,
-        );
+        const checkpointBinding = request.ignoreCheckpointBinding
+          ? undefined
+          : this.resolveCheckpointBinding(runtime, options.nodePath);
+        const resolvedThreadId = checkpointBinding
+          ? checkpointBinding.id
+          : await this.resolveThreadId(request.session, runtime?.context);
         const input = await this.resolveInput(
           request.session,
           runtime?.context,
         );
+        const inputWithRestartNotice =
+          request.restartNotice === undefined
+            ? input
+            : prependCodexRestartNotice(input, request.restartNotice);
         const threadId =
           resolvedThreadId ??
           (
@@ -182,10 +194,16 @@ export class CodexTurn<
               ...(this.options.threadStart ?? {}),
             })
           ).threadId;
+        const restarts = request.restarts ?? checkpointBinding?.restarts ?? 0;
+        await this.recordProviderSession(runtime, options.nodePath, {
+          provider: 'codex',
+          id: threadId,
+          restarts,
+        });
 
         const rawTurnResult = await client.startTurn({
           threadId,
-          input: normalizeCodexInput(input, runtimeSkills),
+          input: normalizeCodexInput(inputWithRestartNotice, runtimeSkills),
           cwd: this.options.cwd,
           model: this.options.model,
           sandboxPolicy: this.options.sandboxPolicy,
@@ -216,17 +234,14 @@ export class CodexTurn<
     let result: Awaited<ReturnType<typeof collectCodexTurnResult>>;
     if (runtime) {
       try {
-        const wrappedModel = await runRuntimeMiddlewareWrapper<
-          TVars,
-          TAttrs,
-          TurnModelRequest<TVars, TAttrs>,
-          Awaited<ReturnType<typeof collectCodexTurnResult>>
-        >(runtime, {
-          phase: 'wrapModelCall',
-          session: currentSession,
-          request: { session: modelSession },
-          call: executeProviderCall,
-        });
+        const wrappedModel = await this.executeWithUnresumablePolicy(
+          runtime,
+          options.nodePath,
+          currentSession,
+          modelSession,
+          executeProviderCall,
+          (error) => closeModelEvents('model.failed', error),
+        );
         await closeModelEvents('model.completed');
         assertTurnCommandSupported(wrappedModel.command, 'CodexTurn');
         currentSession = wrappedModel.session;
@@ -305,6 +320,98 @@ export class CodexTurn<
     return this.options.threadId;
   }
 
+  private resolveCheckpointBinding(
+    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    nodePath: string | undefined,
+  ): ProviderSessionBinding | undefined {
+    if (!runtime?.recordProviderSession || !nodePath) {
+      return undefined;
+    }
+    const binding = runtime.providerSessions?.[nodePath];
+    return binding?.provider === 'codex' ? binding : undefined;
+  }
+
+  private async recordProviderSession(
+    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    nodePath: string | undefined,
+    binding: ProviderSessionBinding,
+  ): Promise<void> {
+    if (!runtime?.recordProviderSession || !nodePath) {
+      return;
+    }
+    runtime.providerSessions = {
+      ...(runtime.providerSessions ?? {}),
+      [nodePath]: binding,
+    };
+    await runtime.recordProviderSession(nodePath, binding);
+  }
+
+  private async executeWithUnresumablePolicy(
+    runtime: ExecutionRuntimeState<TVars, TAttrs>,
+    nodePath: string | undefined,
+    currentSession: Session<TVars, TAttrs>,
+    modelSession: Session<TVars, TAttrs>,
+    executeProviderCall: (input: {
+      request: TurnModelRequest<TVars, TAttrs>;
+    }) => Promise<Awaited<ReturnType<typeof collectCodexTurnResult>>>,
+    closeFailedAttempt: (error: unknown) => Promise<void>,
+  ) {
+    const checkpointBinding = this.resolveCheckpointBinding(runtime, nodePath);
+    const callWrappedModel = (request: TurnModelRequest<TVars, TAttrs>) =>
+      runRuntimeMiddlewareWrapper<
+        TVars,
+        TAttrs,
+        TurnModelRequest<TVars, TAttrs>,
+        Awaited<ReturnType<typeof collectCodexTurnResult>>
+      >(runtime, {
+        phase: 'wrapModelCall',
+        session: currentSession,
+        request,
+        call: executeProviderCall,
+      });
+
+    try {
+      return await callWrappedModel({ session: modelSession });
+    } catch (error) {
+      if (!checkpointBinding || error instanceof ProviderTurnUnresumableError) {
+        throw error;
+      }
+      await closeFailedAttempt(error);
+      const unresumable = new ProviderTurnUnresumableError(
+        'codex',
+        nodePath ?? '<unknown>',
+        checkpointBinding.id,
+        undefined,
+        error,
+      );
+      if ((this.options.onUnresumable ?? 'fail') !== 'restart') {
+        throw unresumable;
+      }
+      const restarts = checkpointBinding.restarts + 1;
+      const maxRestarts = this.options.maxRestarts ?? 1;
+      if (restarts > maxRestarts) {
+        throw new ProviderTurnUnresumableError(
+          'codex',
+          nodePath ?? '<unknown>',
+          checkpointBinding.id,
+          `codex turn at ${nodePath ?? '<unknown>'} exceeded maxRestarts (${maxRestarts}) while recovering provider session ${checkpointBinding.id}.`,
+          error,
+        );
+      }
+      await this.recordProviderSession(runtime, nodePath, {
+        ...checkpointBinding,
+        restarts,
+      });
+      return callWrappedModel({
+        session: modelSession,
+        restartNotice:
+          this.options.restartNotice ?? DEFAULT_PROVIDER_TURN_RESTART_NOTICE,
+        restarts,
+        ignoreCheckpointBinding: true,
+      });
+    }
+  }
+
   private async resolveInput(
     session: Session<TVars, TAttrs>,
     context: Record<string, unknown> | undefined,
@@ -350,6 +457,9 @@ interface TurnModelRequest<
   TAttrs extends Attrs = Attrs,
 > {
   session: Session<TVars, TAttrs>;
+  restartNotice?: string;
+  restarts?: number;
+  ignoreCheckpointBinding?: boolean;
 }
 
 async function emitTurnModelEvent<
@@ -437,6 +547,21 @@ function normalizeCodexInput(
     ...skills.map(promptTrailSkillToCodexInputItem),
     ...(Array.isArray(inputItems) ? inputItems : []),
   ];
+}
+
+function prependCodexRestartNotice(
+  input: string | unknown[] | undefined,
+  notice: string,
+): string | unknown[] {
+  if (Array.isArray(input)) {
+    return [{ type: 'text', text: notice }, ...input];
+  }
+  return input
+    ? [
+        { type: 'text', text: notice },
+        { type: 'text', text: input },
+      ]
+    : notice;
 }
 
 function summarizeCodexItem(item: unknown): unknown {
