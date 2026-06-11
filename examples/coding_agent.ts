@@ -11,80 +11,92 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { exec } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
+import { resolve } from 'path';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// Define shell command tool
-const shellCommandTool = Tool.create({
-  description: 'Execute a shell command',
-  inputSchema: z.object({
-    command: z.string().describe('Shell command to execute'),
-  }),
-  activity: { repeatable: true },
-  execute: async (input) => {
-    try {
-      console.log(`[Debug] Executing command: ${input.command}`);
-      const { stdout, stderr } = await execAsync(input.command);
-      return { stdout, stderr };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Command failed';
-      return { stdout: '', stderr: message };
-    }
-  },
-});
-
-// Define file reading tool
-const readFileTool = Tool.create({
-  description: 'Read content from a file',
-  inputSchema: z.object({
-    path: z.string().describe('Path to the file to read'),
-  }),
-  activity: { repeatable: true },
-  execute: async (input) => {
-    try {
-      const content = await readFile(input.path, 'utf-8');
-      console.log(
-        `[Debug] Read content from ${input.path}:`,
-        content.substring(0, 10),
-        '...',
-      );
-      return { content };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { error: `Failed to read file: ${message}` };
-    }
-  },
-});
-
-// Define file writing tool
-const writeFileTool = Tool.create({
-  description: 'Write content to a file',
-  inputSchema: z.object({
-    path: z.string().describe('Path to write the file'),
-    content: z.string().describe('Content to write to the file'),
-  }),
-  activity: {
-    idempotencyKey: (input) => {
-      const { path, content } = input as { path: string; content: string };
-      return `write-file:${path}:${content.length}`;
+// The tools run shell commands and write files; binding them to an explicit
+// working directory keeps the agent's edits inside it (tests sandbox runs in
+// a temp dir this way).
+function createCodingTools(cwd: string) {
+  const shellCommandTool = Tool.create({
+    description: 'Execute a shell command',
+    inputSchema: z.object({
+      command: z.string().describe('Shell command to execute'),
+    }),
+    activity: { repeatable: true },
+    execute: async (input) => {
+      try {
+        console.log(`[Debug] Executing command: ${input.command}`);
+        const { stdout, stderr } = await execAsync(input.command, { cwd });
+        return { stdout, stderr };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Command failed';
+        return { stdout: '', stderr: message };
+      }
     },
-  },
-  execute: async (input) => {
-    try {
-      console.log(
-        `[Debug] Writing content to ${input.path}:`,
-        input.content.substring(0, 10),
-        '...',
-      );
-      await writeFile(input.path, input.content, 'utf-8');
-      return { success: true };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: `Failed to write file: ${message}` };
-    }
-  },
-});
+  });
+
+  const readFileTool = Tool.create({
+    description: 'Read content from a file',
+    inputSchema: z.object({
+      path: z.string().describe('Path to the file to read'),
+    }),
+    activity: { repeatable: true },
+    execute: async (input) => {
+      try {
+        const content = await readFile(resolve(cwd, input.path), 'utf-8');
+        console.log(
+          `[Debug] Read content from ${input.path}:`,
+          content.substring(0, 10),
+          '...',
+        );
+        return { content };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        return { error: `Failed to read file: ${message}` };
+      }
+    },
+  });
+
+  const writeFileTool = Tool.create({
+    description: 'Write content to a file',
+    inputSchema: z.object({
+      path: z.string().describe('Path to write the file'),
+      content: z.string().describe('Content to write to the file'),
+    }),
+    activity: {
+      idempotencyKey: (input) => {
+        const { path, content } = input as { path: string; content: string };
+        return `write-file:${path}:${content.length}`;
+      },
+    },
+    execute: async (input) => {
+      try {
+        console.log(
+          `[Debug] Writing content to ${input.path}:`,
+          input.content.substring(0, 10),
+          '...',
+        );
+        await writeFile(resolve(cwd, input.path), input.content, 'utf-8');
+        return { success: true };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        return { success: false, error: `Failed to write file: ${message}` };
+      }
+    },
+  });
+
+  return {
+    shell_command: shellCommandTool,
+    read_file: readFileTool,
+    write_file: writeFileTool,
+  };
+}
 
 // Type definition for tools collection
 type ToolsMap = Record<string, Tool>;
@@ -101,13 +113,10 @@ export class CodingAgent {
     provider: 'openai' | 'anthropic';
     apiKey: string;
     modelName?: string;
+    cwd?: string;
   }) {
-    // Register all available tools
-    this.tools = {
-      shell_command: shellCommandTool,
-      read_file: readFileTool,
-      write_file: writeFileTool,
-    };
+    // Register all available tools, bound to the working directory
+    this.tools = createCodingTools(config.cwd ?? process.cwd());
 
     let llmSource = Source.llm();
 

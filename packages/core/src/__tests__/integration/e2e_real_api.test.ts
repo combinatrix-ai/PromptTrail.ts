@@ -306,7 +306,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     const userContentSource = new ListSource(['123456789', '987654321']);
 
     // Define the body of the loop as a Agent
-    const loopBodySequence = Agent.create<Vars<{ count: number }>>()
+    const loopBodySequence = Agent.create<Vars<{ count: number }>>(
+      'e2e-loop-body',
+    )
       .system('This is automated API testing. Repeat what user says.')
       .user(userContentSource)
       .assistant(openAILLMSource)
@@ -406,10 +408,15 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with weather tool', async () => {
     const weatherTool = createWeatherTool();
 
-    const openAIgenerateOptionsWith = openAILLMSource.addTool(
-      'weather',
-      weatherTool,
-    );
+    // The ai-sdk adapter surfaces toolCalls/tool_result messages on the
+    // session, which is the contract this test pins. The native Responses
+    // adapter runs its provider-internal tool loop and returns only the
+    // final assistant message.
+    const openAIgenerateOptionsWith = Source.llm()
+      .openai({ adapter: 'ai-sdk' })
+      .model('gpt-5.4-nano')
+      .temperature(0.7)
+      .addTool('weather', weatherTool);
 
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))

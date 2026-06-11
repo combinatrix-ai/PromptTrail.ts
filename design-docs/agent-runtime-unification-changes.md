@@ -709,6 +709,18 @@ documentation pass, left for a future polish round:
   `{ status, runId, session }`. Consider unifying.
 - `RuntimeDispatchContext.channelPrompt` is channel-shaped terminology left in
   core after the §5.2 platform split — rename when next touching dispatch.
-- `e2e_real_api.test.ts` (off-limits real-API suite) still references the
-  removed `Agent.quick` at two sites; fix when that file is next touched with
-  API keys available.
+- ~~`e2e_real_api.test.ts` quick references~~ — fixed; the real-API suite
+  passes 13/13 against live OpenAI/Anthropic.
+- The native OpenAI Responses adapter (and likely the native Anthropic/Gemini
+  paths) runs a **provider-internal tool loop**: function calls execute inside
+  `generateText` (via `executePromptTrailTool` with NO durable boundary) and
+  only the final assistant message reaches the session. This contradicts the
+  "graph owns the loop; no provider-internal loop" model (§3.4) and makes
+  native-path tool effects invisible to the checkpoint once memo and the
+  strict gate's runtime assertion. The ai-sdk adapter surfaces
+  toolCalls/tool_result on the session as expected. Decide: either surface
+  calls/results from the native paths or document them as vendor-loop
+  surfaces like `.codex`/`.claude`.
+- `Source.llm().addTool/withTool/withTools` now adapt raw ai-sdk tools on
+  entry (previously a raw ai-sdk tool was silently dropped from the request
+  by every downstream path); `toAiSdkToolSet` throws instead of skipping.
