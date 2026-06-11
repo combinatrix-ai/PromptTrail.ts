@@ -93,7 +93,7 @@ export interface AgentGraphManifestNode {
 
 export interface AgentGraphManifestTool {
   name: string;
-  activity?: unknown;
+  effect?: unknown;
 }
 
 export interface AgentGraphManifestHandler {
@@ -183,7 +183,7 @@ export function validateAgentGraph(
  * The manifest hash covers the graph name/version, flattened node paths,
  * node ids/types, serializable node `data` (including template manifest
  * descriptors such as prompt text, provider-turn options, and structured
- * schemas), edges, tool names/activity declarations, and stable middleware /
+ * schemas), edges, tool names/effect declarations, and stable middleware /
  * hook ids. Non-serializable values are reduced to stable stand-ins such as
  * function names or object constructor names.
  *
@@ -205,7 +205,7 @@ export function createAgentGraphManifest(
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, tool]) => ({
       name,
-      activity: toManifestValue(tool.activity ?? tool.metadata?.activity),
+      effect: toManifestValue(tool.effect ?? tool.metadata?.effect),
     }));
   const handlers: AgentGraphManifestHandler[] = [
     ...graph.middleware.map((middleware, order) => ({
@@ -365,14 +365,14 @@ function getDescriptorGeneration(
 
 function validateCheckpointEffectDeclarations(graph: AgentGraph): void {
   for (const [name, tool] of Object.entries(graph.tools)) {
-    const effect = tool.activity ?? tool.metadata?.activity;
+    const effect = tool.effect ?? tool.metadata?.effect;
     if (!isExecutionEffectDeclaration(effect)) {
       throw new AgentGraphValidationError(
         checkpointEffectDeclarationError({
           agentName: graph.name,
           subjectKind: 'tool',
           subjectName: name,
-          declarationProperty: 'activity',
+          declarationProperty: 'effect',
         }),
       );
     }
@@ -426,7 +426,7 @@ function checkpointEffectDeclarationError(options: {
   subjectKind: 'tool' | 'middleware' | 'hook';
   subjectName: string;
   phase?: string;
-  declarationProperty: 'activity' | 'effect';
+  declarationProperty: 'effect';
 }): string {
   const phase = options.phase ? ` ${options.phase}` : '';
   return [

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import * as prompttrail from '../../index';
 import type {
   AgentCheckpointOption,
-  AgentExecuteOptions,
+  AgentExecuteOptionsWithCheckpoint,
   AgentExecutionOptions,
   AgentGoalOptions,
   ClaudeTurnOptions,
@@ -121,14 +121,14 @@ describe('public API surface', () => {
       name: 'read',
       description: 'read',
       inputSchema: z.object({}),
-      activity: { repeatable: true },
+      effect: { repeatable: true },
       execute: () => 'read',
     });
     const writeTool = prompttrail.Tool.create({
       name: 'write',
       description: 'write',
       inputSchema: z.object({}),
-      activity: {
+      effect: {
         idempotencyKey: 'write:tool',
         kind: 'external-write',
         retry: { maxAttempts: 2 },
@@ -140,17 +140,17 @@ describe('public API surface', () => {
       description: 'missing',
       inputSchema: z.object({}),
       // @ts-expect-error declared effects must be keyed or repeatable.
-      activity: { kind: 'external-write' },
+      effect: { kind: 'external-write' },
       execute: () => 'missing',
     });
 
-    expect(readTool.metadata?.activity).toEqual({ repeatable: true });
-    expect(writeTool.metadata?.activity).toEqual({
+    expect(readTool.metadata?.effect).toEqual({ repeatable: true });
+    expect(writeTool.metadata?.effect).toEqual({
       idempotencyKey: 'write:tool',
       kind: 'external-write',
       retry: { maxAttempts: 2 },
     });
-    expect(missingKeyTool.metadata?.activity).toEqual({
+    expect(missingKeyTool.metadata?.effect).toEqual({
       kind: 'external-write',
     });
   });
@@ -178,7 +178,7 @@ describe('public API surface', () => {
   it('types direct agent execution options', async () => {
     const controller = new AbortController();
     const checkpoint: AgentCheckpointOption = prompttrail.memoryStore();
-    const options: AgentExecuteOptions = {
+    const options: AgentExecuteOptionsWithCheckpoint = {
       runId: 'public-direct-agent-run',
       checkpoint,
       context: { userId: 'U1' },
@@ -189,11 +189,27 @@ describe('public API surface', () => {
         },
       ],
     };
-    const session = await prompttrail.Agent.create('public-direct-agent')
+    const result = await prompttrail.Agent.create('public-direct-agent')
       .user('message', 'hello')
       .execute(options);
 
-    expect(session.getLastMessage()?.content).toBe('hello');
+    expect(result.status).toBe('done');
+    expect(result.session.getLastMessage()?.content).toBe('hello');
+  });
+
+  it('types id-less source and function message handlers', async () => {
+    const source = prompttrail.Source.callback(async () => 'from-source');
+    const session = await prompttrail.Agent.create('public-idless-handlers')
+      .system(source)
+      .user(source)
+      .assistant((current) => `reply:${current.getLastMessage()?.content}`)
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'from-source',
+      'from-source',
+      'reply:from-source',
+    ]);
   });
 
   it('types direct agent execution input option', async () => {

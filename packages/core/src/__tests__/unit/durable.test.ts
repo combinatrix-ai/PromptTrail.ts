@@ -547,7 +547,7 @@ describe('checkpoint app runtime', () => {
         inputSchema: {
           parse: (input: unknown) => input,
         } as any,
-        activity: { idempotencyKey: 'write:1' },
+        effect: { idempotencyKey: 'write:1' },
         execute: () => 'written',
       })
       .assistant('reply', () => ({
@@ -595,7 +595,7 @@ describe('checkpoint app runtime', () => {
         inputSchema: {
           parse: (input: unknown) => input,
         } as any,
-        activity: { idempotencyKey: 'write:ordered' },
+        effect: { idempotencyKey: 'write:ordered' },
         execute: () => {
           events.push('external-write');
           return 'written';
@@ -831,7 +831,7 @@ describe('checkpoint app runtime', () => {
       inputSchema: {
         parse: (input: unknown) => input,
       } as any,
-      activity: {
+      effect: {
         idempotencyKey: (input) => `lookup:${(input as { id: string }).id}`,
       },
       execute: (_input, context) => {

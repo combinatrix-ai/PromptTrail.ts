@@ -410,7 +410,7 @@ export async function generateWithSchema<
           name: functionName,
           description: 'Generate structured output according to schema',
           inputSchema: schemaOptions.schema,
-          activity: { repeatable: true },
+          effect: { repeatable: true },
           execute: (input) => input,
         }),
       },

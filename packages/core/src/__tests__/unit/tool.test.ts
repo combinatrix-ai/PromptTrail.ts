@@ -78,16 +78,16 @@ describe('Tool namespace', () => {
       const testTool = Tool.create({
         description: 'Read data',
         inputSchema: z.object({ id: z.string() }),
-        activity: { repeatable: true, kind: 'external-read' },
+        effect: { repeatable: true, kind: 'external-read' },
         execute: ({ id }) => ({ id }),
       });
 
       expect(testTool.name).toBe('tool');
-      expect(testTool.activity).toEqual({
+      expect(testTool.effect).toEqual({
         repeatable: true,
         kind: 'external-read',
       });
-      expect(testTool.metadata?.activity).toEqual({
+      expect(testTool.metadata?.effect).toEqual({
         repeatable: true,
         kind: 'external-read',
       });
@@ -246,13 +246,13 @@ describe('Tool namespace', () => {
         name: 'charge',
         description: 'Charge',
         inputSchema: z.object({ id: z.string() }),
-        activity: {
+        effect: {
           idempotencyKey: (input) => `charge:${(input as { id: string }).id}`,
           retry: { maxAttempts: 2 },
         },
         execute: ({ id }, context) => {
           executions++;
-          expect(context.activity).toEqual({
+          expect(context.effect).toEqual({
             idempotencyKey: expect.any(Function),
             retry: { maxAttempts: 2 },
           });
@@ -311,7 +311,7 @@ describe('Tool namespace', () => {
         name: 'lookup',
         description: 'Lookup',
         inputSchema: z.object({ id: z.string() }),
-        activity: { repeatable: true },
+        effect: { repeatable: true },
         execute: ({ id }, context) => {
           executions++;
           expect(context.idempotencyKey).toBeUndefined();
@@ -359,7 +359,7 @@ describe('Tool namespace', () => {
       const durableTool = Tool.create({
         description: 'Lookup',
         inputSchema: z.object({ id: z.string() }),
-        activity: { idempotencyKey: 'lookup:1' },
+        effect: { idempotencyKey: 'lookup:1' },
         execute: ({ id }, context) => {
           expect(context.capability).toBe('lookup');
           expect(context.idempotencyKey).toBe('lookup:1');

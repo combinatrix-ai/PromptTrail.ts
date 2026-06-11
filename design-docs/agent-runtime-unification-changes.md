@@ -695,20 +695,21 @@ the §3 DSL work; do them as part of §3.
 All checklist items above are done. Small API frictions surfaced by the §7
 documentation pass, left for a future polish round:
 
-- `Tool.create` still names its effect declaration `activity:`, while wrapper
-  middleware/hooks and effect transforms use `effect:` for the same
-  `ExecutionEffectDeclaration` — pick one (likely `effect`) and rename.
-- Graph assistant function handlers require `assistant(id, handler)`; the
-  single-argument function form does not typecheck (only string content has
-  the id-less overload). Consider an id-less handler overload.
+- ~~`activity:` vs `effect:`~~ — done: tools declare `effect:` everywhere
+  (PromptTrailTool, Tool.create, manifests, gate wording).
+- ~~Id-less handler overloads~~ — done: `.assistant((session) => ...)` and
+  `.system(source)` typecheck; single non-string argument is content/source.
 - Loop conditions type more cleanly as `({ session }) => ...` than the
   prototype-bridged `(session) => ...` compatibility shape — consider
   retiring the bridge once examples/docs only show the destructured form.
-- Direct checkpoint `Agent.execute` returns a `Session`, not run metadata, so
-  callers must track `runId` separately; `PromptTrail.app` paths return
-  `{ status, runId, session }`. Consider unifying.
-- `RuntimeDispatchContext.channelPrompt` is channel-shaped terminology left in
-  core after the §5.2 platform split — rename when next touching dispatch.
+- ~~`Agent.execute` return shape~~ — done (plan B): a per-call `checkpoint`
+  option returns the full `DurableRunResult` envelope; without it execute
+  returns `Session`. Typing follows the option (overloads + union fallback).
+  Note: an agent configured via the fluent `.checkpoint(...)` default but
+  executed without a per-call option still returns `Session` — types cannot
+  see fluent state, so runtime matches the signature.
+- ~~`RuntimeDispatchContext.channelPrompt`~~ — done: typed field deleted
+  (zero core consumers; the open `Record` carries platform keys untyped).
 - ~~`e2e_real_api.test.ts` quick references~~ — fixed; the real-API suite
   passes 13/13 against live OpenAI/Anthropic.
 - **DECIDED (user, 2026-06-11): native adapters are vendor-loop surfaces;

@@ -69,7 +69,7 @@ describe('AgentGraph', () => {
     );
   });
 
-  it('includes binary tool activity in graph manifests', () => {
+  it('includes binary tool effect in graph manifests', () => {
     function lookupKey(input: unknown): string {
       return `lookup:${(input as { id: string }).id}`;
     }
@@ -83,7 +83,7 @@ describe('AgentGraph', () => {
       name: 'lookup',
       description: 'Lookup',
       inputSchema: z.object({ id: z.string() }),
-      activity: { idempotencyKey },
+      effect: { idempotencyKey },
       execute: ({ id }) => ({ id }),
     });
     const keyedGraph = createAgentGraph({
@@ -102,7 +102,7 @@ describe('AgentGraph', () => {
     expect(manifest.tools).toEqual([
       {
         name: 'lookup',
-        activity: {
+        effect: {
           idempotencyKey: { kind: 'function', name: 'lookupKey' },
         },
       },
@@ -120,7 +120,7 @@ describe('AgentGraph', () => {
       name: 'lookup',
       description: 'Lookup',
       inputSchema: z.object({ id: z.string() }),
-      activity: { idempotencyKey },
+      effect: { idempotencyKey },
       execute: ({ id }) => ({ id }),
     });
     const firstKey = function lookupKey(): string {

@@ -25,7 +25,7 @@ function createCodingTools(cwd: string) {
     inputSchema: z.object({
       command: z.string().describe('Shell command to execute'),
     }),
-    activity: { repeatable: true },
+    effect: { repeatable: true },
     execute: async (input) => {
       try {
         console.log(`[Debug] Executing command: ${input.command}`);
@@ -44,7 +44,7 @@ function createCodingTools(cwd: string) {
     inputSchema: z.object({
       path: z.string().describe('Path to the file to read'),
     }),
-    activity: { repeatable: true },
+    effect: { repeatable: true },
     execute: async (input) => {
       try {
         const content = await readFile(resolve(cwd, input.path), 'utf-8');
@@ -68,7 +68,7 @@ function createCodingTools(cwd: string) {
       path: z.string().describe('Path to write the file'),
       content: z.string().describe('Content to write to the file'),
     }),
-    activity: {
+    effect: {
       idempotencyKey: (input) => {
         const { path, content } = input as { path: string; content: string };
         return `write-file:${path}:${content.length}`;

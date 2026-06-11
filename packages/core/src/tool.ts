@@ -27,7 +27,7 @@ export namespace Tool {
     ) => Promise<TResult> | TResult;
     approval?: ApprovalPolicy;
     cache?: CacheHint;
-    activity?: ExecutionEffectDeclaration;
+    effect?: ExecutionEffectDeclaration;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult>;
   export function create<TParams, TResult>(config: {
@@ -42,7 +42,7 @@ export namespace Tool {
       | ((input: TParams) => Promise<TResult> | TResult);
     approval?: ApprovalPolicy;
     cache?: CacheHint;
-    activity?: ExecutionEffectDeclaration;
+    effect?: ExecutionEffectDeclaration;
     metadata?: Record<string, unknown>;
   }): PromptTrailTool<TParams, TResult> {
     const inputSchema = config.inputSchema;
@@ -50,8 +50,8 @@ export namespace Tool {
       throw new Error('Tool.create requires inputSchema.');
     }
 
-    const metadata = config.activity
-      ? { ...config.metadata, activity: config.activity }
+    const metadata = config.effect
+      ? { ...config.metadata, effect: config.effect }
       : config.metadata;
 
     return {
@@ -62,7 +62,7 @@ export namespace Tool {
       execute: async (input, context) => config.execute(input, context),
       approval: config.approval,
       cache: config.cache,
-      activity: config.activity,
+      effect: config.effect,
       metadata,
     };
   }
@@ -114,10 +114,10 @@ export async function executePromptTrailTool<TInput, TResult>(
     const executionContext = {
       ...context,
       capability: executionName,
-      activity: tool.activity ?? context.activity,
+      effect: tool.effect ?? context.effect,
     };
     const idempotencyKey = resolveIdempotencyKey(
-      executionContext.activity,
+      executionContext.effect,
       parsedInput,
     );
     const toolContext = {
@@ -142,15 +142,15 @@ export async function executePromptTrailTool<TInput, TResult>(
 }
 
 function resolveIdempotencyKey(
-  activity: ExecutionEffectDeclaration | undefined,
+  effect: ExecutionEffectDeclaration | undefined,
   input: unknown,
 ): string | undefined {
-  if (!activity || !('idempotencyKey' in activity)) {
+  if (!effect || !('idempotencyKey' in effect)) {
     return undefined;
   }
-  return typeof activity.idempotencyKey === 'function'
-    ? activity.idempotencyKey(input)
-    : activity.idempotencyKey;
+  return typeof effect.idempotencyKey === 'function'
+    ? effect.idempotencyKey(input)
+    : effect.idempotencyKey;
 }
 
 export async function resolveToolApproval<TInput>(

@@ -72,7 +72,7 @@ export interface CheckpointGraphExecutionStart<
  * suspended node's children even when their condition is currently false.
  *
  * Keyed external effects are still at-least-once. The local once memo records
- * keyed durable activity results after the effect and before the next checkpoint
+ * keyed durable effect results after the effect and before the next checkpoint
  * so retries can reuse the recorded value when the store has it; effective-once
  * still requires the remote system to deduplicate by the declared idempotency
  * key. Repeatable effects deliberately bypass this memo.

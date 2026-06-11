@@ -3,6 +3,7 @@ import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
 import {
   app as createDurableApp,
+  type DurableRunResult,
   type DurableRunStore,
   type RunStore,
 } from '../durable';
@@ -136,6 +137,20 @@ export interface AgentExecuteOptions<
   TC extends Vars = Vars,
   TM extends Attrs = Attrs,
 > extends AgentGraphExecutionOptions<TC, TM> {}
+
+export type AgentExecuteOptionsWithCheckpoint<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> = Omit<AgentExecuteOptions<TC, TM>, 'checkpoint'> & {
+  checkpoint: AgentCheckpointOption;
+};
+
+export type AgentExecuteOptionsWithoutCheckpoint<
+  TC extends Vars = Vars,
+  TM extends Attrs = Attrs,
+> = Omit<AgentExecuteOptions<TC, TM>, 'checkpoint'> & {
+  checkpoint?: undefined;
+};
 
 type AgentGraphNodeDraft = Omit<AgentGraphNode, 'id' | 'children'> & {
   id?: string;
@@ -303,23 +318,34 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  system(content: string): this;
-  system(id: string, content: string): this;
-  system(idOrContent: string, content?: string) {
+  system(contentOrSource: string | Source<string>): this;
+  system(id: string, contentOrSource: string | Source<string>): this;
+  system(
+    idOrContentOrSource: string | Source<string>,
+    contentOrSource?: string | Source<string>,
+  ) {
     if (this.graphName) {
       this.graphNodes.push({
-        id: content === undefined ? undefined : idOrContent,
+        id:
+          contentOrSource === undefined
+            ? undefined
+            : (idOrContentOrSource as string),
         type: 'system',
-        data: { content: content ?? idOrContent },
+        data: {
+          content:
+            contentOrSource === undefined
+              ? idOrContentOrSource
+              : contentOrSource,
+        },
       });
       return this;
     }
-    const resolvedContent = content ?? idOrContent;
-    if (content !== undefined) {
+    const resolvedContent = contentOrSource ?? idOrContentOrSource;
+    if (contentOrSource !== undefined) {
       this.graphNodes.push({
-        id: idOrContent,
+        id: idOrContentOrSource as string,
         type: 'system',
-        data: { content },
+        data: { content: contentOrSource },
       });
       return this;
     }
@@ -369,13 +395,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ): this;
+  assistant(sourceOrHandler: AgentGraphAssistantInput<TC, TM>): this;
   assistant(
     id: string,
     sourceOrHandler?: AgentGraphAssistantInput<TC, TM>,
     options?: Record<string, unknown>,
   ): this;
   assistant(
-    contentOrSource?: string | Source<ModelOutput> | Source<string>,
+    contentOrSource?: AgentGraphAssistantInput<TC, TM>,
     validatorOrOptions?:
       | IValidator
       | ValidationOptions
@@ -388,7 +415,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       isGraphAssistantInput(validatorOrOptions)
     ) {
       const hasAuthoredId =
-        maybeOptions !== undefined || isGraphAssistantInput(validatorOrOptions);
+        maybeOptions !== undefined ||
+        (typeof contentOrSource === 'string' &&
+          isGraphAssistantInput(validatorOrOptions));
       const validationOptions = hasAuthoredId
         ? undefined
         : (validatorOrOptions as IValidator | ValidationOptions | undefined);
@@ -404,7 +433,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
             ? hasAuthoredId
               ? validatorOrOptions
               : (contentOrSource ?? Source.llm())
-            : validatorOrOptions,
+            : hasAuthoredId
+              ? validatorOrOptions
+              : (contentOrSource ?? Source.llm()),
           options: maybeOptions,
           ...graphAssistantValidationData(contentOrSource, validationOptions),
         }),
@@ -418,7 +449,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     }
     this.root.add(
       new Assistant(
-        contentOrSource,
+        contentOrSource as
+          | string
+          | Source<ModelOutput>
+          | Source<string>
+          | undefined,
         validatorOrOptions as IValidator | ValidationOptions | undefined,
       ),
     );
@@ -941,12 +976,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   async execute(
-    options?: AgentExecuteOptions<TC, TM>,
+    options: AgentExecuteOptionsWithCheckpoint<TC, TM>,
+  ): Promise<DurableRunResult<TC, TM>>;
+  async execute(
+    options?: AgentExecuteOptionsWithoutCheckpoint<TC, TM>,
   ): Promise<Session<TC, TM>>;
+  async execute(
+    options: AgentExecuteOptions<TC, TM>,
+  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>>;
   async execute(
     options?: AgentExecuteOptions<TC, TM> | Session<TC, TM>,
     runtime?: ExecutionRuntimeState<TC, TM>,
-  ): Promise<Session<TC, TM>> {
+  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
     if (options instanceof Session && arguments.length === 1) {
       throw new Error(
         'Agent.execute takes a single options object. Use execute({ session, ...options }) instead of positional arguments.',
@@ -974,7 +1015,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     session?: Session<TC, TM>,
     runtime?: ExecutionRuntimeState<TC, TM>,
   ): Promise<Session<TC, TM>> {
-    return this.executeInternal(session, runtime);
+    return this.executeInternal(session, runtime) as Promise<Session<TC, TM>>;
   }
 
   private async executeInternal(
@@ -986,7 +1027,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | ExecutionRuntimeState<TC, TM>
       | AgentExecutionOptions
       | AgentExecutionInternalOptions,
-  ): Promise<Session<TC, TM>> {
+  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
     if (this.graphNodes.length > 0) {
       const rawOptions =
         sessionOrOptions instanceof Session
@@ -1106,7 +1147,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       );
     }
     const runId = executionOptions?.runId ?? this.ensureDirectDurableRunId();
-    return { runId, store };
+    return {
+      runId,
+      store,
+      returnEnvelope: executionOptions?.checkpoint !== undefined,
+    };
   }
 
   private toLegacyExecutionGraph(): AgentGraph {
@@ -1137,7 +1182,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       | AgentExecutionInternalOptions
       | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
-  ): Promise<Session<TC, TM>> {
+  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
     return this.executeGraphDirectDurable(
       {
         ...executionOptions,
@@ -1150,7 +1195,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   private async executeGraphDirectDurable(
     executionOptions: AgentExecuteOptions<TC, TM> | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
-  ): Promise<Session<TC, TM>> {
+  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
     const runtime = createDurableApp({
       store: durableOptions.store,
       defaults: {
@@ -1168,7 +1213,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       input: input === undefined ? undefined : graphInputForDurableSend(input),
       context: executionOptions?.context,
     });
-    return result.session;
+    return durableOptions.returnEnvelope ? result : result.session;
   }
 
   private legacySystem(content: string): this {
@@ -1213,6 +1258,7 @@ export type AgentCheckpointOptions = AgentCheckpointOption;
 interface ResolvedAgentDirectDurableOptions {
   runId: string;
   store: DurableRunStore;
+  returnEnvelope: boolean;
 }
 
 function checkpointOptionStore(
@@ -1691,7 +1737,7 @@ function graphNodeTemplateName(node: AgentGraphNodeDraft): string {
 }
 
 function graphAssistantValidationData(
-  contentOrSource: string | Source<ModelOutput> | Source<string> | undefined,
+  contentOrSource: AgentGraphAssistantInput<any, any> | undefined,
   validatorOrOptions: IValidator | ValidationOptions | undefined,
 ): Record<string, unknown> {
   if (!validatorOrOptions) {

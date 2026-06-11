@@ -25,6 +25,8 @@ export type {
   AgentCheckpointOption,
   AgentCheckpointOptions,
   AgentExecuteOptions,
+  AgentExecuteOptionsWithCheckpoint,
+  AgentExecuteOptionsWithoutCheckpoint,
   AgentExecutionOptions,
   AgentGraphExecutionOptions,
   AgentGoalOptions,

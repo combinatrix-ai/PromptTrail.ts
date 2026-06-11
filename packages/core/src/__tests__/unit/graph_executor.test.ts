@@ -370,18 +370,18 @@ describe('GraphExecutor', () => {
     });
   });
 
-  it('threads graph context and activity metadata into tools', async () => {
+  it('threads graph context and effect metadata into tools', async () => {
     const seen: unknown[] = [];
     const lookup = Tool.create({
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { repeatable: true, kind: 'external-read' },
+      effect: { repeatable: true, kind: 'external-read' },
       execute: ({ id }, context) => {
         seen.push({
           id,
           context: context.context,
-          activity: context.activity,
+          effect: context.effect,
           capability: context.capability,
         });
         return `value:${id}`;
@@ -416,7 +416,7 @@ describe('GraphExecutor', () => {
       {
         id: '1',
         context: { runId: 'graph-run' },
-        activity: { repeatable: true, kind: 'external-read' },
+        effect: { repeatable: true, kind: 'external-read' },
         capability: 'lookup',
       },
     ]);

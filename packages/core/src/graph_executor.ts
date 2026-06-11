@@ -1194,13 +1194,13 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
         `Graph node ${nodePath} cannot resolve tool ${nextCall.name}.`,
       );
     }
-    const toolActivity = tool.activity ?? tool.metadata?.activity;
+    const toolEffect = tool.effect ?? tool.metadata?.effect;
     if (
       state.durableToolExecution &&
-      !isExecutionEffectDeclaration(toolActivity)
+      !isExecutionEffectDeclaration(toolEffect)
     ) {
       throw new Error(
-        `Checkpoint tool "${nextCall.name}" at ${nodePath} is missing an ExecutionEffectDeclaration. Declare activity: { repeatable: true } or activity: { idempotencyKey: 'stable-key' } on Tool.create(...).`,
+        `Checkpoint tool "${nextCall.name}" at ${nodePath} is missing an ExecutionEffectDeclaration. Declare effect: { repeatable: true } or effect: { idempotencyKey: 'stable-key' } on Tool.create(...).`,
       );
     }
     const wrappedTool = await runRuntimeMiddlewareWrapper<
@@ -1226,8 +1226,8 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
             context: state.context,
             raw: request,
             capability: request.name,
-            activity: isExecutionEffectDeclaration(toolActivity)
-              ? toolActivity
+            effect: isExecutionEffectDeclaration(toolEffect)
+              ? toolEffect
               : undefined,
             durable: durable ?? state.durableToolBoundary?.(context),
           });

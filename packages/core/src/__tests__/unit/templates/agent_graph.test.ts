@@ -78,7 +78,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { repeatable: true },
+      effect: { repeatable: true },
       execute: ({ id }) => ({ id }),
     });
 
@@ -272,7 +272,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { repeatable: true },
+      effect: { repeatable: true },
       execute: ({ id }) => `value:${id}`,
     });
     let modelCalls = 0;
@@ -340,7 +340,7 @@ describe('Agent graph authoring', () => {
 
   it('materializes direct durable graph input without requiring inbox nodes', async () => {
     const store = memoryStore();
-    const session = await Agent.create('assistant')
+    const result = await Agent.create('assistant')
       .system('system', 'You are concise.')
       .assistant(
         'reply',
@@ -352,7 +352,7 @@ describe('Agent graph authoring', () => {
         input: 'hello',
       });
 
-    expect(session.messages.map((message) => message.content)).toEqual([
+    expect(result.session.messages.map((message) => message.content)).toEqual([
       'You are concise.',
       'hello',
       'reply:hello',
@@ -419,19 +419,19 @@ describe('Agent graph authoring', () => {
       input: 'again',
     });
 
-    expect(first.messages.map((message) => message.content)).toEqual([
+    expect(first.session.messages.map((message) => message.content)).toEqual([
       'ready',
       'hello',
       'reply:hello',
     ]);
-    expect(second.messages.map((message) => message.content)).toEqual([
+    expect(second.session.messages.map((message) => message.content)).toEqual([
       'ready',
       'hello',
       'reply:hello',
       'again',
       'reply:again',
     ]);
-    expect(second.getVar('inputCount')).toBe(2);
+    expect(second.session.getVar('inputCount')).toBe(2);
   });
 
   it('emits graph execution observer events', async () => {
@@ -1034,13 +1034,14 @@ describe('Agent graph authoring', () => {
       .assistant('reply', Source.literal('ok'))
       .checkpoint({ store });
 
-    const session = await agent.execute({
+    const result = await agent.execute({
+      checkpoint: store,
       input: 'hello',
       runId: 'direct-graph',
     });
     const run = store.get('direct-graph');
 
-    expect(session.messages.map((message) => message.content)).toEqual([
+    expect(result.session.messages.map((message) => message.content)).toEqual([
       'hello',
       'ok',
     ]);
@@ -1084,7 +1085,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Lookup.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { repeatable: true },
+      effect: { repeatable: true },
       execute: ({ id }) => id,
     });
     const nativeSource = Source.llm()
@@ -1223,7 +1224,7 @@ describe('Agent graph authoring', () => {
     }
   });
 
-  it('memoizes graph checkpoint keyed tool activity and nested once effects', async () => {
+  it('memoizes graph checkpoint keyed tool effect and nested once effects', async () => {
     const store = memoryStore();
     let memoCalls = 0;
     let toolCalls = 0;
@@ -1231,7 +1232,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: {
+      effect: {
         idempotencyKey: (input) => `lookup:${(input as { id: string }).id}`,
         kind: 'external-read',
       },
@@ -1246,7 +1247,7 @@ describe('Agent graph authoring', () => {
           },
           { scope: 'run' },
         );
-        return `${memo}:${context.activity?.kind ?? 'none'}`;
+        return `${memo}:${context.effect?.kind ?? 'none'}`;
       },
     });
     const agent = Agent.create('assistant')
@@ -1258,12 +1259,13 @@ describe('Agent graph authoring', () => {
       .tools('tools')
       .checkpoint({ store });
 
-    const session = await agent.execute({
+    const result = await agent.execute({
+      checkpoint: store,
       runId: 'direct-graph-tool-effects',
     });
     const run = store.get('direct-graph-tool-effects');
 
-    expect(session.messages.map((message) => message.content)).toEqual([
+    expect(result.session.messages.map((message) => message.content)).toEqual([
       'need lookup',
       'memo:one:1:external-read',
     ]);
@@ -1284,18 +1286,20 @@ describe('Agent graph authoring', () => {
       .checkpoint({ store });
 
     const suspended = await agent.execute({
+      checkpoint: store,
       input: 'hello',
       runId: 'direct-resume',
     });
     const resumed = await agent.execute({
+      checkpoint: store,
       input: 'again',
       runId: 'direct-resume',
     });
 
-    expect(suspended.messages.map((message) => message.content)).toEqual([
-      'hello',
-    ]);
-    expect(resumed.messages.map((message) => message.content)).toEqual([
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
       'hello',
       'again',
       'reply:again',
@@ -1327,25 +1331,27 @@ describe('Agent graph authoring', () => {
       .checkpoint({ store });
 
     const suspended = await agent.execute({
+      checkpoint: store,
       input: 'hello',
       runId: 'direct-loop-resume',
     });
     const resumed = await agent.execute({
+      checkpoint: store,
       input: 'again',
       runId: 'direct-loop-resume',
     });
 
-    expect(suspended.messages.map((message) => message.content)).toEqual([
-      'hello',
-    ]);
-    expect(suspended.getVar('count')).toBe(1);
-    expect(resumed.messages.map((message) => message.content)).toEqual([
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(suspended.session.getVar('count')).toBe(1);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
       'hello',
       'again',
       'reply:again',
       'done:1',
     ]);
-    expect(resumed.getVar('count')).toBe(1);
+    expect(resumed.session.getVar('count')).toBe(1);
   });
 
   it('clears graph resume targets after consuming resumed input in nested loops', async () => {
@@ -1381,26 +1387,28 @@ describe('Agent graph authoring', () => {
       .checkpoint({ store });
 
     const suspended = await agent.execute({
+      checkpoint: store,
       input: 'hello',
       runId: 'direct-nested-loop-resume',
     });
     const resumed = await agent.execute({
+      checkpoint: store,
       input: 'again',
       runId: 'direct-nested-loop-resume',
     });
 
-    expect(suspended.messages.map((message) => message.content)).toEqual([
-      'hello',
-    ]);
-    expect(suspended.getVar('count')).toBe(1);
-    expect(resumed.messages.map((message) => message.content)).toEqual([
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(suspended.session.getVar('count')).toBe(1);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
       'hello',
       'again',
       'outer:1',
       'outer:2',
     ]);
-    expect(resumed.getVar('count')).toBe(2);
-    expect(resumed.getVar('needInput')).toBe(false);
+    expect(resumed.session.getVar('count')).toBe(2);
+    expect(resumed.session.getVar('needInput')).toBe(false);
   });
 
   it('fails direct durable graph resume when the graph manifest changes', async () => {
@@ -1502,7 +1510,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
-      activity: { repeatable: true },
+      effect: { repeatable: true },
       execute: ({ id }) => `value:${id}`,
     });
     const agent = Agent.create('research')

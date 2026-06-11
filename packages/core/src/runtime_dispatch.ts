@@ -19,7 +19,6 @@ export interface RuntimeDispatchContext extends Record<string, unknown> {
   skills?: readonly string[];
   workdir?: string;
   historyBackfill?: unknown;
-  channelPrompt?: string;
 }
 
 export interface RuntimeDispatchOptions<TEvent extends TriggerEvent> {

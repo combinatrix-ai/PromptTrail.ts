@@ -100,7 +100,7 @@ const searchDocs = Tool.create({
   name: 'searchDocs',
   description: 'Search documentation.',
   inputSchema: z.object({ query: z.string() }),
-  activity: { repeatable: true },
+  effect: { repeatable: true },
   execute: async ({ query }) => searchDocumentation(query),
 });
 
@@ -108,7 +108,7 @@ const chargeCard = Tool.create({
   name: 'chargeCard',
   description: 'Charge a card for an order.',
   inputSchema: z.object({ orderId: z.string(), cents: z.number() }),
-  activity: {
+  effect: {
     idempotencyKey: (input) =>
       `charge:${(input as { orderId: string }).orderId}`,
   },
@@ -121,7 +121,7 @@ const chargeCard = Tool.create({
 says the tool performs an effect that must be deduplicated. The resolved key is
 passed to the tool as `ctx.idempotencyKey`; forward it to the remote system.
 
-The property is named `activity` on `Tool.create(...)` for the current API. It
+The property is named `effect` on `Tool.create(...)` for the current API. It
 stores an `ExecutionEffectDeclaration`.
 
 Vendor tool loops need one more checkpoint decision. `.codex(...)`,
@@ -153,25 +153,30 @@ const assistant = Agent.create('support')
 
 const runId = 'support:conversation:42';
 
-await assistant.execute({
+const first = await assistant.execute({
   runId,
   input: 'Can you help with billing?',
+  checkpoint: store,
 });
 
-await assistant.execute({
+const resumed = await assistant.execute({
   runId,
   checkpoint: store,
 });
+
+console.log(first.status, resumed.session.getLastMessage()?.content);
 ```
 
 You can also pass the store per execution:
 
 ```ts
-await assistant.execute({
+const result = await assistant.execute({
   runId: 'support:conversation:42',
   input: 'Can you help with billing?',
   checkpoint: store,
 });
+
+console.log(result.session.messages.length);
 ```
 
 `checkpoint: true` uses the app's ambient store. Direct

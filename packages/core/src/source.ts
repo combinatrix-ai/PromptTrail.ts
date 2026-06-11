@@ -263,7 +263,7 @@ function promptTrailToolManifestDescriptor(tool: PromptTrailTool<any, any>) {
     description: tool.description,
     inputSchema: zodSchemaManifestDescriptor(tool.inputSchema),
     execute: { kind: 'function', name: tool.execute.name || undefined },
-    activity: tool.activity ?? tool.metadata?.activity,
+    effect: tool.effect ?? tool.metadata?.effect,
     approval: approvalManifestDescriptor(tool.approval),
     cache: tool.cache,
     metadataKeys: objectKeysManifestDescriptor(tool.metadata),

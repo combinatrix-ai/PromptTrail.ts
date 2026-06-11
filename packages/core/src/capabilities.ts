@@ -36,7 +36,7 @@ export interface ToolExecutionContext {
   capability?: string;
   raw?: unknown;
   approvalHandler?: ApprovalHandler;
-  activity?: ExecutionEffectDeclaration;
+  effect?: ExecutionEffectDeclaration;
   idempotencyKey?: string;
   durable?: ExecutionDurableBoundary;
 }
@@ -62,7 +62,7 @@ export interface PromptTrailTool<TInput = unknown, TResult = unknown> {
   ) => Promise<TResult> | TResult;
   approval?: ApprovalPolicy;
   cache?: CacheHint;
-  activity?: ExecutionEffectDeclaration;
+  effect?: ExecutionEffectDeclaration;
   metadata?: Record<string, unknown>;
 }
 

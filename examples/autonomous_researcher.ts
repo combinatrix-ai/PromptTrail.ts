@@ -12,7 +12,7 @@ const searchDocumentation = Tool.create({
     query: z.string(),
     depth: z.enum(['shallow', 'deep']).default('shallow'),
   }),
-  activity: { repeatable: true },
+  effect: { repeatable: true },
   execute: async ({ query, depth }) => ({
     query,
     depth,
@@ -32,7 +32,7 @@ const inspectCode = Tool.create({
   inputSchema: z.object({
     subsystem: z.string(),
   }),
-  activity: { repeatable: true },
+  effect: { repeatable: true },
   execute: async ({ subsystem }) => ({
     subsystem,
     files: [`src/${subsystem}/index.ts`, `src/${subsystem}/service.ts`],

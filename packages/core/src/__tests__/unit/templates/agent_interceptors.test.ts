@@ -415,8 +415,8 @@ describe('Agent interceptors', () => {
       runId: 'direct-agent-run',
     });
 
-    expect(first.getLastMessage()?.content).toBe('reply:1');
-    expect(second.getLastMessage()?.content).toBe('reply:1');
+    expect(first.session.getLastMessage()?.content).toBe('reply:1');
+    expect(second.session.getLastMessage()?.content).toBe('reply:1');
     expect(calls).toBe(1);
     expect(eventKeys).toEqual([
       'direct-agent-run:agent:0:run.started',
@@ -447,8 +447,8 @@ describe('Agent interceptors', () => {
       runId: 'direct-agent-top-level-options',
     });
 
-    expect(first.getLastMessage()?.content).toBe('reply:1');
-    expect(second.getLastMessage()?.content).toBe('reply:1');
+    expect(first.session.getLastMessage()?.content).toBe('reply:1');
+    expect(second.session.getLastMessage()?.content).toBe('reply:1');
     expect(calls).toBe(1);
   });
 
@@ -481,10 +481,10 @@ describe('Agent interceptors', () => {
       .checkpoint({ store })
       .assistant('reply', source);
 
-    await agent.execute();
-    const replayed = await agent.execute();
+    await agent.execute({ checkpoint: store });
+    const replayed = await agent.execute({ checkpoint: store });
 
-    expect(replayed.getLastMessage()?.content).toBe('fluent:1');
+    expect(replayed.session.getLastMessage()?.content).toBe('fluent:1');
     expect(calls).toBe(1);
   });
 
@@ -508,7 +508,7 @@ describe('Agent interceptors', () => {
       runId: 'direct-agent-checkpoint-run',
     });
 
-    expect(replayed.getLastMessage()?.content).toBe('override:1');
+    expect(replayed.session.getLastMessage()?.content).toBe('override:1');
     expect(calls).toBe(1);
   });
 
