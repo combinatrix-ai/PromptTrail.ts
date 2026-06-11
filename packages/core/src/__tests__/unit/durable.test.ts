@@ -465,9 +465,9 @@ class RecordingRunStore implements DurableRunStore {
 describe('checkpoint app runtime', () => {
   it('can run graph Agents through PromptTrail.app ephemerally', async () => {
     const events: string[] = [];
-    const assistant = Agent.create('graphAssistant').turn('main', (turn) =>
-      turn.inbox('inbound').assistant('reply', Source.literal('ok')),
-    );
+    const assistant = Agent.create('graphAssistant')
+      .inbox('inbound')
+      .assistant('reply', Source.literal('ok'));
     const app = PromptTrail.app({
       agents: { assistant },
       observers: [
@@ -554,7 +554,7 @@ describe('checkpoint app runtime', () => {
         content: 'need write',
         toolCalls: [{ id: 'call-1', name: 'write', arguments: {} }],
       }))
-      .turn('tools', (turn) => turn.tools('run'));
+      .tools('run');
     const app = PromptTrail.app({
       agents: { persisted: assistant },
       store,
@@ -605,7 +605,7 @@ describe('checkpoint app runtime', () => {
         content: 'need write',
         toolCalls: [{ id: 'call-1', name: 'write', arguments: {} }],
       }))
-      .turn('tools', (turn) => turn.tools('run'))
+      .tools('run')
       .patch('after-write', (session) => {
         events.push('next-node');
         return session;
@@ -663,7 +663,7 @@ describe('checkpoint app runtime', () => {
     const store = new RecordingRunStore();
     const assistant = Agent.create('delta-writes')
       .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
-      .turn('wait', (turn) => turn.awaitInput('input'))
+      .awaitInput('input')
       .assistant(
         'reply',
         (session) => `reply:${session.getLastMessage()?.content ?? ''}`,
@@ -723,7 +723,7 @@ describe('checkpoint app runtime', () => {
     const store = new RecordingRunStore();
     const assistant = Agent.create('delta-chain')
       .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
-      .turn('wait', (turn) => turn.awaitInput('input'))
+      .awaitInput('input')
       .assistant('reply', () => 'done');
     const app = PromptTrail.app({
       agents: { delta: assistant },
@@ -774,7 +774,7 @@ describe('checkpoint app runtime', () => {
           vars: { ...session.vars },
         }),
       )
-      .turn('wait', (turn) => turn.awaitInput('input'))
+      .awaitInput('input')
       .assistant('after', () => 'done');
     const app = PromptTrail.app({
       agents: { rewriter: assistant },
@@ -907,9 +907,9 @@ describe('checkpoint app runtime', () => {
     const defaultStore = memoryStore();
     const disabledStore = memoryStore();
     const source = manualSource();
-    const assistant = Agent.create('send-default').turn('main', (turn) =>
-      turn.inbox('inbound').assistant('reply', () => 'hello'),
-    );
+    const assistant = Agent.create('send-default')
+      .inbox('inbound')
+      .assistant('reply', () => 'hello');
     const durableApp = PromptTrail.app({
       agents: { assistant },
       store: defaultStore,
@@ -944,7 +944,7 @@ describe('checkpoint app runtime', () => {
     const events: string[] = [];
     const assistant = Agent.create('observed')
       .assistant('reply', () => 'hello')
-      .turn('wait', (turn) => turn.awaitInput('input'));
+      .awaitInput('input');
     const app = PromptTrail.app({
       agents: { observed: assistant },
       observers: [
@@ -974,7 +974,7 @@ describe('checkpoint app runtime', () => {
     expect(second.status).toBe('done');
     expect(events).toEqual([
       '0:run.started:-:0',
-      '3:run.suspended:observed/wait/input:1',
+      '3:run.suspended:observed/input:1',
       '4:run.started:-:1',
       '5:run.completed:-:2',
     ]);
@@ -984,15 +984,12 @@ describe('checkpoint app runtime', () => {
     const source = manualSource();
     const assistant = Agent.create('assistant')
       .system('system', 'System')
-      .turn('main', (turn) =>
-        turn
-          .inbox('inbox')
-          .assistant(
-            'reply',
-            (session) => `seen:${session.getMessagesByType('user').length}`,
-          )
-          .awaitInput('next'),
-      );
+      .inbox('inbox')
+      .assistant(
+        'reply',
+        (session) => `seen:${session.getMessagesByType('user').length}`,
+      )
+      .awaitInput('next');
     const app = PromptTrail.app({
       agents: { assistant },
       sources: { manual: source },

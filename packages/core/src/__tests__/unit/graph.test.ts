@@ -333,7 +333,7 @@ describe('AgentGraph', () => {
         name: 'assistant',
         nodes: [
           {
-            id: 'turn',
+            id: 'loop',
             type: 'loop',
             children: [
               { id: 'reply', type: 'assistant' },
@@ -351,7 +351,7 @@ describe('AgentGraph', () => {
         name: 'assistant',
         nodes: [
           {
-            id: 'turn',
+            id: 'loop',
             type: 'loop',
             children: [
               { id: 'reply', type: 'assistant' },
@@ -359,7 +359,7 @@ describe('AgentGraph', () => {
             ],
           },
         ],
-        edges: [{ from: 'turn/reply', to: 'turn/tools' }],
+        edges: [{ from: 'loop/reply', to: 'loop/tools' }],
       }),
     ).not.toThrow();
   });

@@ -571,11 +571,21 @@ the §3 DSL work; do them as part of §3.
       graph-invoked effect step (tools remain model-invoked). "patch" survives
       only as the noun for hook/middleware session patches.
       (`templates/agent.ts`, `graph_executor.ts`, `graph.ts`)
-- [ ] **9.2 Remove the `turn` node** (verified: runtime-wise a bare sequence).
+- [x] **9.2 Remove the `turn` node** (verified: runtime-wise a bare sequence).
       `inbox`/`awaitInput`/`tools` become ordinary nodes available in any builder
       scope. (`templates/agent.ts`, `graph_executor.ts`)
-- [ ] **9.3 Remove `repeat`; `loop` everywhere** (verified implementation-
+      Done: `'turn'` node type and builder deleted; former turn children
+      flatten into the parent scope (paths lose the turn segment).
+      Conditional branches flatten too — branch membership moves to
+      `data.branches` id lists, which makes authored ids unique per
+      conditional ACROSS both branches (duplicate ids now fail graph
+      validation loudly; §3.1 auto-ids will make this a non-issue). Legacy
+      `Sequence` lifecycle wrapping survives via an internal
+      `legacySequence` transform marker — dissolves with §9.4.
+- [x] **9.3 Remove `repeat`; `loop` everywhere** (verified implementation-
       identical pre-condition loops). (`templates/agent.ts`)
+      Done: confirmed both compiled to the same `loop` node and runtime path;
+      `loop(id, builder, condition, options)` signature kept.
 - [ ] **9.4 Remove the authoring `sequence` node; rename the IR container to
       `scope`.** Top level and all builders are implicit sequences. `subroutine`
       compiles to `scope` + session policy. (`graph.ts`, `graph_executor.ts`)

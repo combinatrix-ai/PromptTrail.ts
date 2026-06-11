@@ -257,13 +257,10 @@ import {
 
 const support = Agent.create('support')
   .system('system', 'You are a concise support assistant.')
-  .turn('reply', (turn) =>
-    turn
-      .inbox('inbound')
-      .assistant('model', Source.llm().openai())
-      .tools('tools')
-      .awaitInput('next'),
-  );
+  .inbox('inbound')
+  .assistant('model', Source.llm().openai())
+  .tools('tools')
+  .awaitInput('next');
 
 const app = PromptTrail.app({ store: memoryStore() })
   .agent(support)

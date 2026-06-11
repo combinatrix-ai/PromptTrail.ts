@@ -293,15 +293,15 @@ class MockRuntimeFixture {
     const assistant = this.options.assistant ?? deterministicAssistant();
     const agents: Record<string, Agent<any, Attrs>> = {};
     for (const name of Object.keys(this.options.bundle.agents)) {
-      agents[name] = Agent.create<any, Attrs>(name).turn('chat', (turn) =>
-        turn.inbox('inbox').assistant('reply', (session, runtime) => {
+      agents[name] = Agent.create<any, Attrs>(name)
+        .inbox('inbox')
+        .assistant('reply', (session, runtime) => {
           const last = session.getLastMessage();
           return assistant({
             input: { latestText: last?.content ?? '' },
             context: runtime?.context ?? {},
           });
-        }),
-      );
+        });
     }
     return agents;
   }

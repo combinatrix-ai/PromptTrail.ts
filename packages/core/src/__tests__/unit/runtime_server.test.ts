@@ -28,9 +28,7 @@ function discordDeliveryTarget(channel: string, thread?: string) {
 }
 
 function chatAgent(name: string, handler: any): Agent {
-  return Agent.create(name).turn('chat', (turn) =>
-    turn.inbox('inbox').assistant('reply', handler),
-  );
+  return Agent.create(name).inbox('inbox').assistant('reply', handler);
 }
 
 describe('RuntimeServer', () => {

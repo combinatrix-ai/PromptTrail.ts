@@ -113,15 +113,13 @@ describe('GraphExecutor', () => {
     ]);
   });
 
-  it('executes turn repeat blocks with source-backed assistant nodes', async () => {
+  it('executes loop blocks with source-backed assistant nodes', async () => {
     let calls = 0;
     const graph = Agent.create('assistant')
-      .turn('main', (turn) =>
-        turn.repeat(
-          'loop',
-          () => calls++ < 2,
-          (loop) => loop.assistant('reply', Source.literal('tick')),
-        ),
+      .loop(
+        'loop',
+        (loop) => loop.assistant('reply', Source.literal('tick')),
+        () => calls++ < 2,
       )
       .toGraph();
 
@@ -138,8 +136,8 @@ describe('GraphExecutor', () => {
       .conditional(
         'branch',
         ({ context }) => context?.ready === true,
-        (then) => then.assistant('reply', 'ready'),
-        (otherwise) => otherwise.assistant('reply', 'not ready'),
+        (then) => then.assistant('readyReply', 'ready'),
+        (otherwise) => otherwise.assistant('notReadyReply', 'not ready'),
       )
       .toGraph();
 
@@ -311,30 +309,27 @@ describe('GraphExecutor', () => {
 
     const graph = Agent.create('assistant')
       .tool('lookup', lookup)
-      .turn('main', (turn) =>
-        turn
-          .assistant('model', (session) =>
-            session.getMessagesByType('tool_result').length === 0
-              ? {
-                  content: '',
-                  toolCalls: [
-                    { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
-                  ],
-                }
-              : 'final',
-          )
-          .repeat(
-            'toolLoop',
-            ({ session }) => session.hasToolCalls(),
-            (loop) =>
-              loop
-                .tools('tools')
-                .assistant('model', (session) =>
-                  session.getMessagesByType('tool_result').length > 0
-                    ? 'final'
-                    : '',
-                ),
-          ),
+      .assistant('model', (session) =>
+        session.getMessagesByType('tool_result').length === 0
+          ? {
+              content: '',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            }
+          : 'final',
+      )
+      .loop(
+        'toolLoop',
+        (loop) =>
+          loop
+            .tools('tools')
+            .assistant('model', (session) =>
+              session.getMessagesByType('tool_result').length > 0
+                ? 'final'
+                : '',
+            ),
+        ({ session }) => session.hasToolCalls(),
       )
       .toGraph();
 

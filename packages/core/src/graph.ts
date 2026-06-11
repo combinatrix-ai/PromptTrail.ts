@@ -15,7 +15,6 @@ export type AgentGraphNodeType =
   | 'inbox'
   | 'awaitInput'
   | 'goal'
-  | 'turn'
   | 'loop'
   | 'conditional'
   | 'subroutine'
@@ -33,9 +32,9 @@ export interface AgentGraphNode {
 }
 
 export interface AgentGraphEdge {
-  /** Graph-root-relative node path, for example `turn/reply`. */
+  /** Graph-root-relative node path, for example `reply`. */
   from: string;
-  /** Graph-root-relative node path, for example `turn/tools`. */
+  /** Graph-root-relative node path, for example `tools`. */
   to: string;
   condition?: string;
 }

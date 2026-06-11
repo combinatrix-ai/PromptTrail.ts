@@ -20,7 +20,7 @@ export { Transform } from './primitives/transform';
 export { User } from './primitives/user';
 
 // Export Agent (Template Builder)
-export { Agent, AgentTurnGraphBuilder } from './agent';
+export { Agent } from './agent';
 export type {
   AgentCheckpointOption,
   AgentCheckpointOptions,

@@ -84,17 +84,13 @@ describe('Agent graph authoring', () => {
     const agent = Agent.create('assistant')
       .system('system', 'You are concise.')
       .tool('lookup', lookup)
-      .turn('main', (turn) =>
-        turn
-          .inbox('inbound')
-          .repeat(
-            'toolLoop',
-            ({ session }) => session.messages.length > 0,
-            (loop) =>
-              loop.assistant('reply', Source.literal('ok')).tools('tools'),
-          )
-          .awaitInput('next'),
-      );
+      .inbox('inbound')
+      .loop(
+        'toolLoop',
+        (loop) => loop.assistant('reply', Source.literal('ok')).tools('tools'),
+        ({ session }) => session.messages.length > 0,
+      )
+      .awaitInput('next');
 
     const graph = agent.toGraph('v1');
     const manifest = createAgentGraphManifest(graph);
@@ -103,12 +99,11 @@ describe('Agent graph authoring', () => {
     expect(Object.keys(graph.tools)).toEqual(['lookup']);
     expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
       ['assistant/system', 'system'],
-      ['assistant/main', 'turn'],
-      ['assistant/main/inbound', 'inbox'],
-      ['assistant/main/toolLoop', 'loop'],
-      ['assistant/main/toolLoop/reply', 'assistant'],
-      ['assistant/main/toolLoop/tools', 'tools'],
-      ['assistant/main/next', 'awaitInput'],
+      ['assistant/inbound', 'inbox'],
+      ['assistant/toolLoop', 'loop'],
+      ['assistant/toolLoop/reply', 'assistant'],
+      ['assistant/toolLoop/tools', 'tools'],
+      ['assistant/next', 'awaitInput'],
     ]);
   });
 
@@ -186,9 +181,8 @@ describe('Agent graph authoring', () => {
   it('executes graph-authored agents through GraphExecutor', async () => {
     const session = await Agent.create('assistant')
       .system('system', 'You are concise.')
-      .turn('main', (turn) =>
-        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
-      )
+      .inbox('inbound')
+      .assistant('reply', Source.literal('ok'))
       .execute({ input: 'hello' });
 
     expect(session.messages.map((message) => message.content)).toEqual([
@@ -273,19 +267,16 @@ describe('Agent graph authoring', () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
       .assistant('prelude', 'ready')
-      .turn('main', (turn) =>
-        turn
-          .inbox('input')
-          .patch('countInput', (session) =>
-            session.withVar(
-              'inputCount',
-              ((session.getVar('inputCount') as number) ?? 0) + 1,
-            ),
-          )
-          .assistant('reply', (session) => {
-            return `reply:${session.getLastMessage()?.content ?? 'none'}`;
-          }),
-      );
+      .inbox('input')
+      .patch('countInput', (session) =>
+        session.withVar(
+          'inputCount',
+          ((session.getVar('inputCount') as number) ?? 0) + 1,
+        ),
+      )
+      .assistant('reply', (session) => {
+        return `reply:${session.getLastMessage()?.content ?? 'none'}`;
+      });
 
     const first = await agent.execute({
       checkpoint: store,
@@ -352,13 +343,13 @@ describe('Agent graph authoring', () => {
       .observe((event) => {
         events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
       })
-      .turn('main', (turn) => turn.awaitInput('next'));
+      .awaitInput('next');
 
     await expect(agent.execute()).rejects.toThrow(GraphExecutionSuspended);
 
     expect(events).toEqual([
       '0:run.started:-',
-      '1:run.suspended:assistant/main/next',
+      '1:run.suspended:assistant/next',
     ]);
   });
 
@@ -477,16 +468,11 @@ describe('Agent graph authoring', () => {
           },
         }),
       )
-      .turn('main', (turn) =>
-        turn
-          .assistant('reply', (modelSession) => {
-            calls.push(
-              `handler:${modelSession.getLastMessage()?.content ?? '-'}`,
-            );
-            return 'raw model';
-          })
-          .tools('tools'),
-      )
+      .assistant('reply', (modelSession) => {
+        calls.push(`handler:${modelSession.getLastMessage()?.content ?? '-'}`);
+        return 'raw model';
+      })
+      .tools('tools')
       .execute();
 
     expect(session.messages.map((message) => message.content)).toEqual([
@@ -912,9 +898,8 @@ describe('Agent graph authoring', () => {
   it('executes direct durable graph agents through the app runtime', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
-      .turn('main', (turn) =>
-        turn.inbox('inbound').assistant('reply', Source.literal('ok')),
-      )
+      .inbox('inbound')
+      .assistant('reply', Source.literal('ok'))
       .checkpoint({ store });
 
     const session = await agent.execute({
@@ -959,16 +944,11 @@ describe('Agent graph authoring', () => {
     });
     const agent = Agent.create('assistant')
       .tool('lookup', lookup)
-      .turn('main', (turn) =>
-        turn
-          .assistant('reply', () => ({
-            content: 'need lookup',
-            toolCalls: [
-              { id: 'call-1', name: 'lookup', arguments: { id: 'one' } },
-            ],
-          }))
-          .tools('tools'),
-      )
+      .assistant('reply', () => ({
+        content: 'need lookup',
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: 'one' } }],
+      }))
+      .tools('tools')
       .checkpoint({ store });
 
     const session = await agent.execute({
@@ -988,15 +968,12 @@ describe('Agent graph authoring', () => {
   it('resumes direct durable graph agents from suspended input nodes', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
-      .turn('main', (turn) =>
-        turn
-          .inbox('first')
-          .awaitInput('next')
-          .assistant('reply', (session) => {
-            const last = session.getLastMessage()?.content ?? '';
-            return `reply:${last}`;
-          }),
-      )
+      .inbox('first')
+      .awaitInput('next')
+      .assistant('reply', (session) => {
+        const last = session.getLastMessage()?.content ?? '';
+        return `reply:${last}`;
+      })
       .checkpoint({ store });
 
     const suspended = await agent.execute({
@@ -1021,32 +998,25 @@ describe('Agent graph authoring', () => {
   it('resumes direct durable graph loops from suspended input nodes', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
-      .turn('main', (turn) =>
-        turn
-          .inbox('first')
-          .repeat(
-            'waitLoop',
-            ({ session }) => ((session.getVar('count') as number) ?? 0) < 1,
-            (loop) =>
-              loop
-                .patch('count', (session) =>
-                  session.withVar(
-                    'count',
-                    ((session.getVar('count') as number) ?? 0) + 1,
-                  ),
-                )
-                .awaitInput('next')
-                .assistant(
-                  'reply',
-                  (session) =>
-                    `reply:${session.getLastMessage()?.content ?? ''}`,
-                ),
-          )
-          .assistant(
-            'done',
-            (session) => `done:${String(session.getVar('count'))}`,
-          ),
+      .inbox('first')
+      .loop(
+        'waitLoop',
+        (loop) =>
+          loop
+            .patch('count', (session) =>
+              session.withVar(
+                'count',
+                ((session.getVar('count') as number) ?? 0) + 1,
+              ),
+            )
+            .awaitInput('next')
+            .assistant(
+              'reply',
+              (session) => `reply:${session.getLastMessage()?.content ?? ''}`,
+            ),
+        ({ session }) => ((session.getVar('count') as number) ?? 0) < 1,
       )
+      .assistant('done', (session) => `done:${String(session.getVar('count'))}`)
       .checkpoint({ store });
 
     const suspended = await agent.execute({
@@ -1074,33 +1044,32 @@ describe('Agent graph authoring', () => {
   it('clears graph resume targets after consuming resumed input in nested loops', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
-      .turn('main', (turn) =>
-        turn.inbox('first').repeat(
-          'outer',
-          ({ session }) => ((session.getVar('count') as number) ?? 0) < 2,
-          (outer) =>
-            outer
-              .patch('count', (session) =>
-                session.withVar(
-                  'count',
-                  ((session.getVar('count') as number) ?? 0) + 1,
-                ),
-              )
-              .repeat(
-                'inner',
-                ({ session }) => session.getVar('needInput') !== false,
-                (inner) =>
-                  inner
-                    .awaitInput('next')
-                    .patch('inputDone', (session) =>
-                      session.withVar('needInput', false),
-                    ),
-              )
-              .assistant(
-                'reply',
-                (session) => `outer:${String(session.getVar('count'))}`,
+      .inbox('first')
+      .loop(
+        'outer',
+        (outer) =>
+          outer
+            .patch('count', (session) =>
+              session.withVar(
+                'count',
+                ((session.getVar('count') as number) ?? 0) + 1,
               ),
-        ),
+            )
+            .loop(
+              'inner',
+              (inner) =>
+                inner
+                  .awaitInput('next')
+                  .patch('inputDone', (session) =>
+                    session.withVar('needInput', false),
+                  ),
+              ({ session }) => session.getVar('needInput') !== false,
+            )
+            .assistant(
+              'reply',
+              (session) => `outer:${String(session.getVar('count'))}`,
+            ),
+        ({ session }) => ((session.getVar('count') as number) ?? 0) < 2,
       )
       .checkpoint({ store });
 
@@ -1269,10 +1238,8 @@ describe('Agent graph authoring', () => {
 
     expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
       ['assistant/branch', 'conditional'],
-      ['assistant/branch/then', 'turn'],
-      ['assistant/branch/then/thenReply', 'assistant'],
-      ['assistant/branch/else', 'turn'],
-      ['assistant/branch/else/elseReply', 'assistant'],
+      ['assistant/branch/thenReply', 'assistant'],
+      ['assistant/branch/elseReply', 'assistant'],
       ['assistant/retry', 'loop'],
       ['assistant/retry/tick', 'assistant'],
     ]);
@@ -1287,11 +1254,10 @@ describe('Agent graph authoring', () => {
     const manifest = createAgentGraphManifest(graph);
 
     expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
-      ['assistant/draft', 'turn'],
-      ['assistant/draft/prompt', 'user'],
-      ['assistant/draft/reply', 'assistant'],
+      ['assistant/prompt', 'user'],
+      ['assistant/reply', 'assistant'],
     ]);
-    expect(graph.nodes[0]?.data).toEqual({ kind: 'sequence' });
+    expect(graph.nodes[0]?.id).toBe('prompt');
   });
 
   it('rejects mixing legacy control-flow after graph authoring starts', () => {

@@ -414,9 +414,6 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
     case 'inbox':
       consumeInbox(state);
       return;
-    case 'turn':
-      await executeChildren(node.children ?? [], nodePath, state);
-      return;
     case 'goal':
       await executeGoalNode(node, nodePath, state);
       return;
@@ -589,11 +586,15 @@ async function executeConditionalNode<TVars extends Vars, TAttrs extends Attrs>(
   const branchId = resolveGraphCondition(data.condition, nodePath, state)
     ? 'then'
     : 'else';
-  const branch = (node.children ?? []).find((child) => child.id === branchId);
-  if (!branch) {
+  const branchNodeIds = getConditionalBranchNodeIds(data.branches, branchId);
+  if (branchNodeIds.length === 0) {
     return;
   }
-  await executeGraphNode(branch, `${nodePath}/${branch.id}`, state);
+  const branchNodeIdSet = new Set(branchNodeIds);
+  const branchChildren = (node.children ?? []).filter((child) =>
+    branchNodeIdSet.has(child.id),
+  );
+  await executeChildren(branchChildren, nodePath, state);
 }
 
 async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -798,6 +799,10 @@ async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
+  if (data.kind === 'legacySequence') {
+    await executeChildren(node.children ?? [], nodePath, state);
+    return;
+  }
   const handler = data.handler;
   if (typeof handler === 'function') {
     const result = await handler(state.session);
@@ -1359,6 +1364,22 @@ function normalizeGraphInbox<TAttrs extends Attrs>(
 
 function graphNodeData(node: AgentGraphNode): GraphNodeData {
   return isRecord(node.data) ? node.data : {};
+}
+
+function getConditionalBranchNodeIds(
+  branches: unknown,
+  branchId: 'then' | 'else',
+): string[] {
+  if (!isRecord(branches)) {
+    return [];
+  }
+  const nodeIds = branches[branchId];
+  if (!Array.isArray(nodeIds)) {
+    return [];
+  }
+  return nodeIds.filter(
+    (nodeId): nodeId is string => typeof nodeId === 'string',
+  );
 }
 
 function stringValue(value: unknown): string | undefined {

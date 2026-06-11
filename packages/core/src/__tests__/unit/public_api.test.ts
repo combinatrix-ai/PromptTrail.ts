@@ -156,7 +156,6 @@ describe('public API surface', () => {
       isSatisfied: ({ attempt }) => attempt > 0,
     };
 
-    expect(prompttrail).toHaveProperty('AgentTurnGraphBuilder');
     expect(options.interaction).toBe('required');
   });
 

@@ -75,12 +75,7 @@ export type {
   RuntimeSourceDriver,
   RuntimeSourceEmitOptions,
 } from './runtime_server';
-export {
-  Agent,
-  AgentTurnGraphBuilder,
-  Parallel,
-  Structured,
-} from './templates';
+export { Agent, Parallel, Structured } from './templates';
 export type {
   AgentCheckpointOption,
   AgentCheckpointOptions,

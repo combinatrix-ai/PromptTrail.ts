@@ -133,74 +133,6 @@ export interface AgentExecuteOptions<
   TM extends Attrs = Attrs,
 > extends AgentGraphExecutionOptions<TC, TM> {}
 
-export class AgentTurnGraphBuilder<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> {
-  private readonly nodes: AgentGraphNode[] = [];
-
-  inbox(id: string, options?: Record<string, unknown>): this {
-    this.nodes.push({ id, type: 'inbox', data: options });
-    return this;
-  }
-
-  assistant(
-    id: string,
-    sourceOrHandler?: AgentGraphAssistantInput<TC, TM>,
-    options?: Record<string, unknown>,
-  ): this {
-    this.nodes.push({
-      id,
-      type: 'assistant',
-      data: compactGraphData({
-        input: sourceOrHandler,
-        options,
-      }),
-    });
-    return this;
-  }
-
-  tools(id: string, options?: Record<string, unknown>): this {
-    this.nodes.push({ id, type: 'tools', data: options });
-    return this;
-  }
-
-  repeat(
-    id: string,
-    condition: (context: { session: Session<TC, TM> }) => boolean,
-    builder: (
-      loop: AgentTurnGraphBuilder<TC, TM>,
-    ) => AgentTurnGraphBuilder<TC, TM>,
-    options?: Record<string, unknown>,
-  ): this {
-    const loop = builder(new AgentTurnGraphBuilder<TC, TM>());
-    this.nodes.push({
-      id,
-      type: 'loop',
-      data: compactGraphData({ condition, options }),
-      children: loop.build(),
-    });
-    return this;
-  }
-
-  awaitInput(id: string, options?: Record<string, unknown>): this {
-    this.nodes.push({ id, type: 'awaitInput', data: options });
-    return this;
-  }
-
-  patch(
-    id: string,
-    handler: (session: Session<TC, TM>) => unknown | Promise<unknown>,
-  ): this {
-    this.nodes.push({ id, type: 'patch', data: { handler } });
-    return this;
-  }
-
-  build(): AgentGraphNode[] {
-    return [...this.nodes];
-  }
-}
-
 /**
  * Agent class for building and executing templates
  * @template TAttrs - The metadata type.
@@ -476,6 +408,21 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
+  inbox(id: string, options?: Record<string, unknown>): this {
+    this.graphNodes.push({ id, type: 'inbox', data: options });
+    return this;
+  }
+
+  tools(id: string, options?: Record<string, unknown>): this {
+    this.graphNodes.push({ id, type: 'tools', data: options });
+    return this;
+  }
+
+  awaitInput(id: string, options?: Record<string, unknown>): this {
+    this.graphNodes.push({ id, type: 'awaitInput', data: options });
+    return this;
+  }
+
   patch(handler: AgentGraphPatchHandler<TC, TM>): this;
   patch(id: string, handler: AgentGraphPatchHandler<TC, TM>): this;
   patch(
@@ -565,21 +512,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     this.root.add(
       new GenerateMessages(idOrGenerateMessages as GenerateMessagesFn<TM, TC>),
     );
-    return this;
-  }
-
-  turn(
-    id: string,
-    builder: (
-      turn: AgentTurnGraphBuilder<TC, TM>,
-    ) => AgentTurnGraphBuilder<TC, TM>,
-  ): this {
-    const turn = builder(new AgentTurnGraphBuilder<TC, TM>());
-    this.graphNodes.push({
-      id,
-      type: 'turn',
-      children: turn.build(),
-    });
     return this;
   }
 
@@ -792,12 +724,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       this.graphNodes.push({
         id: idOrCondition,
         type: 'conditional',
-        data: { condition: conditionOrThenBuilder },
+        data: compactGraphData({
+          condition: conditionOrThenBuilder,
+          branches: compactGraphData({
+            then: thenChildren.map((child) => child.id),
+            else: elseChildren?.map((child) => child.id),
+          }),
+        }),
         children: compactGraphChildren([
-          { id: 'then', type: 'turn', children: thenChildren },
-          elseChildren
-            ? { id: 'else', type: 'turn', children: elseChildren }
-            : undefined,
+          ...thenChildren,
+          ...(elseChildren ?? []),
         ]),
       });
       return this;
@@ -893,12 +829,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       }
       const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
       const builtAgent = maybeBuilderFn(innerAgent);
-      this.graphNodes.push({
-        id: idOrBuilderFn,
-        type: 'turn',
-        data: { kind: 'sequence' },
-        children: builtAgent.graphNodes,
-      });
+      this.graphNodes.push(...builtAgent.graphNodes);
       return this;
     }
     if (this.isGraphAuthoringMode()) {
@@ -1246,12 +1177,10 @@ function compileLegacyCompositeChildren<TM extends Attrs, TC extends Vars>(
   composite: Composite<TM, TC>,
   state: LegacyTemplateCompilerState,
 ): AgentGraphNode[] {
-  return composite.getTemplates().map((template, index) => {
+  return composite.getTemplates().flatMap((template, index) => {
     const prepared = composite.ensureTemplateHasContentSource(template);
-    return withLegacyTemplateLifecycle(
-      compileLegacyTemplate(prepared, state),
-      prepared,
-      index,
+    return compileLegacyTemplateDirect(prepared, state).map((node) =>
+      withLegacyTemplateLifecycle(node, prepared, index),
     );
   });
 }
@@ -1270,7 +1199,7 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
   if (template instanceof Sequence) {
     return {
       id: nextLegacyNodeId(state, 'sequence'),
-      type: 'turn',
+      type: 'transform',
       data: { kind: 'legacySequence' },
       children: compileLegacyCompositeChildren(template, state),
     };
@@ -1289,29 +1218,26 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
     };
   }
   if (template instanceof Conditional) {
+    const thenChildren = compileLegacyTemplateDirect(
+      template.getThenTemplate(),
+      state,
+    );
+    const elseChildren = template.getElseTemplate()
+      ? compileLegacyTemplateDirect(template.getElseTemplate()!, state)
+      : undefined;
     return {
       id: nextLegacyNodeId(state, 'conditional'),
       type: 'conditional',
-      data: { condition: wrapLegacyCondition(template.getCondition()) },
+      data: compactGraphData({
+        condition: wrapLegacyCondition(template.getCondition()),
+        branches: compactGraphData({
+          then: thenChildren.map((child) => child.id),
+          else: elseChildren?.map((child) => child.id),
+        }),
+      }),
       children: compactGraphChildren([
-        {
-          id: 'then',
-          type: 'turn',
-          children: compileLegacyTemplateDirect(
-            template.getThenTemplate(),
-            state,
-          ),
-        },
-        template.getElseTemplate()
-          ? {
-              id: 'else',
-              type: 'turn',
-              children: compileLegacyTemplateDirect(
-                template.getElseTemplate()!,
-                state,
-              ),
-            }
-          : undefined,
+        ...thenChildren,
+        ...(elseChildren ?? []),
       ]),
     };
   }
