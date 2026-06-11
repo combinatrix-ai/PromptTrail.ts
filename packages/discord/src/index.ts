@@ -14,13 +14,15 @@ import type {
   ExecutionEvent,
   Observer,
   ObserverContext,
-  RuntimePresenceHandle,
-  RuntimeAdapter,
   RuntimeFilter,
-  RuntimeGatewayContext,
   Trigger,
   TriggerEvent,
 } from '@prompttrail/core';
+import type {
+  RuntimeAdapter,
+  RuntimeGatewayContext,
+  RuntimePresenceHandle,
+} from '@prompttrail/core/runtime_server';
 
 export interface DiscordMessageEvent extends TriggerEvent {
   source: 'discord';

@@ -11,18 +11,78 @@ import type {
   ExecutionDurableBoundary,
   ExecutionEffectDeclaration,
   ObserverDeliveryBindingStore,
-  RuntimeAdapter,
 } from '../../index';
+import type { RuntimeAdapter } from '../../runtime_server';
 // @ts-expect-error graph executor types are not package-root APIs.
 import type { GraphExecutionOptions } from '../../index';
 type _GraphExecutionOptionsHidden = GraphExecutionOptions;
+// @ts-expect-error runtime host adapter types live under ./runtime_server.
+import type { RuntimeAdapter as RootRuntimeAdapter } from '../../index';
+type _RuntimeAdapterHidden = RootRuntimeAdapter;
 
 describe('public API surface', () => {
+  it('has an explicit curated runtime value surface', () => {
+    expect(Object.keys(prompttrail).sort()).toEqual([
+      'Agent',
+      'AgentGraphValidationError',
+      'AgentGraphVersionError',
+      'AllValidator',
+      'AnyValidator',
+      'BaseValidator',
+      'CLISource',
+      'CallbackSource',
+      'CompositeValidator',
+      'CustomValidator',
+      'DEFAULT_PROVIDER_TURN_RESTART_NOTICE',
+      'DELETE_VALUE',
+      'Delivery',
+      'Hook',
+      'JsonValidator',
+      'KeywordValidator',
+      'LengthValidator',
+      'ListSource',
+      'LiteralSource',
+      'LlmSource',
+      'MemoryRunStore',
+      'Message',
+      'Middleware',
+      'ModelSource',
+      'Observer',
+      'Parallel',
+      'PromptTrail',
+      'ProviderTurnUnresumableError',
+      'RandomSource',
+      'RegexMatchValidator',
+      'RegexNoMatchValidator',
+      'SchemaValidator',
+      'Session',
+      'SessionBuilder',
+      'Source',
+      'StringSource',
+      'Structured',
+      'Tool',
+      'Validation',
+      'assertProviderFileReferenceUsable',
+      'assertProviderFileReferenceUsableForProvider',
+      'createAgentGraph',
+      'createAgentGraphManifest',
+      'createProviderFileContentPart',
+      'createSession',
+      'isProviderFileReferenceExpired',
+      'manifestConfigDigest',
+      'memoryStore',
+      'on',
+      'validateAgentGraph',
+    ]);
+  });
+
   it('does not re-export ai-sdk tool helpers from core', () => {
     expect(prompttrail).not.toHaveProperty('tool');
     expect(prompttrail).not.toHaveProperty('aiSdkToolToPromptTrailTool');
     expect(prompttrail).not.toHaveProperty('promptTrailToolToAiSdkTool');
     expect(prompttrail).not.toHaveProperty('toAiSdkToolSet');
+    expect(prompttrail).not.toHaveProperty('executePromptTrailTool');
+    expect(prompttrail).not.toHaveProperty('toolResultToCallToolResult');
     expect(prompttrail).toHaveProperty('Tool');
   });
 
@@ -198,11 +258,22 @@ describe('public API surface', () => {
     expect(adapter.name).toBe('test-adapter');
     expect(prompttrail).not.toHaveProperty('server');
     expect(prompttrail).not.toHaveProperty('RuntimeServer');
+    expect(prompttrail).not.toHaveProperty('RuntimeAdapter');
     expect(prompttrail).not.toHaveProperty('dispatchRuntimeBindingEvent');
+    expect(prompttrail).not.toHaveProperty('dispatchRuntimeEvent');
     expect(prompttrail).not.toHaveProperty('AssistantDeliveryTracker');
     expect(prompttrail).not.toHaveProperty('mockRuntimeFixture');
     expect(prompttrail).not.toHaveProperty('mockPlatformConnector');
     expect(prompttrail.PromptTrail).toHaveProperty('server');
+  });
+
+  it('keeps low-level interceptor runners out of the package root', () => {
+    expect(prompttrail).toHaveProperty('Middleware');
+    expect(prompttrail).toHaveProperty('Hook');
+    expect(prompttrail).not.toHaveProperty('runExecutionPhase');
+    expect(prompttrail).not.toHaveProperty('runMiddlewareWrapper');
+    expect(prompttrail).not.toHaveProperty('createExecutionRuntimeState');
+    expect(prompttrail).not.toHaveProperty('extendExecutionRuntimeState');
   });
 
   it('does not expose low-level template authoring classes from the package root', () => {

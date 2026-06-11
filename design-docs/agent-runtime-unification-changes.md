@@ -389,12 +389,20 @@ that replay systems get for free.
 
 ## 6. Export hygiene
 
-- [ ] **6.1 Curate the package root.** `index.ts` currently `export *`s
+- [x] **6.1 Curate the package root.** `index.ts` currently `export *`s
       `runtime_bindings`, `runtime_discord`, `runtime`, `interceptors`, etc.,
       contradicting the doc's "no wildcard export of low-level modules." Move
       host/dispatch/mock and low-level template primitives behind submodules; keep
       `Agent`, graph helper types, `Parallel`, `Structured`, provider turn option
       types, and app authoring types at root. (`index.ts`, `package.json` exports)
+      Done: root is an explicit list (zero `export *`); host/provider plumbing
+      lives behind the existing subpaths (`runtime_server`, `runtime_dispatch`,
+      `codex_app_server`, `claude_agent`, `graph_executor`, `templates`) — no
+      new subpaths were needed. Provider conversion modules, execution
+      internals (ObserverBus, transition helpers), interceptor runners, and
+      tool execution helpers are no longer exported anywhere from root.
+      public_api.test.ts now asserts the exact runtime key set, so a wildcard
+      re-addition fails the suite.
 
 ## 7. Docs & examples
 

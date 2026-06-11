@@ -9,6 +9,11 @@ export default defineConfig({
           .pathname,
       },
       {
+        find: '@prompttrail/core/runtime_server',
+        replacement: new URL('../core/src/runtime_server.ts', import.meta.url)
+          .pathname,
+      },
+      {
         find: '@prompttrail/cron/testing',
         replacement: new URL('../cron/src/testing.ts', import.meta.url)
           .pathname,
