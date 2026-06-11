@@ -6,9 +6,7 @@ import { TemplateBase } from '../base';
 export type GenerateMessagesFn<
   TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
-> = (
-  session: Session<TVars, TAttrs>,
-) => Message<TAttrs>[] | Promise<Message<TAttrs>[]>;
+> = (session: Session<TVars, TAttrs>) => Message<TAttrs>[];
 
 /**
  * A template that appends one or more messages produced from the current session.

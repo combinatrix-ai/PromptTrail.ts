@@ -19,10 +19,10 @@ export class Transform<
     super();
     // Higher-order function
     if (Array.isArray(fn)) {
-      this.transformFn = async (session: Session<TVars, TAttrs>) => {
+      this.transformFn = (session: Session<TVars, TAttrs>) => {
         let updatedSession = session;
         for (const f of fn) {
-          updatedSession = await f(updatedSession);
+          updatedSession = f(updatedSession);
         }
         return updatedSession;
       };

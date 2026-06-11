@@ -56,12 +56,12 @@ describe('AgentGraph', () => {
     const left = createAgentGraph({
       name: 'stable',
       version: 'v1',
-      nodes: [{ id: 'node', type: 'patch', data: { b: 2, a: 1 } }],
+      nodes: [{ id: 'node', type: 'transform', data: { b: 2, a: 1 } }],
     });
     const right = createAgentGraph({
       name: 'stable',
       version: 'v1',
-      nodes: [{ id: 'node', type: 'patch', data: { a: 1, b: 2 } }],
+      nodes: [{ id: 'node', type: 'transform', data: { a: 1, b: 2 } }],
     });
 
     expect(createAgentGraphManifest(left).hash).toBe(

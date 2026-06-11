@@ -20,9 +20,11 @@ import {
   type GraphInboundInput,
   type GraphExecutionOptions,
 } from '../graph_executor';
-import { Message, type Message as PromptTrailMessage } from '../message';
+import { Message } from '../message';
 import {
   createExecutionRuntimeState,
+  type ExecutionDurableBoundary,
+  type ExecutionEffectDeclaration,
   type ExecutionRuntimeState,
   type HookDefinition,
   type MiddlewareDefinition,
@@ -41,10 +43,7 @@ import { Assistant } from './primitives/assistant';
 import { ClaudeTurn } from './primitives/claude_turn';
 import { CodexTurn } from './primitives/codex_turn';
 import { Conditional } from './primitives/conditional';
-import {
-  GenerateMessages,
-  type GenerateMessagesFn,
-} from './primitives/messages';
+import { GenerateMessages } from './primitives/messages';
 import { Structured } from './primitives/structured';
 import { System } from './primitives/system';
 import { Transform } from './primitives/transform';
@@ -62,18 +61,25 @@ type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
   | Source<string>
   | AgentGraphAssistantHandler<TC, TM>;
 
-type AgentGraphMessagesHandler<TC extends Vars, TM extends Attrs> = (
+type AgentGraphPureTransformHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
-  runtime?: AgentGraphHandlerRuntime,
-) =>
-  | PromptTrailMessage<TM>
-  | readonly PromptTrailMessage<TM>[]
-  | Promise<PromptTrailMessage<TM> | readonly PromptTrailMessage<TM>[]>;
+) => Session<TC, TM>;
 
-type AgentGraphPatchHandler<TC extends Vars, TM extends Attrs> = (
+export interface AgentGraphTransformEffectContext {
+  context?: Record<string, unknown>;
+  signal?: AbortSignal;
+  once: ExecutionDurableBoundary['once'];
+  idempotencyKey?: string;
+}
+
+export interface AgentGraphTransformEffectOptions {
+  effect: ExecutionEffectDeclaration;
+}
+
+type AgentGraphEffectTransformHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
-  runtime?: AgentGraphHandlerRuntime,
-) => Session<TC, TM> | void | Promise<Session<TC, TM> | void>;
+  ctx: AgentGraphTransformEffectContext,
+) => Session<TC, TM> | Promise<Session<TC, TM>>;
 
 export interface AgentGraphHandlerRuntime {
   context?: Record<string, unknown>;
@@ -114,9 +120,7 @@ export interface AgentGoalOptions<
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
   model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC, TM>;
-  isSatisfied?: (
-    context: AgentGoalSatisfactionContext<TC, TM>,
-  ) => boolean | Promise<boolean>;
+  isSatisfied?: (context: AgentGoalSatisfactionContext<TC, TM>) => boolean;
   onUnsatisfied?: 'retry' | 'continue' | 'halt';
 }
 
@@ -423,56 +427,41 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  patch(handler: AgentGraphPatchHandler<TC, TM>): this;
-  patch(id: string, handler: AgentGraphPatchHandler<TC, TM>): this;
-  patch(
-    idOrHandler: string | AgentGraphPatchHandler<TC, TM>,
-    handler?: AgentGraphPatchHandler<TC, TM>,
-  ) {
-    if (this.graphName || handler !== undefined) {
-      if (typeof idOrHandler !== 'string' || !handler) {
-        throw new Error('Graph Agent.patch requires patch(id, handler).');
-      }
-      this.graphNodes.push({
-        id: idOrHandler,
-        type: 'patch',
-        data: { handler },
-      });
-      return this;
-    }
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.patch requires patch(id, handler).');
-    }
-    this.root.add(
-      new Transform(async (session) => {
-        const result = await (idOrHandler as AgentGraphPatchHandler<TC, TM>)(
-          session,
-        );
-        return result ?? session;
-      }),
-    );
-    return this;
-  }
-
-  transform(transform: (s: Session<TC, TM>) => Session<TC, TM>): this;
+  transform(transform: AgentGraphPureTransformHandler<TC, TM>): this;
   transform(
     id: string,
-    transform: (s: Session<TC, TM>) => Session<TC, TM>,
+    transform: AgentGraphPureTransformHandler<TC, TM>,
   ): this;
   transform(
-    idOrTransform: string | ((s: Session<TC, TM>) => Session<TC, TM>),
-    maybeTransform?: (s: Session<TC, TM>) => Session<TC, TM>,
+    id: string,
+    options: AgentGraphTransformEffectOptions,
+    transform: AgentGraphEffectTransformHandler<TC, TM>,
+  ): this;
+  transform(
+    idOrTransform: string | AgentGraphPureTransformHandler<TC, TM>,
+    optionsOrTransform?:
+      | AgentGraphTransformEffectOptions
+      | AgentGraphPureTransformHandler<TC, TM>,
+    maybeTransform?: AgentGraphEffectTransformHandler<TC, TM>,
   ) {
     if (typeof idOrTransform === 'string') {
-      if (!maybeTransform) {
+      if (typeof optionsOrTransform === 'function') {
+        this.graphNodes.push({
+          id: idOrTransform,
+          type: 'transform',
+          data: { handler: optionsOrTransform },
+        });
+        return this;
+      }
+      if (!optionsOrTransform || typeof maybeTransform !== 'function') {
         throw new Error(
-          'Graph Agent.transform requires transform(id, handler).',
+          'Graph Agent.transform requires transform(id, handler) or transform(id, { effect }, handler).',
         );
       }
       this.graphNodes.push({
         id: idOrTransform,
         type: 'transform',
-        data: { handler: maybeTransform },
+        data: { handler: maybeTransform, effect: optionsOrTransform.effect },
       });
       return this;
     }
@@ -480,38 +469,6 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       throw new Error('Graph Agent.transform requires transform(id, handler).');
     }
     this.root.add(new Transform(idOrTransform));
-    return this;
-  }
-
-  messages(generateMessages: GenerateMessagesFn<TM, TC>): this;
-  messages(
-    id: string,
-    generateMessages: AgentGraphMessagesHandler<TC, TM>,
-  ): this;
-  messages(
-    idOrGenerateMessages:
-      | string
-      | GenerateMessagesFn<TM, TC>
-      | AgentGraphMessagesHandler<TC, TM>,
-    generateMessages?: AgentGraphMessagesHandler<TC, TM>,
-  ) {
-    if (this.graphName || generateMessages !== undefined) {
-      if (typeof idOrGenerateMessages !== 'string' || !generateMessages) {
-        throw new Error('Graph Agent.messages requires messages(id, handler).');
-      }
-      this.graphNodes.push({
-        id: idOrGenerateMessages,
-        type: 'messages',
-        data: { handler: generateMessages },
-      });
-      return this;
-    }
-    if (this.isGraphAuthoringMode()) {
-      throw new Error('Graph Agent.messages requires messages(id, handler).');
-    }
-    this.root.add(
-      new GenerateMessages(idOrGenerateMessages as GenerateMessagesFn<TM, TC>),
-    );
     return this;
   }
 
@@ -1256,8 +1213,16 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
   if (template instanceof GenerateMessages) {
     return {
       id: nextLegacyNodeId(state, 'messages'),
-      type: 'messages',
-      data: { handler: template.getGenerateMessages() },
+      type: 'transform',
+      data: {
+        handler: (session: Session<TC, TM>) => {
+          let currentSession = session;
+          for (const message of template.getGenerateMessages()(session)) {
+            currentSession = currentSession.addMessage(message);
+          }
+          return currentSession;
+        },
+      },
     };
   }
   if (template instanceof Transform) {
@@ -1501,7 +1466,7 @@ function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
     },
     {
       id: 'check',
-      type: 'patch',
+      type: 'transform',
       data: compactGraphData({
         kind: 'goalSatisfaction',
         isSatisfied: options.isSatisfied,

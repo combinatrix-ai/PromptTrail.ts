@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import {
+  createCheckpointOnceBoundary,
+  type CheckpointOnceMemoStore,
+} from '../../checkpoint_continuation';
 import { createAgentGraph } from '../../graph';
 import {
   executeAgentGraph,
@@ -154,11 +158,11 @@ describe('GraphExecutor', () => {
 
   it('executes named graph loops with node-local max iterations', async () => {
     const graph = Agent.create('assistant')
-      .patch('init', (session) => session.withVar('count', 0))
+      .transform('init', (session) => session.withVar('count', 0))
       .loop(
         'retry',
         (body) =>
-          body.patch('increment', (session) =>
+          body.transform('increment', (session) =>
             session.withVar('count', Number(session.getVar('count')) + 1),
           ),
         ({ session }) => Number(session.getVar('count')) < 3,
@@ -169,6 +173,126 @@ describe('GraphExecutor', () => {
     const session = await executeAgentGraph(graph, { maxLoopIterations: 1 });
 
     expect(session.getVar('count')).toBe(3);
+  });
+
+  it('throws when a pure transform returns a Promise', async () => {
+    const graph = Agent.create('assistant')
+      .transform('asyncPure', (() =>
+        Promise.resolve(Session.create())) as never)
+      .toGraph();
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      "transform 'asyncPure' returned a Promise; declare { effect } to use an async transform",
+    );
+  });
+
+  it('memoizes keyed effect transforms through the checkpoint once boundary', async () => {
+    const onceRun: { once?: CheckpointOnceMemoStore } = {};
+    const recordOnceEntries: unknown[] = [];
+    const boundary = createCheckpointOnceBoundary(onceRun, async (entry) => {
+      recordOnceEntries.push(entry);
+    });
+    let calls = 0;
+    const graph = Agent.create('assistant')
+      .transform(
+        'write',
+        { effect: { idempotencyKey: 'write:static' } },
+        async (session, ctx) => {
+          calls += 1;
+          expect(ctx.idempotencyKey).toBe('write:static');
+          return session.withVar('calls', calls);
+        },
+      )
+      .toGraph();
+    const executeWithCheckpoint = () =>
+      executeAgentGraph(graph, {
+        durableToolExecution: (_context, execute) => execute(boundary),
+      });
+
+    const first = await executeWithCheckpoint();
+    const second = await executeWithCheckpoint();
+
+    expect(calls).toBe(1);
+    expect(first.getVar('calls')).toBe(1);
+    expect(second.getVar('calls')).toBe(1);
+    expect(recordOnceEntries).toHaveLength(1);
+  });
+
+  it('resolves effect transform function keys from the session', async () => {
+    let receivedKeyInput: unknown;
+    const graph = Agent.create('assistant')
+      .transform(
+        'deriveKey',
+        {
+          effect: {
+            idempotencyKey: (input) => {
+              receivedKeyInput = input;
+              return `key:${(input as Session).getVar('seed')}`;
+            },
+          },
+        },
+        async (session, ctx) => {
+          expect(ctx.idempotencyKey).toBe('key:alpha');
+          return session.withVar('key', ctx.idempotencyKey);
+        },
+      )
+      .toGraph();
+
+    const session = await executeAgentGraph(graph, {
+      session: Session.create({ vars: { seed: 'alpha' } }),
+    });
+
+    expect(receivedKeyInput).toBeInstanceOf(Session);
+    expect(session.getVar('key')).toBe('key:alpha');
+  });
+
+  it('re-runs repeatable effect transforms on checkpoint re-execution', async () => {
+    const onceRun: { once?: CheckpointOnceMemoStore } = {};
+    const recordOnceEntries: unknown[] = [];
+    const boundary = createCheckpointOnceBoundary(onceRun, async (entry) => {
+      recordOnceEntries.push(entry);
+    });
+    let calls = 0;
+    const graph = Agent.create('assistant')
+      .transform('repeat', { effect: { repeatable: true } }, async (session) =>
+        session.withVar('calls', ++calls),
+      )
+      .toGraph();
+    const executeWithCheckpoint = () =>
+      executeAgentGraph(graph, {
+        durableToolExecution: (_context, execute) => execute(boundary),
+      });
+
+    await executeWithCheckpoint();
+    const second = await executeWithCheckpoint();
+
+    expect(calls).toBe(2);
+    expect(second.getVar('calls')).toBe(2);
+    expect(recordOnceEntries).toHaveLength(0);
+  });
+
+  it('throws when a loop condition returns a Promise', async () => {
+    const graph = Agent.create('assistant')
+      .loop('retry', (body) => body.assistant('reply', 'never'), (() =>
+        Promise.resolve(true)) as never)
+      .toGraph();
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      'Graph node assistant/retry condition returned a Promise; condition handlers must be synchronous.',
+    );
+  });
+
+  it('throws when goal satisfaction returns a Promise', async () => {
+    const graph = Agent.create('research')
+      .goal('answer', 'Answer', {
+        model: Source.literal('done'),
+        isSatisfied: (() => Promise.resolve(true)) as never,
+      })
+      .toGraph();
+
+    await expect(executeAgentGraph(graph)).rejects.toThrow(
+      'Graph goal research/answer isSatisfied returned a Promise; goal satisfaction handlers must be synchronous.',
+    );
   });
 
   it('executes implicit graph sequences in child order', async () => {
@@ -397,11 +521,11 @@ describe('GraphExecutor', () => {
   it('executes graph subroutines and merges new messages and vars', async () => {
     const graph = Agent.create('assistant')
       .user('before', 'before')
-      .patch('parentVar', (session) => session.withVar('parent', true))
+      .transform('parentVar', (session) => session.withVar('parent', true))
       .subroutine('draft', (sub) =>
         sub
           .user('prompt', 'inside')
-          .patch('subVar', (session) => session.withVar('sub', true))
+          .transform('subVar', (session) => session.withVar('sub', true))
           .assistant('reply', 'ok'),
       )
       .assistant('after', 'after')
@@ -421,13 +545,13 @@ describe('GraphExecutor', () => {
   it('supports isolated graph subroutines without retaining messages', async () => {
     const graph = Agent.create('assistant')
       .user('before', 'before')
-      .patch('parentVar', (session) => session.withVar('parent', true))
+      .transform('parentVar', (session) => session.withVar('parent', true))
       .subroutine(
         'draft',
         (sub) =>
           sub
             .user('prompt', 'inside')
-            .patch('subVar', (session) => session.withVar('sub', true)),
+            .transform('subVar', (session) => session.withVar('sub', true)),
         { isolatedContext: true, retainMessages: false },
       )
       .assistant('after', 'after')
@@ -444,10 +568,11 @@ describe('GraphExecutor', () => {
 
   it('supports custom graph subroutine init and squash handlers', async () => {
     const graph = Agent.create('assistant')
-      .patch('parentVar', (session) => session.withVar('parent', 'kept'))
+      .transform('parentVar', (session) => session.withVar('parent', 'kept'))
       .subroutine(
         'draft',
-        (sub) => sub.patch('subVar', (session) => session.withVar('sub', true)),
+        (sub) =>
+          sub.transform('subVar', (session) => session.withVar('sub', true)),
         {
           initWith: () => Session.create({ vars: { seed: 'custom' } }),
           squashWith: (parent, subroutine) =>

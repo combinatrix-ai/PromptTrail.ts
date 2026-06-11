@@ -606,7 +606,7 @@ describe('checkpoint app runtime', () => {
         toolCalls: [{ id: 'call-1', name: 'write', arguments: {} }],
       }))
       .tools('run')
-      .patch('after-write', (session) => {
+      .transform('after-write', (session) => {
         events.push('next-node');
         return session;
       });
@@ -662,7 +662,7 @@ describe('checkpoint app runtime', () => {
   it('persists session content only as deltas after initial create', async () => {
     const store = new RecordingRunStore();
     const assistant = Agent.create('delta-writes')
-      .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
+      .transform('vars-only', (session) => session.withVar('stage', 'waiting'))
       .awaitInput('input')
       .assistant(
         'reply',
@@ -722,7 +722,7 @@ describe('checkpoint app runtime', () => {
   it('chains session deltas by contiguous session versions', async () => {
     const store = new RecordingRunStore();
     const assistant = Agent.create('delta-chain')
-      .patch('vars-only', (session) => session.withVar('stage', 'waiting'))
+      .transform('vars-only', (session) => session.withVar('stage', 'waiting'))
       .awaitInput('input')
       .assistant('reply', () => 'done');
     const app = PromptTrail.app({
@@ -764,7 +764,7 @@ describe('checkpoint app runtime', () => {
     const store = new RecordingRunStore();
     const assistant = Agent.create('rewriter')
       .assistant('reply', () => 'draft')
-      .patch('redact', (session) =>
+      .transform('redact', (session) =>
         Session.create({
           messages: session.messages.map((message) =>
             message.type === 'assistant'

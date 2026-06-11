@@ -9,8 +9,6 @@ export type AgentGraphNodeType =
   | 'system'
   | 'user'
   | 'assistant'
-  | 'messages'
-  | 'patch'
   | 'tools'
   | 'inbox'
   | 'awaitInput'

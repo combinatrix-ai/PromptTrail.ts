@@ -14,6 +14,7 @@ import {
   runRuntimeExecutionPhase,
   runRuntimeMiddlewareWrapper,
   type ExecutionDurableBoundary,
+  type ExecutionEffectDeclaration,
   type ExecutionRuntimeState,
   type HookDefinition,
   type MiddlewareDefinition,
@@ -66,7 +67,7 @@ export interface GraphExecutionOptions<
     context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
   ) => ExecutionDurableBoundary | undefined;
   durableToolExecution?: <T>(
-    context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
+    context: GraphDurableBoundaryContext<TVars, TAttrs>,
     execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
   ) => Promise<T>;
   providerSessions?: Record<string, ProviderSessionBinding>;
@@ -82,11 +83,30 @@ export interface GraphToolDurableBoundaryContext<
   TVars extends Vars = Vars,
   TAttrs extends Attrs = Attrs,
 > {
+  kind: 'tool';
   nodePath: string;
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
   session: Session<TVars, TAttrs>;
   tool: PromptTrailTool<unknown, unknown>;
 }
+
+export interface GraphTransformDurableBoundaryContext<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> {
+  kind: 'transform';
+  nodePath: string;
+  session: Session<TVars, TAttrs>;
+  effect: ExecutionEffectDeclaration;
+  idempotencyKey?: string;
+}
+
+export type GraphDurableBoundaryContext<
+  TVars extends Vars = Vars,
+  TAttrs extends Attrs = Attrs,
+> =
+  | GraphToolDurableBoundaryContext<TVars, TAttrs>
+  | GraphTransformDurableBoundaryContext<TVars, TAttrs>;
 
 export class GraphExecutionSuspended extends Error {
   constructor(
@@ -443,12 +463,6 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
         }
       }
       return;
-    case 'patch':
-      await executePatchNode(node, nodePath, state);
-      return;
-    case 'messages':
-      await executeMessagesNode(node, nodePath, state);
-      return;
     case 'structured':
       await executeStructuredNode(node, nodePath, state);
       return;
@@ -767,52 +781,96 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
-async function executePatchNode<TVars extends Vars, TAttrs extends Attrs>(
-  node: AgentGraphNode,
-  nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
-): Promise<void> {
-  const data = graphNodeData(node);
-  if (data.kind === 'goalSatisfaction') {
-    await executeGoalSatisfactionNode(data, nodePath, state);
-    return;
-  }
-  const handler = data.handler;
-  if (typeof handler !== 'function') {
-    throw new Error(`Graph node ${nodePath} requires a patch handler.`);
-  }
-  const result = await handler(state.session, {
-    context: state.context,
-    signal: state.signal,
-  });
-  if (result instanceof Session) {
-    state.session = adoptSessionResult(
-      state.session,
-      result as Session<TVars, TAttrs>,
-    );
-    return;
-  }
-  if (result !== undefined) {
-    throw new Error(`Graph node ${nodePath} returned an invalid patch result.`);
-  }
-}
-
 async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
   node: AgentGraphNode,
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
   const data = graphNodeData(node);
+  if (data.kind === 'goalSatisfaction') {
+    executeGoalSatisfactionNode(data, nodePath, state);
+    return;
+  }
   const handler = data.handler;
   if (typeof handler === 'function') {
-    const result = await handler(state.session);
-    state.session = adoptSessionResult(
-      state.session,
-      result as Session<TVars, TAttrs>,
-    );
+    if (isExecutionEffectDeclaration(data.effect)) {
+      await executeEffectTransformNode(
+        node,
+        nodePath,
+        state,
+        handler as (...args: unknown[]) => unknown,
+        data.effect,
+      );
+      return;
+    }
+    const result = handler(state.session);
+    if (isThenable(result)) {
+      throw new Error(
+        `transform '${node.id}' returned a Promise; declare { effect } to use an async transform`,
+      );
+    }
+    adoptTransformResult(nodePath, state, result);
     return;
   }
   await executeTemplateNode(node, nodePath, state);
+}
+
+async function executeEffectTransformNode<
+  TVars extends Vars,
+  TAttrs extends Attrs,
+>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+  handler: (...args: unknown[]) => unknown,
+  effect: ExecutionEffectDeclaration,
+): Promise<void> {
+  const idempotencyKey = resolveTransformIdempotencyKey(effect, state.session);
+  const context: GraphTransformDurableBoundaryContext<TVars, TAttrs> = {
+    kind: 'transform',
+    nodePath,
+    session: state.session,
+    effect,
+    idempotencyKey,
+  };
+  const executeTransform = async (durable?: ExecutionDurableBoundary) => {
+    const boundary = durable ?? directExecutionBoundary;
+    const callHandler = async () => {
+      return handler(state.session, {
+        context: state.context,
+        signal: state.signal,
+        once: boundary.once.bind(boundary),
+        idempotencyKey,
+      });
+    };
+    const result =
+      idempotencyKey !== undefined
+        ? await boundary.once(node.id, idempotencyKey, callHandler)
+        : await callHandler();
+    adoptTransformResult(nodePath, state, result);
+  };
+
+  if (state.durableToolExecution) {
+    await state.durableToolExecution(context, executeTransform);
+    return;
+  }
+  await executeTransform();
+}
+
+function adoptTransformResult<TVars extends Vars, TAttrs extends Attrs>(
+  nodePath: string,
+  state: GraphExecutionState<TVars, TAttrs>,
+  result: unknown,
+): void {
+  if (!(result instanceof Session)) {
+    throw new Error(
+      `Graph node ${nodePath} returned an invalid transform result.`,
+    );
+  }
+  state.session = adoptSessionResult(
+    state.session,
+    result as Session<TVars, TAttrs>,
+  );
 }
 
 async function executeStructuredNode<TVars extends Vars, TAttrs extends Attrs>(
@@ -933,33 +991,33 @@ async function resolveGraphAssistantInput<
   return resolveGraphContent(input, nodePath, session, state.runtime);
 }
 
-async function executeGoalSatisfactionNode<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+function executeGoalSatisfactionNode<TVars extends Vars, TAttrs extends Attrs>(
   data: GraphNodeData,
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
-): Promise<void> {
+): void {
   const goal = state.activeGoal;
   if (!goal) {
     throw new Error(`Graph node ${nodePath} requires an active goal.`);
   }
   const handler = data.isSatisfied;
   const canSatisfy = goal.interaction !== 'required' || goal.interacted;
-  const satisfied =
-    canSatisfy &&
-    (typeof handler === 'function'
-      ? Boolean(
-          await handler({
-            session: state.session,
-            goal: goal.goal,
-            attempt: goal.attempt,
-            context: state.context,
-            signal: state.signal,
-          }),
-        )
-      : true);
+  let satisfied = canSatisfy;
+  if (satisfied && typeof handler === 'function') {
+    const result = handler({
+      session: state.session,
+      goal: goal.goal,
+      attempt: goal.attempt,
+      context: state.context,
+      signal: state.signal,
+    });
+    if (isThenable(result)) {
+      throw new Error(
+        `Graph goal ${goal.nodePath} isSatisfied returned a Promise; goal satisfaction handlers must be synchronous.`,
+      );
+    }
+    satisfied = Boolean(result);
+  }
 
   if (satisfied) {
     goal.satisfied = true;
@@ -971,32 +1029,6 @@ async function executeGoalSatisfactionNode<
   }
   if (goal.onUnsatisfied === 'halt') {
     throw new Error(`Graph goal ${goal.nodePath} was not satisfied.`);
-  }
-}
-
-async function executeMessagesNode<TVars extends Vars, TAttrs extends Attrs>(
-  node: AgentGraphNode,
-  nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
-): Promise<void> {
-  const handler = graphNodeData(node).handler;
-  if (typeof handler !== 'function') {
-    throw new Error(`Graph node ${nodePath} requires a messages handler.`);
-  }
-  const result = await handler(state.session, {
-    context: state.context,
-    signal: state.signal,
-  });
-  const messages = Array.isArray(result) ? result : [result];
-  for (const message of messages) {
-    if (!isPromptTrailMessage(message)) {
-      throw new Error(
-        `Graph node ${nodePath} returned an invalid message result.`,
-      );
-    }
-    state.session = state.session.addMessage(
-      message as PromptTrailMessage<TAttrs>,
-    );
   }
 }
 
@@ -1111,6 +1143,7 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
       request: nextCall,
       call: async ({ session, request }) => {
         const context = {
+          kind: 'tool' as const,
           nodePath,
           toolCall: request,
           session,
@@ -1123,14 +1156,7 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
             raw: request,
             capability: request.name,
             activity: tool.activity,
-            durable:
-              durable ??
-              state.durableToolBoundary?.({
-                nodePath,
-                toolCall: request,
-                session,
-                tool,
-              }),
+            durable: durable ?? state.durableToolBoundary?.(context),
           });
         const result = state.durableToolExecution
           ? await state.durableToolExecution(context, executeTool)
@@ -1295,15 +1321,54 @@ function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
     return condition;
   }
   if (typeof condition === 'function') {
-    return Boolean(
-      condition({
-        session: state.session,
-        context: state.context,
-        signal: state.signal,
-      }),
-    );
+    const result = condition({
+      session: state.session,
+      context: state.context,
+      signal: state.signal,
+    });
+    if (isThenable(result)) {
+      throw new Error(
+        `Graph node ${nodePath} condition returned a Promise; condition handlers must be synchronous.`,
+      );
+    }
+    return Boolean(result);
   }
   throw new Error(`Graph node ${nodePath} requires a condition.`);
+}
+
+const directExecutionBoundary: ExecutionDurableBoundary = {
+  async once(_name, _dep, fn) {
+    return fn();
+  },
+};
+
+function resolveTransformIdempotencyKey(
+  effect: ExecutionEffectDeclaration,
+  session: Session,
+): string | undefined {
+  if (!('idempotencyKey' in effect)) {
+    return undefined;
+  }
+  return typeof effect.idempotencyKey === 'function'
+    ? effect.idempotencyKey(session)
+    : effect.idempotencyKey;
+}
+
+function isExecutionEffectDeclaration(
+  value: unknown,
+): value is ExecutionEffectDeclaration {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return 'idempotencyKey' in value || 'repeatable' in value;
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
 }
 
 function isGraphDescendantPath(path: string, ancestorPath: string): boolean {
@@ -1454,18 +1519,6 @@ function isAssistantMessage<TAttrs extends Attrs = Attrs>(
     isRecord(value) &&
     value.type === 'assistant' &&
     typeof value.content === 'string'
-  );
-}
-
-function isPromptTrailMessage(value: unknown): value is PromptTrailMessage {
-  if (!isRecord(value) || typeof value.content !== 'string') {
-    return false;
-  }
-  return (
-    value.type === 'system' ||
-    value.type === 'user' ||
-    value.type === 'assistant' ||
-    value.type === 'tool_result'
   );
 }
 

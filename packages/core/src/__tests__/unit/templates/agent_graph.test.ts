@@ -236,7 +236,7 @@ describe('Agent graph authoring', () => {
   it('rejects follow-up input for completed direct durable graph runs', async () => {
     const store = memoryStore();
     const agent = Agent.create('assistant')
-      .patch('countRun', (session) =>
+      .transform('countRun', (session) =>
         session.withVar(
           'runCount',
           ((session.getVar('runCount') as number) ?? 0) + 1,
@@ -268,7 +268,7 @@ describe('Agent graph authoring', () => {
     const agent = Agent.create('assistant')
       .assistant('prelude', 'ready')
       .inbox('input')
-      .patch('countInput', (session) =>
+      .transform('countInput', (session) =>
         session.withVar(
           'inputCount',
           ((session.getVar('inputCount') as number) ?? 0) + 1,
@@ -500,17 +500,19 @@ describe('Agent graph authoring', () => {
     ]);
   });
 
-  it('builds top-level graph messages and patch nodes', async () => {
+  it('builds top-level graph transform nodes', async () => {
     const agent = Agent.create('assistant')
-      .messages('derived', () => [{ type: 'user', content: 'derived input' }])
-      .patch('mark', (session) => session.withVar('marked', true));
+      .transform('derived', (session) =>
+        session.addMessage({ type: 'user', content: 'derived input' }),
+      )
+      .transform('mark', (session) => session.withVar('marked', true));
 
     const graph = agent.toGraph('v1');
     const session = await agent.execute();
 
     expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
-      ['derived', 'messages'],
-      ['mark', 'patch'],
+      ['derived', 'transform'],
+      ['mark', 'transform'],
     ]);
     expect(session.messages.map((message) => message.content)).toEqual([
       'derived input',
@@ -884,15 +886,10 @@ describe('Agent graph authoring', () => {
     });
   });
 
-  it('requires explicit ids for named graph messages and patch nodes', () => {
+  it('requires explicit ids for named graph transform nodes', () => {
     expect(() =>
-      Agent.create('assistant').messages(() => [
-        { type: 'user', content: 'missing id' },
-      ]),
-    ).toThrow(/messages\(id, handler\)/);
-    expect(() => Agent.create('assistant').patch((session) => session)).toThrow(
-      /patch\(id, handler\)/,
-    );
+      Agent.create('assistant').transform((session) => session),
+    ).toThrow(/Graph Agent\.transform/);
   });
 
   it('executes direct durable graph agents through the app runtime', async () => {
@@ -1006,7 +1003,7 @@ describe('Agent graph authoring', () => {
         'waitLoop',
         (loop) =>
           loop
-            .patch('count', (session) =>
+            .transform('count', (session) =>
               session.withVar(
                 'count',
                 ((session.getVar('count') as number) ?? 0) + 1,
@@ -1052,7 +1049,7 @@ describe('Agent graph authoring', () => {
         'outer',
         (outer) =>
           outer
-            .patch('count', (session) =>
+            .transform('count', (session) =>
               session.withVar(
                 'count',
                 ((session.getVar('count') as number) ?? 0) + 1,
@@ -1063,7 +1060,7 @@ describe('Agent graph authoring', () => {
               (inner) =>
                 inner
                   .awaitInput('next')
-                  .patch('inputDone', (session) =>
+                  .transform('inputDone', (session) =>
                     session.withVar('needInput', false),
                   ),
               ({ session }) => session.getVar('needInput') !== false,
@@ -1183,7 +1180,7 @@ describe('Agent graph authoring', () => {
       ['research/researchTopic/attempts', 'loop'],
       ['research/researchTopic/attempts/model', 'assistant'],
       ['research/researchTopic/attempts/tools', 'tools'],
-      ['research/researchTopic/attempts/check', 'patch'],
+      ['research/researchTopic/attempts/check', 'transform'],
       ['research/researchTopic/attempts/interaction', 'awaitInput'],
     ]);
     const checkData = manifest.nodes.find((node) =>
@@ -1287,11 +1284,8 @@ describe('Agent graph authoring', () => {
     );
     expect(() => graphStarted().user('legacy')).toThrow(/Graph Agent\.user/);
     expect(() => graphStarted().assistant()).toThrow(/Graph Agent\.assistant/);
-    expect(() => graphStarted().messages(() => [])).toThrow(
-      /Graph Agent\.messages/,
-    );
-    expect(() => graphStarted().patch((session) => session)).toThrow(
-      /Graph Agent\.patch/,
+    expect(() => graphStarted().transform((session) => session)).toThrow(
+      /Graph Agent\.transform/,
     );
     expect(() =>
       graphStarted().structured(Structured.withSchema(z.object({}))),
@@ -1304,9 +1298,6 @@ describe('Agent graph authoring', () => {
     );
     expect(() => graphStarted().claude({} as never)).toThrow(
       /Graph Agent\.claude/,
-    );
-    expect(() => graphStarted().transform((session) => session)).toThrow(
-      /Graph Agent\.transform/,
     );
     expect(() => graphStarted().add(Agent.quick().build())).toThrow(
       /Graph Agent\.add/,

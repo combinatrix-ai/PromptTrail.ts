@@ -6,7 +6,7 @@ import { Attrs, Vars } from '../session';
  */
 export type TransformFn<TAttrs extends Attrs, TVars extends Vars> = (
   session: Session<TVars, TAttrs>,
-) => Session<TVars, TAttrs> | Promise<Session<TVars, TAttrs>>;
+) => Session<TVars, TAttrs>;
 
 /**
  * Options for configuring the SubroutineTemplate.

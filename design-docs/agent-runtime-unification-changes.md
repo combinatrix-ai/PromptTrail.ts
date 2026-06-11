@@ -301,7 +301,7 @@ that replay systems get for free.
       session-version fallback dep for tools is structurally gone — there is
       no declared-but-keyless state anymore. Function keys appear in the
       manifest as named function stand-ins.
-- [ ] **4.3 Synchronous decision/transform handlers.** Type
+- [x] **4.3 Synchronous decision/transform handlers.** Type
       `conditional`/`loop` conditions, `goal.isSatisfied`, and `patch` handlers as
       synchronous (`=> boolean` / `=> Session`, drop the `| Promise<...>` variants)
       so IO can't be `await`ed into a decision and effects stay in tools. Add a cheap
@@ -309,6 +309,10 @@ that replay systems get for free.
       global IO sandbox. Open: whether `transform` handlers join this rule — they
       currently `await handler(session)` in `graph_executor.ts` and were omitted
       from the original list. (`templates/agent.ts`, `graph_executor.ts`, `tool.ts`)
+      Done with §9.1 (the open question was resolved by Decision Update 3
+      point 1: undeclared transform IS sync). Conditions were already
+      sync-typed; `goal.isSatisfied` dropped its Promise variant; thenable
+      guards added for transforms, graph conditions, and goal satisfaction.
 - [ ] **4.4 Unify effect classification across tool/hook/middleware** with the
       phase-split rule (Decision Update 3, point 10): transform phases
       (`beforeModel`/`prepareModelInput`/`afterModel`/`beforeTool`/`afterTool` +
@@ -575,13 +579,21 @@ only vars/attrs, not messages), not just appended messages.
 Outcome of the vocabulary review (main doc Decision Update 3). These reshape
 the §3 DSL work; do them as part of §3.
 
-- [ ] **9.1 Unify `transform`** (absorbs `patch` and `messages` nodes — both
+- [x] **9.1 Unify `transform`** (absorbs `patch` and `messages` nodes — both
       removed). Pure form is synchronous (`(session) => Session`, thenable guard);
       `{ effect }` declaration (8.2 binary) unlocks the async form
       `async (session, ctx) => Session` with `ctx.once` available. This is the
       graph-invoked effect step (tools remain model-invoked). "patch" survives
       only as the noun for hook/middleware session patches.
       (`templates/agent.ts`, `graph_executor.ts`, `graph.ts`)
+      Done: effect transforms route through the same checkpoint boundary as
+      tools (the `durableToolExecution` channel, now a discriminated
+      tool/transform context); keyed transforms resolve their key from the
+      session, auto-wrap in `once(nodeId, key, handler)`, and hand the key to
+      the handler as `ctx.idempotencyKey`. Note the cost contract: a keyed
+      transform memoizes its resulting Session in the once store — keep keyed
+      transforms small or put big payloads in tools. All 21 patch/messages
+      call sites migrated to pure transforms.
 - [x] **9.2 Remove the `turn` node** (verified: runtime-wise a bare sequence).
       `inbox`/`awaitInput`/`tools` become ordinary nodes available in any builder
       scope. (`templates/agent.ts`, `graph_executor.ts`)
