@@ -1624,15 +1624,25 @@ function finalizeGraphNodeIds(
           }
         : node.data;
 
-    return {
+    const finalized: AgentGraphNode = {
       id,
       type: node.type,
       data,
-      children:
-        node.children === undefined
-          ? undefined
-          : finalizeGraphNodeIds(node.children, options),
     };
+    const metadata =
+      node.id === undefined
+        ? { ...node.metadata, authoredId: false }
+        : node.metadata;
+    if (metadata && Object.keys(metadata).length > 0) {
+      Object.defineProperty(finalized, 'metadata', {
+        value: metadata,
+        enumerable: false,
+      });
+    }
+    if (node.children !== undefined) {
+      finalized.children = finalizeGraphNodeIds(node.children, options);
+    }
+    return finalized;
   });
 }
 

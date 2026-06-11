@@ -93,6 +93,10 @@ export interface McpServer {
   name: string;
   transport: McpTransport;
   tools?: 'all' | string[];
+  effects?: {
+    defaults?: ExecutionEffectDeclaration;
+    perTool?: Record<string, ExecutionEffectDeclaration>;
+  };
   approval?: ApprovalPolicy;
   cache?: CacheHint;
 }
@@ -189,6 +193,26 @@ export async function requireConfiguredCapabilityApprovals(
       await requireConfiguredCapabilityApproval(capability, context);
     }
   }
+}
+
+export function resolveMcpDiscoveredToolEffectDeclaration(
+  server: McpServer,
+  toolName: string,
+): ExecutionEffectDeclaration | undefined {
+  return server.effects?.perTool?.[toolName] ?? server.effects?.defaults;
+}
+
+export function assertCheckpointDiscoveredToolEffectDeclaration(
+  server: McpServer,
+  toolName: string,
+): ExecutionEffectDeclaration {
+  const effect = resolveMcpDiscoveredToolEffectDeclaration(server, toolName);
+  if (effect) {
+    return effect;
+  }
+  throw new Error(
+    `Checkpoint MCP tool "${toolName}" discovered from server "${server.name}" is missing an ExecutionEffectDeclaration. Fix the MCP server registration with effects: { defaults: { repeatable: true } } or effects: { perTool: { ${JSON.stringify(toolName)}: { idempotencyKey: 'stable-key' } } }.`,
+  );
 }
 
 export function getCapabilityExecutionMode(

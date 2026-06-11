@@ -14,6 +14,7 @@ import {
   runRuntimeExecutionPhase,
   runRuntimeMiddlewareWrapper,
   type ExecutionDurableBoundary,
+  type ExecutionDurableBoundaryProvider,
   type ExecutionEffectDeclaration,
   type ExecutionRuntimeState,
   type HookDefinition,
@@ -71,6 +72,7 @@ export interface GraphExecutionOptions<
     context: GraphDurableBoundaryContext<TVars, TAttrs>,
     execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
   ) => Promise<T>;
+  durableBoundary?: ExecutionDurableBoundaryProvider;
   providerSessions?: Record<string, ProviderSessionBinding>;
   recordProviderSession?: (
     nodePath: string,
@@ -208,6 +210,7 @@ export async function executeAgentGraph<
         emitEvent,
         eventScopeId,
         nextEventSeq,
+        durableBoundary: options.durableBoundary,
         providerSessions: options.providerSessions,
         recordProviderSession: options.recordProviderSession,
       });
@@ -217,6 +220,8 @@ export async function executeAgentGraph<
     runtime.emitEvent = emitEvent;
     runtime.eventScopeId = eventScopeId;
     runtime.nextEventSeq = nextEventSeq;
+    runtime.durableBoundary =
+      options.durableBoundary ?? options.runtime.durableBoundary;
     runtime.providerSessions =
       options.providerSessions ?? options.runtime.providerSessions;
     runtime.recordProviderSession =
@@ -1189,6 +1194,15 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
         `Graph node ${nodePath} cannot resolve tool ${nextCall.name}.`,
       );
     }
+    const toolActivity = tool.activity ?? tool.metadata?.activity;
+    if (
+      state.durableToolExecution &&
+      !isExecutionEffectDeclaration(toolActivity)
+    ) {
+      throw new Error(
+        `Checkpoint tool "${nextCall.name}" at ${nodePath} is missing an ExecutionEffectDeclaration. Declare activity: { repeatable: true } or activity: { idempotencyKey: 'stable-key' } on Tool.create(...).`,
+      );
+    }
     const wrappedTool = await runRuntimeMiddlewareWrapper<
       TVars,
       TAttrs,
@@ -1212,7 +1226,9 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
             context: state.context,
             raw: request,
             capability: request.name,
-            activity: tool.activity,
+            activity: isExecutionEffectDeclaration(toolActivity)
+              ? toolActivity
+              : undefined,
             durable: durable ?? state.durableToolBoundary?.(context),
           });
         const result = state.durableToolExecution

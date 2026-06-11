@@ -241,6 +241,12 @@ function capabilitySetManifestDescriptor(
           name: capability.name,
           transport: mcpTransportManifestDescriptor(capability.transport),
           tools: capability.tools,
+          effects: capability.effects
+            ? {
+                defaults: capability.effects.defaults,
+                perTool: capability.effects.perTool,
+              }
+            : undefined,
           approval: approvalManifestDescriptor(capability.approval),
           cache: capability.cache,
         };
@@ -255,6 +261,7 @@ function promptTrailToolManifestDescriptor(tool: PromptTrailTool<any, any>) {
     description: tool.description,
     inputSchema: zodSchemaManifestDescriptor(tool.inputSchema),
     execute: { kind: 'function', name: tool.execute.name || undefined },
+    activity: tool.activity ?? tool.metadata?.activity,
     approval: approvalManifestDescriptor(tool.approval),
     cache: tool.cache,
     metadataKeys: objectKeysManifestDescriptor(tool.metadata),

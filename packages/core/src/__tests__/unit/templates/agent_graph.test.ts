@@ -78,6 +78,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
+      activity: { repeatable: true },
       execute: ({ id }) => ({ id }),
     });
 
@@ -271,6 +272,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
+      activity: { repeatable: true },
       execute: ({ id }) => `value:${id}`,
     });
     let modelCalls = 0;
@@ -693,6 +695,7 @@ describe('Agent graph authoring', () => {
       .use(
         Middleware.create({
           name: 'structuredRuntime',
+          effect: { repeatable: true },
           beforeModel: ({ session }) => {
             calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
             return { session: { vars: { beforeModel: true } } };
@@ -1048,6 +1051,91 @@ describe('Agent graph authoring', () => {
     );
   });
 
+  it('rejects undeclared static tools at checkpoint app registration only', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => id,
+    });
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant('reply', () => ({
+        content: 'need lookup',
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: 'one' } }],
+      }))
+      .tools('tools');
+
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: agent },
+      }),
+    ).toThrow(
+      'Checkpoint agent "assistant" tool "lookup" is missing an ExecutionEffectDeclaration.',
+    );
+    expect(() =>
+      PromptTrail.app({ agents: { assistant: agent } }),
+    ).not.toThrow();
+  });
+
+  it('requires wrapper middleware declarations under checkpoint only', () => {
+    const wrapperAgent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'modelWrapper',
+          wrapModelCall: async (_ctx, next) => next(),
+        }),
+      )
+      .assistant('reply', Source.literal('ok'));
+    const transformOnlyAgent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'modelPatch',
+          beforeModel: () => ({ session: { vars: { patched: true } } }),
+        }),
+      )
+      .assistant('reply', Source.literal('ok'));
+
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: wrapperAgent },
+      }),
+    ).toThrow(
+      'Checkpoint agent "assistant" middleware "modelWrapper" wrapModelCall is missing an ExecutionEffectDeclaration.',
+    );
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: transformOnlyAgent },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      PromptTrail.app({ agents: { assistant: wrapperAgent } }),
+    ).not.toThrow();
+  });
+
+  it('warns for checkpoint resume-sensitive auto-derived ids', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      createAgentGraphManifest(
+        Agent.create('assistant').awaitInput().toGraph(),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        'Checkpoint agent "assistant" has auto-derived ids on resume-sensitive nodes. Add explicit ids to keep resume stable across graph edits: assistant/awaitInput-1',
+      );
+      warn.mockClear();
+
+      createAgentGraphManifest(
+        Agent.create('assistant').awaitInput('next').toGraph(),
+      );
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('memoizes graph checkpoint keyed tool activity and nested once effects', async () => {
     const store = memoryStore();
     let memoCalls = 0;
@@ -1327,6 +1415,7 @@ describe('Agent graph authoring', () => {
       name: 'lookup',
       description: 'Look up a value.',
       inputSchema: z.object({ id: z.string() }),
+      activity: { repeatable: true },
       execute: ({ id }) => `value:${id}`,
     });
     const agent = Agent.create('research')

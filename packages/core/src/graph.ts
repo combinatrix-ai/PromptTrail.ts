@@ -1,5 +1,9 @@
 import type { ObserverLike } from './execution';
-import type { HookDefinition, MiddlewareDefinition } from './interceptors';
+import type {
+  ExecutionEffectDeclaration,
+  HookDefinition,
+  MiddlewareDefinition,
+} from './interceptors';
 import type { PromptTrailTool } from './tool';
 
 type AnyMiddlewareDefinition = MiddlewareDefinition<any, any>;
@@ -27,6 +31,11 @@ export interface AgentGraphNode {
   type: AgentGraphNodeType;
   data?: unknown;
   children?: readonly AgentGraphNode[];
+  metadata?: AgentGraphNodeMetadata;
+}
+
+export interface AgentGraphNodeMetadata {
+  authoredId?: boolean;
 }
 
 export interface AgentGraphEdge {
@@ -92,6 +101,7 @@ export interface AgentGraphManifestHandler {
   kind: 'middleware' | 'hook';
   id: string;
   order: number;
+  effect?: unknown;
 }
 
 export class AgentGraphValidationError extends Error {
@@ -187,6 +197,8 @@ export function createAgentGraphManifest(
   graph: AgentGraph,
 ): AgentGraphManifest {
   validateAgentGraph(graph, { durable: true, app: true });
+  validateCheckpointEffectDeclarations(graph);
+  warnCheckpointDerivedResumeIds(graph);
   const nodes = flattenManifestNodes(graph.name, graph.nodes);
   const tools = Object.entries(graph.tools)
     .sort(([left], [right]) => left.localeCompare(right))
@@ -200,6 +212,7 @@ export function createAgentGraphManifest(
       kind: 'middleware' as const,
       id: stableHandlerId(middleware, 'middleware', order),
       order,
+      effect: toManifestValue(middleware.effect),
     })),
     ...graph.hooks.map((hook, order) => ({
       layer: 'agent' as const,
@@ -221,6 +234,138 @@ export function createAgentGraphManifest(
     ...unsigned,
     hash: stableHash(unsigned),
   };
+}
+
+function validateCheckpointEffectDeclarations(graph: AgentGraph): void {
+  for (const [name, tool] of Object.entries(graph.tools)) {
+    const effect = tool.activity ?? tool.metadata?.activity;
+    if (!isExecutionEffectDeclaration(effect)) {
+      throw new AgentGraphValidationError(
+        checkpointEffectDeclarationError({
+          agentName: graph.name,
+          subjectKind: 'tool',
+          subjectName: name,
+          declarationProperty: 'activity',
+        }),
+      );
+    }
+  }
+
+  graph.middleware.forEach((middleware, index) => {
+    for (const phase of executionWrapperPhases(middleware as object)) {
+      if (!isExecutionEffectDeclaration(middleware.effect)) {
+        throw new AgentGraphValidationError(
+          checkpointEffectDeclarationError({
+            agentName: graph.name,
+            subjectKind: 'middleware',
+            subjectName: middleware.name ?? `<anonymous:${index}>`,
+            phase,
+            declarationProperty: 'effect',
+          }),
+        );
+      }
+    }
+  });
+
+  graph.hooks.forEach((hook, index) => {
+    for (const phase of executionWrapperPhases(hook as object)) {
+      const effect = (hook as { effect?: unknown }).effect;
+      if (!isExecutionEffectDeclaration(effect)) {
+        throw new AgentGraphValidationError(
+          checkpointEffectDeclarationError({
+            agentName: graph.name,
+            subjectKind: 'hook',
+            subjectName: hook.name ?? `<anonymous:${index}>`,
+            phase,
+            declarationProperty: 'effect',
+          }),
+        );
+      }
+    }
+  });
+}
+
+function executionWrapperPhases(
+  handler: object,
+): Array<'wrapModelCall' | 'wrapToolCall'> {
+  const record = handler as Record<string, unknown>;
+  return (['wrapModelCall', 'wrapToolCall'] as const).filter(
+    (phase) => typeof record[phase] === 'function',
+  );
+}
+
+function checkpointEffectDeclarationError(options: {
+  agentName: string;
+  subjectKind: 'tool' | 'middleware' | 'hook';
+  subjectName: string;
+  phase?: string;
+  declarationProperty: 'activity' | 'effect';
+}): string {
+  const phase = options.phase ? ` ${options.phase}` : '';
+  return [
+    `Checkpoint agent "${options.agentName}" ${options.subjectKind} "${options.subjectName}"${phase} is missing an ExecutionEffectDeclaration.`,
+    `Fix by declaring ${options.declarationProperty}: { repeatable: true } or ${options.declarationProperty}: { idempotencyKey: 'stable-key' } (or a function key).`,
+  ].join(' ');
+}
+
+function warnCheckpointDerivedResumeIds(graph: AgentGraph): void {
+  const paths = collectDerivedResumeIdentityPaths(
+    graph.nodes,
+    graph.name,
+  ).sort();
+  if (paths.length === 0) {
+    return;
+  }
+  console.warn(
+    `Checkpoint agent "${graph.name}" has auto-derived ids on resume-sensitive nodes. Add explicit ids to keep resume stable across graph edits: ${paths.join(', ')}`,
+  );
+}
+
+function collectDerivedResumeIdentityPaths(
+  nodes: readonly AgentGraphNode[],
+  parentPath: string,
+): string[] {
+  return nodes.flatMap((node) => {
+    const path = `${parentPath}/${node.id}`;
+    const childPaths = collectDerivedResumeIdentityPaths(
+      node.children ?? [],
+      path,
+    );
+    const ownPaths =
+      node.metadata?.authoredId === false &&
+      isResumeSensitiveNode(node, childPaths)
+        ? [path]
+        : [];
+    return [...ownPaths, ...childPaths];
+  });
+}
+
+function isResumeSensitiveNode(
+  node: AgentGraphNode,
+  childWarningPaths: readonly string[],
+): boolean {
+  if (node.type === 'awaitInput') {
+    return true;
+  }
+  if (node.type === 'goal' && graphDataInteraction(node.data) !== 'none') {
+    return true;
+  }
+  return node.type === 'loop' && childWarningPaths.length > 0;
+}
+
+function graphDataInteraction(data: unknown): unknown {
+  return data && typeof data === 'object'
+    ? (data as { interaction?: unknown }).interaction
+    : undefined;
+}
+
+function isExecutionEffectDeclaration(
+  value: unknown,
+): value is ExecutionEffectDeclaration {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return 'idempotencyKey' in value || 'repeatable' in value;
 }
 
 function validateGraphNode(

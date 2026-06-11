@@ -200,6 +200,23 @@ describe('execution interceptors', () => {
     );
   });
 
+  it('rejects thenables from synchronous phase handlers', async () => {
+    await expect(
+      runExecutionPhase({
+        phase: 'beforeModel',
+        session: createSession(),
+        middleware: [
+          Middleware.create({
+            name: 'asyncPhase',
+            beforeModel: (() => Promise.resolve({})) as never,
+          }),
+        ],
+      }),
+    ).rejects.toThrow(
+      'middleware asyncPhase beforeModel returned a Promise; beforeModel handlers must be synchronous.',
+    );
+  });
+
   it('preserves request/result when middleware only patches session', async () => {
     const session = createSession({
       context: { stale: true },
@@ -340,7 +357,7 @@ describe('execution interceptors', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('rejects nested durable effects in materialized phases', async () => {
+  it('rejects async durable work in materialized phases', async () => {
     await expect(
       runExecutionPhase({
         phase: 'beforeModel',
@@ -348,22 +365,16 @@ describe('execution interceptors', () => {
         middleware: [
           Middleware.create({
             name: 'clock',
-            beforeModel: async ({ durable }) => ({
-              session: {
-                vars: {
-                  now: await durable.once('now', 'clock', () => Date.now()),
-                },
-              },
-            }),
+            beforeModel: (() => Promise.resolve({})) as never,
           }),
         ],
       }),
     ).rejects.toThrow(
-      "ctx.once() is not allowed in middleware clock beforeModel; declare durability: 'replayable-handler'",
+      'middleware clock beforeModel returned a Promise; beforeModel handlers must be synchronous.',
     );
   });
 
-  it('requires durable execution for replayable handler effects', async () => {
+  it('rejects async durable work in replayable lifecycle handlers', async () => {
     await expect(
       runExecutionPhase({
         phase: 'beforeModel',
@@ -372,30 +383,21 @@ describe('execution interceptors', () => {
           Middleware.create({
             name: 'profile',
             durability: 'replayable-handler',
-            beforeModel: async ({ durable }) => ({
-              session: {
-                vars: {
-                  profile: await durable.once(
-                    'load-profile',
-                    'profile',
-                    () => 'loaded',
-                  ),
-                },
-              },
-            }),
+            beforeModel: (() => Promise.resolve({})) as never,
           }),
         ],
       }),
     ).rejects.toThrow(
-      'ctx.once() is only available when middleware profile beforeModel runs in durable replayable-handler mode.',
+      'middleware profile beforeModel returned a Promise; beforeModel handlers must be synchronous.',
     );
   });
 
-  it('injects durable boundaries only for replayable handlers', async () => {
+  it('injects durable boundaries for effect wrapper handlers', async () => {
     const provided: string[] = [];
-    const result = await runExecutionPhase({
-      phase: 'beforeModel',
+    const result = await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
       session: createSession(),
+      request: { prompt: 'hello' },
       durableBoundary: (handler) => ({
         async once(name, dep, fn) {
           provided.push(
@@ -407,25 +409,32 @@ describe('execution interceptors', () => {
       middleware: [
         Middleware.create({
           name: 'clock',
-          durability: 'replayable-handler',
-          beforeModel: async ({ durable }) => ({
-            session: {
-              vars: {
-                now: await durable.once('now', 'clock', () => 123),
-              },
-            },
-          }),
+          effect: { idempotencyKey: 'clock' },
+          wrapModelCall: async ({ once }, next) => {
+            const now = await once('now', 'clock', () => 123);
+            const result = await next();
+            return {
+              result,
+              session: { vars: { now } },
+            };
+          },
         }),
       ],
+      call: async () => 'ok',
     });
 
     expect(result.session.getVarsObject()).toEqual({ now: 123 });
-    expect(provided).toEqual(['middleware:clock:beforeModel:now:clock']);
+    expect(result.result).toBe('ok');
+    expect(provided).toEqual([
+      'middleware:clock:wrapModelCall:middleware:clock:wrapModelCall:0:clock',
+      'middleware:clock:wrapModelCall:now:clock',
+    ]);
 
     await expect(
-      runExecutionPhase({
-        phase: 'beforeModel',
+      runMiddlewareWrapper({
+        phase: 'wrapModelCall',
         session: createSession(),
+        request: { prompt: 'hello' },
         durableBoundary: () => ({
           async once(_name, _dep, fn) {
             return fn();
@@ -434,18 +443,16 @@ describe('execution interceptors', () => {
         middleware: [
           Middleware.create({
             name: 'materialized',
-            beforeModel: async ({ durable }) => ({
-              session: {
-                vars: {
-                  now: await durable.once('now', 'clock', () => 456),
-                },
-              },
-            }),
+            wrapModelCall: async ({ once }, next) => {
+              await once('now', 'clock', () => 456);
+              return next();
+            },
           }),
         ],
+        call: async () => 'ok',
       }),
     ).rejects.toThrow(
-      "ctx.once() is not allowed in middleware materialized beforeModel; declare durability: 'replayable-handler'",
+      "ctx.once() is not allowed in middleware materialized wrapModelCall; declare durability: 'replayable-handler'",
     );
   });
 
@@ -535,5 +542,61 @@ describe('execution interceptors', () => {
       'call:original',
       'observer:after',
     ]);
+  });
+
+  it('memoizes keyed wrapper middleware through durable once', async () => {
+    const memo = new Map<string, unknown>();
+    const durableBoundary = {
+      async once<T>(name: string, dep: unknown, fn: () => T | Promise<T>) {
+        const key = `${name}:${dep}`;
+        if (memo.has(key)) {
+          return memo.get(key) as T;
+        }
+        const value = await fn();
+        memo.set(key, value);
+        return value;
+      },
+    };
+    let handlerCalls = 0;
+    let modelCalls = 0;
+    const middleware = [
+      Middleware.create({
+        name: 'keyedWrapper',
+        effect: { idempotencyKey: 'model:stable' },
+        wrapModelCall: async ({ idempotencyKey }, next) => {
+          handlerCalls++;
+          const result = await next();
+          return `${result}:${idempotencyKey}:${handlerCalls}`;
+        },
+      }),
+    ];
+
+    const first = await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
+      session: createSession(),
+      request: { prompt: 'hello' },
+      middleware,
+      durableBoundary: () => durableBoundary,
+      call: async () => {
+        modelCalls++;
+        return `model:${modelCalls}`;
+      },
+    });
+    const second = await runMiddlewareWrapper({
+      phase: 'wrapModelCall',
+      session: createSession(),
+      request: { prompt: 'hello' },
+      middleware,
+      durableBoundary: () => durableBoundary,
+      call: async () => {
+        modelCalls++;
+        return `model:${modelCalls}`;
+      },
+    });
+
+    expect(first.result).toBe('model:1:model:stable:1');
+    expect(second.result).toBe(first.result);
+    expect(handlerCalls).toBe(1);
+    expect(modelCalls).toBe(1);
   });
 });

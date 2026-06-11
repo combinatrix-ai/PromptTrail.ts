@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertCheckpointDiscoveredToolEffectDeclaration,
   requireConfiguredCapabilityApproval,
   resolveConfiguredCapabilityApproval,
   type McpServer,
@@ -106,5 +107,27 @@ describe('configured capability approvals', () => {
         config: { timeoutMs: 1000 },
       },
     });
+  });
+
+  it('guards checkpoint MCP tools discovered without source effects', () => {
+    const server: McpServer = {
+      kind: 'mcp',
+      name: 'docs',
+      transport: { kind: 'http', url: 'https://mcp.example.com' },
+      effects: {
+        perTool: {
+          search: { repeatable: true },
+        },
+      },
+    };
+
+    expect(
+      assertCheckpointDiscoveredToolEffectDeclaration(server, 'search'),
+    ).toEqual({ repeatable: true });
+    expect(() =>
+      assertCheckpointDiscoveredToolEffectDeclaration(server, 'fetch'),
+    ).toThrow(
+      'Checkpoint MCP tool "fetch" discovered from server "docs" is missing an ExecutionEffectDeclaration.',
+    );
   });
 });

@@ -238,7 +238,7 @@ structured/codex/claude/goal`).
       Conditions accept both `(session) =>` and `({ session }) =>` shapes via
       a prototype-bridging context arg. e2e_real_api.test.ts still references
       quick at two sites (file is off-limits; fix when touched next).
-- [ ] **3.3 Registration-time durable gate (two gears, tied to run mode).**
+- [x] **3.3 Registration-time durable gate (two gears, tied to run mode).**
       Ephemeral = loose: no declaration required (Temporal-style honor system).
       **Durable = strict automatically** (decided — no separate `strict` flag): each
       tool/hook/middleware that could write must declare one of _safe to re-run_
@@ -253,6 +253,18 @@ structured/codex/claude/goal`).
       time without a resolvable declaration under checkpoint mode fails the run at
       discovery — the gate is never silently bypassed (Decision Update 2, point 6).
       (`durable.ts`, `graph.ts`, `capabilities.ts`)
+      Done: the gate lives in `createAgentGraphManifest` — every checkpoint
+      path (app registration, direct checkpoint execute, resume validation)
+      already flows through manifest creation, so that is the single choke
+      point; ephemeral runs never reach it. Actionable errors name the
+      agent/tool/handler and show both declaration forms. Auto-derived ids on
+      resume-sensitive nodes (awaitInput, interactive goals) emit one
+      aggregated console.warn per agent. MCP server capabilities gained
+      `effects: { defaults, perTool }` and a discovery-time guard
+      (`assertCheckpointDiscoveredToolEffectDeclaration`) — core has no
+      in-process MCP discovery executor yet, so the guard is the mandatory
+      seam for when one lands. The execution-time undeclared-tool assertion
+      stays as defense in depth.
 - [x] **3.4 Intent-layer auto tool-loop.** A top-level `assistant(...)` and every
       `goal(...)` auto-loops by compiling to `assistant` + `loop(tools, assistant)`.
       Pure sugar; no provider-internal loop. The manual layer is writing the
@@ -332,7 +344,7 @@ that replay systems get for free.
       point 1: undeclared transform IS sync). Conditions were already
       sync-typed; `goal.isSatisfied` dropped its Promise variant; thenable
       guards added for transforms, graph conditions, and goal satisfaction.
-- [ ] **4.4 Unify effect classification across tool/hook/middleware** with the
+- [x] **4.4 Unify effect classification across tool/hook/middleware** with the
       phase-split rule (Decision Update 3, point 10): transform phases
       (`beforeModel`/`prepareModelInput`/`afterModel`/`beforeTool`/`afterTool` +
       hook lifecycle phases) become synchronous by type (thenable guard, no

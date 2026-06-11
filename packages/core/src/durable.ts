@@ -471,6 +471,9 @@ export class PromptTrailApp {
       typeof nameOrAgent === 'string'
         ? nameOrAgent
         : registeredAgentName(registeredAgent);
+    if (this.defaultCheckpoint !== undefined) {
+      createAgentGraphManifest(registeredAgent.toGraph());
+    }
     this.agents.set(name, registeredAgent);
     return this;
   }
@@ -1103,6 +1106,9 @@ export class PromptTrailApp {
     const inbox = checkpoint.inbox.map((input) =>
       graphInboundFromStoredInbound<TAttrs>(input),
     );
+    const durableBoundary = createCheckpointOnceBoundary(run, (entry) =>
+      this.recordOnce(runId, entry),
+    );
 
     try {
       const session = await executeAgentGraph<TVars, TAttrs>(
@@ -1126,12 +1132,9 @@ export class PromptTrailApp {
           context: cloneDurableRuntimeValue(run.context),
           eventScopeId: runId,
           nextEventSeq: () => this.nextRunEventSeq(runId),
+          durableBoundary: () => durableBoundary,
           durableToolExecution: (_context, execute) => {
-            return execute(
-              createCheckpointOnceBoundary(run, (entry) =>
-                this.recordOnce(runId, entry),
-              ),
-            );
+            return execute(durableBoundary);
           },
           providerSessions: run.providerSessions,
           recordProviderSession: (nodePath, binding) =>

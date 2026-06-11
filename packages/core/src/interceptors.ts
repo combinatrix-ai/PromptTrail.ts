@@ -81,6 +81,8 @@ export interface ExecutionPhaseContext<
   context?: Record<string, unknown>;
   middlewareState: Record<string, unknown>;
   durable: ExecutionDurableBoundary;
+  once: ExecutionDurableBoundary['once'];
+  idempotencyKey?: string;
   signal?: AbortSignal;
 }
 
@@ -91,10 +93,7 @@ export type MiddlewarePhaseHandler<
   TResult = unknown,
 > = (
   context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
-) =>
-  | ExecutionPatch<TVars, TAttrs>
-  | void
-  | Promise<ExecutionPatch<TVars, TAttrs> | void>;
+) => ExecutionPatch<TVars, TAttrs> | void;
 
 export interface ExecutionWrapperNextInput<
   TVars extends Vars = Vars,
@@ -135,10 +134,7 @@ export type HookPhaseHandler<
   TResult = unknown,
 > = (
   context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
-) =>
-  | HookExecutionPatch<TVars, TAttrs>
-  | void
-  | Promise<HookExecutionPatch<TVars, TAttrs> | void>;
+) => HookExecutionPatch<TVars, TAttrs> | void;
 
 export type HookExecutionPatch<
   TVars extends Vars = Vars,
@@ -152,6 +148,8 @@ export interface MiddlewareDefinition<
   name?: string;
   /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
+  /** Required under checkpoint when wrapModelCall or wrapToolCall is defined. */
+  effect?: ExecutionEffectDeclaration;
   beforeAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
   afterAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
   beforeModel?: MiddlewarePhaseHandler<TVars, TAttrs>;
@@ -530,25 +528,29 @@ export async function runExecutionPhase<
     if (!handler) {
       continue;
     }
-    const patch = await handler({
+    const descriptor: ExecutionHandlerDescriptor = {
+      kind: 'middleware',
+      name: middleware.name,
+      phase: options.phase,
+      durability: middleware.durability ?? 'materialized-phase',
+      registrationIndex,
+    };
+    const durable = durableBoundaryForHandler(
+      descriptor,
+      options.durableBoundary,
+    );
+    const patch = handler({
       phase: options.phase,
       session,
       request,
       result,
       context: handlerContext,
       middlewareState,
-      durable: durableBoundaryForHandler(
-        {
-          kind: 'middleware',
-          name: middleware.name,
-          phase: options.phase,
-          durability: middleware.durability ?? 'materialized-phase',
-          registrationIndex,
-        },
-        options.durableBoundary,
-      ),
+      durable,
+      once: durable.once.bind(durable),
       signal: options.signal,
     });
+    assertSynchronousPhaseResult(patch, descriptor);
     throwIfAborted(options.signal);
     if (!patch) {
       continue;
@@ -591,25 +593,29 @@ export async function runExecutionPhase<
     if (!handler) {
       continue;
     }
-    const patch = await handler({
+    const descriptor: ExecutionHandlerDescriptor = {
+      kind: 'hook',
+      name: hook.name,
+      phase: options.phase,
+      durability: hook.durability ?? 'materialized-phase',
+      registrationIndex,
+    };
+    const durable = durableBoundaryForHandler(
+      descriptor,
+      options.durableBoundary,
+    );
+    const patch = handler({
       phase: options.phase,
       session,
       request,
       result,
       context: handlerContext,
       middlewareState,
-      durable: durableBoundaryForHandler(
-        {
-          kind: 'hook',
-          name: hook.name,
-          phase: options.phase,
-          durability: hook.durability ?? 'materialized-phase',
-          registrationIndex,
-        },
-        options.durableBoundary,
-      ),
+      durable,
+      once: durable.once.bind(durable),
       signal: options.signal,
     });
+    assertSynchronousPhaseResult(patch, descriptor);
     throwIfAborted(options.signal);
     assertHookPatchAuthority(hook.name, options.phase, patch);
     if (!patch) {
@@ -713,27 +719,42 @@ export async function runMiddlewareWrapper<
       return nextOutcome.result;
     };
 
-    const returned = await handler(
-      {
-        phase: options.phase,
-        session,
-        request,
-        context: handlerContext,
-        middlewareState,
-        durable: durableBoundaryForHandler(
-          {
-            kind: 'middleware',
-            name: definition.name,
-            phase: options.phase,
-            durability: definition.durability ?? 'materialized-phase',
-            registrationIndex: index,
-          },
-          options.durableBoundary,
-        ),
-        signal: options.signal,
-      },
-      next,
+    const descriptor: ExecutionHandlerDescriptor = {
+      kind: 'middleware',
+      name: definition.name,
+      phase: options.phase,
+      durability: definition.durability ?? 'materialized-phase',
+      registrationIndex: index,
+    };
+    const durable = durableBoundaryForHandler(
+      descriptor,
+      options.durableBoundary,
+      definition.effect !== undefined,
     );
+    const idempotencyKey = resolveExecutionEffectKey(
+      definition.effect,
+      request,
+    );
+    const context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult> = {
+      phase: options.phase,
+      session,
+      request,
+      context: handlerContext,
+      middlewareState,
+      durable,
+      once: durable.once.bind(durable),
+      idempotencyKey,
+      signal: options.signal,
+    };
+    const callHandler = () => handler(context, next);
+    const returned =
+      idempotencyKey === undefined
+        ? await callHandler()
+        : await durable.once(
+            wrapperEffectMemoName(descriptor),
+            idempotencyKey,
+            callHandler,
+          );
     throwIfAborted(options.signal);
     const patch = normalizeWrapperReturn<TVars, TAttrs, TResult>(returned);
     const baseSession = nextOutcome?.session ?? session;
@@ -960,9 +981,10 @@ function assertHookPatchAuthority<TVars extends Vars, TAttrs extends Attrs>(
 function durableBoundaryForHandler(
   handler: ExecutionHandlerDescriptor,
   provider: ExecutionDurableBoundaryProvider | undefined,
+  forceReplayable = false,
 ): ExecutionDurableBoundary {
   const label = `${handler.kind} ${handler.name ?? '<anonymous>'} ${handler.phase}`;
-  if (handler.durability === 'replayable-handler') {
+  if (forceReplayable || handler.durability === 'replayable-handler') {
     return provider?.(handler) ?? unavailableDurableBoundary(label);
   }
   return materializedDurableBoundary(label);
@@ -995,6 +1017,47 @@ function durableEffectError(
     return `ctx.once() is not allowed in ${label}; declare durability: 'replayable-handler' to use nested durable effects.`;
   }
   return `ctx.once() is only available when ${label} runs in durable replayable-handler mode.`;
+}
+
+function assertSynchronousPhaseResult(
+  value: unknown,
+  handler: ExecutionHandlerDescriptor,
+): void {
+  if (!isThenable(value)) {
+    return;
+  }
+  throw new Error(
+    `${handler.kind} ${handler.name ?? '<anonymous>'} ${handler.phase} returned a Promise; ${handler.phase} handlers must be synchronous.`,
+  );
+}
+
+function resolveExecutionEffectKey(
+  effect: ExecutionEffectDeclaration | undefined,
+  input: unknown,
+): string | undefined {
+  if (!effect || !('idempotencyKey' in effect)) {
+    return undefined;
+  }
+  return typeof effect.idempotencyKey === 'function'
+    ? effect.idempotencyKey(input)
+    : effect.idempotencyKey;
+}
+
+function wrapperEffectMemoName(handler: ExecutionHandlerDescriptor): string {
+  return [
+    handler.kind,
+    handler.name ?? '<anonymous>',
+    handler.phase,
+    handler.registrationIndex,
+  ].join(':');
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
