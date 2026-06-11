@@ -5,12 +5,14 @@ import {
   Structured,
   Tool,
   memoryStore,
+  type DurableRunStore,
   type MessageType,
   type ModelOutput,
   type Session,
   type Vars,
 } from '@prompttrail/core';
 import { z } from 'zod';
+import { SqliteRunStore } from './sqlite-store';
 
 export type SupportAgentName = 'support' | 'returns';
 type SupportMessageType = Exclude<MessageType['type'], 'system'>;
@@ -269,6 +271,15 @@ export function createReturnsAgent(
     );
 }
 
+export function createSupportAgents(
+  modelSource: SupportModelSource = defaultSupportModelSource(),
+  returnsModelSource: ReturnsModelSource = defaultReturnsModelSource(),
+) {
+  const support = createSupportAgent(modelSource);
+  const returns = createReturnsAgent(returnsModelSource);
+  return { support, returns };
+}
+
 export function getRefundRecords(): readonly RefundRecord[] {
   return refundRecords;
 }
@@ -285,33 +296,37 @@ export function resetSupportDemoRecords(): void {
 export function createSupportRuntime(
   modelSource: SupportModelSource = defaultSupportModelSource(),
   returnsModelSource: ReturnsModelSource = defaultReturnsModelSource(),
+  store?: DurableRunStore,
 ) {
-  const support = createSupportAgent(modelSource);
-  const returns = createReturnsAgent(returnsModelSource);
+  const agents = createSupportAgents(modelSource, returnsModelSource);
+  const runtimeStore = store ?? memoryStore();
   const app = PromptTrail.app({
-    agents: { support, returns },
-    store: memoryStore(),
+    agents,
+    store: runtimeStore,
     defaults: { checkpoint: true },
   });
 
   return {
     app,
-    support,
-    returns,
+    store: runtimeStore,
+    support: agents.support,
+    returns: agents.returns,
     handleMessage: (
       conversationId: string,
       message: string,
       agent: SupportAgentName = 'support',
     ) => handleMessageWithApp(app, conversationId, message, agent),
+    readConversation: (conversationId: string) =>
+      readConversationFromStore(runtimeStore, conversationId),
   };
 }
 
-const support = createSupportAgent();
-const returns = createReturnsAgent();
+const agents = createSupportAgents();
+export const store = new SqliteRunStore({ agents });
 
 export const app = PromptTrail.app({
-  agents: { support, returns },
-  store: memoryStore(),
+  agents,
+  store,
   defaults: { checkpoint: true },
 });
 
@@ -321,6 +336,45 @@ export async function handleMessage(
   agent: SupportAgentName = 'support',
 ): Promise<SupportChatResponse> {
   return handleMessageWithApp(app, conversationId, message, agent);
+}
+
+export function sanitizeUserName(name: string): string {
+  const sanitized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!sanitized) {
+    throw new Error('User name must contain at least one letter or number.');
+  }
+  return sanitized;
+}
+
+export function conversationIdFor(
+  agent: SupportAgentName,
+  userName: string,
+): string {
+  return `${agent}:${sanitizeUserName(userName)}`;
+}
+
+export function listStoredUsers(
+  durableStore: DurableRunStore = store,
+): string[] {
+  const users = new Set<string>();
+  for (const [runId] of durableStore.entries()) {
+    const match = /^(?:support|returns):([a-z0-9-]+)$/.exec(runId);
+    if (match) {
+      users.add(match[1]);
+    }
+  }
+  return [...users].sort();
+}
+
+export function readConversation(
+  conversationId: string,
+  durableStore: DurableRunStore = store,
+): SupportChatResponse {
+  return readConversationFromStore(durableStore, conversationId);
 }
 
 async function handleMessageWithApp(
@@ -338,22 +392,39 @@ async function handleMessageWithApp(
   return {
     status: result.status,
     awaiting: result.awaiting,
-    messages: result.session.messages
-      .filter((item): item is MessageType & { type: SupportMessageType } => {
-        return item.type !== 'system';
-      })
-      .map((item) => {
-        const projected: SupportChatMessage = {
-          type: item.type,
-          content: item.content,
-        };
-        if (
-          'structuredContent' in item &&
-          item.structuredContent !== undefined
-        ) {
-          projected.structuredContent = item.structuredContent;
-        }
-        return projected;
-      }),
+    messages: projectSessionMessages(result.session),
   };
+}
+
+function readConversationFromStore(
+  durableStore: DurableRunStore,
+  conversationId: string,
+): SupportChatResponse {
+  const run = durableStore.get(conversationId);
+  if (!run) {
+    return { status: 'done', messages: [] };
+  }
+  const session = run.result ?? run.initial;
+  return {
+    status: run.graphSuspendedAt ? 'suspended' : 'done',
+    awaiting: run.graphSuspendedAt,
+    messages: projectSessionMessages(session),
+  };
+}
+
+function projectSessionMessages(session: Session): SupportChatMessage[] {
+  return session.messages
+    .filter((item): item is MessageType & { type: SupportMessageType } => {
+      return item.type !== 'system';
+    })
+    .map((item) => {
+      const projected: SupportChatMessage = {
+        type: item.type,
+        content: item.content,
+      };
+      if ('structuredContent' in item && item.structuredContent !== undefined) {
+        projected.structuredContent = item.structuredContent;
+      }
+      return projected;
+    });
 }

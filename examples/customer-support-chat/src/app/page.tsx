@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { SupportAgentName, SupportChatMessage } from '@/lib/support-agent';
 
 interface ChatResponse {
@@ -14,8 +14,20 @@ interface ChoiceDirective {
   choices: Array<{ id: string; label: string }>;
 }
 
-function createConversationId(agent: SupportAgentName) {
-  return globalThis.crypto?.randomUUID?.() ?? `${agent}-${Date.now()}`;
+interface UsersResponse {
+  users: string[];
+}
+
+function sanitizeUserName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function conversationIdFor(agent: SupportAgentName, userName: string) {
+  return `${agent}:${userName}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -74,10 +86,9 @@ function lastAssistantMessage(messages: SupportChatMessage[]) {
 
 export default function Page() {
   const [mode, setMode] = useState<SupportAgentName>('support');
-  const [conversationIds] = useState(() => ({
-    support: createConversationId('support'),
-    returns: createConversationId('returns'),
-  }));
+  const [activeUser, setActiveUser] = useState<string | undefined>();
+  const [nameEntry, setNameEntry] = useState('');
+  const [savedUsers, setSavedUsers] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [messagesByMode, setMessagesByMode] = useState<
     Record<SupportAgentName, SupportChatMessage[]>
@@ -89,12 +100,27 @@ export default function Page() {
     Record<SupportAgentName, string | undefined>
   >({ support: undefined, returns: undefined });
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const conversationId = conversationIds[mode];
+  const conversationIds = useMemo(
+    () =>
+      activeUser
+        ? {
+            support: conversationIdFor('support', activeUser),
+            returns: conversationIdFor('returns', activeUser),
+          }
+        : undefined,
+    [activeUser],
+  );
+  const conversationId = conversationIds?.[mode] ?? '';
   const messages = messagesByMode[mode];
   const status = statusByMode[mode];
   const awaiting = awaitingByMode[mode];
+
+  useEffect(() => {
+    void refreshSavedUsers();
+  }, []);
 
   const visibleMessages = useMemo(
     () => messages.filter((item) => messageContent(item).trim().length > 0),
@@ -110,7 +136,7 @@ export default function Page() {
   }, [messages, status]);
 
   async function sendText(nextMessage: string) {
-    if (!nextMessage || isSending) {
+    if (!nextMessage || isSending || !conversationIds) {
       return;
     }
 
@@ -151,6 +177,7 @@ export default function Page() {
         [activeMode]: payload.awaiting,
       }));
       setMessage('');
+      await refreshSavedUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected chat error.');
     } finally {
@@ -161,6 +188,123 @@ export default function Page() {
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await sendText(message.trim());
+  }
+
+  async function refreshSavedUsers() {
+    const response = await fetch('/api/users');
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as UsersResponse;
+    setSavedUsers(payload.users);
+  }
+
+  async function loadUser(userName: string) {
+    const sanitized = sanitizeUserName(userName);
+    if (!sanitized || isLoadingUser) {
+      return;
+    }
+
+    setIsLoadingUser(true);
+    setError(undefined);
+
+    try {
+      const [supportResponse, returnsResponse] = await Promise.all([
+        fetch(
+          `/api/conversation?conversationId=${encodeURIComponent(
+            conversationIdFor('support', sanitized),
+          )}`,
+        ),
+        fetch(
+          `/api/conversation?conversationId=${encodeURIComponent(
+            conversationIdFor('returns', sanitized),
+          )}`,
+        ),
+      ]);
+
+      if (!supportResponse.ok || !returnsResponse.ok) {
+        throw new Error('Could not load saved conversations.');
+      }
+
+      const [supportPayload, returnsPayload] = (await Promise.all([
+        supportResponse.json(),
+        returnsResponse.json(),
+      ])) as [ChatResponse, ChatResponse];
+
+      setActiveUser(sanitized);
+      setNameEntry('');
+      setMessagesByMode({
+        support: supportPayload.messages,
+        returns: returnsPayload.messages,
+      });
+      setStatusByMode({
+        support: supportPayload.status,
+        returns: returnsPayload.status,
+      });
+      setAwaitingByMode({
+        support: supportPayload.awaiting,
+        returns: returnsPayload.awaiting,
+      });
+      await refreshSavedUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected load error.');
+    } finally {
+      setIsLoadingUser(false);
+    }
+  }
+
+  async function startUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await loadUser(nameEntry);
+  }
+
+  if (!activeUser) {
+    return (
+      <main className="shell">
+        <section className="landing-panel" aria-label="Choose support user">
+          <div>
+            <p className="eyebrow">Trail Supply Support</p>
+            <h1>Choose a customer</h1>
+          </div>
+
+          <form className="name-form" onSubmit={startUser}>
+            <label htmlFor="customer-name">Customer name</label>
+            <div className="name-entry">
+              <input
+                id="customer-name"
+                value={nameEntry}
+                onChange={(event) => setNameEntry(event.target.value)}
+                placeholder="Example: Mina Tanaka"
+                disabled={isLoadingUser}
+              />
+              <button
+                type="submit"
+                disabled={isLoadingUser || !sanitizeUserName(nameEntry)}
+              >
+                {isLoadingUser ? 'Loading' : 'Continue'}
+              </button>
+            </div>
+          </form>
+
+          {savedUsers.length > 0 ? (
+            <div className="saved-users" aria-label="Saved users">
+              {savedUsers.map((user) => (
+                <button
+                  type="button"
+                  key={user}
+                  disabled={isLoadingUser}
+                  onClick={() => loadUser(user)}
+                >
+                  {user}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {error ? <p className="error-banner">{error}</p> : null}
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -189,9 +333,13 @@ export default function Page() {
               </button>
             </div>
             <div className="run-pill" title={conversationId}>
+              <span>User: {activeUser}</span>
               <span>Status: {status}</span>
               {awaiting ? <span>Awaiting: {awaiting}</span> : null}
-              <code>{conversationId.slice(0, 8)}</code>
+              <code>{conversationId}</code>
+              <button type="button" onClick={() => setActiveUser(undefined)}>
+                Switch user
+              </button>
             </div>
           </div>
         </header>

@@ -56,6 +56,9 @@
   "pnpm": {
     "overrides": {
       "@prompttrail/core": "link:packages/core"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }
