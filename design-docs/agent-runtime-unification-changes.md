@@ -711,16 +711,23 @@ documentation pass, left for a future polish round:
   core after the §5.2 platform split — rename when next touching dispatch.
 - ~~`e2e_real_api.test.ts` quick references~~ — fixed; the real-API suite
   passes 13/13 against live OpenAI/Anthropic.
-- The native OpenAI Responses adapter (and likely the native Anthropic/Gemini
-  paths) runs a **provider-internal tool loop**: function calls execute inside
-  `generateText` (via `executePromptTrailTool` with NO durable boundary) and
-  only the final assistant message reaches the session. This contradicts the
-  "graph owns the loop; no provider-internal loop" model (§3.4) and makes
-  native-path tool effects invisible to the checkpoint once memo and the
-  strict gate's runtime assertion. The ai-sdk adapter surfaces
-  toolCalls/tool_result on the session as expected. Decide: either surface
-  calls/results from the native paths or document them as vendor-loop
-  surfaces like `.codex`/`.claude`.
+- **DECIDED (user, 2026-06-11): native adapters are vendor-loop surfaces;
+  checkpoint requires explicit non-durability consent.** The native
+  OpenAI/Anthropic/Gemini adapters run a provider-internal tool loop
+  (function calls execute inside `generateText` with no durable boundary;
+  only the final assistant message reaches the session). We do NOT try to
+  surface toolCalls/tool_result from them — like `.codex`/`.claude`, the
+  vendor owns the loop. Instead, the §3.3 gate is extended: a checkpoint
+  agent containing a node whose source uses a native adapter WITH tools
+  fails registration unless the source declares `toolLoop: 'vendor'` — an
+  explicit acknowledgment that those tool executions sit outside the once
+  memo and the whole turn re-runs on resume (self-heal / best-effort).
+  Keyed tools still forward `ctx.idempotencyKey` for REMOTE dedup, which is
+  the only effective-once mechanism anyway (Decision Update 2, point 2);
+  what the vendor loop loses is only the local memo. The acknowledgment is
+  source config, so it lands in the manifest via §2 automatically. The
+  ai-sdk adapter keeps surfacing tool calls/results on the session
+  (graph-visible path).
 - `Source.llm().addTool/withTool/withTools` now adapt raw ai-sdk tools on
   entry (previously a raw ai-sdk tool was silently dropped from the request
   by every downstream path); `toAiSdkToolSet` throws instead of skipping.

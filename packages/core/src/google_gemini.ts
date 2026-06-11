@@ -1023,6 +1023,8 @@ export async function createGeminiFunctionResponsePart(
   context?: Record<string, unknown>,
 ) {
   const tool = tools.find((candidate) => candidate.name === call.name);
+  // Native Gemini tools run outside any durable boundary by design
+  // (vendor loop); ctx.idempotencyKey still reaches the tool for remote dedup.
   const result: CallToolResult = tool
     ? await executePromptTrailTool(tool, call.args, {
         session,

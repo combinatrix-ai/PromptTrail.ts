@@ -991,6 +991,8 @@ export async function createAnthropicToolResultBlock(
     };
   }
 
+  // Native Messages tools run outside any durable boundary by design
+  // (vendor loop); ctx.idempotencyKey still reaches the tool for remote dedup.
   const result = await executePromptTrailTool(tool, toolUse.input, {
     session,
     context,

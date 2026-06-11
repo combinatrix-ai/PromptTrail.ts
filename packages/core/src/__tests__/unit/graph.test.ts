@@ -174,6 +174,7 @@ describe('AgentGraph', () => {
         })
         .temperature(0.2)
         .maxTokens(64)
+        .toolLoop('vendor')
         .withCapabilities([
           {
             kind: 'tool',

@@ -176,6 +176,7 @@ function llmGenerationManifestDescriptor(options: LLMOptions) {
     topP: options.topP,
     topK: options.topK,
     toolChoice: options.toolChoice,
+    toolLoop: options.toolLoop,
     retain: options.retain,
     conversationBinding: options.conversationBinding,
     skillInjection: options.skillInjection,
@@ -1192,6 +1193,10 @@ export class LlmSource extends ModelSource {
 
   toolChoice(choice: 'auto' | 'required' | 'none'): LlmSource {
     return this.clone({ toolChoice: choice });
+  }
+
+  toolLoop(loop: 'vendor'): LlmSource {
+    return this.clone({ toolLoop: loop });
   }
 
   anthropicToolChoice(choice: AnthropicToolChoice): LlmSource {

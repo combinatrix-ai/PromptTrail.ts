@@ -124,6 +124,17 @@ passed to the tool as `ctx.idempotencyKey`; forward it to the remote system.
 The property is named `activity` on `Tool.create(...)` for the current API. It
 stores an `ExecutionEffectDeclaration`.
 
+Vendor tool loops need one more checkpoint decision. `.codex(...)`,
+`.claude(...)`, and native OpenAI Responses, Anthropic Messages, and Gemini
+sources with tools let the vendor own the loop. Tool effects in that loop sit
+outside PromptTrail's `once` memo, and an interrupted turn may re-run on resume;
+this is a best-effort/self-heal posture, not a durable local tool boundary.
+`ctx.idempotencyKey` still flows into PromptTrail tool bodies, so forward it to
+remote systems for deduplication. Under checkpoint execution, native adapter
+sources with tools must explicitly acknowledge this with
+`toolLoop: 'vendor'`, or use `adapter: 'ai-sdk'` for graph-visible tool calls
+and results.
+
 ## Checkpoint Durability
 
 Checkpoint execution persists session progress at node boundaries and resumes
@@ -277,7 +288,9 @@ const agent = Agent.create('coding').codex({
 });
 ```
 
-Vendor-internal tool side effects are outside PromptTrail's idempotency memo.
+Vendor-internal tool side effects are outside PromptTrail's idempotency memo;
+use the same `toolLoop: 'vendor'` acknowledgement when a checkpointed native
+adapter source carries tools.
 
 ## App Runtime
 

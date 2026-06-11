@@ -1079,6 +1079,93 @@ describe('Agent graph authoring', () => {
     ).not.toThrow();
   });
 
+  it('requires explicit vendor tool-loop consent for checkpoint native adapter tools', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup.',
+      inputSchema: z.object({ id: z.string() }),
+      activity: { repeatable: true },
+      execute: ({ id }) => id,
+    });
+    const nativeSource = Source.llm()
+      .openai({ api: 'responses', adapter: 'native' })
+      .addTool('lookup', lookup);
+    const nativeSources = [
+      nativeSource,
+      Source.llm().anthropic({ adapter: 'native' }).addTool('lookup', lookup),
+      Source.llm().google({ adapter: 'native' }).addTool('lookup', lookup),
+    ];
+
+    for (const [index, source] of nativeSources.entries()) {
+      const agentName = `assistant-${index}`;
+      const checkpointAgent = Agent.create(agentName).assistant(
+        'reply',
+        source,
+      );
+
+      expect(() =>
+        PromptTrail.app({
+          defaults: { checkpoint: true },
+          agents: { assistant: checkpointAgent },
+        }),
+      ).toThrow(
+        new RegExp(
+          `Checkpoint agent "${agentName}" node "${agentName}/reply".*adapter: 'ai-sdk'.*toolLoop: 'vendor'.*not durable.*whole turn re-runs`,
+        ),
+      );
+
+      expect(() =>
+        PromptTrail.app({ agents: { assistant: checkpointAgent } }),
+      ).not.toThrow();
+
+      expect(() =>
+        PromptTrail.app({
+          defaults: { checkpoint: true },
+          agents: {
+            assistant: Agent.create(`acknowledged-${index}`).assistant(
+              'reply',
+              source.toolLoop('vendor'),
+            ),
+          },
+        }),
+      ).not.toThrow();
+    }
+
+    const acknowledgedAgent = Agent.create('assistant').assistant(
+      'reply',
+      nativeSource.toolLoop('vendor'),
+    );
+    const manifest = createAgentGraphManifest(acknowledgedAgent.toGraph());
+    const serialized = JSON.stringify(manifest.nodes[0].data);
+    expect(serialized).toContain('"toolLoop":"vendor"');
+
+    const noToolManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .assistant('reply', Source.llm().openai({ api: 'responses' }))
+        .toGraph(),
+    );
+    const noToolAcknowledgedManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .assistant(
+          'reply',
+          Source.llm().openai({ api: 'responses' }).toolLoop('vendor'),
+        )
+        .toGraph(),
+    );
+    expect(noToolAcknowledgedManifest.hash).not.toBe(noToolManifest.hash);
+
+    const aiSdkAgent = Agent.create('assistant').assistant(
+      'reply',
+      Source.llm().openai({ adapter: 'ai-sdk' }).addTool('lookup', lookup),
+    );
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: aiSdkAgent },
+      }),
+    ).not.toThrow();
+  });
+
   it('requires wrapper middleware declarations under checkpoint only', () => {
     const wrapperAgent = Agent.create('assistant')
       .use(

@@ -62,6 +62,7 @@ export interface LLMOptions {
   tools?: Record<string, PromptTrailTool<any, any>>;
   capabilities?: CapabilitySet;
   toolChoice?: 'auto' | 'required' | 'none';
+  toolLoop?: 'vendor';
   dangerouslyAllowBrowser?: boolean;
   aiSdk?: AiSdkAdapterOptions;
   anthropic?: AnthropicAdapterOptions;

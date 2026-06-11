@@ -751,6 +751,8 @@ export async function createOpenAIToolOutputItem(
     };
   }
 
+  // Native Responses tools run outside any durable boundary by design
+  // (vendor loop); ctx.idempotencyKey still reaches the tool for remote dedup.
   const result = await executePromptTrailTool(tool, call.arguments, {
     session,
     context,

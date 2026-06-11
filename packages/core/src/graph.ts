@@ -200,6 +200,7 @@ export function createAgentGraphManifest(
   validateCheckpointEffectDeclarations(graph);
   warnCheckpointDerivedResumeIds(graph);
   const nodes = flattenManifestNodes(graph.name, graph.nodes);
+  validateCheckpointVendorToolLoopConsent(graph.name, nodes);
   const tools = Object.entries(graph.tools)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, tool]) => ({
@@ -234,6 +235,132 @@ export function createAgentGraphManifest(
     ...unsigned,
     hash: stableHash(unsigned),
   };
+}
+
+function validateCheckpointVendorToolLoopConsent(
+  agentName: string,
+  nodes: readonly AgentGraphManifestNode[],
+): void {
+  for (const node of nodes) {
+    for (const descriptor of collectLlmSourceDescriptors(node.data)) {
+      if (!isNativeAdapterWithTools(descriptor)) {
+        continue;
+      }
+      if (getDescriptorGeneration(descriptor)?.toolLoop === 'vendor') {
+        continue;
+      }
+      throw new AgentGraphValidationError(
+        [
+          `Checkpoint agent "${agentName}" node "${node.path}" uses a native provider adapter with tools but is missing toolLoop: 'vendor'.`,
+          `Fix by switching the source to adapter: 'ai-sdk' so tool calls/results are graph-visible, or declare toolLoop: 'vendor' to accept that vendor tool executions are not durable (outside the once memo; the whole turn re-runs on resume).`,
+        ].join(' '),
+      );
+    }
+  }
+}
+
+function collectLlmSourceDescriptors(
+  value: unknown,
+): Record<string, unknown>[] {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectLlmSourceDescriptors(item));
+  }
+
+  const record = value as Record<string, unknown>;
+  const descriptor = record.descriptor;
+  if (
+    record.kind === 'manifestDescriptor' &&
+    descriptor &&
+    typeof descriptor === 'object'
+  ) {
+    const descriptorRecord = descriptor as Record<string, unknown>;
+    if (
+      descriptorRecord.kind === 'source' &&
+      descriptorRecord.sourceType === 'LlmSource'
+    ) {
+      return [descriptorRecord];
+    }
+  }
+
+  return Object.values(record).flatMap((item) =>
+    collectLlmSourceDescriptors(item),
+  );
+}
+
+function isNativeAdapterWithTools(
+  descriptor: Record<string, unknown>,
+): boolean {
+  const config = getDescriptorConfig(descriptor);
+  const provider = getDescriptorProvider(descriptor);
+  return (
+    !!config &&
+    isNativeProviderDescriptor(provider) &&
+    hasAttachedToolDescriptor(config)
+  );
+}
+
+function isNativeProviderDescriptor(
+  provider: Record<string, unknown> | undefined,
+): boolean {
+  if (!provider) {
+    return false;
+  }
+  if (provider.type === 'openai') {
+    return provider.api === 'responses' && provider.adapter !== 'ai-sdk';
+  }
+  return (
+    (provider.type === 'anthropic' || provider.type === 'google') &&
+    provider.adapter !== 'ai-sdk'
+  );
+}
+
+function hasAttachedToolDescriptor(config: Record<string, unknown>): boolean {
+  const tools = config.tools;
+  if (Array.isArray(tools) && tools.length > 0) {
+    return true;
+  }
+
+  const capabilities = config.capabilities;
+  return (
+    Array.isArray(capabilities) &&
+    capabilities.some((capability) => {
+      if (!capability || typeof capability !== 'object') {
+        return false;
+      }
+      const kind = (capability as { kind?: unknown }).kind;
+      return kind === 'tool' || kind === 'builtin' || kind === 'mcp';
+    })
+  );
+}
+
+function getDescriptorConfig(
+  descriptor: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const config = descriptor.config;
+  return config && typeof config === 'object'
+    ? (config as Record<string, unknown>)
+    : undefined;
+}
+
+function getDescriptorProvider(
+  descriptor: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const provider = getDescriptorConfig(descriptor)?.provider;
+  return provider && typeof provider === 'object'
+    ? (provider as Record<string, unknown>)
+    : undefined;
+}
+
+function getDescriptorGeneration(
+  descriptor: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const generation = getDescriptorConfig(descriptor)?.generation;
+  return generation && typeof generation === 'object'
+    ? (generation as Record<string, unknown>)
+    : undefined;
 }
 
 function validateCheckpointEffectDeclarations(graph: AgentGraph): void {
