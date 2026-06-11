@@ -492,6 +492,9 @@ bun run examples/autonomous_researcher.ts
 bun run examples/coding_agent.ts
 ```
 
+[examples/customer-support-chat](examples/customer-support-chat) is the
+React/Next integration example for durable, server-owned conversations.
+
 [examples/readme_snippets.ts](examples/readme_snippets.ts) mirrors the code
 blocks in this README and is typechecked by `pnpm -C examples typecheck` —
 update both together.

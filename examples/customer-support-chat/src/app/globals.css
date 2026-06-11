@@ -1,0 +1,257 @@
+:root {
+  color-scheme: light;
+  --ink: #1d2520;
+  --muted: #65736c;
+  --line: #cdd8d1;
+  --paper: #f7f4ed;
+  --panel: #fffcf5;
+  --assistant: #eef4ec;
+  --user: #1f6b57;
+  --tool: #fff1c9;
+  --danger: #9b2f27;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    linear-gradient(90deg, rgba(31, 107, 87, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(31, 107, 87, 0.08) 1px, transparent 1px), var(--paper);
+  background-size: 36px 36px;
+  color: var(--ink);
+  font-family:
+    Optima,
+    Candara,
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  min-height: 100vh;
+  padding: clamp(16px, 4vw, 48px);
+  place-items: center;
+}
+
+.conversation-panel {
+  display: grid;
+  grid-template-rows: auto minmax(320px, 1fr) auto auto;
+  width: min(920px, 100%);
+  min-height: min(820px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(29, 37, 32, 0.14);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 22px clamp(18px, 4vw, 34px);
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  letter-spacing: 0;
+}
+
+.run-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.run-pill code {
+  color: var(--ink);
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 24px clamp(18px, 4vw, 34px);
+}
+
+.empty-state {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.message-row {
+  display: grid;
+  max-width: min(78%, 640px);
+  gap: 6px;
+}
+
+.message-row.user {
+  align-self: flex-end;
+}
+
+.message-row.assistant,
+.message-row.tool_result {
+  align-self: flex-start;
+}
+
+.message-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.message-row.user .message-meta {
+  text-align: right;
+}
+
+.message-bubble {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.message-row.user .message-bubble {
+  border-color: var(--user);
+  background: var(--user);
+  color: #fffaf0;
+}
+
+.message-row.assistant .message-bubble {
+  background: var(--assistant);
+}
+
+.message-row.tool_result .message-bubble {
+  background: var(--tool);
+  color: #4c3a05;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.error-banner {
+  margin: 0 clamp(18px, 4vw, 34px) 14px;
+  border: 1px solid rgba(155, 47, 39, 0.3);
+  border-radius: 8px;
+  background: rgba(155, 47, 39, 0.08);
+  color: var(--danger);
+  padding: 10px 12px;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 16px clamp(18px, 4vw, 34px);
+}
+
+.composer input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdfa;
+  color: var(--ink);
+  padding: 12px 14px;
+}
+
+.composer input:focus {
+  border-color: var(--user);
+  outline: 3px solid rgba(31, 107, 87, 0.16);
+}
+
+.composer button {
+  min-width: 92px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fffaf0;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 18px;
+}
+
+.composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 0;
+  }
+
+  .conversation-panel {
+    min-height: 100vh;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .run-pill {
+    align-items: flex-start;
+  }
+
+  .message-row {
+    max-width: 92%;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .composer button {
+    min-height: 44px;
+  }
+}

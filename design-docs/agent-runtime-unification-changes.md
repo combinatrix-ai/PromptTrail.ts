@@ -732,3 +732,12 @@ documentation pass, left for a future polish round:
 - `Source.llm().addTool/withTool/withTools` now adapt raw ai-sdk tools on
   entry (previously a raw ai-sdk tool was silently dropped from the request
   by every downstream path); `toAiSdkToolSet` throws instead of skipping.
+- Agent-level `.tool(...)` registrations never reach the MODEL request:
+  `state.graph.tools` feeds only the tools-node executor, so a bare
+  `Source.llm()` model cannot know the tools exist and the §3.4 auto
+  tool-loop only fires when the source itself carries definitions
+  (`addTool`). Found live in the customer-support-chat example (the model
+  kept saying "let me check" without calling anything). Decide: inject
+  graph tool definitions into assistant model calls (mind the vendor-loop
+  gate for native adapters), or document source-level `addTool` as the
+  required wiring and reduce `.tool()` to registry/gate semantics.

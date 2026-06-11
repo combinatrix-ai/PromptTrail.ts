@@ -1,4 +1,5 @@
 packages:
   - 'packages/*'
   - 'examples'
+  - 'examples/customer-support-chat'
   - 'claw'

@@ -6,5 +6,5 @@
     }
   },
   "include": ["./*.ts"],
-  "exclude": ["node_modules", "dist", "next-chat-app", "react-chat"]
+  "exclude": ["node_modules", "dist", "customer-support-chat", "react-chat"]
 }
