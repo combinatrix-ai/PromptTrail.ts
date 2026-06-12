@@ -894,6 +894,25 @@ describe('Agent graph authoring', () => {
     );
   });
 
+  it('accepts a zod schema directly on .structured as sugar', () => {
+    const schema = z.object({ ok: z.boolean() });
+    const direct = createAgentGraphManifest(
+      Agent.create('assistant').structured('reply', schema).toGraph('v1'),
+    );
+    const wrapped = createAgentGraphManifest(
+      Agent.create('assistant')
+        .structured('reply', Structured.withSchema(schema))
+        .toGraph('v1'),
+    );
+
+    expect(direct.hash).toBe(wrapped.hash);
+    expect(
+      createAgentGraphManifest(
+        Agent.create('assistant').structured(schema).toGraph('v1'),
+      ).nodes.map((node) => [node.path, node.type]),
+    ).toEqual([['assistant/structured-1', 'structured']]);
+  });
+
   it('changes the manifest when graph content or structured schemas change', () => {
     const systemHash = (content: string) =>
       createAgentGraphManifest(

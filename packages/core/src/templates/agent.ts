@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import { Session, type Attrs, type Vars } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
@@ -681,30 +682,35 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   structured(template: Structured<TM, TC>): this;
+  structured(schema: z.ZodType): this;
   structured(id: string, template: Structured<TM, TC>): this;
+  structured(id: string, schema: z.ZodType): this;
   structured(
-    idOrTemplate: string | Structured<TM, TC>,
-    maybeTemplate?: Structured<TM, TC>,
+    idOrValue: string | Structured<TM, TC> | z.ZodType,
+    maybeValue?: Structured<TM, TC> | z.ZodType,
   ) {
-    if (typeof idOrTemplate === 'string') {
-      if (!maybeTemplate) {
-        throw new Error('Agent.structured(id, template) requires template.');
+    if (typeof idOrValue === 'string') {
+      if (!maybeValue) {
+        throw new Error(
+          'Agent.structured(id, value) requires a Structured template or a schema.',
+        );
       }
       this.graphNodes.push({
-        id: idOrTemplate,
+        id: idOrValue,
         type: 'structured',
-        data: { template: maybeTemplate },
+        data: { template: normalizeStructuredValue<TM, TC>(maybeValue) },
       });
       return this;
     }
+    const template = normalizeStructuredValue<TM, TC>(idOrValue);
     if (this.isGraphAuthoringMode()) {
       this.graphNodes.push({
         type: 'structured',
-        data: { template: idOrTemplate },
+        data: { template },
       });
       return this;
     }
-    this.root.add(idOrTemplate);
+    this.root.add(template);
     return this;
   }
 
@@ -1763,6 +1769,14 @@ function isAgentGraphLoopOptions(
   value: unknown,
 ): value is AgentGraphLoopOptions {
   return typeof value === 'object' && value !== null;
+}
+
+function normalizeStructuredValue<TM extends Attrs, TC extends Vars>(
+  value: Structured<TM, TC> | z.ZodType,
+): Structured<TM, TC> {
+  return value instanceof Structured
+    ? value
+    : Structured.withSchema<TM, TC>(value);
 }
 
 function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(

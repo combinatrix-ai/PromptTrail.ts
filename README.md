@@ -327,9 +327,7 @@ import { z } from 'zod';
 
 const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
 
-const classifier = Agent.create('classifier')
-  .inbox()
-  .structured(Structured.withSchema(triageSchema));
+const classifier = Agent.create('classifier').inbox().structured(triageSchema); // a zod schema directly; Structured.withSchema for options
 
 const session = await classifier.execute({
   input: 'My payment failed twice!',
