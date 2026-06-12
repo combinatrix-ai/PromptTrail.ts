@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { Message } from '../../message';
 import { createSession, Session } from '../../session';
 
@@ -89,6 +90,37 @@ describe('Session', () => {
     expect(withVar.version).toBe(2);
     expect(withVars.version).toBe(3);
     expect(typed.version).toBe(3);
+  });
+
+  it('reads the latest structured payload typed by its schema', () => {
+    const choiceSchema = z.object({
+      reply: z.string(),
+      choices: z.array(z.object({ id: z.string(), label: z.string() })),
+    });
+    const payload = {
+      reply: 'Pick one.',
+      choices: [{ id: 'a', label: 'Option A' }],
+    };
+    const session = createSession({
+      messages: [
+        {
+          type: 'assistant',
+          content: ' ',
+          structuredContent: payload,
+        },
+        createUserMessage('a'),
+      ],
+    });
+
+    const parsed = session.getStructured(choiceSchema);
+    expect(parsed).toEqual(payload);
+    // Typed: the inference flows from the schema, not from a cast.
+    parsed?.choices[0].id satisfies string | undefined;
+
+    expect(createSession({}).getStructured(choiceSchema)).toBeUndefined();
+    expect(() =>
+      session.getStructured(z.object({ totally: z.number() })),
+    ).toThrow(/getStructured schema mismatch/);
   });
 
   it('should get messages by type', () => {

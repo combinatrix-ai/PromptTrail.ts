@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { ValidationError } from './errors';
 import { makeContentPartsPersistenceSafe } from './content_parts';
 import type { Message } from './message';
@@ -183,6 +184,36 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
       Message<TAttrs>,
       { type: U }
     >[];
+  }
+
+  /**
+   * Returns the most recent message's structured payload, validated against
+   * the given schema and typed as its inference. This is the typed read side
+   * of `structured` nodes: their schema type cannot survive the homogeneous
+   * message list, so the reader re-validates instead — the returned type is
+   * backed by a runtime check, which also covers payloads revived from a
+   * persistent store. Returns undefined when no message carries structured
+   * content; throws when one does but the schema rejects it (a silent
+   * undefined there would hide schema drift).
+   */
+  getStructured<TSchema extends z.ZodType>(
+    schema: TSchema,
+  ): z.infer<TSchema> | undefined {
+    for (let index = this.messages.length - 1; index >= 0; index--) {
+      const structuredContent = (
+        this.messages[index] as { structuredContent?: unknown }
+      ).structuredContent;
+      if (structuredContent !== undefined) {
+        const parsed = schema.safeParse(structuredContent);
+        if (!parsed.success) {
+          throw new ValidationError(
+            `getStructured schema mismatch: ${parsed.error.message}`,
+          );
+        }
+        return parsed.data as z.infer<TSchema>;
+      }
+    }
+    return undefined;
   }
 
   /**

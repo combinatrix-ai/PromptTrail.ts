@@ -150,19 +150,19 @@ void researcher;
 
 // --- Structured Output ---------------------------------------------------
 
+declare function escalate(category: string): void;
+
+const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
+
 const classifier = Agent.create('classifier')
   .inbox()
-  .structured(
-    Structured.withSchema(
-      z.object({ category: z.string(), urgent: z.boolean() }),
-    ),
-  );
+  .structured(Structured.withSchema(triageSchema));
 
 const classified = await classifier.execute({
   input: 'My payment failed twice!',
 });
-const parsed = classified.getLastMessage()?.structuredContent;
-void parsed;
+const triage = classified.getStructured(triageSchema);
+if (triage?.urgent) escalate(triage.category);
 
 // --- Subroutines ---------------------------------------------------------
 

@@ -317,24 +317,26 @@ follows.
 ## Structured Output
 
 `structured` nodes validate the model's answer against a schema and expose the
-parsed value:
+parsed value. Read it back with `session.getStructured(schema)` — the schema
+types the result (`z.infer`), backed by a runtime re-validation, so the typing
+also holds for payloads revived from a persistent store:
 
 ```ts
 import { Structured } from '@prompttrail/core';
 import { z } from 'zod';
 
+const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
+
 const classifier = Agent.create('classifier')
   .inbox()
-  .structured(
-    Structured.withSchema(
-      z.object({ category: z.string(), urgent: z.boolean() }),
-    ),
-  );
+  .structured(Structured.withSchema(triageSchema));
 
 const session = await classifier.execute({
   input: 'My payment failed twice!',
 });
-const parsed = session.getLastMessage()?.structuredContent;
+const triage = session.getStructured(triageSchema);
+// triage: { category: string; urgent: boolean } | undefined
+if (triage?.urgent) escalate(triage.category);
 ```
 
 ## Subroutines
