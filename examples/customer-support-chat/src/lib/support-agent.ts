@@ -96,6 +96,7 @@ const returnChoiceSchema = z.object({
   ),
 });
 
+// demo-source:tools:start
 const lookupOrder = Tool.create({
   name: 'lookupOrder',
   description: 'Look up customer order status and refund eligibility.',
@@ -144,6 +145,7 @@ const issueRefund = Tool.create({
     };
   },
 });
+// demo-source:tools:end
 
 // The model only calls tools whose definitions reach the provider request,
 // and that wiring lives on the SOURCE: the ai-sdk adapter surfaces tool
@@ -176,6 +178,7 @@ function selectedOrderIdFromSession(session: Session): string {
 export function createSupportAgent(
   modelSource: SupportModelSource = defaultSupportModelSource(),
 ) {
+  // demo-source:support:start
   return Agent.create('support')
     .system(
       'persona',
@@ -189,11 +192,13 @@ export function createSupportAgent(
     .tool('issueRefund', issueRefund)
     .inbox('customer-message')
     .assistant('reply', modelSource);
+  // demo-source:support:end
 }
 
 export function createReturnsAgent(
   modelSource: ReturnsModelSource = defaultReturnsModelSource(),
 ) {
+  // demo-source:returns:start
   return Agent.create<ReturnWizardVars>('returns')
     .system(
       'policy',
@@ -269,6 +274,7 @@ export function createReturnsAgent(
           return `${order.orderId} is not eligible for a refund.`;
         }),
     );
+  // demo-source:returns:end
 }
 
 export function createSupportAgents(
@@ -321,7 +327,7 @@ export function createSupportRuntime(
   };
 }
 
-const agents = createSupportAgents();
+export const agents = createSupportAgents();
 export const store = new SqliteRunStore({ agents });
 
 export const app = PromptTrail.app({

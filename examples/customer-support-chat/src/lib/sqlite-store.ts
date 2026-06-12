@@ -22,6 +22,29 @@ interface SqliteRunStoreOptions {
   agents: Record<string, Agent>;
 }
 
+export interface SqliteWriteJournalEntry {
+  at: string;
+  runId: string;
+  op:
+    | 'create'
+    | 'appendInbox'
+    | 'appendSessionDelta'
+    | 'recordOnce'
+    | 'upsertOutbox'
+    | 'recordProviderSession'
+    | 'patch'
+    | 'delete';
+  summary: string;
+}
+
+export interface SqliteRunCounts {
+  runs: number;
+  session_deltas: number;
+  once_memo: number;
+  inbox: number;
+  outbox: number;
+}
+
 interface RunRow {
   run_id: string;
   agent_name: string;
@@ -80,8 +103,11 @@ interface ProviderSessionRow {
  * construction replays those rows into live runs.
  */
 export class SqliteRunStore implements DurableRunStore {
+  private static readonly maxJournalEntriesPerRun = 50;
+
   private readonly db: Database.Database;
   private readonly runs = new Map<string, StoredRun<any, any>>();
+  private readonly writeJournal = new Map<string, SqliteWriteJournalEntry[]>();
 
   private readonly insertRunStmt: Database.Statement;
   private readonly updateRunStmt: Database.Statement;
@@ -194,6 +220,11 @@ export class SqliteRunStore implements DurableRunStore {
       jsonOrNull(run.graphManifest),
     );
     this.runs.set(runId, run);
+    this.recordJournal(
+      runId,
+      'create',
+      `INSERT runs (${runId}, agent=${run.agentName})`,
+    );
   }
 
   async patch(runId: string, patch: StoredRunPatch): Promise<void> {
@@ -211,6 +242,7 @@ export class SqliteRunStore implements DurableRunStore {
       jsonOrNull(run.graphManifest),
       runId,
     );
+    this.recordJournal(runId, 'patch', patchSummary(patch));
   }
 
   async appendInbox(runId: string, inbound: Inbound): Promise<void> {
@@ -224,6 +256,13 @@ export class SqliteRunStore implements DurableRunStore {
       inbound.kind,
       inbound.content,
       jsonOrNull(inbound.attrs),
+    );
+    this.recordJournal(
+      runId,
+      'appendInbox',
+      `INSERT inbox (offset ${inbound.offset}, ${quoteOneLine(
+        inbound.content,
+      )})`,
     );
   }
 
@@ -249,6 +288,7 @@ export class SqliteRunStore implements DurableRunStore {
       delta.rewrite ? 1 : 0,
     );
     applySessionDelta(run, delta);
+    this.recordJournal(runId, 'appendSessionDelta', sessionDeltaSummary(delta));
   }
 
   async recordOnce(
@@ -263,6 +303,11 @@ export class SqliteRunStore implements DurableRunStore {
     }
     this.upsertOnceMemoStmt.run(runId, scope, key, JSON.stringify(value));
     run.once[scope].set(key, value);
+    this.recordJournal(
+      runId,
+      'recordOnce',
+      `UPSERT once_memo (${scope}, ${quoteOneLine(key)})`,
+    );
   }
 
   async upsertOutbox(
@@ -287,6 +332,11 @@ export class SqliteRunStore implements DurableRunStore {
     } else {
       outbox.push(entry);
     }
+    this.recordJournal(
+      runId,
+      'upsertOutbox',
+      `UPSERT outbox (${quoteOneLine(entry.idempotencyKey)})`,
+    );
   }
 
   async recordProviderSession(
@@ -307,11 +357,31 @@ export class SqliteRunStore implements DurableRunStore {
       ...(run.providerSessions ?? {}),
       [nodePath]: binding,
     };
+    this.recordJournal(
+      runId,
+      'recordProviderSession',
+      `UPSERT provider_sessions (${nodePath})`,
+    );
   }
 
   async delete(runId: string): Promise<void> {
     this.deleteRunStmt.run(runId);
     this.runs.delete(runId);
+    this.recordJournal(runId, 'delete', `DELETE runs (${runId})`);
+  }
+
+  writesFor(runId: string): SqliteWriteJournalEntry[] {
+    return [...(this.writeJournal.get(runId) ?? [])];
+  }
+
+  countsFor(runId: string): SqliteRunCounts {
+    return {
+      runs: this.countRows('runs', runId),
+      session_deltas: this.countRows('session_deltas', runId),
+      once_memo: this.countRows('once_memo', runId),
+      inbox: this.countRows('inbox', runId),
+      outbox: this.countRows('outbox', runId),
+    };
   }
 
   close(): void {
@@ -474,6 +544,34 @@ export class SqliteRunStore implements DurableRunStore {
       };
     }
   }
+
+  private countRows(table: keyof SqliteRunCounts, runId: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE run_id = ?`)
+      .get(runId) as { count: number | bigint } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
+  private recordJournal(
+    runId: string,
+    op: SqliteWriteJournalEntry['op'],
+    summary: string,
+  ): void {
+    const entries = this.writeJournal.get(runId) ?? [];
+    entries.push({
+      at: new Date().toISOString(),
+      runId,
+      op,
+      summary,
+    });
+    if (entries.length > SqliteRunStore.maxJournalEntriesPerRun) {
+      entries.splice(
+        0,
+        entries.length - SqliteRunStore.maxJournalEntriesPerRun,
+      );
+    }
+    this.writeJournal.set(runId, entries);
+  }
 }
 
 export function defaultSupportDbPath(): string {
@@ -530,4 +628,45 @@ function parseJson<T = any>(json: string | null): T | undefined {
 
 function parseJsonRequired<T = any>(json: string): T {
   return JSON.parse(json) as T;
+}
+
+function quoteOneLine(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  const truncated =
+    compact.length > 72 ? `${compact.slice(0, 69).trimEnd()}...` : compact;
+  return JSON.stringify(truncated);
+}
+
+function sessionDeltaSummary(delta: SessionCheckpointDelta<any, any>): string {
+  const parts = [
+    `v${delta.fromVersion} -> v${delta.toVersion}`,
+    `+${delta.appendedMessages.length} messages`,
+  ];
+  if (delta.rewrite) {
+    parts.push('rewrite');
+  }
+  return `INSERT session_deltas (${parts.join(', ')})`;
+}
+
+function patchSummary(patch: StoredRunPatch): string {
+  const assignments: string[] = [];
+  if ('status' in patch) {
+    assignments.push(`status=${patch.status ?? 'null'}`);
+  }
+  if ('graphCursor' in patch) {
+    assignments.push(`graph_cursor=${patch.graphCursor ?? 'null'}`);
+  }
+  if ('graphSuspendedAt' in patch) {
+    assignments.push(`graph_suspended_at=${patch.graphSuspendedAt ?? 'null'}`);
+  }
+  if ('agentName' in patch) {
+    assignments.push(`agent_name=${patch.agentName ?? 'null'}`);
+  }
+  if ('context' in patch) {
+    assignments.push('context_json');
+  }
+  if ('graphManifest' in patch) {
+    assignments.push('graph_manifest_json');
+  }
+  return `UPDATE runs SET ${assignments.join(', ') || 'metadata'}`;
 }

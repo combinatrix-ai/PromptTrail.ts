@@ -18,7 +18,9 @@ import {
   readConversation,
   resetSupportDemoRecords,
 } from '../lib/support-agent';
+import { getInspectorPayload } from '../lib/inspector';
 import { SqliteRunStore } from '../lib/sqlite-store';
+import { readSupportAgentSourceSnippets } from '../lib/source-snippets';
 
 const returnChoicesPayload = {
   reply: 'Which order should I return?',
@@ -38,6 +40,20 @@ function returnChoicesSource() {
       };
     }
   })();
+}
+
+function expectSubsequence<T>(actual: T[], expected: T[]): void {
+  let cursor = 0;
+  for (const item of actual) {
+    if (Object.is(item, expected[cursor])) {
+      cursor++;
+    }
+    if (cursor === expected.length) {
+      return;
+    }
+  }
+  expect(actual).toEqual(expect.arrayContaining(expected));
+  expect(cursor).toBe(expected.length);
 }
 
 describe('customer support chat runtime', () => {
@@ -227,6 +243,135 @@ describe('customer support chat runtime', () => {
     expect(result.messages.at(-1)?.content).toBe(
       'ORD-1003 is not eligible for a refund.',
     );
+  });
+
+  it('journals durable writes for a suspended and resumed return wizard', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prompttrail-support-'));
+    const dbPath = join(tempDir, 'support.db');
+    const returnsSource = returnChoicesSource();
+    const agents = createSupportAgents(Source.llm().mock(), returnsSource);
+    const runId = 'returns-journal';
+
+    try {
+      const durableStore = new SqliteRunStore({
+        path: dbPath,
+        agents,
+      });
+      const runtime = createSupportRuntime(
+        Source.llm().mock(),
+        returnsSource,
+        durableStore,
+      );
+
+      await runtime.handleMessage(
+        runId,
+        'The backpack is too small.',
+        'returns',
+      );
+      await runtime.handleMessage(runId, 'ORD-1001', 'returns');
+
+      const writes = durableStore.writesFor(runId);
+      expectSubsequence(
+        writes.map((write) => write.op),
+        [
+          'appendInbox',
+          'appendSessionDelta',
+          'appendInbox',
+          'recordOnce',
+          'appendSessionDelta',
+          'patch',
+        ],
+      );
+      expect(
+        writes.some(
+          (write) =>
+            write.op === 'patch' && write.summary.includes('status=done'),
+        ),
+      ).toBe(true);
+      expect(writes.map((write) => write.summary).join('\n')).toContain(
+        'INSERT session_deltas',
+      );
+      durableStore.close();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('extracts non-empty source snippets from marked agent regions', () => {
+    const supportSnippets = readSupportAgentSourceSnippets('support');
+    const returnsSnippets = readSupportAgentSourceSnippets('returns');
+
+    expect(supportSnippets.agent).toContain('Agent.create');
+    expect(returnsSnippets.agent).toContain('Agent.create');
+    expect(supportSnippets.tools).toContain('Tool.create');
+  });
+
+  it('builds inspector payloads for existing and missing conversations', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prompttrail-support-'));
+    const dbPath = join(tempDir, 'support.db');
+    const supportSource = Source.llm()
+      .mock()
+      .mockCallback(() => ({ content: 'Support reply.' }));
+    const agents = createSupportAgents(supportSource, returnChoicesSource());
+    const runId = 'support:inspector';
+
+    try {
+      const durableStore = new SqliteRunStore({
+        path: dbPath,
+        agents,
+      });
+      const runtime = createSupportRuntime(
+        supportSource,
+        returnChoicesSource(),
+        durableStore,
+      );
+
+      await runtime.handleMessage(runId, 'Hello', 'support');
+
+      const existing = getInspectorPayload({
+        conversationId: runId,
+        agentName: 'support',
+        durableStore,
+        agentRegistry: agents,
+      });
+      expect(existing.run).toMatchObject({
+        runId,
+        agentName: 'support',
+        status: 'done',
+        awaiting: null,
+        sessionVersion: expect.any(Number),
+        messageCount: 3,
+      });
+      expect(existing.graph.hash).toEqual(expect.any(String));
+      expect(existing.graph.nodes.length).toBeGreaterThan(0);
+      expect(existing.persistence.counts.runs).toBe(1);
+      expect(existing.persistence.writes.length).toBeGreaterThan(0);
+
+      const missing = getInspectorPayload({
+        conversationId: 'support:missing',
+        agentName: 'support',
+        durableStore,
+        agentRegistry: agents,
+      });
+      expect(missing.run).toEqual({
+        runId: null,
+        agentName: null,
+        status: null,
+        awaiting: null,
+        sessionVersion: null,
+        messageCount: null,
+      });
+      expect(missing.persistence.counts).toEqual({
+        runs: 0,
+        session_deltas: 0,
+        once_memo: 0,
+        inbox: 0,
+        outbox: 0,
+      });
+      durableStore.close();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('round-trips per-user durable runs through SQLite restart', async () => {
