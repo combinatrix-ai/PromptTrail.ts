@@ -10,22 +10,22 @@ import type {
 } from './capabilities';
 import { zodToJsonSchema } from './json_schema';
 import type { RetainLevel, RuntimeTurnResult } from './runtime';
-import type { Attrs, Session, Vars } from './session';
+import type { Session, Vars } from './session';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
-export type ClaudeAgentInput<TVars extends Vars, TAttrs extends Attrs> =
+export type ClaudeAgentInput<TVars extends Vars> =
   | string
   | ((
-      session: Session<TVars, TAttrs>,
+      session: Session<TVars>,
       context: Record<string, unknown> | undefined,
     ) => string | Promise<string>);
 
-export type ClaudeAgentSessionId<TVars extends Vars, TAttrs extends Attrs> =
+export type ClaudeAgentSessionId<TVars extends Vars> =
   | string
   | 'new'
   | 'auto'
   | ((
-      session: Session<TVars, TAttrs>,
+      session: Session<TVars>,
       context: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
@@ -38,13 +38,10 @@ export interface ClaudeAgentQueryParams {
   options: Record<string, unknown>;
 }
 
-export interface ClaudeTurnOptions<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> {
+export interface ClaudeTurnOptions<TVars extends Vars = Vars> {
   client?: ClaudeAgentClient;
-  input?: ClaudeAgentInput<TVars, TAttrs>;
-  sessionId?: ClaudeAgentSessionId<TVars, TAttrs>;
+  input?: ClaudeAgentInput<TVars>;
+  sessionId?: ClaudeAgentSessionId<TVars>;
   cwd?: string;
   model?: string;
   allowedTools?: string[];
@@ -81,9 +78,9 @@ export interface ClaudeTurnOptions<
   maxRestarts?: number;
   onEvent?: (event: unknown) => void | Promise<void>;
   squashWith?: (
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     result: RuntimeTurnResult,
-  ) => Session<TVars, TAttrs> | Promise<Session<TVars, TAttrs>>;
+  ) => Session<TVars> | Promise<Session<TVars>>;
   sdkOptions?: Record<string, unknown>;
 }
 
@@ -173,7 +170,7 @@ export function getClaudeAllowedMcpToolNames(
 
 export function promptTrailToolToClaudeAgentToolDefinition(
   tool: PromptTrailTool,
-  session: Session<any, any>,
+  session: Session<any>,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
 ): ClaudeAgentToolDefinition {
@@ -194,7 +191,7 @@ export function promptTrailToolToClaudeAgentToolDefinition(
 
 export function createClaudePromptTrailMcpServer(
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   sdk?: ClaudeAgentSdkLike,
   serverName = 'prompttrail',
   approvalHandler?: ApprovalHandler,
@@ -255,7 +252,7 @@ export function promptTrailMcpToClaudeAgentMcpServer(
 export function getClaudeAgentMcpServers(
   capabilities: CapabilitySet | undefined,
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   sdk?: ClaudeAgentSdkLike,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
@@ -279,7 +276,7 @@ export function getClaudeAgentMcpServers(
 
 export function buildClaudeAgentQueryParams(
   prompt: string,
-  session: Session<any, any>,
+  session: Session<any>,
   options: Omit<
     ClaudeTurnOptions,
     'client' | 'input' | 'onEvent' | 'squashWith'
@@ -342,7 +339,7 @@ export async function materializeClaudeAgentSkills(options: {
   capabilities: CapabilitySet | undefined;
   cwd: string | undefined;
   approvalHandler: ApprovalHandler | undefined;
-  session: Session<any, any>;
+  session: Session<any>;
 }): Promise<ClaudeSkillMaterialization[]> {
   const skills = getClaudeRuntimeSkills(options.capabilities).filter(
     (skill) => skill.materialize === 'workspace',
@@ -459,7 +456,7 @@ export async function collectClaudeAgentTurnResult(
   };
 }
 
-export function claudeAgentResultToMessage<TAttrs extends Attrs = Attrs>(
+export function claudeAgentResultToMessage(
   result: RuntimeTurnResult,
   attrsKey = 'claudeAgent',
 ) {
@@ -468,7 +465,7 @@ export function claudeAgentResultToMessage<TAttrs extends Attrs = Attrs>(
     content: result.finalAnswer || ' ',
     attrs: {
       [attrsKey]: result,
-    } as TAttrs,
+    },
   };
 }
 

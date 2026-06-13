@@ -14,7 +14,7 @@ export interface ConversationBinding {
 }
 
 export function deriveConversationBinding(
-  session: Session<any, any>,
+  session: Session<any>,
   provider?: ConversationBindingProvider,
 ): ConversationBinding | undefined {
   for (let index = session.messages.length - 1; index >= 0; index--) {
@@ -37,11 +37,10 @@ export function deriveConversationBinding(
 }
 
 export function deriveConversationBindingFromMessage(
-  message: Message<any>,
+  message: Message,
   messageIndex = -1,
 ): ConversationBinding | undefined {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  const openai = attrs?.openai as Record<string, unknown> | undefined;
+  const openai = message.attrs?.openai as Record<string, unknown> | undefined;
   if (typeof openai?.responseId === 'string') {
     return {
       provider: 'openai',
@@ -50,7 +49,7 @@ export function deriveConversationBindingFromMessage(
     };
   }
 
-  const codex = attrs?.codex as Record<string, unknown> | undefined;
+  const codex = message.attrs?.codex as Record<string, unknown> | undefined;
   if (typeof codex?.threadId === 'string') {
     return {
       provider: 'codex',
@@ -59,7 +58,9 @@ export function deriveConversationBindingFromMessage(
     };
   }
 
-  const claudeAgent = attrs?.claudeAgent as Record<string, unknown> | undefined;
+  const claudeAgent = message.attrs?.claudeAgent as
+    | Record<string, unknown>
+    | undefined;
   if (typeof claudeAgent?.sessionId === 'string') {
     return {
       provider: 'claude-agent',
@@ -68,7 +69,7 @@ export function deriveConversationBindingFromMessage(
     };
   }
 
-  const google = attrs?.google as Record<string, unknown> | undefined;
+  const google = message.attrs?.google as Record<string, unknown> | undefined;
   const googleCachedContentBinding = google?.cachedContentBinding as
     | Record<string, unknown>
     | undefined;
@@ -94,9 +95,9 @@ export function deriveConversationBindingFromMessage(
 }
 
 export function getMessagesAfterBinding(
-  session: Session<any, any>,
+  session: Session<any>,
   binding: ConversationBinding | undefined,
-): readonly Message<any>[] {
+): readonly Message[] {
   if (!binding || binding.messageIndex < 0) {
     return session.messages;
   }
@@ -104,14 +105,14 @@ export function getMessagesAfterBinding(
 }
 
 export function createConversationHistoryFingerprint(
-  messages: readonly Message<any>[],
+  messages: readonly Message[],
 ): string {
   return fnv1a(stableStringify(messages.map(canonicalizeMessageForBinding)));
 }
 
 function conversationBindingMatchesSessionPrefix(
-  session: Session<any, any>,
-  message: Message<any>,
+  session: Session<any>,
+  message: Message,
   index: number,
 ): boolean {
   const expected = getConversationHistoryFingerprint(message);
@@ -127,20 +128,21 @@ function conversationBindingMatchesSessionPrefix(
 }
 
 function getConversationHistoryFingerprint(
-  message: Message<any>,
+  message: Message,
 ): string | undefined {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  const openai = attrs?.openai as Record<string, unknown> | undefined;
+  const openai = message.attrs?.openai as Record<string, unknown> | undefined;
   if (typeof openai?.historyFingerprint === 'string') {
     return openai.historyFingerprint;
   }
 
-  const codex = attrs?.codex as Record<string, unknown> | undefined;
+  const codex = message.attrs?.codex as Record<string, unknown> | undefined;
   if (typeof codex?.historyFingerprint === 'string') {
     return codex.historyFingerprint;
   }
 
-  const claudeAgent = attrs?.claudeAgent as Record<string, unknown> | undefined;
+  const claudeAgent = message.attrs?.claudeAgent as
+    | Record<string, unknown>
+    | undefined;
   if (typeof claudeAgent?.historyFingerprint === 'string') {
     return claudeAgent.historyFingerprint;
   }
@@ -148,7 +150,7 @@ function getConversationHistoryFingerprint(
   return undefined;
 }
 
-function canonicalizeMessageForBinding(message: Message<any>) {
+function canonicalizeMessageForBinding(message: Message) {
   return {
     type: message.type,
     content: message.content,

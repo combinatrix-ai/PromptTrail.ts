@@ -6,8 +6,8 @@ import type {
 } from './interceptors';
 import type { PromptTrailTool } from './tool';
 
-type AnyMiddlewareDefinition = MiddlewareDefinition<any, any>;
-type AnyHookDefinition = HookDefinition<any, any>;
+type AnyMiddlewareDefinition = MiddlewareDefinition<any>;
+type AnyHookDefinition = HookDefinition<any>;
 
 export type AgentGraphNodeType =
   | 'system'

@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   AgentGraphVersionError,
+  Session,
   Source,
   type ModelOutput,
 } from '@prompttrail/core';
@@ -292,6 +293,60 @@ describe('customer support chat runtime', () => {
         'INSERT session_deltas',
       );
       durableStore.close();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('promotes legacy attrs toolCallId while hydrating SQLite deltas', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'prompttrail-support-'));
+    const dbPath = join(tempDir, 'support.db');
+    const agents = createSupportAgents(
+      Source.llm().mock(),
+      returnChoicesSource(),
+    );
+    const agent = agents.support;
+    const runId = 'support:legacy-tool';
+
+    try {
+      const firstStore = new SqliteRunStore({
+        path: dbPath,
+        agents,
+      });
+      await firstStore.create(runId, {
+        agent,
+        agentName: 'support',
+        initial: Session.create(),
+        status: 'open',
+        once: { run: new Map(), conversation: new Map() },
+        outbox: [],
+        inbox: [],
+      });
+      await firstStore.appendSessionDelta(runId, {
+        fromVersion: 0,
+        toVersion: 1,
+        appendedMessages: [
+          {
+            type: 'tool_result',
+            content: 'done',
+            attrs: { toolCallId: 'legacy-call', provider: 'legacy' },
+          },
+        ],
+      });
+      firstStore.close();
+
+      const secondStore = new SqliteRunStore({
+        path: dbPath,
+        agents,
+      });
+      const message = secondStore.get(runId)?.result?.messages[0];
+      expect(message).toMatchObject({
+        type: 'tool_result',
+        content: 'done',
+        toolCallId: 'legacy-call',
+        attrs: { toolCallId: 'legacy-call', provider: 'legacy' },
+      });
+      secondStore.close();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

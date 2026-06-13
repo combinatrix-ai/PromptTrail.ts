@@ -34,7 +34,7 @@ import {
   type PromptTrailStreamEvent,
 } from './stream';
 import { contentPartsToAiSdkContent } from './content_parts';
-import type { Session, Attrs, Vars } from './session';
+import type { Session, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { toAiSdkToolSet } from './ai_sdk_tools';
 import { Tool, executePromptTrailTool, isPromptTrailTool } from './tool';
@@ -51,7 +51,7 @@ export type { SchemaGenerationOptions } from './llm_types';
  * Convert Session to AI SDK compatible format
  */
 export function convertSessionToAiSdkMessages(
-  session: Session<any, any>,
+  session: Session<any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): Array<{
   role: string;
@@ -70,9 +70,8 @@ export function convertSessionToAiSdkMessages(
   const toolResultsMap = new Map<string, string>();
   for (const msg of session.messages) {
     if (msg.type === 'tool_result') {
-      const toolCallId = msg.attrs?.toolCallId as string;
-      if (toolCallId) {
-        toolResultsMap.set(toolCallId, msg.content);
+      if (msg.toolCallId) {
+        toolResultsMap.set(msg.toolCallId, msg.content);
       }
     }
   }
@@ -229,10 +228,10 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
-  session: Session<TVars, TAttrs>,
+export async function generateText<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   if (
     options.provider.type === 'openai' &&
     options.provider.api === 'responses' &&
@@ -325,14 +324,11 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 /**
  * Generate structured content using schema
  */
-export async function generateWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateWithSchema<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message & { structuredOutput?: unknown }> {
   const schemaMode = normalizeSchemaGenerationMode(schemaOptions.mode);
   assertExplicitNativeSchemaModeWhenToolsArePresent(options, schemaOptions);
 
@@ -476,14 +472,11 @@ export function assertNativeStreamingToolLoopSupported(
 /**
  * Generate text stream using AI SDK
  */
-export async function* generateTextStream<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function* generateTextStream<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
-  runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  runtime?: ExecutionRuntimeState<TVars>,
+): AsyncGenerator<Message, void, unknown> {
   assertNativeStreamingToolLoopSupported(options);
 
   if (
@@ -589,18 +582,16 @@ export async function* generateTextStream<
   }
 }
 
-export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
-  session: Session<any, TAttrs>,
+export async function* streamPromptTrailToolLoop(
+  session: Session<any>,
   options: LLMOptions,
   config: {
     provider: 'openai' | 'anthropic' | 'google';
     attrsKey: string;
-    events: (
-      session: Session<any, TAttrs>,
-    ) => AsyncIterable<PromptTrailStreamEvent>;
-    runtime?: ExecutionRuntimeState<any, TAttrs>;
+    events: (session: Session<any>) => AsyncIterable<PromptTrailStreamEvent>;
+    runtime?: ExecutionRuntimeState<any>;
   },
-): AsyncGenerator<Message<TAttrs>, void, unknown> {
+): AsyncGenerator<Message, void, unknown> {
   const maxToolRounds = options.maxCallLimit ?? 10;
   let currentSession = session;
 
@@ -612,13 +603,13 @@ export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
         yield {
           type: 'assistant',
           content: event.delta || ' ',
-        } as Message<TAttrs>;
+        } as Message;
       }
     }
 
-    const assistant = streamStateToAssistantMessage<TAttrs>(
+    const assistant = streamStateToAssistantMessage(
       state,
-      createStreamMessageAttrs<TAttrs>(state, {
+      createStreamMessageAttrs(state, {
         attrsKey: config.attrsKey,
         retain: options.retain,
       }),
@@ -641,10 +632,8 @@ export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
           context: config.runtime.context,
           runtime: config.runtime,
         });
-        yield executed.message as Message<TAttrs>;
-        nextSession = executed.session.addMessage(
-          executed.message as Message<TAttrs>,
-        );
+        yield executed.message as Message;
+        nextSession = executed.session.addMessage(executed.message as Message);
       }
     } else {
       const toolResults = await Promise.all(
@@ -659,25 +648,25 @@ export async function* streamPromptTrailToolLoop<TAttrs extends Attrs = Attrs>(
         ),
       );
       for (const result of toolResults) {
-        yield result as Message<TAttrs>;
-        nextSession = nextSession.addMessage(result as Message<TAttrs>);
+        yield result as Message;
+        nextSession = nextSession.addMessage(result as Message);
       }
     }
     currentSession = nextSession;
   }
 }
 
-async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
+async function executeStreamingToolCallWithRuntime(
   call: { id: string; name: string; arguments: Record<string, unknown> },
   options: {
     provider: 'openai' | 'anthropic' | 'google';
     tools: readonly PromptTrailTool[];
-    session: Session<any, TAttrs>;
+    session: Session<any>;
     approvalHandler?: LLMOptions['approvalHandler'];
     context?: Record<string, unknown>;
-    runtime: ExecutionRuntimeState<any, TAttrs>;
+    runtime: ExecutionRuntimeState<any>;
   },
-): Promise<{ message: Message<TAttrs>; session: Session<any, TAttrs> }> {
+): Promise<{ message: Message; session: Session<any> }> {
   const before = await runRuntimeExecutionPhase(options.runtime, {
     phase: 'beforeTool',
     session: options.session,
@@ -697,7 +686,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
     type: 'tool.completed' | 'tool.failed',
     request: { id: string; name: string; arguments: Record<string, unknown> },
     error?: unknown,
-    result?: Message<TAttrs>,
+    result?: Message,
   ) => {
     if (openToolEvents.length === 0) {
       await emitStreamingToolEvent(
@@ -739,7 +728,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
           session,
           approvalHandler: options.approvalHandler,
           context: options.context,
-        }) as Promise<Message<TAttrs>>;
+        }) as Promise<Message>;
       },
     });
     assertStreamingToolCommandSupported(wrappedTool.command);
@@ -752,8 +741,7 @@ async function executeStreamingToolCallWithRuntime<TAttrs extends Attrs>(
       result: message,
     });
     assertStreamingToolCommandSupported(after.command);
-    const resultMessage =
-      (after.result as Message<TAttrs> | undefined) ?? message;
+    const resultMessage = (after.result as Message | undefined) ?? message;
     await closeToolEvents(
       isToolResultErrorMessage(resultMessage)
         ? 'tool.failed'
@@ -777,7 +765,7 @@ async function executeStreamingToolCall(
   options: {
     provider: 'openai' | 'anthropic' | 'google';
     tools: readonly PromptTrailTool[];
-    session: Session<any, any>;
+    session: Session<any>;
     approvalHandler?: LLMOptions['approvalHandler'];
     context?: Record<string, unknown>;
   },
@@ -801,8 +789,8 @@ async function executeStreamingToolCall(
   return {
     type: 'tool_result',
     content: JSON.stringify(result),
+    toolCallId: call.id,
     attrs: {
-      toolCallId: call.id,
       toolCallName: call.name,
     },
   };
@@ -819,12 +807,12 @@ function assertStreamingToolCommandSupported(
   );
 }
 
-async function emitStreamingToolEvent<TAttrs extends Attrs>(
-  runtime: ExecutionRuntimeState<any, TAttrs>,
+async function emitStreamingToolEvent(
+  runtime: ExecutionRuntimeState<any>,
   type: 'tool.started' | 'tool.completed' | 'tool.failed',
   call: { id: string; name: string; arguments: Record<string, unknown> },
   error?: unknown,
-  result?: Message<TAttrs>,
+  result?: Message,
 ): Promise<boolean> {
   if (!runtime.emitEvent || !runtime.nextEventSeq) {
     return false;
@@ -880,12 +868,10 @@ function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {
   return [...tools.values()];
 }
 
-export async function* promptTrailStreamEventsToMessages<
-  TAttrs extends Attrs = Attrs,
->(
+export async function* promptTrailStreamEventsToMessages(
   events: AsyncIterable<PromptTrailStreamEvent>,
   options: { attrsKey?: string; retain?: LLMOptions['retain'] } = {},
-): AsyncGenerator<Message<TAttrs>, void, unknown> {
+): AsyncGenerator<Message, void, unknown> {
   let state = createPromptTrailStreamState();
   for await (const event of events) {
     state = reducePromptTrailStreamEvent(state, event);
@@ -893,25 +879,25 @@ export async function* promptTrailStreamEventsToMessages<
       yield {
         type: 'assistant',
         content: event.delta || ' ',
-      } as Message<TAttrs>;
+      } as Message;
     } else if (event.type === 'tool.args.done') {
-      yield streamStateToAssistantMessage<TAttrs>(
+      yield streamStateToAssistantMessage(
         state,
-        createStreamMessageAttrs<TAttrs>(state, options),
+        createStreamMessageAttrs(state, options),
       );
     } else if (event.type === 'message.done') {
-      yield streamStateToAssistantMessage<TAttrs>(
+      yield streamStateToAssistantMessage(
         state,
-        createStreamMessageAttrs<TAttrs>(state, options),
+        createStreamMessageAttrs(state, options),
       );
     }
   }
 }
 
-function createStreamMessageAttrs<TAttrs extends Attrs>(
+function createStreamMessageAttrs(
   state: ReturnType<typeof createPromptTrailStreamState>,
   options: { attrsKey?: string; retain?: LLMOptions['retain'] },
-): TAttrs | undefined {
+): Readonly<Record<string, unknown>> | undefined {
   if (!options.attrsKey) {
     return undefined;
   }
@@ -920,5 +906,5 @@ function createStreamMessageAttrs<TAttrs extends Attrs>(
       state,
       options.retain ?? 'summary',
     ),
-  } as TAttrs;
+  };
 }

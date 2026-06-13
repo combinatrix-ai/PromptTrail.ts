@@ -128,7 +128,7 @@ to "latest-matching scan — prefer the fold callback inside the graph, and expl
 message addressing at the boundary." (A `message.getStructured(schema)` explicit
 reader may be added later if a boundary needs it; not required now.)
 
-### [ ] 2.2 Drop the `TAttrs` generic — keep the channel, kill the type parameter
+### [x] 2.2 Drop the `TAttrs` generic — keep the channel, kill the type parameter
 
 `Session<TVars>` and `Message` lose their second generic; `attrs` becomes a plain
 `Readonly<Record<string, unknown>>` bag. Delete `withAttrsType` (all overloads),
@@ -148,7 +148,7 @@ already carries `setAttrs`/`expandAttrs`/`setStructuredContent`. Revisit only wh
 a real consumer appears — and if so, consolidate the existing mutators in the
 same stroke.
 
-### [ ] 2.3 Promote `toolCallId` to a first-class message field
+### [x] 2.3 Promote `toolCallId` to a first-class message field
 
 The one attr key the framework reads on a hot path on every provider is
 `toolCallId` (tool-result correlation: `generate.ts`, all three provider

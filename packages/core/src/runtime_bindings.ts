@@ -78,14 +78,14 @@ export type RuntimeAgentRef = string | PromptTrailRegisteredAgent;
 
 export interface RuntimeBundle {
   name: string;
-  agents: Record<string, PromptTrailRegisteredAgent<any, any>>;
+  agents: Record<string, PromptTrailRegisteredAgent<any>>;
   defaults: BindingDefaults;
   bindings: RuntimeBinding<TriggerEvent>[];
 }
 
 export interface RuntimeBundleOptions {
   name: string;
-  agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
+  agents?: Record<string, PromptTrailRegisteredAgent<any>>;
   defaults?: BindingDefaults;
   bindings?: RuntimeBindingLike<any>[];
 }

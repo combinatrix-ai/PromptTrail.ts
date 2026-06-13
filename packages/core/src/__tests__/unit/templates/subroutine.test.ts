@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
-import { Attrs, Vars } from '../../../session';
+import { Vars } from '../../../session';
 import {
   Agent,
   Assistant,
@@ -108,7 +108,7 @@ describe('SubroutineTemplate', () => {
   it('should isolate parent session context by default', async () => {
     type SharedContext = Vars<{ userName: string }>;
     // Create a parent session with context
-    const parentSession = Session.create<SharedContext, Attrs>().withVars({
+    const parentSession = Session.create<SharedContext>().withVars({
       userName: 'Bob',
     });
 
@@ -119,7 +119,7 @@ describe('SubroutineTemplate', () => {
     });
 
     // Create a subroutine that tries to use parent context.
-    const subroutine = new Subroutine<Attrs, SharedContext>(
+    const subroutine = new Subroutine<SharedContext>(
       Agent.create<SharedContext>('subroutine-template')
         .user(
           new (class extends Source<string> {
@@ -238,7 +238,7 @@ describe('SubroutineTemplate', () => {
       parentData: 'visible',
     });
 
-    const isolatedSubroutine = new Subroutine<any, any>(
+    const isolatedSubroutine = new Subroutine<any>(
       Agent.create('subroutine-template')
         .user('Testing isolated context')
         .transform((session: Session<any>) => {
@@ -270,7 +270,7 @@ describe('SubroutineTemplate', () => {
     expect(resultSession.getVar('parentData')).toBe('visible');
 
     // --- Test explicit parent context projection ---
-    const sharedSubroutine = new Subroutine<any, any>(
+    const sharedSubroutine = new Subroutine<any>(
       Agent.create('subroutine-template')
         .user('Testing shared context')
         .transform((session: Session<any>) => {
@@ -614,7 +614,7 @@ describe('SubroutineTemplate', () => {
       },
     });
 
-    const initialSession = Session.create<CounterContext, Attrs>();
+    const initialSession = Session.create<CounterContext>();
     const session = await loop.execute(initialSession);
 
     // Verify the count was incremented to 3

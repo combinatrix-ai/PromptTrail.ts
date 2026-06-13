@@ -367,8 +367,8 @@ export abstract class Source<T = unknown> {
    * @returns Promise resolving to content of type T
    */
   abstract getContent(
-    session: Session<any, any>,
-    runtime?: ExecutionRuntimeState<any, any>,
+    session: Session<any>,
+    runtime?: ExecutionRuntimeState<any>,
   ): Promise<T>;
 
   /**
@@ -377,7 +377,7 @@ export abstract class Source<T = unknown> {
    */
   protected async validateContent(
     content: string,
-    session: Session<any, any>,
+    session: Session<any>,
   ): Promise<ValidationResult> {
     if (!this.validator) {
       return { isValid: true }; // No validator means content is considered valid
@@ -449,7 +449,7 @@ export class RandomSource extends StringSource {
     super(options);
   }
 
-  async getContent(_session: Session<any, any>): Promise<string> {
+  async getContent(_session: Session<any>): Promise<string> {
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
   }
@@ -479,7 +479,7 @@ export class ListSource extends StringSource {
     this.loop = options?.loop ?? false;
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     if (this.index < this.contentList.length) {
       const content = this.contentList[this.index++];
       // Apply validation if a validator exists
@@ -606,7 +606,7 @@ export class CLISource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -727,7 +727,7 @@ export class CallbackSource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
     let currentInput = '';
@@ -838,7 +838,7 @@ export class LiteralSource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     const interpolatedContent = interpolateTemplate(this.content, session);
     const validationResult = await this.validateContent(
       interpolatedContent,
@@ -883,7 +883,7 @@ export interface MockResponse {
  * Mock callback function type
  */
 export type MockCallback = (
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions,
 ) => Promise<MockResponse> | MockResponse;
 
@@ -895,7 +895,7 @@ interface MockState {
   mockCallback?: MockCallback;
   currentResponseIndex: number;
   callHistory: Array<{
-    session: Session<any, any>;
+    session: Session<any>;
     options: LLMOptions;
     response: MockResponse;
   }>;
@@ -910,13 +910,13 @@ export interface MockedLlmSource extends LlmSource {
   mockResponses(...responses: MockResponse[]): MockedLlmSource;
   mockCallback(callback: MockCallback): MockedLlmSource;
   getCallHistory(): Array<{
-    session: Session<any, any>;
+    session: Session<any>;
     options: LLMOptions;
     response: MockResponse;
   }>;
   getLastCall():
     | {
-        session: Session<any, any>;
+        session: Session<any>;
         options: LLMOptions;
         response: MockResponse;
       }
@@ -1364,7 +1364,7 @@ export class LlmSource extends ModelSource {
    * Generate mock response and apply validation
    */
   private async _generateMockResponse(
-    session: Session<any, any>,
+    session: Session<any>,
   ): Promise<ModelOutput> {
     if (!this._mockState) {
       throw new Error('_generateMockResponse called on non-mocked source');
@@ -1470,8 +1470,8 @@ export class LlmSource extends ModelSource {
   }
 
   async getContent(
-    session: Session<any, any>,
-    runtime?: ExecutionRuntimeState<any, any>,
+    session: Session<any>,
+    runtime?: ExecutionRuntimeState<any>,
   ): Promise<ModelOutput> {
     // Check if this is a mocked source
     if (this._mockState) {
@@ -1591,8 +1591,8 @@ export class LlmSource extends ModelSource {
   }
 
   private async generateWithRuntimeToolLoop(
-    session: Session<any, any>,
-    runtime: ExecutionRuntimeState<any, any>,
+    session: Session<any>,
+    runtime: ExecutionRuntimeState<any>,
   ) {
     let lastAssistant:
       | {

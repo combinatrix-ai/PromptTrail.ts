@@ -2,14 +2,14 @@ import { z } from 'zod';
 import { ValidationError } from './errors';
 import { makeContentPartsPersistenceSafe } from './content_parts';
 import type { Message } from './message';
-export type { Attrs, Vars } from './session_types';
-import type { Attrs, Vars } from './session_types';
+export type { Vars } from './session_types';
+import type { Vars } from './session_types';
 /**
  * Internal session implementation
  */
-export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
+export class Session<TVars extends Vars = Vars> {
   constructor(
-    messages: readonly Message<TAttrs>[] = [],
+    messages: readonly Message[] = [],
     public readonly vars: TVars,
     public readonly print: boolean = false,
     private readonly _version: number = 0,
@@ -18,7 +18,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
     this.messages = messages.map(makeMessagePersistenceSafe);
   }
 
-  public readonly messages: readonly Message<TAttrs>[];
+  public readonly messages: readonly Message[];
 
   /**
    * Lineage-local session identity.
@@ -44,7 +44,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   /**
    * Create a new session with additional message
    */
-  addMessage(message: Message<TAttrs>): Session<TVars, TAttrs> {
+  addMessage(message: Message): Session<TVars> {
     if (this.print) {
       switch (message.type) {
         case 'system':
@@ -71,7 +71,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
           break;
       }
     }
-    return new Session<TVars, TAttrs>(
+    return new Session<TVars>(
       [...this.messages, message],
       { ...this.vars }, // Create a shallow copy of the context
       this.print,
@@ -95,7 +95,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   withVar<K extends PropertyKey, V>(
     key: K,
     value: V,
-  ): Session<Vars<TVars & { [P in K]: V }>, TAttrs> {
+  ): Session<Vars<TVars & { [P in K]: V }>> {
     const newContext = {
       ...this.vars,
       [key]: value,
@@ -112,33 +112,13 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
 
   withVars<U extends Record<string, unknown>>(
     vars: U,
-  ): Session<Vars<TVars & U>, TAttrs> {
+  ): Session<Vars<TVars & U>> {
     const newContext = { ...this.vars, ...vars } as TVars & U;
     return new Session(
       [...this.messages],
       newContext,
       this.print,
       this.version + 1,
-      this.historyRewrittenAtVersion,
-    );
-  }
-
-  /**
-   * Create a new session with specified attrs type (type-only, no runtime changes)
-   * This is useful for adding type information to an existing session
-   * @returns A new session with the same data but specified attrs type
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const typedSession = session.withAttrsType<MessageMeta>();
-   * ```
-   */
-  withAttrsType<U extends Record<string, unknown>>(): Session<TVars, Attrs<U>> {
-    return new Session<TVars, Attrs<U>>(
-      [...this.messages] as Message<Attrs<U>>[],
-      { ...this.vars },
-      this.print,
-      this.version,
       this.historyRewrittenAtVersion,
     );
   }
@@ -160,7 +140,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   /**
    * Get the last message in the session
    */
-  getLastMessage(): Message<TAttrs> | undefined {
+  getLastMessage(): Message | undefined {
     return this.messages[this.messages.length - 1];
   }
 
@@ -177,11 +157,11 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   /**
    * Get all messages of a specific type
    */
-  getMessagesByType<U extends Message<TAttrs>['type']>(
+  getMessagesByType<U extends Message['type']>(
     type: U,
-  ): Extract<Message<TAttrs>, { type: U }>[] {
+  ): Extract<Message, { type: U }>[] {
     return this.messages.filter((msg) => msg.type === type) as Extract<
-      Message<TAttrs>,
+      Message,
       { type: U }
     >[];
   }
@@ -261,9 +241,7 @@ export class Session<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs> {
   }
 }
 
-function makeMessagePersistenceSafe<TAttrs extends Attrs>(
-  message: Message<TAttrs>,
-): Message<TAttrs> {
+function makeMessagePersistenceSafe(message: Message): Message {
   if (!message.contentParts) {
     return message;
   }
@@ -273,20 +251,28 @@ function makeMessagePersistenceSafe<TAttrs extends Attrs>(
   };
 }
 
+function normalizeMessageFromJSON(value: unknown): Message {
+  const message = value as Message;
+  if (message.type !== 'tool_result' || message.toolCallId !== undefined) {
+    return message;
+  }
+  const toolCallId = message.attrs?.toolCallId;
+  return typeof toolCallId === 'string' ? { ...message, toolCallId } : message;
+}
+
 /**
  * Create a new session with type inference
  */
 export function createSession<
   C extends Record<string, unknown> = {},
-  M extends Record<string, unknown> = {},
 >(options?: {
   context?: C;
-  messages?: Message<Attrs<M>>[];
+  messages?: Message[];
   print?: boolean;
-}): Session<Vars<C>, Attrs<M>> {
+}): Session<Vars<C>> {
   options = options ?? {};
   const ctx = (options.context ?? {}) as C;
-  return new Session<Vars<C>, Attrs<M>>(
+  return new Session<Vars<C>>(
     options.messages ?? [],
     ctx,
     options.print ?? false,
@@ -296,46 +282,21 @@ export function createSession<
 /**
  * Session builder for chainable session creation with gradual typing
  * @template TVars - The vars type
- * @template TAttrs - The attrs type
  */
-export class SessionBuilder<
-  TVars extends Record<string, unknown> = {},
-  TAttrs extends Record<string, unknown> = {},
-> {
+export class SessionBuilder<TVars extends Record<string, unknown> = {}> {
   /**
    * Add vars type specification to the builder (type-only, no runtime values)
    * @returns A new builder with the specified vars type
    * @example
    * ```typescript
    * type UserContext = { userId: string; role: string };
-   * const session = Session.withAttrsType<MessageMeta>()
-   *   .withVarsType<UserContext>()
-   *   .create();
+   * const session = Session.withVarsType<UserContext>().create();
    * ```
    */
-  withVarsType<TNewVars extends Record<string, unknown>>(): SessionBuilder<
-    TNewVars,
-    TAttrs
-  > {
-    return new SessionBuilder<TNewVars, TAttrs>();
-  }
-
-  /**
-   * Add attrs type specification to the builder (type-only, no runtime values)
-   * @returns A new builder with the specified attrs type
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
-   *   .create();
-   * ```
-   */
-  withAttrsType<TNewAttrs extends Record<string, unknown>>(): SessionBuilder<
-    TVars,
-    TNewAttrs
-  > {
-    return new SessionBuilder<TVars, TNewAttrs>();
+  withVarsType<
+    TNewVars extends Record<string, unknown>,
+  >(): SessionBuilder<TNewVars> {
+    return new SessionBuilder<TNewVars>();
   }
 
   /**
@@ -345,16 +306,15 @@ export class SessionBuilder<
    * @example
    * ```typescript
    * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
    *   .create({ vars: { userId: '123', role: 'admin' } });
    * ```
    */
   create(options?: {
     vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    messages?: Message[];
     print?: boolean;
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+  }): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: options?.vars,
       messages: options?.messages,
       print: options?.print,
@@ -366,13 +326,11 @@ export class SessionBuilder<
    * @returns A new empty session instance with the specified types
    * @example
    * ```typescript
-   * const session = Session.withVarsType<UserContext>()
-   *   .withAttrsType<MessageMeta>()
-   *   .empty();
+   * const session = Session.withVarsType<UserContext>().empty();
    * ```
    */
-  empty(): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({});
+  empty(): Session<Vars<TVars>> {
+    return createSession<TVars>({});
   }
 
   /**
@@ -387,9 +345,9 @@ export class SessionBuilder<
    */
   debug(options?: {
     vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+    messages?: Message[];
+  }): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: options?.vars,
       messages: options?.messages,
       print: true,
@@ -412,15 +370,12 @@ export namespace Session {
    * const sessionWithVars = Session.create({ vars: { name: 'test' } });
    * ```
    */
-  export function create<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(options?: {
+  export function create<TVars extends Record<string, unknown> = {}>(options?: {
     vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
+    messages?: Message[];
     print?: boolean;
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+  }): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: options?.vars,
       messages: options?.messages,
       print: options?.print,
@@ -440,10 +395,9 @@ export namespace Session {
    * });
    * ```
    */
-  export function fromJSON<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(json: Record<string, unknown>): Session<Vars<TVars>, Attrs<TAttrs>> {
+  export function fromJSON<TVars extends Record<string, unknown> = {}>(
+    json: Record<string, unknown>,
+  ): Session<Vars<TVars>> {
     if (!json.messages || !Array.isArray(json.messages)) {
       throw new ValidationError(
         'Invalid session JSON: messages must be an array',
@@ -478,8 +432,8 @@ export namespace Session {
       );
     }
 
-    return new Session<Vars<TVars>, Attrs<TAttrs>>(
-      json.messages as Message<Attrs<TAttrs>>[],
+    return new Session<Vars<TVars>>(
+      json.messages.map(normalizeMessageFromJSON),
       (json.context ?? {}) as Vars<TVars>,
       json.print ? (json.print as boolean) : false,
       json.version === undefined ? 0 : (json.version as number),
@@ -497,11 +451,10 @@ export namespace Session {
    * const session = Session.empty();
    * ```
    */
-  export function empty<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({});
+  export function empty<TVars extends Record<string, unknown> = {}>(): Session<
+    Vars<TVars>
+  > {
+    return createSession<TVars>({});
   }
 
   /**
@@ -517,11 +470,11 @@ export namespace Session {
   export function withVars<TVars extends Record<string, unknown>>(
     vars: TVars,
     options?: {
-      messages?: Message<Attrs<{}>>[];
+      messages?: Message[];
       print?: boolean;
     },
-  ): Session<Vars<TVars>, Attrs<{}>> {
-    return createSession<TVars, {}>({
+  ): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: vars,
       messages: options?.messages,
       print: options?.print,
@@ -540,14 +493,14 @@ export namespace Session {
    * ]);
    * ```
    */
-  export function withMessages<TAttrs extends Record<string, unknown> = {}>(
-    messages: Message<Attrs<TAttrs>>[],
+  export function withMessages(
+    messages: Message[],
     options?: {
       vars?: Record<string, unknown>;
       print?: boolean;
     },
-  ): Session<Vars<{}>, Attrs<TAttrs>> {
-    return createSession<{}, TAttrs>({
+  ): Session<Vars<{}>> {
+    return createSession<{}>({
       context: options?.vars,
       messages: messages,
       print: options?.print,
@@ -568,17 +521,14 @@ export namespace Session {
    * );
    * ```
    */
-  export function withVarsAndMessages<
-    TVars extends Record<string, unknown>,
-    TAttrs extends Record<string, unknown> = {},
-  >(
+  export function withVarsAndMessages<TVars extends Record<string, unknown>>(
     vars: TVars,
-    messages: Message<Attrs<TAttrs>>[],
+    messages: Message[],
     options?: {
       print?: boolean;
     },
-  ): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+  ): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: vars,
       messages: messages,
       print: options?.print,
@@ -594,14 +544,11 @@ export namespace Session {
    * const session = Session.debug({ vars: { debug: true } });
    * ```
    */
-  export function debug<
-    TVars extends Record<string, unknown> = {},
-    TAttrs extends Record<string, unknown> = {},
-  >(options?: {
+  export function debug<TVars extends Record<string, unknown> = {}>(options?: {
     vars?: TVars;
-    messages?: Message<Attrs<TAttrs>>[];
-  }): Session<Vars<TVars>, Attrs<TAttrs>> {
-    return createSession<TVars, TAttrs>({
+    messages?: Message[];
+  }): Session<Vars<TVars>> {
+    return createSession<TVars>({
       context: options?.vars,
       messages: options?.messages,
       print: true,
@@ -619,22 +566,7 @@ export namespace Session {
    */
   export function withVarsType<
     TVars extends Record<string, unknown>,
-  >(): SessionBuilder<TVars, {}> {
-    return new SessionBuilder<TVars, {}>();
-  }
-
-  /**
-   * Create a session builder with specified attrs type (type-only, no runtime values)
-   * @returns A chainable session builder
-   * @example
-   * ```typescript
-   * type MessageMeta = { role: string; hidden: boolean };
-   * const session = Session.withAttrsType<MessageMeta>().create();
-   * ```
-   */
-  export function withAttrsType<
-    TAttrs extends Record<string, unknown>,
-  >(): SessionBuilder<{}, TAttrs> {
-    return new SessionBuilder<{}, TAttrs>();
+  >(): SessionBuilder<TVars> {
+    return new SessionBuilder<TVars>();
   }
 }

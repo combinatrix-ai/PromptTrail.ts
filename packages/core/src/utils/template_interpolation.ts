@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import type { Attrs, Vars } from '../session';
+import type { Vars } from '../session';
 
 type SessionLike = {
   vars?: Record<string, unknown>;
@@ -47,9 +47,9 @@ function resolvePath(root: unknown, path: string): unknown {
  * @param session The session containing context values for interpolation
  * @returns The interpolated string
  */
-export function interpolateTemplate<TVars extends Vars, TAttrs extends Attrs>(
+export function interpolateTemplate<TVars extends Vars>(
   template: string,
-  session: Session<TVars, TAttrs> | Vars | Record<string, unknown>,
+  session: Session<TVars> | Vars | Record<string, unknown>,
 ): string {
   const root = hasVars(session) ? session.vars : session;
   return template.replace(/\${([\w.]+)}/g, (_match, path: string) => {

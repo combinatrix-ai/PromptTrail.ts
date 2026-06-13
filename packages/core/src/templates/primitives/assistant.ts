@@ -1,17 +1,13 @@
 // assistant.ts
 import type { AssistantMessage } from '../../message';
 import type { ExecutionRuntimeState } from '../../interceptors';
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
-import { Attrs, Vars } from '../../session';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
 import { executeRuntimeModelCall } from './model_runtime';
 
-export class Assistant<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
+export class Assistant<TVars extends Vars = Vars> extends TemplateBase<TVars> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;
@@ -55,9 +51,9 @@ export class Assistant<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     return this.executeSource(session, runtime);
   }
 
@@ -68,9 +64,9 @@ export class Assistant<
    * @internal
    */
   async executeSource(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     let validSession = this.ensureSession(session);
 
     // Content source should always be available now (either provided or default)
@@ -164,11 +160,11 @@ export class Assistant<
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately
-        const message: AssistantMessage<TAttrs> = {
+        const message: AssistantMessage = {
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          attrs: (currentOutput.metadata as TAttrs) ?? ({} as TAttrs),
+          attrs: currentOutput.metadata ?? {},
           structuredContent: currentOutput.structuredOutput,
         };
         let updatedSession = validSession.addMessage(message);
@@ -179,9 +175,7 @@ export class Assistant<
             updatedSession = updatedSession.addMessage({
               type: 'tool_result',
               content: JSON.stringify(toolResult.result),
-              attrs: {
-                toolCallId: toolResult.toolCallId,
-              } as unknown as TAttrs,
+              toolCallId: toolResult.toolCallId,
             });
           }
         }
@@ -219,11 +213,11 @@ export class Assistant<
     // This happens if the last attempt failed and raiseError was false.
     if (!this.raiseError && lastError && lastOutput) {
       // Construct session from the last recorded output (which failed validation)
-      const lastMessage: AssistantMessage<TAttrs> = {
+      const lastMessage: AssistantMessage = {
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        attrs: (lastOutput.metadata as TAttrs) ?? ({} as TAttrs),
+        attrs: lastOutput.metadata ?? {},
         structuredContent: lastOutput.structuredOutput,
       };
       const lastAttemptSession = validSession.addMessage(lastMessage);
@@ -240,8 +234,8 @@ export class Assistant<
   }
 
   private async getModelContent(
-    session: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+    session: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
   ): Promise<string | ModelOutput> {
     return (await this.contentSource!.getContent(session, runtime)) as
       | string

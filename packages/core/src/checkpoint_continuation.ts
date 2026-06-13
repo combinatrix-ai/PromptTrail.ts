@@ -1,6 +1,6 @@
 import type { AgentGraphNode } from './graph';
 import type { GraphExecutionOptions } from './graph_executor';
-import { Session, type Attrs, type Vars } from './session';
+import { Session, type Vars } from './session';
 
 export type CheckpointOnceScope = 'run' | 'conversation';
 
@@ -28,33 +28,22 @@ export interface CheckpointOnceMemoEntry {
   value: unknown;
 }
 
-interface CheckpointGraphRunState<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TInbound,
-> {
-  initial: Session<TVars, TAttrs>;
-  result?: Session<TVars, TAttrs>;
+interface CheckpointGraphRunState<TVars extends Vars, TInbound> {
+  initial: Session<TVars>;
+  result?: Session<TVars>;
   inbox: TInbound[];
   graphCursor?: number;
   graphSuspendedAt?: string;
 }
 
-interface CompletableCheckpointGraphRunState<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TInbound,
-> extends CheckpointGraphRunState<TVars, TAttrs, TInbound> {
+interface CompletableCheckpointGraphRunState<TVars extends Vars, TInbound>
+  extends CheckpointGraphRunState<TVars, TInbound> {
   status: 'open' | 'done';
 }
 
-export interface CheckpointGraphExecutionStart<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TInbound,
-> {
+export interface CheckpointGraphExecutionStart<TVars extends Vars, TInbound> {
   cursor: number;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   inbox: TInbound[];
   resumeFromNode?: string;
   isContinuation: boolean;
@@ -79,14 +68,13 @@ export interface CheckpointGraphExecutionStart<
  */
 export async function beginCheckpointGraphExecution<
   TVars extends Vars,
-  TAttrs extends Attrs,
   TInbound,
 >(
-  run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
+  run: CheckpointGraphRunState<TVars, TInbound>,
   persist: () => Promise<void>,
-): Promise<CheckpointGraphExecutionStart<TVars, TAttrs, TInbound>> {
+): Promise<CheckpointGraphExecutionStart<TVars, TInbound>> {
   const cursor = run.graphCursor ?? 0;
-  const start: CheckpointGraphExecutionStart<TVars, TAttrs, TInbound> = {
+  const start: CheckpointGraphExecutionStart<TVars, TInbound> = {
     cursor,
     session: run.result ?? run.initial,
     inbox: run.inbox.slice(cursor),
@@ -105,7 +93,7 @@ export async function beginCheckpointGraphExecution<
  * previous execution suspended inside the graph.
  */
 export function deriveCheckpointResumeCoordinate(
-  run: Pick<CheckpointGraphRunState<Vars, Attrs, unknown>, 'graphSuspendedAt'>,
+  run: Pick<CheckpointGraphRunState<Vars, unknown>, 'graphSuspendedAt'>,
 ): string | undefined {
   return run.graphSuspendedAt;
 }
@@ -155,12 +143,9 @@ export function computeCheckpointContinuationSkipNodes(
   return skipNodePaths;
 }
 
-export function createCheckpointContinuationSkipPredicate<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+export function createCheckpointContinuationSkipPredicate<TVars extends Vars>(
   skipNodePaths: Set<string> | undefined,
-): GraphExecutionOptions<TVars, TAttrs>['skipNode'] {
+): GraphExecutionOptions<TVars>['skipNode'] {
   if (!skipNodePaths) {
     return undefined;
   }
@@ -175,11 +160,10 @@ export function createCheckpointContinuationSkipPredicate<
 
 export async function recordCheckpointGraphCompletion<
   TVars extends Vars,
-  TAttrs extends Attrs,
   TInbound,
 >(
-  run: CompletableCheckpointGraphRunState<TVars, TAttrs, TInbound>,
-  session: Session<TVars, TAttrs>,
+  run: CompletableCheckpointGraphRunState<TVars, TInbound>,
+  session: Session<TVars>,
   persist: () => Promise<void>,
 ): Promise<void> {
   run.status = 'done';
@@ -190,12 +174,11 @@ export async function recordCheckpointGraphCompletion<
 
 export async function recordCheckpointGraphSuspension<
   TVars extends Vars,
-  TAttrs extends Attrs,
   TInbound,
 >(
-  run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
+  run: CheckpointGraphRunState<TVars, TInbound>,
   nodePath: string,
-  session: Session<TVars, TAttrs>,
+  session: Session<TVars>,
   persist: () => Promise<void>,
 ): Promise<void> {
   run.result = session;
@@ -205,10 +188,9 @@ export async function recordCheckpointGraphSuspension<
 
 export async function restoreCheckpointGraphCursor<
   TVars extends Vars,
-  TAttrs extends Attrs,
   TInbound,
 >(
-  run: CheckpointGraphRunState<TVars, TAttrs, TInbound>,
+  run: CheckpointGraphRunState<TVars, TInbound>,
   cursor: number,
   persist: () => Promise<void>,
 ): Promise<void> {

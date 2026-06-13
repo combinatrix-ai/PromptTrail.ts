@@ -189,10 +189,9 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
 function getRuntimeContext(
   session: Session,
 ): { conversationId?: string } | undefined {
-  const attrs = session.getLastMessage()?.attrs as
-    | { runtimeContext?: { conversationId?: string } }
+  return session.getLastMessage()?.attrs?.runtimeContext as
+    | { conversationId?: string }
     | undefined;
-  return attrs?.runtimeContext;
 }
 
 function readConfig(): ClawConfig {

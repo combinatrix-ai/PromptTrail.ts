@@ -24,13 +24,13 @@ export interface ApprovalRequest {
 
 export type ApprovalHandler = (
   request: ApprovalRequest,
-  session: Session<any, any>,
+  session: Session<any>,
 ) => Promise<ApprovalDecision>;
 
 export type ApprovalPolicy = 'never' | 'always' | 'on-risk' | ApprovalHandler;
 
 export interface ToolExecutionContext {
-  session?: Session<any, any>;
+  session?: Session<any>;
   context?: Record<string, unknown>;
   provider?: ApprovalRequest['provider'] | 'ai-sdk';
   capability?: string;
@@ -122,7 +122,7 @@ export type CapabilitySet = readonly Capability[];
 
 export interface ConfiguredCapabilityApprovalContext {
   provider: ApprovalRequest['provider'];
-  session: Session<any, any>;
+  session: Session<any>;
   approvalHandler?: ApprovalHandler;
   action?: string;
   input?: unknown;

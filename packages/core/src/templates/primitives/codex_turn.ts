@@ -25,7 +25,7 @@ import {
 } from '../../provider_session';
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import {
   runExecutionPhase,
   runRuntimeMiddlewareWrapper,
@@ -36,14 +36,10 @@ import {
 import type { ExecutionEvent } from '../../execution';
 import type { ResolvedExecutionCommand } from '../../execution';
 import { manifestConfigDigest } from '../../graph';
-import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
-export class CodexTurn<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
-  constructor(private readonly options: CodexTurnOptions<TAttrs, TVars>) {
+export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
+  constructor(private readonly options: CodexTurnOptions<TVars>) {
     super();
   }
 
@@ -65,9 +61,9 @@ export class CodexTurn<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     return this.executeTurn(session, runtime);
   }
 
@@ -79,10 +75,10 @@ export class CodexTurn<
    * @internal
    */
   async executeTurn(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
     options: { nodePath?: string } = {},
-  ): Promise<Session<TVars, TAttrs>> {
+  ): Promise<Session<TVars>> {
     let currentSession = this.ensureSession(session);
     if (runtime) {
       const beforeModel = await runRuntimeExecutionPhase(runtime, {
@@ -131,15 +127,15 @@ export class CodexTurn<
       runtime.middlewareState = prepared.middlewareState;
       runtime.version = prepared.afterVersion;
       modelSession =
-        (prepared.request as TurnModelRequest<TVars, TAttrs> | undefined)
-          ?.session ?? modelSession;
+        (prepared.request as TurnModelRequest<TVars> | undefined)?.session ??
+        modelSession;
     }
 
     let openModelEvents = 0;
     const executeProviderCall = async ({
       request,
     }: {
-      request: TurnModelRequest<TVars, TAttrs>;
+      request: TurnModelRequest<TVars>;
     }) => {
       const ownsClient = this.options.client === undefined;
       const client =
@@ -285,7 +281,7 @@ export class CodexTurn<
     }
     const sessionResult = this.prepareSessionResult(result);
 
-    let nextSession: Session<TVars, TAttrs>;
+    let nextSession: Session<TVars>;
     if (this.options.squashWith) {
       nextSession = await this.options.squashWith(currentSession, result);
     } else if (this.options.retainMessages === false) {
@@ -295,7 +291,7 @@ export class CodexTurn<
       );
     } else {
       const attrsKey = this.options.attrsKey ?? 'codex';
-      const message = codexResultToMessage<TAttrs>(sessionResult, attrsKey);
+      const message = codexResultToMessage(sessionResult, attrsKey);
       const historyFingerprint = createConversationHistoryFingerprint([
         ...currentSession.messages,
         message,
@@ -305,12 +301,12 @@ export class CodexTurn<
         attrs: {
           ...message.attrs,
           [attrsKey]: {
-            ...((message.attrs as Record<string, unknown> | undefined)?.[
-              attrsKey
-            ] as Record<string, unknown> | undefined),
+            ...(message.attrs?.[attrsKey] as unknown as
+              | Record<string, unknown>
+              | undefined),
             historyFingerprint,
           },
-        } as TAttrs,
+        },
       });
     }
 
@@ -318,7 +314,7 @@ export class CodexTurn<
   }
 
   private async resolveThreadId(
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     context: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
@@ -339,7 +335,7 @@ export class CodexTurn<
   }
 
   private resolveCheckpointBinding(
-    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    runtime: ExecutionRuntimeState<TVars> | undefined,
     nodePath: string | undefined,
   ): ProviderSessionBinding | undefined {
     if (!runtime?.recordProviderSession || !nodePath) {
@@ -350,7 +346,7 @@ export class CodexTurn<
   }
 
   private async recordProviderSession(
-    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    runtime: ExecutionRuntimeState<TVars> | undefined,
     nodePath: string | undefined,
     binding: ProviderSessionBinding,
   ): Promise<void> {
@@ -365,21 +361,20 @@ export class CodexTurn<
   }
 
   private async executeWithUnresumablePolicy(
-    runtime: ExecutionRuntimeState<TVars, TAttrs>,
+    runtime: ExecutionRuntimeState<TVars>,
     nodePath: string | undefined,
-    currentSession: Session<TVars, TAttrs>,
-    modelSession: Session<TVars, TAttrs>,
+    currentSession: Session<TVars>,
+    modelSession: Session<TVars>,
     executeProviderCall: (input: {
-      request: TurnModelRequest<TVars, TAttrs>;
+      request: TurnModelRequest<TVars>;
     }) => Promise<Awaited<ReturnType<typeof collectCodexTurnResult>>>,
     closeFailedAttempt: (error: unknown) => Promise<void>,
   ) {
     const checkpointBinding = this.resolveCheckpointBinding(runtime, nodePath);
-    const callWrappedModel = (request: TurnModelRequest<TVars, TAttrs>) =>
+    const callWrappedModel = (request: TurnModelRequest<TVars>) =>
       runRuntimeMiddlewareWrapper<
         TVars,
-        TAttrs,
-        TurnModelRequest<TVars, TAttrs>,
+        TurnModelRequest<TVars>,
         Awaited<ReturnType<typeof collectCodexTurnResult>>
       >(runtime, {
         phase: 'wrapModelCall',
@@ -431,7 +426,7 @@ export class CodexTurn<
   }
 
   private async resolveInput(
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     context: Record<string, unknown> | undefined,
   ): Promise<string | unknown[] | undefined> {
     if (this.options.input === undefined) {
@@ -470,21 +465,15 @@ export class CodexTurn<
   }
 }
 
-interface TurnModelRequest<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
+interface TurnModelRequest<TVars extends Vars = Vars> {
+  session: Session<TVars>;
   restartNotice?: string;
   restarts?: number;
   ignoreCheckpointBinding?: boolean;
 }
 
-async function emitTurnModelEvent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+async function emitTurnModelEvent<TVars extends Vars = Vars>(
+  runtime: ExecutionRuntimeState<TVars> | undefined,
   type: 'model.started' | 'model.completed' | 'model.failed',
   stepId: string,
   error?: unknown,

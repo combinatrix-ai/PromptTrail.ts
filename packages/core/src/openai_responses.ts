@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { Message } from './message';
-import type { Attrs, Session, Vars } from './session';
+import type { Session, Vars } from './session';
 import type {
   LLMOptions,
   OpenAIProviderConfig,
@@ -45,21 +45,15 @@ export interface OpenAIResponsesFunctionCall {
   raw: unknown;
 }
 
-export async function generateOpenAIResponsesText<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateOpenAIResponsesText<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: OpenAIProviderConfig },
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   return generateOpenAIResponsesMessage(session, options);
 }
 
-export async function* streamOpenAIResponsesEvents<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function* streamOpenAIResponsesEvents<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: OpenAIProviderConfig },
   textFormat?: Record<string, unknown>,
 ) {
@@ -115,14 +109,11 @@ export async function* normalizeOpenAIResponsesStream(
   }
 }
 
-export async function generateOpenAIResponsesWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateOpenAIResponsesWithSchema<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: OpenAIProviderConfig },
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message & { structuredOutput?: unknown }> {
   const message = await generateOpenAIResponsesMessage(session, options, {
     type: 'json_schema',
     name: schemaOptions.functionName ?? 'structured_output',
@@ -132,12 +123,11 @@ export async function generateOpenAIResponsesWithSchema<
   return finalizeOpenAIStructuredOutputMessage(message, schemaOptions);
 }
 
-export function finalizeOpenAIStructuredOutputMessage<TAttrs extends Attrs>(
-  message: Message<TAttrs>,
+export function finalizeOpenAIStructuredOutputMessage(
+  message: Message,
   schemaOptions: SchemaGenerationOptions,
-): Message<TAttrs> & { structuredOutput?: unknown } {
-  const openai = (message.attrs as Record<string, unknown> | undefined)
-    ?.openai as Record<string, unknown> | undefined;
+): Message & { structuredOutput?: unknown } {
+  const openai = message.attrs?.openai as Record<string, unknown> | undefined;
   if (typeof openai?.refusal === 'string') {
     return {
       ...message,
@@ -168,14 +158,11 @@ export function finalizeOpenAIStructuredOutputMessage<TAttrs extends Attrs>(
   };
 }
 
-async function generateOpenAIResponsesMessage<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+async function generateOpenAIResponsesMessage<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: OpenAIProviderConfig },
   textFormat?: Record<string, unknown>,
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   const client = new OpenAI({
     apiKey: options.provider.apiKey,
     baseURL: options.provider.baseURL,
@@ -254,19 +241,19 @@ async function generateOpenAIResponsesMessage<
         requestOptions.retain ?? 'summary',
         historyFingerprint,
       ),
-    } as unknown as TAttrs,
+    },
   };
 }
 
 export function withOpenAIResponsesPromptCacheKey<
   T extends LLMOptions & { provider: OpenAIProviderConfig },
->(session: Session<any, any>, options: T): T {
+>(session: Session<any>, options: T): T {
   const cacheKey = deriveOpenAIResponsesPromptCacheKey(session, options);
   return cacheKey === options.cacheKey ? options : { ...options, cacheKey };
 }
 
 export function deriveOpenAIResponsesPromptCacheKey(
-  session: Session<any, any>,
+  session: Session<any>,
   options: Pick<LLMOptions, 'cacheKey' | 'capabilities'>,
 ): string | undefined {
   if (options.cacheKey) {
@@ -285,9 +272,9 @@ export function deriveOpenAIResponsesPromptCacheKey(
 }
 
 export function getOpenAIResponsesCacheablePrefix(
-  session: Session<any, any>,
+  session: Session<any>,
   options: Pick<LLMOptions, 'capabilities'> = {},
-): { messages: readonly Message<any>[]; messageIndex: number } | undefined {
+): { messages: readonly Message[]; messageIndex: number } | undefined {
   let lastCacheHintIndex = -1;
   session.messages.forEach((message, index) => {
     if (message.cache) {
@@ -369,7 +356,7 @@ export function getOpenAIResponsesInclude(
 }
 
 export function convertSessionToResponsesInput(
-  session: Session<any, any>,
+  session: Session<any>,
   binding?: ConversationBinding,
 ): unknown[] {
   return getMessagesAfterBinding(session, binding).flatMap((message) => {
@@ -420,14 +407,12 @@ export function convertSessionToResponsesInput(
   });
 }
 
-function getToolResultCallId(message: Message<any>): string | undefined {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  return typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
+function getToolResultCallId(message: Message): string | undefined {
+  return message.type === 'tool_result' ? message.toolCallId : undefined;
 }
 
-function getOpenAIReplayRequiredInputItems(message: Message<any>): unknown[] {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  const openai = attrs?.openai as Record<string, unknown> | undefined;
+function getOpenAIReplayRequiredInputItems(message: Message): unknown[] {
+  const openai = message.attrs?.openai as Record<string, unknown> | undefined;
   const replayRequired = openai?.replayRequired;
   if (!Array.isArray(replayRequired)) {
     return [];
@@ -445,7 +430,7 @@ function getOpenAIReplayRequiredInputItems(message: Message<any>): unknown[] {
 }
 
 export function getResponsesInstructions(
-  session: Session<any, any>,
+  session: Session<any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): string | undefined {
   const instructions = session.messages
@@ -621,7 +606,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function canonicalizeMessageForCache(message: Message<any>) {
+function canonicalizeMessageForCache(message: Message) {
   return {
     type: message.type,
     content: message.content,
@@ -735,7 +720,7 @@ export function collectOpenAIResponseFunctionCalls(
 export async function createOpenAIToolOutputItem(
   call: OpenAIResponsesFunctionCall,
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {

@@ -1,6 +1,6 @@
 import type { DurableRunResult, PromptTrailApp } from './durable';
 import type { Message } from './message';
-import type { Attrs, Vars } from './session';
+import type { Vars } from './session';
 import type {
   BindingDefaults,
   DeliveryTarget,
@@ -32,19 +32,16 @@ export interface RuntimeDispatchOptions<TEvent extends TriggerEvent> {
   resumable?: boolean;
 }
 
-export interface RuntimeDispatchResult<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface RuntimeDispatchResult<TVars extends Vars = Vars> {
   conversationId: string;
   delivery: DeliveryTarget | undefined;
   context: RuntimeDispatchContext;
   content: string;
-  result: DurableRunResult<TVars, TAttrs>;
+  result: DurableRunResult<TVars>;
 }
 
-export interface PendingAssistantDelivery<TAttrs extends Attrs = Attrs> {
-  message: Message<TAttrs> & { type: 'assistant' };
+export interface PendingAssistantDelivery {
+  message: Message & { type: 'assistant' };
   assistantIndex: number;
   idempotencyKey: string;
   target?: DeliveryTarget;
@@ -138,10 +135,9 @@ export function runtimeContextFromDefaults(
 export async function dispatchRuntimeEvent<
   TEvent extends TriggerEvent,
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
 >(
   options: RuntimeDispatchOptions<TEvent>,
-): Promise<RuntimeDispatchResult<TVars, TAttrs>> {
+): Promise<RuntimeDispatchResult<TVars>> {
   const conversationId = options.binding.conversation(options.event);
   const bindingContext = resolveRuntimeBindingContext(
     options.binding,
@@ -174,7 +170,7 @@ export async function dispatchRuntimeEvent<
   }
   const content =
     options.content ?? resolveRuntimeInput(options.binding, options.event);
-  const result = await options.app.send<TVars, TAttrs>({
+  const result = await options.app.send<TVars>({
     agent: options.binding.agent,
     runId: conversationId,
     input: {
@@ -225,14 +221,14 @@ export function runtimeEventAttrs(
 export class AssistantDeliveryTracker {
   private readonly deliveredKeys = new Set<string>();
 
-  pending<TAttrs extends Attrs = Attrs>(
+  pending(
     conversationId: string,
-    messages: readonly Message<TAttrs>[],
+    messages: readonly Message[],
     target?: DeliveryTarget,
-  ): PendingAssistantDelivery<TAttrs>[] {
+  ): PendingAssistantDelivery[] {
     return messages
       .filter(
-        (message): message is Message<TAttrs> & { type: 'assistant' } =>
+        (message): message is Message & { type: 'assistant' } =>
           message.type === 'assistant',
       )
       .map((message, index) => ({

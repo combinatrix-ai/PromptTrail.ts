@@ -24,7 +24,7 @@ import type { Message } from './message';
 import { createAnthropicStreamNormalizer } from './provider_stream';
 import { extractAnthropicReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
-import type { Attrs, Session, Vars } from './session';
+import type { Session, Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -123,13 +123,10 @@ export class AnthropicSkillsHttpClient implements AnthropicSkillUploadClient {
   }
 }
 
-export async function generateAnthropicMessagesText<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateAnthropicMessagesText<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
     session,
     options,
@@ -202,15 +199,12 @@ export async function generateAnthropicMessagesText<
         response,
         resolvedOptions.retain ?? 'summary',
       ),
-    } as unknown as TAttrs,
+    },
   };
 }
 
-export async function* streamAnthropicMessagesEvents<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function* streamAnthropicMessagesEvents<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
 ) {
   const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
@@ -271,14 +265,11 @@ export async function* normalizeAnthropicMessagesStream(
   }
 }
 
-export async function generateAnthropicMessagesWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateAnthropicMessagesWithSchema<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message & { structuredOutput?: unknown }> {
   const resolvedOptions = await resolveAnthropicRuntimeCapabilities(
     session,
     options,
@@ -334,7 +325,7 @@ export async function generateAnthropicMessagesWithSchema<
           response,
           resolvedOptions.retain ?? 'summary',
         ),
-      } as unknown as TAttrs,
+      },
     };
   }
 
@@ -372,7 +363,7 @@ export async function generateAnthropicMessagesWithSchema<
             response,
             resolvedOptions.retain ?? 'summary',
           ),
-        } as unknown as TAttrs,
+        },
       };
     }
 
@@ -407,7 +398,7 @@ export async function generateAnthropicMessagesWithSchema<
 }
 
 export function buildAnthropicSchemaRequestBody(
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   schemaOptions: SchemaGenerationOptions,
   toolChoice: 'auto' | 'force' = 'force',
@@ -479,7 +470,7 @@ async function createAnthropicMessage(
   client: Anthropic,
   messages: unknown[],
   system: unknown,
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
@@ -506,7 +497,7 @@ async function createAnthropicMessage(
 }
 
 export function convertSessionToAnthropicMessages(
-  session: Session<any, any>,
+  session: Session<any>,
 ): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
   for (const message of session.messages) {
@@ -534,7 +525,7 @@ export function convertSessionToAnthropicMessages(
   return messages;
 }
 
-function convertMessageToAnthropicContent(message: Message<any>): unknown {
+function convertMessageToAnthropicContent(message: Message): unknown {
   const baseContent = message.contentParts
     ? contentPartsToAnthropicContent(message.contentParts)
     : message.content;
@@ -566,7 +557,7 @@ function convertMessageToAnthropicContent(message: Message<any>): unknown {
 }
 
 function convertToolResultToAnthropicBlock(
-  message: Message<any>,
+  message: Message,
 ): Record<string, unknown> | undefined {
   const callId = getToolResultCallId(message);
   if (!callId) {
@@ -579,16 +570,14 @@ function convertToolResultToAnthropicBlock(
   };
 }
 
-function getToolResultCallId(message: Message<any>): string | undefined {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  return typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
+function getToolResultCallId(message: Message): string | undefined {
+  return message.type === 'tool_result' ? message.toolCallId : undefined;
 }
 
-function getAnthropicReplayRequiredContentBlocks(
-  message: Message<any>,
-): unknown[] {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  const anthropic = attrs?.anthropic as Record<string, unknown> | undefined;
+function getAnthropicReplayRequiredContentBlocks(message: Message): unknown[] {
+  const anthropic = message.attrs?.anthropic as
+    | Record<string, unknown>
+    | undefined;
   const replayRequired = anthropic?.replayRequired;
   if (!Array.isArray(replayRequired)) {
     return [];
@@ -606,7 +595,7 @@ function getAnthropicReplayRequiredContentBlocks(
 }
 
 export function getAnthropicRequestContent(
-  session: Session<any, any>,
+  session: Session<any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): AnthropicRequestContent {
   return limitAnthropicCacheControlBreakpoints({
@@ -692,7 +681,7 @@ function anthropicCacheControlPriority(cacheControl: unknown): number {
 }
 
 export function getAnthropicSystemPrompt(
-  session: Session<any, any>,
+  session: Session<any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): unknown {
   const systemMessages = session.messages.filter(
@@ -833,7 +822,7 @@ export function getAnthropicRequestOptions(
 }
 
 export async function resolveAnthropicRuntimeCapabilities(
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: AnthropicProviderConfig },
   uploadClient: AnthropicSkillUploadClient = new AnthropicSkillsHttpClient({
     apiKey: options.provider.apiKey,
@@ -854,7 +843,7 @@ export async function resolveAnthropicRuntimeCapabilities(
 export async function uploadAnthropicTemporarySkills(options: {
   capabilities: CapabilitySet | undefined;
   approvalHandler: ApprovalHandler | undefined;
-  session: Session<any, any>;
+  session: Session<any>;
   uploadClient: AnthropicSkillUploadClient;
 }): Promise<CapabilitySet | undefined> {
   const skills = (options.capabilities ?? []).filter(
@@ -977,7 +966,7 @@ export function collectAnthropicToolUses(
 export async function createAnthropicToolResultBlock(
   toolUse: AnthropicToolUse,
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
 ) {

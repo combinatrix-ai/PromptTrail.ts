@@ -1,30 +1,25 @@
 import type { Message } from '../../message';
-import type { Session } from '../../session';
-import { Attrs, Vars } from '../../session';
+import type { Session, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
-export type GenerateMessagesFn<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> = (session: Session<TVars, TAttrs>) => Message<TAttrs>[];
+export type GenerateMessagesFn<TVars extends Vars = Vars> = (
+  session: Session<TVars>,
+) => Message[];
 
 /**
  * A template that appends one or more messages produced from the current session.
  */
 export class GenerateMessages<
-  TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
-  constructor(
-    private readonly generateMessages: GenerateMessagesFn<TAttrs, TVars>,
-  ) {
+> extends TemplateBase<TVars> {
+  constructor(private readonly generateMessages: GenerateMessagesFn<TVars>) {
     super();
   }
 
   /**
    * @internal
    */
-  getGenerateMessages(): GenerateMessagesFn<TAttrs, TVars> {
+  getGenerateMessages(): GenerateMessagesFn<TVars> {
     return this.generateMessages;
   }
 
@@ -36,9 +31,7 @@ export class GenerateMessages<
     };
   }
 
-  async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+  async execute(session?: Session<TVars>): Promise<Session<TVars>> {
     let currentSession = this.ensureSession(session);
     const messages = await this.generateMessages(currentSession);
 

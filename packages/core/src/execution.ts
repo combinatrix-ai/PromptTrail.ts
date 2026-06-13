@@ -1,5 +1,5 @@
 import type { Message } from './message';
-import { Session, type Attrs, type Vars } from './session';
+import { Session, type Vars } from './session';
 
 export interface DeleteValue {
   readonly __prompttrailDelete: true;
@@ -17,15 +17,12 @@ export function isDeleteValue(value: unknown): value is DeleteValue {
   );
 }
 
-export type AuthoredSessionPatch<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> =
-  | Session<TVars, TAttrs>
-  | ((session: Session<TVars, TAttrs>) => Session<TVars, TAttrs>)
+export type AuthoredSessionPatch<TVars extends Vars = Vars> =
+  | Session<TVars>
+  | ((session: Session<TVars>) => Session<TVars>)
   | {
-      appendMessages?: readonly Message<TAttrs>[];
-      replaceMessages?: readonly Message<TAttrs>[];
+      appendMessages?: readonly Message[];
+      replaceMessages?: readonly Message[];
       vars?: Record<string, unknown | DeleteValue>;
       middlewareState?: Record<string, unknown | DeleteValue>;
     };
@@ -37,20 +34,17 @@ export type ResolvedExecutionCommand =
   | { type: 'halt'; reason?: string }
   | { type: 'retry'; reason?: string };
 
-export interface ExecutionPatch<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session?: AuthoredSessionPatch<TVars, TAttrs>;
+export interface ExecutionPatch<TVars extends Vars = Vars> {
+  session?: AuthoredSessionPatch<TVars>;
   request?: unknown;
   result?: unknown;
   command?: Exclude<ResolvedExecutionCommand, { type: 'none' }>;
 }
 
-export interface ResolvedSessionDelta<TAttrs extends Attrs = Attrs> {
+export interface ResolvedSessionDelta {
   messageOp:
-    | { type: 'append'; messages: readonly Message<TAttrs>[] }
-    | { type: 'replace'; messages: readonly Message<TAttrs>[] }
+    | { type: 'append'; messages: readonly Message[] }
+    | { type: 'replace'; messages: readonly Message[] }
     | { type: 'none' };
   varsSet: Record<string, unknown>;
   varsDelete: readonly string[];
@@ -58,11 +52,11 @@ export interface ResolvedSessionDelta<TAttrs extends Attrs = Attrs> {
   middlewareStateDelete: readonly string[];
 }
 
-export interface ResolvedExecutionTransition<TAttrs extends Attrs = Attrs> {
+export interface ResolvedExecutionTransition {
   schemaVersion: 1;
   beforeVersion: number;
   afterVersion: number;
-  session: ResolvedSessionDelta<TAttrs>;
+  session: ResolvedSessionDelta;
   command: ResolvedExecutionCommand;
 }
 
@@ -70,18 +64,15 @@ export interface ResolveExecutionTransitionOptions {
   beforeVersion?: number;
 }
 
-export function resolveExecutionTransition<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  session: Session<TVars, TAttrs>,
-  patch: ExecutionPatch<TVars, TAttrs> = {},
+export function resolveExecutionTransition<TVars extends Vars = Vars>(
+  session: Session<TVars>,
+  patch: ExecutionPatch<TVars> = {},
   options: ResolveExecutionTransitionOptions = {},
-): ResolvedExecutionTransition<TAttrs> {
+): ResolvedExecutionTransition {
   const beforeVersion = options.beforeVersion ?? 0;
   const sessionDelta = patch.session
     ? resolveSessionDelta(session, patch.session)
-    : emptySessionDelta<TAttrs>();
+    : emptySessionDelta();
   return {
     schemaVersion: 1,
     beforeVersion,
@@ -93,13 +84,10 @@ export function resolveExecutionTransition<
   };
 }
 
-export function resolveSessionDelta<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  session: Session<TVars, TAttrs>,
-  patch: AuthoredSessionPatch<TVars, TAttrs>,
-): ResolvedSessionDelta<TAttrs> {
+export function resolveSessionDelta<TVars extends Vars = Vars>(
+  session: Session<TVars>,
+  patch: AuthoredSessionPatch<TVars>,
+): ResolvedSessionDelta {
   if (patch instanceof Session) {
     return diffSession(session, patch);
   }
@@ -128,23 +116,17 @@ export interface ApplyExecutionTransitionOptions {
   middlewareState?: Record<string, unknown>;
 }
 
-export interface ApplyExecutionTransitionResult<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
+export interface ApplyExecutionTransitionResult<TVars extends Vars = Vars> {
+  session: Session<TVars>;
   middlewareState: Record<string, unknown>;
   command: ResolvedExecutionCommand;
 }
 
-export function applyResolvedExecutionTransition<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  session: Session<TVars, TAttrs>,
-  transition: ResolvedExecutionTransition<TAttrs>,
+export function applyResolvedExecutionTransition<TVars extends Vars = Vars>(
+  session: Session<TVars>,
+  transition: ResolvedExecutionTransition,
   options: ApplyExecutionTransitionOptions = {},
-): ApplyExecutionTransitionResult<TVars, TAttrs> {
+): ApplyExecutionTransitionResult<TVars> {
   const messages =
     transition.session.messageOp.type === 'append'
       ? [...session.messages, ...transition.session.messageOp.messages]
@@ -170,7 +152,7 @@ export function applyResolvedExecutionTransition<
       : session.historyRewrittenAtVersion;
 
   return {
-    session: new Session<TVars, TAttrs>(
+    session: new Session<TVars>(
       messages,
       vars,
       session.print,
@@ -190,13 +172,10 @@ export function applyResolvedExecutionTransition<
  * once-deps and checkpoint delta persistence key on. Diffing and re-applying
  * keeps the content while continuing the previous lineage.
  */
-export function adoptSessionResult<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  previous: Session<TVars, TAttrs>,
-  returned: Session<TVars, TAttrs>,
-): Session<TVars, TAttrs> {
+export function adoptSessionResult<TVars extends Vars = Vars>(
+  previous: Session<TVars>,
+  returned: Session<TVars>,
+): Session<TVars> {
   if (returned === previous) {
     return returned;
   }
@@ -628,10 +607,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function diffSession<TVars extends Vars, TAttrs extends Attrs>(
-  before: Session<TVars, TAttrs>,
-  after: Session<TVars, TAttrs>,
-): ResolvedSessionDelta<TAttrs> {
+function diffSession<TVars extends Vars>(
+  before: Session<TVars>,
+  after: Session<TVars>,
+): ResolvedSessionDelta {
   const messageOp = hasMessagePrefix(before.messages, after.messages)
     ? {
         type: 'append' as const,
@@ -665,9 +644,7 @@ function diffSession<TVars extends Vars, TAttrs extends Attrs>(
   };
 }
 
-function emptySessionDelta<
-  TAttrs extends Attrs,
->(): ResolvedSessionDelta<TAttrs> {
+function emptySessionDelta(): ResolvedSessionDelta {
   return {
     messageOp: { type: 'none' },
     varsSet: {},
@@ -736,9 +713,9 @@ function applyKeyWrites(
   return next;
 }
 
-function hasMessagePrefix<TAttrs extends Attrs>(
-  prefix: readonly Message<TAttrs>[],
-  messages: readonly Message<TAttrs>[],
+function hasMessagePrefix(
+  prefix: readonly Message[],
+  messages: readonly Message[],
 ): boolean {
   if (prefix.length > messages.length) {
     return false;
@@ -748,9 +725,9 @@ function hasMessagePrefix<TAttrs extends Attrs>(
   );
 }
 
-function messagesAreEquivalent<TAttrs extends Attrs>(
-  left: Message<TAttrs>,
-  right: Message<TAttrs> | undefined,
+function messagesAreEquivalent(
+  left: Message,
+  right: Message | undefined,
 ): boolean {
   if (!right) {
     return false;

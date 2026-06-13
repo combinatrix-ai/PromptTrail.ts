@@ -1,20 +1,17 @@
 import type { Session } from '../session';
-import { Attrs, Vars } from '../session';
+import type { Vars } from '../session';
 
 /**
  * Type definition for transform functions
  */
-export type TransformFn<TAttrs extends Attrs, TVars extends Vars> = (
-  session: Session<TVars, TAttrs>,
-) => Session<TVars, TAttrs>;
+export type TransformFn<TVars extends Vars> = (
+  session: Session<TVars>,
+) => Session<TVars>;
 
 /**
  * Options for configuring the SubroutineTemplate.
  */
-export interface ISubroutineTemplateOptions<
-  TAttrs extends Attrs,
-  TVars extends Vars,
-> {
+export interface ISubroutineTemplateOptions<TVars extends Vars> {
   /**
    * Entry projection for the subroutine session.
    *
@@ -25,7 +22,7 @@ export interface ISubroutineTemplateOptions<
    * @param parentSession The parent session (Session<P>).
    * @returns The initial session for the subroutine (Session<S>).
    */
-  init?: (parentSession: Session<TVars, TAttrs>) => Session<TVars, TAttrs>;
+  init?: (parentSession: Session<TVars>) => Session<TVars>;
 
   /**
    * Exit projection for merging the final subroutine session back into the
@@ -39,9 +36,9 @@ export interface ISubroutineTemplateOptions<
    * @returns The merged session (Session<P>).
    */
   squash?: (
-    parentSession: Session<TVars, TAttrs>,
-    subroutineSession: Session<TVars, TAttrs>,
-  ) => Session<TVars, TAttrs>;
+    parentSession: Session<TVars>,
+    subroutineSession: Session<TVars>,
+  ) => Session<TVars>;
 
   /**
    * Optional identifier for the template.

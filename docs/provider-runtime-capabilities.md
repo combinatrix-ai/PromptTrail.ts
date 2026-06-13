@@ -1024,7 +1024,7 @@ export interface ApprovalRequest {
 
 export type ApprovalHandler = (
   request: ApprovalRequest,
-  session: Session<any, any>,
+  session: Session<any>,
 ) => Promise<ApprovalDecision>;
 ```
 

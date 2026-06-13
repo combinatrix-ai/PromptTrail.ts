@@ -7,25 +7,18 @@ import {
   runRuntimeMiddlewareWrapper,
 } from '../../interceptors';
 import type { Session } from '../../session';
-import type { Attrs, Vars } from '../../session';
+import type { Vars } from '../../session';
 
-export interface ModelRuntimeRequest<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
+export interface ModelRuntimeRequest<TVars extends Vars = Vars> {
+  session: Session<TVars>;
 }
 
-export async function executeRuntimeModelCall<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TResult,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
-  session: Session<TVars, TAttrs>,
-  call: (session: Session<TVars, TAttrs>) => Promise<TResult>,
+export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
+  runtime: ExecutionRuntimeState<TVars>,
+  session: Session<TVars>,
+  call: (session: Session<TVars>) => Promise<TResult>,
   commandScope = 'Model execution',
-): Promise<{ session: Session<TVars, TAttrs>; result: TResult }> {
+): Promise<{ session: Session<TVars>; result: TResult }> {
   const beforeModel = await runRuntimeExecutionPhase(runtime, {
     phase: 'beforeModel',
     session,
@@ -33,7 +26,7 @@ export async function executeRuntimeModelCall<
   assertModelCommandSupported(beforeModel.command, commandScope);
   let validSession = beforeModel.session;
 
-  const request: ModelRuntimeRequest<TVars, TAttrs> = {
+  const request: ModelRuntimeRequest<TVars> = {
     session: validSession,
   };
   const prepared = await runExecutionPhase({
@@ -52,8 +45,8 @@ export async function executeRuntimeModelCall<
   runtime.middlewareState = prepared.middlewareState;
   runtime.version = prepared.afterVersion;
   const modelSession =
-    (prepared.request as ModelRuntimeRequest<TVars, TAttrs> | undefined)
-      ?.session ?? validSession;
+    (prepared.request as ModelRuntimeRequest<TVars> | undefined)?.session ??
+    validSession;
 
   let openModelEvents = 0;
   const closeModelEvents = async (
@@ -70,8 +63,7 @@ export async function executeRuntimeModelCall<
     try {
       const result = await runRuntimeMiddlewareWrapper<
         TVars,
-        TAttrs,
-        ModelRuntimeRequest<TVars, TAttrs>,
+        ModelRuntimeRequest<TVars>,
         TResult
       >(runtime, {
         phase: 'wrapModelCall',
@@ -107,11 +99,8 @@ export async function executeRuntimeModelCall<
   return { session: validSession, result };
 }
 
-export async function emitModelEvent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+export async function emitModelEvent<TVars extends Vars = Vars>(
+  runtime: ExecutionRuntimeState<TVars> | undefined,
   type: 'model.started' | 'model.completed' | 'model.failed',
   error?: unknown,
 ): Promise<boolean> {

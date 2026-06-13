@@ -25,7 +25,7 @@ import {
   type AssistantMessage,
   type Message as PromptTrailMessage,
 } from './message';
-import { Session, type Attrs, type Vars } from './session';
+import { Session, type Vars } from './session';
 import { type ModelOutput, Source } from './source';
 import { Parallel } from './templates/composite/parallel';
 import type { Template } from './templates/base';
@@ -41,15 +41,9 @@ import {
 import type { ProviderSessionBinding } from './provider_session';
 import type { IValidator } from './validators';
 
-export interface GraphExecutionOptions<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session?: Session<TVars, TAttrs>;
-  input?:
-    | string
-    | GraphInboundInput<TAttrs>
-    | readonly GraphInboundInput<TAttrs>[];
+export interface GraphExecutionOptions<TVars extends Vars = Vars> {
+  session?: Session<TVars>;
+  input?: string | GraphInboundInput | readonly GraphInboundInput[];
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   maxLoopIterations?: number;
@@ -58,18 +52,18 @@ export interface GraphExecutionOptions<
   strictObservers?: boolean;
   eventScopeId?: string;
   nextEventSeq?: () => number;
-  runtime?: ExecutionRuntimeState<TVars, TAttrs>;
+  runtime?: ExecutionRuntimeState<TVars>;
   skipNode?: (
     node: AgentGraphNode,
     nodePath: string,
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
   ) => boolean;
   resumeFromNode?: string;
   durableToolBoundary?: (
-    context: GraphToolDurableBoundaryContext<TVars, TAttrs>,
+    context: GraphToolDurableBoundaryContext<TVars>,
   ) => ExecutionDurableBoundary | undefined;
   durableToolExecution?: <T>(
-    context: GraphDurableBoundaryContext<TVars, TAttrs>,
+    context: GraphDurableBoundaryContext<TVars>,
     execute: (durable?: ExecutionDurableBoundary) => Promise<T>,
   ) => Promise<T>;
   durableBoundary?: ExecutionDurableBoundaryProvider;
@@ -82,34 +76,27 @@ export interface GraphExecutionOptions<
   unsupportedCommandLabel?: string;
 }
 
-export interface GraphToolDurableBoundaryContext<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface GraphToolDurableBoundaryContext<TVars extends Vars = Vars> {
   kind: 'tool';
   nodePath: string;
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   tool: PromptTrailTool<unknown, unknown>;
 }
 
 export interface GraphTransformDurableBoundaryContext<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
 > {
   kind: 'transform';
   nodePath: string;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   effect: ExecutionEffectDeclaration;
   idempotencyKey?: string;
 }
 
-export type GraphDurableBoundaryContext<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> =
-  | GraphToolDurableBoundaryContext<TVars, TAttrs>
-  | GraphTransformDurableBoundaryContext<TVars, TAttrs>;
+export type GraphDurableBoundaryContext<TVars extends Vars = Vars> =
+  | GraphToolDurableBoundaryContext<TVars>
+  | GraphTransformDurableBoundaryContext<TVars>;
 
 export class GraphExecutionSuspended extends Error {
   constructor(
@@ -122,31 +109,25 @@ export class GraphExecutionSuspended extends Error {
   }
 }
 
-export interface GraphInboundInput<TAttrs extends Attrs = Attrs> {
+export interface GraphInboundInput {
   kind?: 'user' | 'system' | 'control';
   content: string;
-  attrs?: TAttrs;
+  attrs?: Readonly<Record<string, unknown>>;
 }
 
-interface GraphExecutionState<TVars extends Vars, TAttrs extends Attrs> {
+interface GraphExecutionState<TVars extends Vars> {
   graph: AgentGraph;
-  session: Session<TVars, TAttrs>;
-  inbox: GraphInboundInput<TAttrs>[];
+  session: Session<TVars>;
+  inbox: GraphInboundInput[];
   cursor: number;
   maxLoopIterations: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
-  runtime: ExecutionRuntimeState<TVars, TAttrs>;
-  skipNode?: GraphExecutionOptions<TVars, TAttrs>['skipNode'];
+  runtime: ExecutionRuntimeState<TVars>;
+  skipNode?: GraphExecutionOptions<TVars>['skipNode'];
   resumeFromNode?: string;
-  durableToolBoundary?: GraphExecutionOptions<
-    TVars,
-    TAttrs
-  >['durableToolBoundary'];
-  durableToolExecution?: GraphExecutionOptions<
-    TVars,
-    TAttrs
-  >['durableToolExecution'];
+  durableToolBoundary?: GraphExecutionOptions<TVars>['durableToolBoundary'];
+  durableToolExecution?: GraphExecutionOptions<TVars>['durableToolExecution'];
   runEventSource: ExecutionEvent['source'];
   unsupportedCommandLabel?: string;
   activeGoal?: ActiveGoalExecution;
@@ -167,13 +148,10 @@ interface ActiveGoalExecution {
   stopped: boolean;
 }
 
-export async function executeAgentGraph<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
+export async function executeAgentGraph<TVars extends Vars = Vars>(
   graph: AgentGraph,
-  options: GraphExecutionOptions<TVars, TAttrs> = {},
-): Promise<Session<TVars, TAttrs>> {
+  options: GraphExecutionOptions<TVars> = {},
+): Promise<Session<TVars>> {
   const observerBus = new ObserverBus(
     [...graph.observers, ...(options.observers ?? [])],
     {
@@ -202,7 +180,7 @@ export async function executeAgentGraph<
         middleware: graph.middleware,
         hooks: graph.hooks,
       })
-    : createExecutionRuntimeState<TVars, TAttrs>({
+    : createExecutionRuntimeState<TVars>({
         middleware: graph.middleware,
         hooks: graph.hooks,
         context,
@@ -227,10 +205,10 @@ export async function executeAgentGraph<
     runtime.recordProviderSession =
       options.recordProviderSession ?? options.runtime.recordProviderSession;
   }
-  const state: GraphExecutionState<TVars, TAttrs> = {
+  const state: GraphExecutionState<TVars> = {
     graph,
-    session: options.session ?? Session.create<TVars, TAttrs>(),
-    inbox: normalizeGraphInbox<TAttrs>(options.input),
+    session: options.session ?? Session.create<TVars>(),
+    inbox: normalizeGraphInbox(options.input),
     cursor: 0,
     maxLoopIterations: options.maxLoopIterations ?? 10,
     context,
@@ -251,11 +229,8 @@ export async function executeAgentGraph<
     const before = await runRuntimeExecutionPhase(state.runtime, {
       phase: 'beforeAgent',
       session: state.session,
-      middleware: graph.middleware as readonly MiddlewareDefinition<
-        TVars,
-        TAttrs
-      >[],
-      hooks: graph.hooks as readonly HookDefinition<TVars, TAttrs>[],
+      middleware: graph.middleware as readonly MiddlewareDefinition<TVars>[],
+      hooks: graph.hooks as readonly HookDefinition<TVars>[],
     });
     state.session = before.session;
     if (before.command.type !== 'none') {
@@ -298,11 +273,8 @@ export async function executeAgentGraph<
     const after = await runRuntimeExecutionPhase(state.runtime, {
       phase: 'afterAgent',
       session: state.session,
-      middleware: graph.middleware as readonly MiddlewareDefinition<
-        TVars,
-        TAttrs
-      >[],
-      hooks: graph.hooks as readonly HookDefinition<TVars, TAttrs>[],
+      middleware: graph.middleware as readonly MiddlewareDefinition<TVars>[],
+      hooks: graph.hooks as readonly HookDefinition<TVars>[],
     });
     state.session = after.session;
     if (after.command.type !== 'none') {
@@ -341,9 +313,9 @@ export async function executeAgentGraph<
   }
 }
 
-async function emitGraphRunEvent<TVars extends Vars, TAttrs extends Attrs>(
+async function emitGraphRunEvent<TVars extends Vars>(
   type: 'run.started' | 'run.completed' | 'run.suspended' | 'run.failed',
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
   event: Partial<ExecutionEvent> = {},
 ): Promise<void> {
   if (!state.runtime.emitEvent || !state.runtime.nextEventSeq) {
@@ -392,11 +364,8 @@ function throwUnsupportedGraphCommand(
   );
 }
 
-function throwUnsupportedGraphCommandForState<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  state: GraphExecutionState<TVars, TAttrs>,
+function throwUnsupportedGraphCommandForState<TVars extends Vars>(
+  state: GraphExecutionState<TVars>,
   command: ResolvedExecutionCommand,
   phase: string,
 ): never {
@@ -418,10 +387,10 @@ function assertGraphPhaseCommandSupported(
   throwUnsupportedGraphCommand(command, phase);
 }
 
-async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeGraphNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   throwIfGraphAborted(state);
   if (state.skipNode?.(node, nodePath, state.session)) {
@@ -487,10 +456,10 @@ async function executeGraphNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeChildren<TVars extends Vars, TAttrs extends Attrs>(
+async function executeChildren<TVars extends Vars>(
   nodes: readonly AgentGraphNode[],
   parentPath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   for (const child of nodes) {
     const halted = await executeGraphNodeWithLegacyLifecycle(
@@ -508,13 +477,10 @@ async function executeChildren<TVars extends Vars, TAttrs extends Attrs>(
  *
  * Returns true if execution should halt (sibling iteration should stop).
  */
-async function executeGraphNodeWithLegacyLifecycle<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function executeGraphNodeWithLegacyLifecycle<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<boolean> {
   const data = graphNodeData(node);
   const lifecycle = isRecord(data.legacyTemplateLifecycle)
@@ -553,10 +519,10 @@ async function executeGraphNodeWithLegacyLifecycle<
   return false;
 }
 
-async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeLoopNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   if (data.kind === 'goalAttempts') {
@@ -597,10 +563,10 @@ async function executeLoopNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeConditionalNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeConditionalNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const branchId = resolveGraphCondition(data.condition, nodePath, state)
@@ -617,10 +583,10 @@ async function executeConditionalNode<TVars extends Vars, TAttrs extends Attrs>(
   await executeChildren(branchChildren, nodePath, state);
 }
 
-async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeGoalNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const goal = stringValue(data.goal);
@@ -646,10 +612,10 @@ async function executeGoalNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeScopeNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   if (!hasSessionPolicy(data)) {
@@ -666,9 +632,9 @@ async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
     throw new Error(`Graph node ${nodePath} returned an invalid init session.`);
   }
 
-  const subState: GraphExecutionState<TVars, TAttrs> = {
+  const subState: GraphExecutionState<TVars> = {
     ...state,
-    session: subroutineInitial as Session<TVars, TAttrs>,
+    session: subroutineInitial as Session<TVars>,
   };
   try {
     await executeChildren(node.children ?? [], nodePath, subState);
@@ -679,7 +645,7 @@ async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
         nodePath,
         data,
         parentSession,
-        subroutineInitial as Session<TVars, TAttrs>,
+        subroutineInitial as Session<TVars>,
         subState.session,
       ),
     );
@@ -690,7 +656,7 @@ async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
         nodePath,
         data,
         parentSession,
-        subroutineInitial as Session<TVars, TAttrs>,
+        subroutineInitial as Session<TVars>,
         subState.session,
       );
       state.session = suspendedSession;
@@ -704,13 +670,10 @@ async function executeScopeNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-async function executeGoalAttemptsNode<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function executeGoalAttemptsNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const goal = state.activeGoal;
   if (!goal) {
@@ -735,10 +698,10 @@ async function executeGoalAttemptsNode<
   }
 }
 
-async function executeUserNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeUserNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const input = data.input ?? data.content;
@@ -757,10 +720,10 @@ async function executeUserNode<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
-async function executeSystemNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeSystemNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const input = data.input ?? data.content;
@@ -779,10 +742,10 @@ async function executeSystemNode<TVars extends Vars, TAttrs extends Attrs>(
   state.session = state.session.addMessage(Message.system(content));
 }
 
-async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeAssistantNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const input = data.input;
@@ -802,7 +765,6 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
     try {
       const modelCall = await executeRuntimeModelCall<
         TVars,
-        TAttrs,
         string | ModelOutput
       >(
         state.runtime,
@@ -861,10 +823,10 @@ async function executeAssistantNode<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
-async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeTransformNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   if (data.kind === 'goalSatisfaction') {
@@ -895,18 +857,15 @@ async function executeTransformNode<TVars extends Vars, TAttrs extends Attrs>(
   await executeTemplateNode(node, nodePath, state);
 }
 
-async function executeEffectTransformNode<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function executeEffectTransformNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
   handler: (...args: unknown[]) => unknown,
   effect: ExecutionEffectDeclaration,
 ): Promise<void> {
   const idempotencyKey = resolveTransformIdempotencyKey(effect, state.session);
-  const context: GraphTransformDurableBoundaryContext<TVars, TAttrs> = {
+  const context: GraphTransformDurableBoundaryContext<TVars> = {
     kind: 'transform',
     nodePath,
     session: state.session,
@@ -937,9 +896,9 @@ async function executeEffectTransformNode<
   await executeTransform();
 }
 
-function adoptTransformResult<TVars extends Vars, TAttrs extends Attrs>(
+function adoptTransformResult<TVars extends Vars>(
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
   result: unknown,
 ): void {
   if (!(result instanceof Session)) {
@@ -947,16 +906,13 @@ function adoptTransformResult<TVars extends Vars, TAttrs extends Attrs>(
       `Graph node ${nodePath} returned an invalid transform result.`,
     );
   }
-  state.session = adoptSessionResult(
-    state.session,
-    result as Session<TVars, TAttrs>,
-  );
+  state.session = adoptSessionResult(state.session, result as Session<TVars>);
 }
 
-async function executeStructuredNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeStructuredNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const template = data.template;
@@ -996,16 +952,13 @@ async function executeStructuredNode<TVars extends Vars, TAttrs extends Attrs>(
       `Graph node ${nodePath} returned an invalid structured fold result.`,
     );
   }
-  state.session = adoptSessionResult(
-    producedSession,
-    result as Session<TVars, TAttrs>,
-  );
+  state.session = adoptSessionResult(producedSession, result as Session<TVars>);
 }
 
-async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeParallelNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const template = graphNodeData(node).template;
   if (!(template instanceof Parallel)) {
@@ -1016,7 +969,7 @@ async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
     return;
   }
 
-  const results: Session<TVars, TAttrs>[] = [];
+  const results: Session<TVars>[] = [];
   // Runtime middleware state is ordered and mutable; keep runtime-backed source
   // calls sequential so phase/version updates cannot race.
   for (const config of sources) {
@@ -1036,10 +989,10 @@ async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
-async function executeCodexTurnNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeCodexTurnNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const template = graphNodeData(node).template;
   if (!(template instanceof CodexTurn)) {
@@ -1050,10 +1003,10 @@ async function executeCodexTurnNode<TVars extends Vars, TAttrs extends Attrs>(
   });
 }
 
-async function executeClaudeTurnNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeClaudeTurnNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const template = graphNodeData(node).template;
   if (!(template instanceof ClaudeTurn)) {
@@ -1064,26 +1017,23 @@ async function executeClaudeTurnNode<TVars extends Vars, TAttrs extends Attrs>(
   });
 }
 
-async function executeTemplateNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeTemplateNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const template = graphNodeData(node).template;
-  if (!isTemplate<TVars, TAttrs>(template)) {
+  if (!isTemplate<TVars>(template)) {
     throw new Error(`Graph node ${nodePath} requires a template.`);
   }
   state.session = await template.execute(state.session, state.runtime);
 }
 
-async function resolveGraphAssistantInput<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function resolveGraphAssistantInput<TVars extends Vars>(
   input: unknown,
   nodePath: string,
-  session: Session<TVars, TAttrs>,
-  state: GraphExecutionState<TVars, TAttrs>,
+  session: Session<TVars>,
+  state: GraphExecutionState<TVars>,
 ): Promise<string | ModelOutput> {
   if (typeof input === 'function') {
     const result = await input(session, {
@@ -1108,10 +1058,10 @@ async function resolveGraphAssistantInput<
   return resolveGraphContent(input, nodePath, session, state.runtime);
 }
 
-function executeGoalSatisfactionNode<TVars extends Vars, TAttrs extends Attrs>(
+function executeGoalSatisfactionNode<TVars extends Vars>(
   data: GraphNodeData,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): void {
   const goal = state.activeGoal;
   if (!goal) {
@@ -1149,14 +1099,11 @@ function executeGoalSatisfactionNode<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-function defaultSubroutineInitialSession<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  _parentSession: Session<TVars, TAttrs>,
+function defaultSubroutineInitialSession<TVars extends Vars>(
+  _parentSession: Session<TVars>,
   _data: GraphNodeData,
-): Session<TVars, TAttrs> {
-  return Session.create<TVars, TAttrs>();
+): Session<TVars> {
+  return Session.create<TVars>();
 }
 
 function hasSessionPolicy(data: GraphNodeData): boolean {
@@ -1167,21 +1114,18 @@ function hasSessionPolicy(data: GraphNodeData): boolean {
   );
 }
 
-async function squashSubroutineSession<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
+async function squashSubroutineSession<TVars extends Vars>(
   nodePath: string,
   data: GraphNodeData,
-  parentSession: Session<TVars, TAttrs>,
-  initialSession: Session<TVars, TAttrs>,
-  subroutineSession: Session<TVars, TAttrs>,
-): Promise<Session<TVars, TAttrs>> {
+  parentSession: Session<TVars>,
+  initialSession: Session<TVars>,
+  subroutineSession: Session<TVars>,
+): Promise<Session<TVars>> {
   const squash = data.squash;
   if (typeof squash === 'function') {
     const result = await squash(parentSession, subroutineSession);
     if (result instanceof Session) {
-      return result as Session<TVars, TAttrs>;
+      return result as Session<TVars>;
     }
     throw new Error(
       `Graph node ${nodePath} returned an invalid squash session.`,
@@ -1192,7 +1136,7 @@ async function squashSubroutineSession<
     ...parentSession.messages,
     ...subroutineSession.messages.slice(initialSession.messages.length),
   ];
-  let merged = Session.create<TVars, TAttrs>({
+  let merged = Session.create<TVars>({
     vars: parentSession.getVarsObject() as TVars,
   });
   for (const message of messages) {
@@ -1201,10 +1145,10 @@ async function squashSubroutineSession<
   return merged;
 }
 
-async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
+async function executeToolsNode<TVars extends Vars>(
   node: AgentGraphNode,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): Promise<void> {
   const data = graphNodeData(node);
   const lastMessage = state.session.getLastMessage();
@@ -1242,9 +1186,8 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
     }
     const wrappedTool = await runRuntimeMiddlewareWrapper<
       TVars,
-      TAttrs,
       typeof nextCall,
-      PromptTrailMessage<TAttrs>
+      PromptTrailMessage
     >(state.runtime, {
       phase: 'wrapToolCall',
       session: state.session,
@@ -1283,7 +1226,7 @@ async function executeToolsNode<TVars extends Vars, TAttrs extends Attrs>(
     });
     assertGraphPhaseCommandSupported(afterTool.command, 'afterTool');
     const result =
-      (afterTool.result as PromptTrailMessage<TAttrs> | undefined) ??
+      (afterTool.result as PromptTrailMessage | undefined) ??
       wrappedTool.result;
     state.session = afterTool.session;
     state.session = state.session.addMessage(result);
@@ -1318,19 +1261,19 @@ function resolveGraphTools(
   throw new Error(`Graph node ${nodePath} has unsupported tools config.`);
 }
 
-function normalizeToolResultMessage<TAttrs extends Attrs>(
+function normalizeToolResultMessage(
   result: CallToolResult,
   call: { id: string; name: string },
-): PromptTrailMessage<TAttrs> {
+): PromptTrailMessage {
   return {
     type: 'tool_result' as const,
     content: stringifyCallToolResult(result),
     structuredContent: result.structuredContent,
+    toolCallId: call.id,
     attrs: {
-      toolCallId: call.id,
       toolName: call.name,
       isError: result.isError,
-    } as unknown as TAttrs,
+    },
   };
 }
 
@@ -1354,8 +1297,8 @@ function isPromptTrailToolRecord(
   return Object.values(value).every(isPromptTrailTool);
 }
 
-function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
-  state: GraphExecutionState<TVars, TAttrs>,
+function consumeInbox<TVars extends Vars>(
+  state: GraphExecutionState<TVars>,
 ): ConsumedInboxKind {
   const inbound = state.inbox[state.cursor];
   if (!inbound) {
@@ -1378,8 +1321,8 @@ function consumeInbox<TVars extends Vars, TAttrs extends Attrs>(
   return kind;
 }
 
-function materializeRemainingInbox<TVars extends Vars, TAttrs extends Attrs>(
-  state: GraphExecutionState<TVars, TAttrs>,
+function materializeRemainingInbox<TVars extends Vars>(
+  state: GraphExecutionState<TVars>,
 ): void {
   while (state.cursor < state.inbox.length) {
     consumeInbox(state);
@@ -1409,10 +1352,10 @@ function isStaticGraphUserNode(node: AgentGraphNode): boolean {
   );
 }
 
-function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
+function resolveGraphCondition<TVars extends Vars>(
   condition: unknown,
   nodePath: string,
-  state: GraphExecutionState<TVars, TAttrs>,
+  state: GraphExecutionState<TVars>,
 ): boolean {
   if (typeof condition === 'boolean') {
     return condition;
@@ -1429,10 +1372,10 @@ function resolveGraphCondition<TVars extends Vars, TAttrs extends Attrs>(
   throw new Error(`Graph node ${nodePath} requires a condition.`);
 }
 
-function graphConditionContext<TVars extends Vars, TAttrs extends Attrs>(
-  state: GraphExecutionState<TVars, TAttrs>,
+function graphConditionContext<TVars extends Vars>(
+  state: GraphExecutionState<TVars>,
 ): {
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
 } {
@@ -1482,11 +1425,11 @@ function isGraphDescendantPath(path: string, ancestorPath: string): boolean {
   return path.startsWith(`${ancestorPath}/`);
 }
 
-async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
+async function resolveGraphContent<TVars extends Vars>(
   input: unknown,
   nodePath: string,
-  session: Session<TVars, TAttrs>,
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  session: Session<TVars>,
+  runtime: ExecutionRuntimeState<TVars>,
 ): Promise<string | ModelOutput> {
   if (input instanceof Source) {
     return input.getContent(session, runtime);
@@ -1505,8 +1448,8 @@ async function resolveGraphContent<TVars extends Vars, TAttrs extends Attrs>(
 
 function isGraphContentSource(input: unknown): input is {
   getContent: (
-    session: Session<any, any>,
-    runtime?: ExecutionRuntimeState<any, any>,
+    session: Session<any>,
+    runtime?: ExecutionRuntimeState<any>,
   ) => Promise<string | ModelOutput> | string | ModelOutput;
 } {
   return (
@@ -1569,42 +1512,34 @@ function normalizeAssistantOutput(
   );
 }
 
-function addAssistantOutputMessages<TVars extends Vars, TAttrs extends Attrs>(
-  session: Session<TVars, TAttrs>,
+function addAssistantOutputMessages<TVars extends Vars>(
+  session: Session<TVars>,
   output: ModelOutput,
-): Session<TVars, TAttrs> {
+): Session<TVars> {
   let updatedSession = session.addMessage(assistantMessageFromOutput(output));
   for (const toolResult of output.toolResults ?? []) {
     updatedSession = updatedSession.addMessage({
       type: 'tool_result',
       content: JSON.stringify(toolResult.result),
-      attrs: {
-        toolCallId: toolResult.toolCallId,
-      } as unknown as TAttrs,
+      toolCallId: toolResult.toolCallId,
     });
   }
   return updatedSession;
 }
 
-function assistantMessageFromOutput<TAttrs extends Attrs>(
-  output: ModelOutput,
-): AssistantMessage<TAttrs> {
+function assistantMessageFromOutput(output: ModelOutput): AssistantMessage {
   return {
     type: 'assistant',
     content: output.content,
     toolCalls: output.toolCalls,
-    attrs: (output.metadata as TAttrs) ?? ({} as TAttrs),
+    attrs: output.metadata ?? {},
     structuredContent: output.structuredOutput,
   };
 }
 
-function normalizeGraphInbox<TAttrs extends Attrs>(
-  input:
-    | string
-    | GraphInboundInput<TAttrs>
-    | readonly GraphInboundInput<TAttrs>[]
-    | undefined,
-): GraphInboundInput<TAttrs>[] {
+function normalizeGraphInbox(
+  input: string | GraphInboundInput | readonly GraphInboundInput[] | undefined,
+): GraphInboundInput[] {
   if (input === undefined) {
     return [];
   }
@@ -1612,9 +1547,9 @@ function normalizeGraphInbox<TAttrs extends Attrs>(
     return [{ kind: 'user', content: input }];
   }
   if (Array.isArray(input)) {
-    return [...(input as readonly GraphInboundInput<TAttrs>[])];
+    return [...(input as readonly GraphInboundInput[])];
   }
-  return [input as GraphInboundInput<TAttrs>];
+  return [input as GraphInboundInput];
 }
 
 function graphNodeData(node: AgentGraphNode): GraphNodeData {
@@ -1673,8 +1608,8 @@ function handleUnsatisfiedGoal(
   throw new Error(`Graph goal ${goal.nodePath} ${reason} at ${nodePath}.`);
 }
 
-function throwIfGraphAborted<TVars extends Vars, TAttrs extends Attrs>(
-  state: GraphExecutionState<TVars, TAttrs>,
+function throwIfGraphAborted<TVars extends Vars>(
+  state: GraphExecutionState<TVars>,
 ): void {
   if (!state.signal?.aborted) {
     return;
@@ -1693,9 +1628,7 @@ function isModelOutput(value: unknown): value is ModelOutput {
   return isRecord(value) && typeof value.content === 'string';
 }
 
-function isAssistantMessage<TAttrs extends Attrs = Attrs>(
-  value: unknown,
-): value is AssistantMessage<TAttrs> {
+function isAssistantMessage(value: unknown): value is AssistantMessage {
   return (
     isRecord(value) &&
     value.type === 'assistant' &&
@@ -1703,8 +1636,8 @@ function isAssistantMessage<TAttrs extends Attrs = Attrs>(
   );
 }
 
-function isTemplate<TVars extends Vars, TAttrs extends Attrs>(
+function isTemplate<TVars extends Vars>(
   value: unknown,
-): value is Template<TAttrs, TVars> {
+): value is Template<TVars> {
   return isRecord(value) && typeof value.execute === 'function';
 }

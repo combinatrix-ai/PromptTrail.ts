@@ -1,6 +1,5 @@
 import type { Message } from './message';
 import type { RetainLevel } from './runtime';
-import type { Attrs } from './session';
 
 export type PromptTrailStreamEvent =
   | { type: 'text.delta'; index: number; delta: string }
@@ -164,10 +163,10 @@ export function retainPromptTrailStreamMetadata(
   return metadata;
 }
 
-export function streamStateToAssistantMessage<TAttrs extends Attrs = Attrs>(
+export function streamStateToAssistantMessage(
   state: PromptTrailStreamState,
-  attrs?: TAttrs,
-): Message<TAttrs> {
+  attrs?: Readonly<Record<string, unknown>>,
+): Message {
   const toolCalls = Object.values(state.tools)
     .sort((left, right) => left.index - right.index)
     .filter((tool) => tool.name)

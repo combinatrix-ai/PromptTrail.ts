@@ -363,8 +363,8 @@ describe('GraphExecutor', () => {
     expect(session.getLastMessage()).toMatchObject({
       type: 'tool_result',
       content: 'value:1',
+      toolCallId: 'call-1',
       attrs: {
-        toolCallId: 'call-1',
         toolName: 'lookup',
       },
     });

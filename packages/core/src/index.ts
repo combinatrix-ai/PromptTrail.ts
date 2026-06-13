@@ -158,7 +158,7 @@ export type {
   TriggerEvent,
 } from './runtime_bindings';
 export { createSession, Session, SessionBuilder } from './session';
-export type { Attrs, Vars } from './session';
+export type { Vars } from './session';
 export {
   CallbackSource,
   CLISource,

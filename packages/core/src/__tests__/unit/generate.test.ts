@@ -124,7 +124,7 @@ describe('convertSessionToAiSdkMessages', () => {
           {
             type: 'tool_result',
             content: JSON.stringify({ found: true, status: 'shipped' }),
-            attrs: { toolCallId: 'call-1' },
+            toolCallId: 'call-1',
           },
           { type: 'user', content: 'Refund it please.' },
         ],
@@ -315,7 +315,8 @@ describe('streamPromptTrailToolLoop', () => {
           content: [{ type: 'json', json: { value: 'result:streaming' } }],
           structuredContent: { value: 'result:streaming' },
         }),
-        attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+        toolCallId: 'call-1',
+        attrs: { toolCallName: 'lookup' },
       },
       { type: 'assistant', content: 'Done' },
       {
@@ -432,7 +433,8 @@ describe('streamPromptTrailToolLoop', () => {
     expect(messages[1]).toMatchObject({
       type: 'tool_result',
       content: 'patched tool result',
-      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+      toolCallId: 'call-1',
+      attrs: { toolCallName: 'lookup' },
     });
     expect(seenTurnVars).toEqual([{}, { beforeTool: true, afterTool: true }]);
     expect(events).toEqual([
@@ -467,8 +469,8 @@ describe('streamPromptTrailToolLoop', () => {
               result: {
                 type: 'tool_result',
                 content: `blocked:${call.name}`,
+                toolCallId: call.id,
                 attrs: {
-                  toolCallId: call.id,
                   toolCallName: call.name,
                 },
               },
@@ -541,7 +543,8 @@ describe('streamPromptTrailToolLoop', () => {
     expect(messages[1]).toMatchObject({
       type: 'tool_result',
       content: 'blocked:lookup:after',
-      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+      toolCallId: 'call-1',
+      attrs: { toolCallName: 'lookup' },
     });
     expect(events).toEqual([
       '0:session.patched:wrapToolCall',
@@ -685,7 +688,8 @@ describe('streamPromptTrailToolLoop', () => {
 
     expect(messages[1]).toMatchObject({
       type: 'tool_result',
-      attrs: { toolCallId: 'call-1', toolCallName: 'lookup' },
+      toolCallId: 'call-1',
+      attrs: { toolCallName: 'lookup' },
     });
     expect(JSON.parse(messages[1].content as string)).toMatchObject({
       isError: true,

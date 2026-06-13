@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { Session, type Attrs, type Vars } from '../session';
+import { Session, type Vars } from '../session';
 import type { CodexTurnOptions } from '../codex_app_server';
 import type { ClaudeTurnOptions } from '../claude_agent';
 import {
@@ -52,26 +52,25 @@ import { Transform } from './primitives/transform';
 import { User } from './primitives/user';
 import { ISubroutineTemplateOptions } from './template_types';
 
-type AgentGraphAssistantHandler<TC extends Vars, TM extends Attrs> = (
-  session: Session<TC, TM>,
+type AgentGraphAssistantHandler<TC extends Vars> = (
+  session: Session<TC>,
   runtime?: AgentGraphHandlerRuntime,
 ) => unknown | Promise<unknown>;
 
-type AgentGraphAssistantInput<TC extends Vars, TM extends Attrs> =
+type AgentGraphAssistantInput<TC extends Vars> =
   | string
   | Source<ModelOutput>
   | Source<string>
-  | AgentGraphAssistantHandler<TC, TM>;
+  | AgentGraphAssistantHandler<TC>;
 
-type AgentGraphPureTransformHandler<TC extends Vars, TM extends Attrs> = (
-  session: Session<TC, TM>,
-) => Session<TC, TM>;
+type AgentGraphPureTransformHandler<TC extends Vars> = (
+  session: Session<TC>,
+) => Session<TC>;
 
 type AgentGraphStructuredFold<
   TSchema extends z.ZodType,
-  TC extends Vars,
-  TM extends Attrs,
-> = (obj: z.infer<TSchema>, session: Session<TC, TM>) => Session<any, TM>;
+  TC extends Vars = Vars,
+> = (obj: z.infer<TSchema>, session: Session<TC>) => Session<any>;
 
 export interface AgentGraphTransformEffectContext {
   context?: Record<string, unknown>;
@@ -84,23 +83,20 @@ export interface AgentGraphTransformEffectOptions {
   effect: ExecutionEffectDeclaration;
 }
 
-type AgentGraphEffectTransformHandler<TC extends Vars, TM extends Attrs> = (
-  session: Session<TC, TM>,
+type AgentGraphEffectTransformHandler<TC extends Vars> = (
+  session: Session<TC>,
   ctx: AgentGraphTransformEffectContext,
-) => Session<TC, TM> | Promise<Session<TC, TM>>;
+) => Session<TC> | Promise<Session<TC>>;
 
 export interface AgentGraphHandlerRuntime {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
-export type AgentGraphCondition<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> =
+export type AgentGraphCondition<TC extends Vars = Vars> =
   | boolean
   | ((context: {
-      session: Session<TC, TM>;
+      session: Session<TC>;
       context?: Record<string, unknown>;
       signal?: AbortSignal;
     }) => boolean);
@@ -109,53 +105,43 @@ export interface AgentGraphLoopOptions {
   maxIterations?: number;
 }
 
-export interface AgentGoalSatisfactionContext<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> {
-  session: Session<TC, TM>;
+export interface AgentGoalSatisfactionContext<TC extends Vars = Vars> {
+  session: Session<TC>;
   goal: string;
   attempt: number;
   context?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
-export interface AgentGoalOptions<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> {
+export interface AgentGoalOptions<TC extends Vars = Vars> {
   interaction?: 'none' | 'optional' | 'required';
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
-  model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC, TM>;
-  isSatisfied?: (context: AgentGoalSatisfactionContext<TC, TM>) => boolean;
+  model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC>;
+  isSatisfied?: (context: AgentGoalSatisfactionContext<TC>) => boolean;
   onUnsatisfied?: 'retry' | 'continue' | 'halt';
 }
 
-export interface AgentGraphExecutionOptions<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> extends GraphExecutionOptions<TC, TM>,
+export interface AgentGraphExecutionOptions<TC extends Vars = Vars>
+  extends GraphExecutionOptions<TC>,
     AgentExecutionOptions {
   version?: string;
 }
 
-export interface AgentExecuteOptions<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> extends AgentGraphExecutionOptions<TC, TM> {}
+export interface AgentExecuteOptions<TC extends Vars = Vars>
+  extends AgentGraphExecutionOptions<TC> {}
 
-export type AgentExecuteOptionsWithCheckpoint<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> = Omit<AgentExecuteOptions<TC, TM>, 'checkpoint'> & {
+export type AgentExecuteOptionsWithCheckpoint<TC extends Vars = Vars> = Omit<
+  AgentExecuteOptions<TC>,
+  'checkpoint'
+> & {
   checkpoint: AgentCheckpointOption;
 };
 
-export type AgentExecuteOptionsWithoutCheckpoint<
-  TC extends Vars = Vars,
-  TM extends Attrs = Attrs,
-> = Omit<AgentExecuteOptions<TC, TM>, 'checkpoint'> & {
+export type AgentExecuteOptionsWithoutCheckpoint<TC extends Vars = Vars> = Omit<
+  AgentExecuteOptions<TC>,
+  'checkpoint'
+> & {
   checkpoint?: undefined;
 };
 
@@ -167,7 +153,6 @@ type AgentGraphNodeDraft = Omit<AgentGraphNode, 'id' | 'children'> & {
 
 /**
  * Agent class for building and executing templates
- * @template TAttrs - The metadata type.
  * @template TVars - The context type.
  * @class
  * @public
@@ -193,16 +178,16 @@ type AgentGraphNodeDraft = Omit<AgentGraphNode, 'id' | 'children'> & {
  *   .loop(agent => agent.user('Input'), condition)
  *   .subroutine(agent => agent.user('Sub'));
  */
-export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
+export class Agent<TC extends Vars = Vars> {
   private constructor(
-    private readonly root: Fluent<TM, TC> = new Sequence<TM, TC>(),
+    private readonly root: Fluent<TC> = new Sequence<TC>(),
     private readonly graphName?: string,
   ) {}
 
   private readonly graphNodes: AgentGraphNodeDraft[] = [];
   private readonly graphTools: Record<string, PromptTrailTool<any, any>> = {};
-  private readonly middleware: MiddlewareDefinition<TC, TM>[] = [];
-  private readonly hooks: HookDefinition<TC, TM>[] = [];
+  private readonly middleware: MiddlewareDefinition<TC>[] = [];
+  private readonly hooks: HookDefinition<TC>[] = [];
   private readonly observers: ObserverLike[] = [];
   private directCheckpointOptions?: AgentCheckpointOption;
   private directDurableStore?: DurableRunStore;
@@ -225,7 +210,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   private assertGraphExecutionSupported(
-    options: AgentGraphExecutionOptions<TC, TM> | undefined,
+    options: AgentGraphExecutionOptions<TC> | undefined,
   ): void {
     const rawOptions = options as Record<string, unknown> | undefined;
     const unsupportedOption = ['runId'].find((key) => {
@@ -245,21 +230,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
   /** Static factory methods -------------------------------------------------- */
 
-  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    name: string,
-  ): Agent<TC, TM>;
-  static create<TC extends Vars = Vars, TM extends Attrs = Attrs>(
-    name?: string,
-  ) {
+  static create<TC extends Vars = Vars>(name: string): Agent<TC>;
+  static create<TC extends Vars = Vars>(name?: string) {
     if (!name) {
       throw new Error('Agent.create(name) requires a stable agent name.');
     }
-    return new Agent<TC, TM>(new Sequence<TM, TC>(), name);
+    return new Agent<TC>(new Sequence<TC>(), name);
   }
 
   /** fluent helpers -------------------------------------------------- */
 
-  add(t: Template<TM, TC>) {
+  add(t: Template<TC>) {
     if (this.isGraphAuthoringMode()) {
       this.graphNodes.push({
         type: 'transform',
@@ -271,12 +252,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  use(middleware: MiddlewareDefinition<TC, TM>) {
+  use(middleware: MiddlewareDefinition<TC>) {
     this.middleware.push(middleware);
     return this;
   }
 
-  hook(hook: HookDefinition<TC, TM>) {
+  hook(hook: HookDefinition<TC>) {
     this.hooks.push(hook);
     return this;
   }
@@ -300,7 +281,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         ? finalizeGraphNodeIds(this.graphNodes, {
             legacyLifecycle: this.hasInterceptors(),
           })
-        : compileLegacyRootTemplate(this.root as Composite<TM, TC>);
+        : compileLegacyRootTemplate(this.root as Composite<TC>);
     return createAgentGraph({
       name: this.graphName,
       version,
@@ -402,18 +383,18 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     contentOrSource?: string | Source<ModelOutput> | Source<string>,
     validatorOrOptions?: IValidator | ValidationOptions,
   ): this;
-  assistant(sourceOrHandler: AgentGraphAssistantInput<TC, TM>): this;
+  assistant(sourceOrHandler: AgentGraphAssistantInput<TC>): this;
   assistant(
     id: string,
-    sourceOrHandler?: AgentGraphAssistantInput<TC, TM>,
+    sourceOrHandler?: AgentGraphAssistantInput<TC>,
     options?: Record<string, unknown>,
   ): this;
   assistant(
-    contentOrSource?: AgentGraphAssistantInput<TC, TM>,
+    contentOrSource?: AgentGraphAssistantInput<TC>,
     validatorOrOptions?:
       | IValidator
       | ValidationOptions
-      | AgentGraphAssistantInput<TC, TM>,
+      | AgentGraphAssistantInput<TC>,
     maybeOptions?: Record<string, unknown>,
   ) {
     if (
@@ -467,12 +448,12 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  goal(goal: string, options?: AgentGoalOptions<TC, TM>): this;
-  goal(id: string, goal: string, options?: AgentGoalOptions<TC, TM>): this;
+  goal(goal: string, options?: AgentGoalOptions<TC>): this;
+  goal(id: string, goal: string, options?: AgentGoalOptions<TC>): this;
   goal(
     idOrGoal: string,
-    goalOrOptions?: string | AgentGoalOptions<TC, TM>,
-    maybeOptions: AgentGoalOptions<TC, TM> = {},
+    goalOrOptions?: string | AgentGoalOptions<TC>,
+    maybeOptions: AgentGoalOptions<TC> = {},
   ): this {
     const hasAuthoredId = typeof goalOrOptions === 'string';
     this.graphNodes.push(
@@ -481,7 +462,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         hasAuthoredId ? goalOrOptions : idOrGoal,
         hasAuthoredId
           ? maybeOptions
-          : ((goalOrOptions as AgentGoalOptions<TC, TM> | undefined) ?? {}),
+          : ((goalOrOptions as AgentGoalOptions<TC> | undefined) ?? {}),
       ),
     );
     return this;
@@ -529,30 +510,27 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  transform(transform: AgentGraphPureTransformHandler<TC, TM>): this;
+  transform(transform: AgentGraphPureTransformHandler<TC>): this;
   transform(
     options: AgentGraphTransformEffectOptions,
-    transform: AgentGraphEffectTransformHandler<TC, TM>,
+    transform: AgentGraphEffectTransformHandler<TC>,
   ): this;
-  transform(
-    id: string,
-    transform: AgentGraphPureTransformHandler<TC, TM>,
-  ): this;
+  transform(id: string, transform: AgentGraphPureTransformHandler<TC>): this;
   transform(
     id: string,
     options: AgentGraphTransformEffectOptions,
-    transform: AgentGraphEffectTransformHandler<TC, TM>,
+    transform: AgentGraphEffectTransformHandler<TC>,
   ): this;
   transform(
     idOrTransform:
       | string
-      | AgentGraphPureTransformHandler<TC, TM>
+      | AgentGraphPureTransformHandler<TC>
       | AgentGraphTransformEffectOptions,
     optionsOrTransform?:
       | AgentGraphTransformEffectOptions
-      | AgentGraphPureTransformHandler<TC, TM>
-      | AgentGraphEffectTransformHandler<TC, TM>,
-    maybeTransform?: AgentGraphEffectTransformHandler<TC, TM>,
+      | AgentGraphPureTransformHandler<TC>
+      | AgentGraphEffectTransformHandler<TC>,
+    maybeTransform?: AgentGraphEffectTransformHandler<TC>,
   ) {
     if (typeof idOrTransform === 'string') {
       if (typeof optionsOrTransform === 'function') {
@@ -596,16 +574,16 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     this.root.add(
-      new Transform(idOrTransform as AgentGraphPureTransformHandler<TC, TM>),
+      new Transform(idOrTransform as AgentGraphPureTransformHandler<TC>),
     );
     return this;
   }
 
-  codex(options: CodexTurnOptions<TM, TC>): this;
-  codex(id: string, options: CodexTurnOptions<TM, TC>): this;
+  codex(options: CodexTurnOptions<TC>): this;
+  codex(id: string, options: CodexTurnOptions<TC>): this;
   codex(
-    idOrOptions: string | CodexTurnOptions<TM, TC>,
-    maybeOptions?: CodexTurnOptions<TM, TC>,
+    idOrOptions: string | CodexTurnOptions<TC>,
+    maybeOptions?: CodexTurnOptions<TC>,
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
@@ -630,11 +608,11 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  claude(options: ClaudeTurnOptions<TM, TC>): this;
-  claude(id: string, options: ClaudeTurnOptions<TM, TC>): this;
+  claude(options: ClaudeTurnOptions<TC>): this;
+  claude(id: string, options: ClaudeTurnOptions<TC>): this;
   claude(
-    idOrOptions: string | ClaudeTurnOptions<TM, TC>,
-    maybeOptions?: ClaudeTurnOptions<TM, TC>,
+    idOrOptions: string | ClaudeTurnOptions<TC>,
+    maybeOptions?: ClaudeTurnOptions<TC>,
   ) {
     if (typeof idOrOptions === 'string') {
       if (!maybeOptions) {
@@ -659,12 +637,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  parallel(template: Parallel<TM, TC>): this;
-  parallel(id: string, template: Parallel<TM, TC>): this;
-  parallel(
-    idOrTemplate: string | Parallel<TM, TC>,
-    maybeTemplate?: Parallel<TM, TC>,
-  ) {
+  parallel(template: Parallel<TC>): this;
+  parallel(id: string, template: Parallel<TC>): this;
+  parallel(idOrTemplate: string | Parallel<TC>, maybeTemplate?: Parallel<TC>) {
     if (typeof idOrTemplate === 'string') {
       if (!maybeTemplate) {
         throw new Error('Agent.parallel(id, template) requires template.');
@@ -687,26 +662,26 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  structured(template: Structured<TM, TC>): this;
+  structured(template: Structured<TC>): this;
   structured<TSchema extends z.ZodType>(schema: TSchema): this;
   structured<TSchema extends z.ZodType>(
     schema: TSchema,
-    fold: AgentGraphStructuredFold<TSchema, TC, TM>,
+    fold: AgentGraphStructuredFold<TSchema, TC>,
   ): this;
-  structured(id: string, template: Structured<TM, TC>): this;
+  structured(id: string, template: Structured<TC>): this;
   structured<TSchema extends z.ZodType>(id: string, schema: TSchema): this;
   structured<TSchema extends z.ZodType>(
     id: string,
     schema: TSchema,
-    fold: AgentGraphStructuredFold<TSchema, TC, TM>,
+    fold: AgentGraphStructuredFold<TSchema, TC>,
   ): this;
   structured(
-    idOrValue: string | Structured<TM, TC> | z.ZodType,
+    idOrValue: string | Structured<TC> | z.ZodType,
     maybeValue?:
-      | Structured<TM, TC>
+      | Structured<TC>
       | z.ZodType
-      | AgentGraphStructuredFold<z.ZodType, TC, TM>,
-    maybeFold?: AgentGraphStructuredFold<z.ZodType, TC, TM>,
+      | AgentGraphStructuredFold<z.ZodType, TC>,
+    maybeFold?: AgentGraphStructuredFold<z.ZodType, TC>,
   ) {
     if (typeof idOrValue === 'string') {
       if (!maybeValue) {
@@ -722,7 +697,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           'Agent.structured(id, schema, fold) requires a schema.',
         );
       }
-      if (!isStructuredValue<TM, TC>(maybeValue)) {
+      if (!isStructuredValue<TC>(maybeValue)) {
         throw new Error(
           'Agent.structured(id, value) requires a Structured template or a schema.',
         );
@@ -731,7 +706,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
         id: idOrValue,
         type: 'structured',
         data: compactGraphData({
-          template: normalizeStructuredValue<TM, TC>(maybeValue),
+          template: normalizeStructuredValue<TC>(maybeValue),
           fold: maybeFold,
         }),
       });
@@ -743,9 +718,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     if (maybeValue && idOrValue instanceof Structured) {
       throw new Error('Agent.structured(schema, fold) requires a schema.');
     }
-    const template = normalizeStructuredValue<TM, TC>(idOrValue);
+    const template = normalizeStructuredValue<TC>(idOrValue);
     const fold = maybeValue as
-      | AgentGraphStructuredFold<z.ZodType, TC, TM>
+      | AgentGraphStructuredFold<z.ZodType, TC>
       | undefined;
     if (this.isGraphAuthoringMode()) {
       this.graphNodes.push({
@@ -774,41 +749,39 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
   loop(
     id: string,
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    loopIf: AgentGraphCondition<TC, TM>,
+    builderFn: (agent: Agent<TC>) => Agent<TC>,
+    loopIf: AgentGraphCondition<TC>,
     options?: AgentGraphLoopOptions,
   ): this;
   loop(
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    loopIf?: AgentGraphCondition<TC, TM> | boolean,
+    builderFn: (agent: Agent<TC>) => Agent<TC>,
+    loopIf?: AgentGraphCondition<TC> | boolean,
     options?: AgentGraphLoopOptions | number,
   ): this;
   loop(
-    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    idOrBuilderFn: string | ((agent: Agent<TC>) => Agent<TC>),
     builderOrLoopIf?:
-      | ((agent: Agent<TC, TM>) => Agent<TC, TM>)
+      | ((agent: Agent<TC>) => Agent<TC>)
       | boolean
-      | ((s: Session<TC, TM>) => boolean)
-      | AgentGraphCondition<TC, TM>,
+      | ((s: Session<TC>) => boolean)
+      | AgentGraphCondition<TC>,
     loopIfOrMaxIterations?:
-      | AgentGraphCondition<TC, TM>
+      | AgentGraphCondition<TC>
       | boolean
-      | ((s: Session<TC, TM>) => boolean)
+      | ((s: Session<TC>) => boolean)
       | number
       | AgentGraphLoopOptions,
     maybeOptions?: AgentGraphLoopOptions,
   ): this {
     if (typeof idOrBuilderFn === 'string') {
-      const builderFn = builderOrLoopIf as (
-        agent: Agent<TC, TM>,
-      ) => Agent<TC, TM>;
-      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
+      const builderFn = builderOrLoopIf as (agent: Agent<TC>) => Agent<TC>;
+      const innerAgent = Agent.create<TC>(idOrBuilderFn);
       const builtAgent = builderFn(innerAgent);
       this.graphNodes.push({
         id: idOrBuilderFn,
         type: 'loop',
         data: compactGraphData({
-          condition: loopIfOrMaxIterations as AgentGraphCondition<TC, TM>,
+          condition: loopIfOrMaxIterations as AgentGraphCondition<TC>,
           maxIterations: maybeOptions?.maxIterations,
         }),
         children: finalizeGraphNodeIds(builtAgent.graphNodes),
@@ -817,7 +790,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     }
     if (this.isGraphAuthoringMode()) {
       const builderFn = idOrBuilderFn;
-      const innerAgent = Agent.create<TC, TM>('loop');
+      const innerAgent = Agent.create<TC>('loop');
       const builtAgent = builderFn(innerAgent);
       const maxIterations =
         typeof loopIfOrMaxIterations === 'number'
@@ -828,7 +801,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       this.graphNodes.push({
         type: 'loop',
         data: compactGraphData({
-          condition: builderOrLoopIf as AgentGraphCondition<TC, TM> | undefined,
+          condition: builderOrLoopIf as AgentGraphCondition<TC> | undefined,
           maxIterations,
         }),
         children: finalizeGraphNodeIds(builtAgent.graphNodes),
@@ -836,11 +809,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     const builderFn = idOrBuilderFn;
-    const loopIf = builderOrLoopIf as
-      | boolean
-      | ((s: Session<TC, TM>) => boolean);
+    const loopIf = builderOrLoopIf as boolean | ((s: Session<TC>) => boolean);
     const maxIterations = loopIfOrMaxIterations as number | undefined;
-    const innerAgent = Agent.create<TC, TM>('loop');
+    const innerAgent = Agent.create<TC>('loop');
     const builtAgent = builderFn(innerAgent);
     const bodyTemplate = builtAgent.build();
 
@@ -852,34 +823,34 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this;
   }
 
-  loopForever(builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>) {
+  loopForever(builderFn: (agent: Agent<TC>) => Agent<TC>) {
     return this.loop(builderFn, true);
   }
 
   conditional(
     id: string,
-    condition: AgentGraphCondition<TC, TM>,
-    thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    condition: AgentGraphCondition<TC>,
+    thenBuilderFn: (agent: Agent<TC>) => Agent<TC>,
+    elseBuilderFn?: (agent: Agent<TC>) => Agent<TC>,
   ): this;
   conditional(
-    condition: (s: Session<TC, TM>) => boolean,
-    thenBuilderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    elseBuilderFn?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+    condition: (s: Session<TC>) => boolean,
+    thenBuilderFn: (agent: Agent<TC>) => Agent<TC>,
+    elseBuilderFn?: (agent: Agent<TC>) => Agent<TC>,
   ): this;
   conditional(
     idOrCondition:
       | string
-      | ((s: Session<TC, TM>) => boolean)
-      | AgentGraphCondition<TC, TM>,
+      | ((s: Session<TC>) => boolean)
+      | AgentGraphCondition<TC>,
     conditionOrThenBuilder:
-      | AgentGraphCondition<TC, TM>
-      | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
-    thenOrElseBuilder?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    maybeElseBuilder?: (agent: Agent<TC, TM>) => Agent<TC, TM>,
+      | AgentGraphCondition<TC>
+      | ((agent: Agent<TC>) => Agent<TC>),
+    thenOrElseBuilder?: (agent: Agent<TC>) => Agent<TC>,
+    maybeElseBuilder?: (agent: Agent<TC>) => Agent<TC>,
   ): this {
     if (typeof idOrCondition === 'string') {
-      const thenAgent = Agent.create<TC, TM>('then');
+      const thenAgent = Agent.create<TC>('then');
       const thenBuilderFn = thenOrElseBuilder;
       if (!thenBuilderFn) {
         throw new Error(
@@ -888,7 +859,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       }
       const thenChildren = thenBuilderFn(thenAgent).graphNodes;
       const elseChildren = maybeElseBuilder
-        ? maybeElseBuilder(Agent.create<TC, TM>('else')).graphNodes
+        ? maybeElseBuilder(Agent.create<TC>('else')).graphNodes
         : undefined;
       const children = finalizeGraphNodeIds([
         ...thenChildren,
@@ -915,16 +886,14 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     if (this.isGraphAuthoringMode()) {
-      const condition = idOrCondition as AgentGraphCondition<TC, TM>;
+      const condition = idOrCondition as AgentGraphCondition<TC>;
       const thenBuilderFn = conditionOrThenBuilder as (
-        agent: Agent<TC, TM>,
-      ) => Agent<TC, TM>;
+        agent: Agent<TC>,
+      ) => Agent<TC>;
       const elseBuilderFn = thenOrElseBuilder;
-      const thenChildren = thenBuilderFn(
-        Agent.create<TC, TM>('then'),
-      ).graphNodes;
+      const thenChildren = thenBuilderFn(Agent.create<TC>('then')).graphNodes;
       const elseChildren = elseBuilderFn
-        ? elseBuilderFn(Agent.create<TC, TM>('else')).graphNodes
+        ? elseBuilderFn(Agent.create<TC>('else')).graphNodes
         : undefined;
       const children = finalizeGraphNodeIds([
         ...thenChildren,
@@ -947,17 +916,17 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       });
       return this;
     }
-    const condition = idOrCondition as (s: Session<TC, TM>) => boolean;
+    const condition = idOrCondition as (s: Session<TC>) => boolean;
     const thenBuilderFn = conditionOrThenBuilder as (
-      agent: Agent<TC, TM>,
-    ) => Agent<TC, TM>;
+      agent: Agent<TC>,
+    ) => Agent<TC>;
     const elseBuilderFn = thenOrElseBuilder;
-    const thenAgent = Agent.create<TC, TM>('then');
+    const thenAgent = Agent.create<TC>('then');
     const thenTemplate = thenBuilderFn(thenAgent).build();
 
-    let elseTemplate: Template<TM, TC> | undefined;
+    let elseTemplate: Template<TC> | undefined;
     if (elseBuilderFn) {
-      const elseAgent = Agent.create<TC, TM>('else');
+      const elseAgent = Agent.create<TC>('else');
       elseTemplate = elseBuilderFn(elseAgent).build();
     }
 
@@ -972,26 +941,24 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   subroutine(
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    opts?: ISubroutineTemplateOptions<TM, TC>,
+    builderFn: (agent: Agent<TC>) => Agent<TC>,
+    opts?: ISubroutineTemplateOptions<TC>,
   ): this;
   subroutine(
     id: string,
-    builderFn: (agent: Agent<TC, TM>) => Agent<TC, TM>,
-    opts?: ISubroutineTemplateOptions<TM, TC>,
+    builderFn: (agent: Agent<TC>) => Agent<TC>,
+    opts?: ISubroutineTemplateOptions<TC>,
   ): this;
   subroutine(
-    idOrBuilderFn: string | ((agent: Agent<TC, TM>) => Agent<TC, TM>),
+    idOrBuilderFn: string | ((agent: Agent<TC>) => Agent<TC>),
     builderOrOptions?:
-      | ((agent: Agent<TC, TM>) => Agent<TC, TM>)
-      | ISubroutineTemplateOptions<TM, TC>,
-    maybeOptions?: ISubroutineTemplateOptions<TM, TC>,
+      | ((agent: Agent<TC>) => Agent<TC>)
+      | ISubroutineTemplateOptions<TC>,
+    maybeOptions?: ISubroutineTemplateOptions<TC>,
   ): this {
     if (typeof idOrBuilderFn === 'string') {
-      const builderFn = builderOrOptions as (
-        agent: Agent<TC, TM>,
-      ) => Agent<TC, TM>;
-      const innerAgent = Agent.create<TC, TM>(idOrBuilderFn);
+      const builderFn = builderOrOptions as (agent: Agent<TC>) => Agent<TC>;
+      const innerAgent = Agent.create<TC>(idOrBuilderFn);
       const builtAgent = builderFn(innerAgent);
       this.graphNodes.push({
         id: idOrBuilderFn,
@@ -1005,9 +972,9 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     if (this.isGraphAuthoringMode()) {
       const builderFn = idOrBuilderFn;
       const opts = builderOrOptions as
-        | ISubroutineTemplateOptions<TM, TC>
+        | ISubroutineTemplateOptions<TC>
         | undefined;
-      const innerAgent = Agent.create<TC, TM>('subroutine');
+      const innerAgent = Agent.create<TC>('subroutine');
       const builtAgent = builderFn(innerAgent);
       this.graphNodes.push({
         type: 'scope',
@@ -1018,10 +985,8 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       return this;
     }
     const builderFn = idOrBuilderFn;
-    const opts = builderOrOptions as
-      | ISubroutineTemplateOptions<TM, TC>
-      | undefined;
-    const innerAgent = Agent.create<TC, TM>('subroutine');
+    const opts = builderOrOptions as ISubroutineTemplateOptions<TC> | undefined;
+    const innerAgent = Agent.create<TC>('subroutine');
     const builtAgent = builderFn(innerAgent);
     const subroutineTemplate = builtAgent.build();
 
@@ -1031,25 +996,25 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
 
   /** -------------------------------------------------- */
 
-  build(): Template<TM, TC> {
+  build(): Template<TC> {
     return this.hasInterceptors() || this.isGraphAuthoringMode()
       ? this.asTemplate()
       : this.root;
   }
 
   async execute(
-    options: AgentExecuteOptionsWithCheckpoint<TC, TM>,
-  ): Promise<DurableRunResult<TC, TM>>;
+    options: AgentExecuteOptionsWithCheckpoint<TC>,
+  ): Promise<DurableRunResult<TC>>;
   async execute(
-    options?: AgentExecuteOptionsWithoutCheckpoint<TC, TM>,
-  ): Promise<Session<TC, TM>>;
+    options?: AgentExecuteOptionsWithoutCheckpoint<TC>,
+  ): Promise<Session<TC>>;
   async execute(
-    options: AgentExecuteOptions<TC, TM>,
-  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>>;
+    options: AgentExecuteOptions<TC>,
+  ): Promise<Session<TC> | DurableRunResult<TC>>;
   async execute(
-    options?: AgentExecuteOptions<TC, TM> | Session<TC, TM>,
-    runtime?: ExecutionRuntimeState<TC, TM>,
-  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
+    options?: AgentExecuteOptions<TC> | Session<TC>,
+    runtime?: ExecutionRuntimeState<TC>,
+  ): Promise<Session<TC> | DurableRunResult<TC>> {
     if (options instanceof Session && arguments.length === 1) {
       throw new Error(
         'Agent.execute takes a single options object. Use execute({ session, ...options }) instead of positional arguments.',
@@ -1067,34 +1032,31 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     return this.executeInternal(options, runtime);
   }
 
-  private asTemplate(): Template<TM, TC> {
+  private asTemplate(): Template<TC> {
     return {
       execute: (session, runtime) => this.executeTemplate(session, runtime),
     };
   }
 
   private executeTemplate(
-    session?: Session<TC, TM>,
-    runtime?: ExecutionRuntimeState<TC, TM>,
-  ): Promise<Session<TC, TM>> {
-    return this.executeInternal(session, runtime) as Promise<Session<TC, TM>>;
+    session?: Session<TC>,
+    runtime?: ExecutionRuntimeState<TC>,
+  ): Promise<Session<TC>> {
+    return this.executeInternal(session, runtime) as Promise<Session<TC>>;
   }
 
   private async executeInternal(
-    sessionOrOptions?:
-      | Session<TC, TM>
-      | AgentExecuteOptions<TC, TM>
-      | undefined,
+    sessionOrOptions?: Session<TC> | AgentExecuteOptions<TC> | undefined,
     runtimeOrOptions?:
-      | ExecutionRuntimeState<TC, TM>
+      | ExecutionRuntimeState<TC>
       | AgentExecutionOptions
       | AgentExecutionInternalOptions,
-  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
+  ): Promise<Session<TC> | DurableRunResult<TC>> {
     if (this.graphNodes.length > 0) {
       const rawOptions =
         sessionOrOptions instanceof Session
           ? { session: sessionOrOptions }
-          : (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined);
+          : (sessionOrOptions as AgentExecuteOptions<TC> | undefined);
       const options = rawOptions;
       assertNoTopLevelStoreOption(options);
       this.assertGraphExecutionSupported(options);
@@ -1106,7 +1068,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     }
     const optionsObject =
       runtimeOrOptions === undefined && !(sessionOrOptions instanceof Session)
-        ? (sessionOrOptions as AgentExecuteOptions<TC, TM> | undefined)
+        ? (sessionOrOptions as AgentExecuteOptions<TC> | undefined)
         : undefined;
     const session = addDirectExecuteInput(
       optionsObject?.session ??
@@ -1116,7 +1078,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
     assertNoTopLevelStoreOption(optionsObject);
     const parentRuntime = optionsObject
       ? undefined
-      : isExecutionRuntimeState<TC, TM>(runtimeOrOptions)
+      : isExecutionRuntimeState<TC>(runtimeOrOptions)
         ? runtimeOrOptions
         : undefined;
     const executionOptions = optionsObject
@@ -1164,7 +1126,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       const runtime =
         parentRuntime ??
         (executionOptions
-          ? createExecutionRuntimeState<TC, TM>({
+          ? createExecutionRuntimeState<TC>({
               context: executionOptions.context,
               eventScopeId,
               signal: executionOptions.signal,
@@ -1221,7 +1183,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       name: 'direct-agent',
       version: 'legacy-template',
       nodes: expandIntentToolLoops(
-        compileLegacyRootTemplate(this.root as Composite<TM, TC>),
+        compileLegacyRootTemplate(this.root as Composite<TC>),
         Object.keys(this.graphTools).length > 0,
         true,
       ),
@@ -1238,26 +1200,26 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   private async executeDirectDurable(
-    session: Session<TC, TM> | undefined,
+    session: Session<TC> | undefined,
     executionOptions:
       | AgentExecutionOptions
       | AgentExecutionInternalOptions
       | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
-  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
+  ): Promise<Session<TC> | DurableRunResult<TC>> {
     return this.executeGraphDirectDurable(
       {
         ...executionOptions,
         session,
-      } as AgentExecuteOptions<TC, TM>,
+      } as AgentExecuteOptions<TC>,
       durableOptions,
     );
   }
 
   private async executeGraphDirectDurable(
-    executionOptions: AgentExecuteOptions<TC, TM> | undefined,
+    executionOptions: AgentExecuteOptions<TC> | undefined,
     durableOptions: ResolvedAgentDirectDurableOptions,
-  ): Promise<Session<TC, TM> | DurableRunResult<TC, TM>> {
+  ): Promise<Session<TC> | DurableRunResult<TC>> {
     const runtime = createDurableApp({
       store: durableOptions.store,
       defaults: {
@@ -1268,7 +1230,7 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
       observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
     });
     const input = executionOptions?.input;
-    const result = await runtime.executeCheckpointRun<TC, TM>({
+    const result = await runtime.executeCheckpointRun<TC>({
       agent: this,
       runId: durableOptions.runId,
       session: executionOptions?.session,
@@ -1364,16 +1326,16 @@ interface LegacyTemplateCompilerState {
   nextIds: Map<string, number>;
 }
 
-function compileLegacyRootTemplate<TM extends Attrs, TC extends Vars>(
-  root: Composite<TM, TC>,
+function compileLegacyRootTemplate<TC extends Vars>(
+  root: Composite<TC>,
 ): AgentGraphNode[] {
   return compileLegacyCompositeChildren(root, {
     nextIds: new Map<string, number>(),
   });
 }
 
-function compileLegacyCompositeChildren<TM extends Attrs, TC extends Vars>(
-  composite: Composite<TM, TC>,
+function compileLegacyCompositeChildren<TC extends Vars>(
+  composite: Composite<TC>,
   state: LegacyTemplateCompilerState,
 ): AgentGraphNode[] {
   return composite.getTemplates().flatMap((template, index) => {
@@ -1384,15 +1346,15 @@ function compileLegacyCompositeChildren<TM extends Attrs, TC extends Vars>(
   });
 }
 
-function compileLegacyTemplateDirect<TM extends Attrs, TC extends Vars>(
-  template: Template<TM, TC>,
+function compileLegacyTemplateDirect<TC extends Vars>(
+  template: Template<TC>,
   state: LegacyTemplateCompilerState,
 ): AgentGraphNode[] {
   return [compileLegacyTemplate(template, state)];
 }
 
-function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
-  template: Template<TM, TC>,
+function compileLegacyTemplate<TC extends Vars>(
+  template: Template<TC>,
   state: LegacyTemplateCompilerState,
 ): AgentGraphNode {
   if (template instanceof Sequence) {
@@ -1489,7 +1451,7 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
       id: nextLegacyNodeId(state, 'messages'),
       type: 'transform',
       data: {
-        handler: (session: Session<TC, TM>) => {
+        handler: (session: Session<TC>) => {
           let currentSession = session;
           for (const message of template.getGenerateMessages()(session)) {
             currentSession = currentSession.addMessage(message);
@@ -1543,9 +1505,9 @@ function compileLegacyTemplate<TM extends Attrs, TC extends Vars>(
   };
 }
 
-function withLegacyTemplateLifecycle<TM extends Attrs, TC extends Vars>(
+function withLegacyTemplateLifecycle<TC extends Vars>(
   node: AgentGraphNode,
-  template: Template<TM, TC>,
+  template: Template<TC>,
   templateIndex: number,
 ): AgentGraphNode {
   return {
@@ -1560,11 +1522,11 @@ function withLegacyTemplateLifecycle<TM extends Attrs, TC extends Vars>(
   };
 }
 
-function wrapLegacyCondition<TC extends Vars, TM extends Attrs>(
-  condition: ((session: Session<TC, TM>) => boolean) | undefined,
+function wrapLegacyCondition<TC extends Vars>(
+  condition: ((session: Session<TC>) => boolean) | undefined,
 ):
   | ((context: {
-      session: Session<TC, TM>;
+      session: Session<TC>;
       context?: Record<string, unknown>;
       signal?: AbortSignal;
     }) => boolean)
@@ -1609,14 +1571,14 @@ function createDirectAgentEventScopeId(): string {
   return `direct-agent:${random}`;
 }
 
-function addDirectExecuteInput<TC extends Vars, TM extends Attrs>(
-  session: Session<TC, TM> | undefined,
-  input: AgentExecuteOptions<TC, TM>['input'] | undefined,
-): Session<TC, TM> | undefined {
+function addDirectExecuteInput<TC extends Vars>(
+  session: Session<TC> | undefined,
+  input: AgentExecuteOptions<TC>['input'] | undefined,
+): Session<TC> | undefined {
   if (input === undefined) {
     return session;
   }
-  let current = session ?? Session.create<TC, TM>();
+  let current = session ?? Session.create<TC>();
   const inputs = normalizeDirectExecuteInput(input);
   for (const inbound of inputs) {
     if (inbound.kind === 'control') {
@@ -1631,29 +1593,27 @@ function addDirectExecuteInput<TC extends Vars, TM extends Attrs>(
   return current;
 }
 
-function normalizeDirectExecuteInput<TAttrs extends Attrs>(
-  input:
-    | string
-    | GraphInboundInput<TAttrs>
-    | readonly GraphInboundInput<TAttrs>[],
-): GraphInboundInput<TAttrs>[] {
+function normalizeDirectExecuteInput(
+  input: string | GraphInboundInput | readonly GraphInboundInput[],
+): GraphInboundInput[] {
   if (typeof input === 'string') {
     return [{ kind: 'user', content: input }];
   }
   if (Array.isArray(input)) {
-    return [...(input as readonly GraphInboundInput<TAttrs>[])];
+    return [...(input as readonly GraphInboundInput[])];
   }
-  return [input as GraphInboundInput<TAttrs>];
+  return [input as GraphInboundInput];
 }
 
-function graphInputForDurableSend<TAttrs extends Attrs>(
-  input:
-    | string
-    | GraphInboundInput<TAttrs>
-    | readonly GraphInboundInput<TAttrs>[],
+function graphInputForDurableSend(
+  input: string | GraphInboundInput | readonly GraphInboundInput[],
 ):
   | string
-  | { kind: 'user' | 'system' | 'control'; content: string; attrs?: TAttrs } {
+  | {
+      kind: 'user' | 'system' | 'control';
+      content: string;
+      attrs?: Readonly<Record<string, unknown>>;
+    } {
   if (typeof input === 'string') {
     return input;
   }
@@ -1665,7 +1625,7 @@ function graphInputForDurableSend<TAttrs extends Attrs>(
     }
     return graphInputForDurableSend(input[0]);
   }
-  const inbound = input as GraphInboundInput<TAttrs>;
+  const inbound = input as GraphInboundInput;
   return {
     kind: inbound.kind ?? 'user',
     content: inbound.content,
@@ -1673,9 +1633,9 @@ function graphInputForDurableSend<TAttrs extends Attrs>(
   };
 }
 
-function isExecutionRuntimeState<TC extends Vars, TM extends Attrs>(
+function isExecutionRuntimeState<TC extends Vars>(
   value: unknown,
-): value is ExecutionRuntimeState<TC, TM> {
+): value is ExecutionRuntimeState<TC> {
   return (
     !!value &&
     typeof value === 'object' &&
@@ -1799,7 +1759,7 @@ function graphNodeTemplateName(node: AgentGraphNodeDraft): string {
 }
 
 function graphAssistantValidationData(
-  contentOrSource: AgentGraphAssistantInput<any, any> | undefined,
+  contentOrSource: AgentGraphAssistantInput<any> | undefined,
   validatorOrOptions: IValidator | ValidationOptions | undefined,
 ): Record<string, unknown> {
   if (!validatorOrOptions) {
@@ -1827,17 +1787,15 @@ function isAgentGraphLoopOptions(
   return typeof value === 'object' && value !== null;
 }
 
-function normalizeStructuredValue<TM extends Attrs, TC extends Vars>(
-  value: Structured<TM, TC> | z.ZodType,
-): Structured<TM, TC> {
-  return value instanceof Structured
-    ? value
-    : Structured.withSchema<TM, TC>(value);
+function normalizeStructuredValue<TC extends Vars>(
+  value: Structured<TC> | z.ZodType,
+): Structured<TC> {
+  return value instanceof Structured ? value : Structured.withSchema<TC>(value);
 }
 
-function isStructuredValue<TM extends Attrs, TC extends Vars>(
+function isStructuredValue<TC extends Vars>(
   value: unknown,
-): value is Structured<TM, TC> | z.ZodType {
+): value is Structured<TC> | z.ZodType {
   return value instanceof Structured || isZodSchema(value);
 }
 
@@ -1849,8 +1807,8 @@ function isZodSchema(value: unknown): value is z.ZodType {
   );
 }
 
-function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(
-  options: ISubroutineTemplateOptions<TM, TC> | undefined,
+function graphSubroutineScopeData<TC extends Vars>(
+  options: ISubroutineTemplateOptions<TC> | undefined,
 ): Record<string, unknown> {
   return {
     init: options?.init,
@@ -1995,10 +1953,10 @@ function isManualToolLoopFollower(node: AgentGraphNode | undefined): boolean {
   return node?.type === 'tools' || node?.type === 'loop';
 }
 
-function hasPendingToolCalls<TC extends Vars, TM extends Attrs>({
+function hasPendingToolCalls<TC extends Vars>({
   session,
 }: {
-  session: Session<TC, TM>;
+  session: Session<TC>;
 }): boolean {
   return session.hasToolCalls();
 }
@@ -2011,9 +1969,9 @@ function compactGraphChildren(
   );
 }
 
-function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(
+function isGraphAssistantInput<TC extends Vars>(
   value: unknown,
-): value is AgentGraphAssistantInput<TC, TM> {
+): value is AgentGraphAssistantInput<TC> {
   return (
     typeof value === 'string' ||
     typeof value === 'function' ||
@@ -2021,10 +1979,10 @@ function isGraphAssistantInput<TC extends Vars, TM extends Attrs>(
   );
 }
 
-function createGoalGraphNode<TC extends Vars, TM extends Attrs>(
+function createGoalGraphNode<TC extends Vars>(
   id: string | undefined,
   goal: string,
-  options: AgentGoalOptions<TC, TM>,
+  options: AgentGoalOptions<TC>,
 ): AgentGraphNodeDraft {
   const interaction = options.interaction ?? 'none';
   const attemptChildren: AgentGraphNode[] = [

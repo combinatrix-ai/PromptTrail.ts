@@ -25,6 +25,12 @@
 - `.claudeTurn(...)` -> `.claude(...)`.
 - Bare `.subroutine(...)` now isolates by default; use `init` and `squash` to
   pass state through.
+- `Session<TVars, TAttrs>` -> `Session<TVars>` and `Message<TAttrs>` ->
+  `Message`. `withAttrsType` and `Attrs<T>` were removed; `message.attrs` is now
+  an open `Readonly<Record<string, unknown>>` plumbing bag.
+- Tool-result correlation moved from `message.attrs.toolCallId` to
+  `message.toolCallId`. `Session.fromJSON` still revives legacy checkpoints that
+  only have `attrs.toolCallId`.
 - `app.bind(...)` -> `app.on(trigger, builder)`.
 - `app.source(...)` -> `app.gateway(...)`.
 - `app.activity(...)` -> `app.presence(...)`.

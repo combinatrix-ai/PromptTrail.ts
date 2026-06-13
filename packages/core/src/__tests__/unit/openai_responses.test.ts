@@ -60,7 +60,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       .addMessage({
         type: 'tool_result',
         content: JSON.stringify({ value: 'ok' }),
-        attrs: { toolCallId: 'call-1' },
+        toolCallId: 'call-1',
       })
       .addMessage({ type: 'user', content: 'Use the result.' });
 

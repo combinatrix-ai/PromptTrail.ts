@@ -2,7 +2,6 @@ import {
   Agent,
   MemoryRunStore,
   PromptTrail,
-  type Attrs,
   type BindingDefaults,
   type DeliveryTarget,
   type Message,
@@ -77,10 +76,10 @@ export interface MockAssistantInput {
 
 export type MockAssistantHandler = (input: MockAssistantInput) =>
   | string
-  | Message<Attrs>
+  | Message
   | {
       content: string;
-      attrs?: Attrs;
+      attrs?: Readonly<Record<string, unknown>>;
       toolCalls?: Array<{
         id: string;
         name: string;
@@ -254,11 +253,11 @@ class MockRuntimeFixture {
     };
   }
 
-  private buildAgents(): Record<string, Agent<any, Attrs>> {
+  private buildAgents(): Record<string, Agent<any>> {
     const assistant = this.options.assistant ?? deterministicAssistant();
-    const agents: Record<string, Agent<any, Attrs>> = {};
+    const agents: Record<string, Agent<any>> = {};
     for (const name of Object.keys(this.options.bundle.agents)) {
-      agents[name] = Agent.create<any, Attrs>(name)
+      agents[name] = Agent.create<any>(name)
         .inbox('inbox')
         .assistant('reply', (session, runtime) => {
           const last = session.getLastMessage();
@@ -365,7 +364,7 @@ class MockRuntimeFixture {
 
   private async deliverUndelivered(
     conversationId: string,
-    messages: readonly Message<Attrs>[],
+    messages: readonly Message[],
   ): Promise<void> {
     const runContext =
       (this.store.get(conversationId)?.context as
@@ -373,7 +372,7 @@ class MockRuntimeFixture {
         | undefined) ?? {};
     const pending = messages
       .filter(
-        (message): message is Message<Attrs> & { type: 'assistant' } =>
+        (message): message is Message & { type: 'assistant' } =>
           message.type === 'assistant',
       )
       .map((message, index) => {

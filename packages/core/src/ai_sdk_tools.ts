@@ -63,7 +63,7 @@ export function promptTrailToolToAiSdkTool<TInput, TResult>(
 export function toAiSdkToolSet(
   tools: Record<string, PromptTrailTool<any, any>> | undefined,
   context?: Omit<ToolExecutionContext, 'provider' | 'capability'> & {
-    session?: Session<any, any>;
+    session?: Session<any>;
   },
 ): ToolSet | undefined {
   if (!tools) {

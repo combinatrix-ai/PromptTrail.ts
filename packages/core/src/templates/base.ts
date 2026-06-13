@@ -2,43 +2,35 @@ import { Session } from '../session';
 import type { ExecutionRuntimeState } from '../interceptors';
 import type { LlmSource, ModelOutput } from '../source';
 import { LiteralSource, Source } from '../source';
-import { Attrs, Vars } from '../session';
+import type { Vars } from '../session';
 import { interpolateTemplate } from '../utils/template_interpolation';
 
 /**
  * Core template interface
- * TAttrs: Message metadata type, must extend Record<string, unknown>
  * TVars: Session context type, must extend Record<string, unknown>
  */
-export interface Template<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> {
+export interface Template<TVars extends Vars = Vars> {
   execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>>;
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>>;
 }
 
 /**
  * Base template class with composition methods
  */
-export abstract class TemplateBase<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> implements Template<TAttrs, TVars>
+export abstract class TemplateBase<TVars extends Vars = Vars>
+  implements Template<TVars>
 {
   protected contentSource?: Source<unknown>;
 
   abstract execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>>;
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>>;
 
-  protected ensureSession(
-    session?: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
-    return session || Session.create<TVars, TAttrs>();
+  protected ensureSession(session?: Session<TVars>): Session<TVars> {
+    return session || Session.create<TVars>();
   }
 
   getContentSource(): Source<unknown> | undefined {
@@ -60,9 +52,7 @@ export abstract class TemplateBase<
     if (typeof input === 'string') {
       if (expectedSourceType === 'model') {
         return {
-          async getContent(
-            session: Session<TVars, TAttrs>,
-          ): Promise<ModelOutput> {
+          async getContent(session: Session<TVars>): Promise<ModelOutput> {
             const interpolatedContent = interpolateTemplate(
               input,
               session.vars,

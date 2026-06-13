@@ -1,21 +1,19 @@
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import type { ExecutionRuntimeState } from '../../interceptors';
-import { Attrs, Vars } from '../../session';
 import type { Template } from '../base';
 import { TemplateBase } from '../base';
 
 export class Conditional<
-  TAttrs extends Attrs = Attrs,
   TVars extends Vars = Vars,
-> extends TemplateBase<any, any> {
-  private condition: (session: Session<TVars, TAttrs>) => boolean;
-  private thenTemplate: Template<TAttrs, TVars>;
-  private elseTemplate?: Template<TAttrs, TVars>;
+> extends TemplateBase<TVars> {
+  private condition: (session: Session<TVars>) => boolean;
+  private thenTemplate: Template<TVars>;
+  private elseTemplate?: Template<TVars>;
 
   constructor(options: {
-    condition: (session: Session<TVars, TAttrs>) => boolean;
-    thenTemplate: Template<TAttrs, TVars>;
-    elseTemplate?: Template<TAttrs, TVars>;
+    condition: (session: Session<TVars>) => boolean;
+    thenTemplate: Template<TVars>;
+    elseTemplate?: Template<TVars>;
   }) {
     super();
     this.condition = options.condition;
@@ -26,21 +24,21 @@ export class Conditional<
   /**
    * @internal
    */
-  getCondition(): (session: Session<TVars, TAttrs>) => boolean {
+  getCondition(): (session: Session<TVars>) => boolean {
     return this.condition;
   }
 
   /**
    * @internal
    */
-  getThenTemplate(): Template<TAttrs, TVars> {
+  getThenTemplate(): Template<TVars> {
     return this.thenTemplate;
   }
 
   /**
    * @internal
    */
-  getElseTemplate(): Template<TAttrs, TVars> | undefined {
+  getElseTemplate(): Template<TVars> | undefined {
     return this.elseTemplate;
   }
 
@@ -55,9 +53,9 @@ export class Conditional<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     const validSession = this.ensureSession(session);
 
     if (this.condition(validSession)) {

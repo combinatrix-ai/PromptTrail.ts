@@ -27,7 +27,7 @@ import { geminiStreamEventToPromptTrailEvents } from './provider_stream';
 import { extractGeminiReplayRequiredArtifacts } from './replay_pins';
 import type { RetainLevel } from './runtime';
 import { Session } from './session';
-import type { Attrs, Vars } from './session';
+import type { Vars } from './session';
 import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
 import { executePromptTrailTool, isPromptTrailTool } from './tool';
 
@@ -55,13 +55,10 @@ export interface GeminiCachedContentResolution {
   metadataBinding?: ConversationBinding;
 }
 
-export async function generateGoogleGeminiText<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateGoogleGeminiText<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: GoogleProviderConfig },
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   return generateGoogleGeminiMessage(session, options);
 }
 
@@ -74,11 +71,8 @@ export function getGoogleGenAIClientOptions(
   };
 }
 
-export async function* streamGoogleGeminiEvents<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function* streamGoogleGeminiEvents<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: GoogleProviderConfig },
 ) {
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
@@ -132,14 +126,11 @@ export async function* normalizeGeminiContentStream(
   }
 }
 
-export async function generateGoogleGeminiWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateGoogleGeminiWithSchema<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
+): Promise<Message & { structuredOutput?: unknown }> {
   const message = await generateGoogleGeminiMessage(session, options, {
     ...createGeminiStructuredOutputConfig(schemaOptions),
   });
@@ -166,14 +157,11 @@ export function createGeminiStructuredOutputConfig(
   };
 }
 
-async function generateGoogleGeminiMessage<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+async function generateGoogleGeminiMessage<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   extraConfig: Record<string, unknown> = {},
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
   const ai = new GoogleGenAI(getGoogleGenAIClientOptions(options.provider));
   assertGeminiProviderCompactionUnsupported(options.compaction);
   const tools = getGeminiPromptTrailTools(options);
@@ -257,7 +245,7 @@ async function generateGoogleGeminiMessage<
         retainGeminiResponseMetadata(response, options.retain ?? 'summary'),
         cacheResolution,
       ),
-    } as unknown as TAttrs,
+    },
   };
 }
 
@@ -299,7 +287,7 @@ function isGeminiStructuredOutputConfig(
 
 async function resolveGeminiCachedContentBinding(
   ai: GeminiCacheClient,
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
@@ -317,7 +305,7 @@ async function resolveGeminiCachedContentBinding(
 
 export async function resolveGeminiCachedContent(
   client: GeminiCacheClient,
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[] = getGeminiPromptTrailTools(options),
   toolDefinitions: readonly unknown[] = getGeminiToolDefinitions(options),
@@ -374,7 +362,7 @@ export async function resolveGeminiCachedContent(
 async function createGeminiContent(
   ai: GoogleGenAI,
   contents: unknown[],
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
@@ -400,7 +388,7 @@ async function createGeminiContent(
 }
 
 export function buildGeminiGenerationConfig(
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[],
   toolDefinitions: readonly unknown[],
@@ -450,7 +438,7 @@ export function assertGeminiProviderCompactionUnsupported(
 }
 
 export function buildGeminiCachedContentCreateParams(
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions & { provider: GoogleProviderConfig },
   tools: readonly PromptTrailTool[] = getGeminiPromptTrailTools(options),
   toolDefinitions: readonly unknown[] = getGeminiToolDefinitions(options),
@@ -694,11 +682,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 export function getGeminiCacheablePrefixSession(
-  session: Session<any, any>,
+  session: Session<any>,
   options: Pick<LLMOptions, 'capabilities'> = {},
 ):
   | {
-      session: Session<any, any>;
+      session: Session<any>;
       messageIndex: number;
     }
   | undefined {
@@ -751,13 +739,13 @@ export function attachGeminiCachedContentMetadata(
 }
 
 export function convertSessionToGeminiContents(
-  session: Session<any, any>,
+  session: Session<any>,
 ): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
   return convertMessagesToGeminiContents(session.messages);
 }
 
 export function convertMessagesToGeminiContents(
-  messages: readonly Message<any>[],
+  messages: readonly Message[],
 ): Array<{ role: 'user' | 'model'; parts: unknown[] }> {
   const contents: Array<{ role: 'user' | 'model'; parts: unknown[] }> = [];
   const toolNamesByCallId = new Map<string, string>();
@@ -823,12 +811,11 @@ function filterEmptyGeminiTextParts(parts: unknown[]): unknown[] {
 }
 
 function convertToolResultToGeminiPart(
-  message: Message<any>,
+  message: Message,
   toolNamesByCallId: ReadonlyMap<string, string>,
 ): Record<string, unknown> | undefined {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
   const callId =
-    typeof attrs?.toolCallId === 'string' ? attrs.toolCallId : undefined;
+    message.type === 'tool_result' ? message.toolCallId : undefined;
   if (!callId) {
     return undefined;
   }
@@ -850,9 +837,8 @@ function parseGeminiToolResultContent(content: string): unknown {
   }
 }
 
-function getGeminiReplayRequiredParts(message: Message<any>): unknown[] {
-  const attrs = message.attrs as Record<string, unknown> | undefined;
-  const google = attrs?.google as Record<string, unknown> | undefined;
+function getGeminiReplayRequiredParts(message: Message): unknown[] {
+  const google = message.attrs?.google as Record<string, unknown> | undefined;
   const replayRequired = google?.replayRequired;
   if (!Array.isArray(replayRequired)) {
     return [];
@@ -870,7 +856,7 @@ function getGeminiReplayRequiredParts(message: Message<any>): unknown[] {
 }
 
 export function getGeminiSystemInstruction(
-  session: Session<any, any>,
+  session: Session<any>,
   options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): string | undefined {
   const system = session.messages
@@ -1018,7 +1004,7 @@ function collectGeminiFunctionCallParts(
 export async function createGeminiFunctionResponsePart(
   call: GeminiFunctionCall,
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
 ) {

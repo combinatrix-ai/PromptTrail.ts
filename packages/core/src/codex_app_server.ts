@@ -6,7 +6,7 @@ import {
 } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import type { Message } from './message';
-import type { Session, Attrs, Vars } from './session';
+import type { Session, Vars } from './session';
 import {
   type RetainLevel,
   type RuntimeEvent,
@@ -28,7 +28,7 @@ export type CodexThreadId =
   | 'new'
   | 'auto'
   | ((
-      session: Session<any, any>,
+      session: Session<any>,
       context: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
@@ -36,7 +36,7 @@ export type CodexTurnInput =
   | string
   | unknown[]
   | ((
-      session: Session<any, any>,
+      session: Session<any>,
       context: Record<string, unknown> | undefined,
     ) => string | unknown[] | Promise<string | unknown[]>);
 
@@ -795,10 +795,7 @@ export function createCodexAppServerWebSocketClient(
   return new CodexAppServerWebSocketClient(options);
 }
 
-export interface CodexTurnOptions<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> {
+export interface CodexTurnOptions<TVars extends Vars = Vars> {
   threadId?: CodexThreadId;
   input?: CodexTurnInput;
   client?: CodexAppServerClient;
@@ -849,9 +846,9 @@ export interface CodexTurnOptions<
   threadStart?: Record<string, unknown>;
   turnStart?: Record<string, unknown>;
   squashWith?: (
-    parentSession: Session<TVars, TAttrs>,
+    parentSession: Session<TVars>,
     result: CodexTurnResult,
-  ) => Session<TVars, TAttrs> | Promise<Session<TVars, TAttrs>>;
+  ) => Session<TVars> | Promise<Session<TVars>>;
 }
 
 export function promptTrailToolToCodexDynamicTool(
@@ -1012,7 +1009,7 @@ export function promptTrailSkillToCodexInputItem(
 
 export function createCodexToolRequestHandler(
   tools: readonly PromptTrailTool[],
-  session: Session<any, any>,
+  session: Session<any>,
   fallback?: CodexInboundRequestHandler,
   approvalHandler?: ApprovalHandler,
   context?: Record<string, unknown>,
@@ -1049,7 +1046,7 @@ export function createCodexToolRequestHandler(
 
 export function createCodexRuntimeRequestHandler(options: {
   tools?: readonly PromptTrailTool[];
-  session: Session<any, any>;
+  session: Session<any>;
   fallback?: CodexInboundRequestHandler;
   approvalHandler?: ApprovalHandler;
   context?: Record<string, unknown>;
@@ -1325,16 +1322,16 @@ export function normalizeCodexRuntimeEvent(
   };
 }
 
-export function codexResultToMessage<TAttrs extends Attrs = Attrs>(
+export function codexResultToMessage(
   result: CodexTurnResult,
   attrsKey = 'codex',
-): Message<TAttrs> {
+): Message {
   return {
     type: 'assistant',
     content: extractCodexFinalAnswer(result) || ' ',
     attrs: {
       [attrsKey]: result,
-    } as TAttrs,
+    },
   };
 }
 

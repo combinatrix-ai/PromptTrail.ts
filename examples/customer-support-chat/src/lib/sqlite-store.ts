@@ -8,13 +8,13 @@ import {
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
+  type Message,
   type OnceScope,
   type ProviderSessionBinding,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
   type Vars,
-  type Attrs,
 } from '@prompttrail/core';
 
 interface SqliteRunStoreOptions {
@@ -48,7 +48,7 @@ export interface SqliteRunCounts {
 interface RunRow {
   run_id: string;
   agent_name: string;
-  status: StoredRun<any, any>['status'];
+  status: StoredRun<any>['status'];
   graph_cursor: number | null;
   graph_suspended_at: string | null;
   context_json: string | null;
@@ -106,7 +106,7 @@ export class SqliteRunStore implements DurableRunStore {
   private static readonly maxJournalEntriesPerRun = 50;
 
   private readonly db: Database.Database;
-  private readonly runs = new Map<string, StoredRun<any, any>>();
+  private readonly runs = new Map<string, StoredRun<any>>();
   private readonly writeJournal = new Map<string, SqliteWriteJournalEntry[]>();
 
   private readonly insertRunStmt: Database.Statement;
@@ -196,7 +196,7 @@ export class SqliteRunStore implements DurableRunStore {
     this.hydrate(options.agents);
   }
 
-  get(runId: string): StoredRun<any, any> | undefined {
+  get(runId: string): StoredRun<any> | undefined {
     return this.runs.get(runId);
   }
 
@@ -204,11 +204,11 @@ export class SqliteRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any, any>]> {
+  entries(): Iterable<[string, StoredRun<any>]> {
     return this.runs.entries();
   }
 
-  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any>): Promise<void> {
     this.insertRunStmt.run(
       runId,
       run.agentName,
@@ -268,7 +268,7 @@ export class SqliteRunStore implements DurableRunStore {
 
   async appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -312,7 +312,7 @@ export class SqliteRunStore implements DurableRunStore {
 
   async upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -478,7 +478,7 @@ export class SqliteRunStore implements DurableRunStore {
           `Cannot hydrate durable run ${row.run_id}: unknown agent "${row.agent_name}".`,
         );
       }
-      const run: StoredRun<any, any> = {
+      const run: StoredRun<any> = {
         agent,
         agentName: row.agent_name,
         graphManifest: parseJson(row.graph_manifest_json),
@@ -503,7 +503,9 @@ export class SqliteRunStore implements DurableRunStore {
       applySessionDelta(run, {
         fromVersion: row.from_version,
         toVersion: row.to_version,
-        appendedMessages: parseJsonRequired(row.appended_messages_json),
+        appendedMessages: normalizeStoredMessages(
+          parseJsonRequired(row.appended_messages_json),
+        ),
         varsSet: parseJson(row.vars_set_json),
         varsDeleted: parseJson(row.vars_deleted_json),
         rewrite: row.rewrite === 1,
@@ -587,16 +589,16 @@ export function defaultSupportDbPath(): string {
   );
 }
 
-function applySessionDelta<TVars extends Vars, TAttrs extends Attrs>(
-  run: StoredRun<TVars, TAttrs>,
-  delta: SessionCheckpointDelta<TVars, TAttrs>,
+function applySessionDelta<TVars extends Vars>(
+  run: StoredRun<TVars>,
+  delta: SessionCheckpointDelta<TVars>,
 ): void {
   const current = run.result ?? run.initial;
   if (current.version >= delta.toVersion) {
     return;
   }
   if (delta.rewrite) {
-    run.result = new Session<TVars, TAttrs>(
+    run.result = new Session<TVars>(
       [...delta.appendedMessages],
       { ...(delta.varsSet ?? {}) } as TVars,
       current.print,
@@ -610,12 +612,24 @@ function applySessionDelta<TVars extends Vars, TAttrs extends Attrs>(
     delete vars[key];
   }
   Object.assign(vars, delta.varsSet);
-  run.result = new Session<TVars, TAttrs>(
+  run.result = new Session<TVars>(
     [...current.messages, ...delta.appendedMessages],
     vars as TVars,
     current.print,
     delta.toVersion,
   );
+}
+
+function normalizeStoredMessages(messages: readonly Message[]): Message[] {
+  return messages.map(normalizeStoredMessage);
+}
+
+function normalizeStoredMessage(message: Message): Message {
+  if (message.type !== 'tool_result' || message.toolCallId !== undefined) {
+    return message;
+  }
+  const toolCallId = message.attrs?.toolCallId;
+  return typeof toolCallId === 'string' ? { ...message, toolCallId } : message;
 }
 
 function jsonOrNull(value: unknown): string | null {
@@ -637,7 +651,7 @@ function quoteOneLine(value: string): string {
   return JSON.stringify(truncated);
 }
 
-function sessionDeltaSummary(delta: SessionCheckpointDelta<any, any>): string {
+function sessionDeltaSummary(delta: SessionCheckpointDelta<any>): string {
   const parts = [
     `v${delta.fromVersion} -> v${delta.toVersion}`,
     `+${delta.appendedMessages.length} messages`,

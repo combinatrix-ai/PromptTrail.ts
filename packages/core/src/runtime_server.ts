@@ -11,7 +11,6 @@ import {
   type ObserverLike,
 } from './execution';
 import type { Message } from './message';
-import type { Attrs } from './session';
 import type { DeliveryTarget, TriggerEvent } from './runtime_bindings';
 import {
   AssistantDeliveryTracker,
@@ -313,7 +312,7 @@ export class RuntimeServer {
     }
     const pending = this.deliveryTracker.pending(
       dispatched.conversationId,
-      dispatched.result.session.messages as readonly Message<Attrs>[],
+      dispatched.result.session.messages as readonly Message[],
       dispatched.delivery,
     );
     const deliveryAttempts =

@@ -30,7 +30,7 @@ import {
   type RuntimeServerErrorContext,
   type RuntimeGatewayDriver,
 } from './runtime_server';
-import { Session, type Attrs, type Vars } from './session';
+import { Session, type Vars } from './session';
 import {
   executeAgentGraph,
   GraphExecutionSuspended,
@@ -66,7 +66,7 @@ export interface Inbound {
   offset: number;
   kind: InboundKind;
   content: string;
-  attrs?: Attrs;
+  attrs?: Readonly<Record<string, unknown>>;
 }
 
 export interface ToolCall {
@@ -75,25 +75,22 @@ export interface ToolCall {
   id: string;
 }
 
-export interface DurableRunResult<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface DurableRunResult<TVars extends Vars = Vars> {
   status: 'done' | 'suspended';
   runId: string;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   awaiting?: string;
 }
 
-export interface AssistantDeliveryOutboxInput<TAttrs extends Attrs = Attrs> {
-  message: PromptTrailMessage<TAttrs> & { type: 'assistant' };
+export interface AssistantDeliveryOutboxInput {
+  message: PromptTrailMessage & { type: 'assistant' };
   assistantIndex: number;
   idempotencyKey: string;
   target?: unknown;
 }
 
-export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
-  extends AssistantDeliveryOutboxInput<TAttrs> {
+export interface AssistantDeliveryOutboxEntry
+  extends AssistantDeliveryOutboxInput {
   id: string;
   conversationId: string;
   messageRef: {
@@ -115,11 +112,9 @@ export interface AssistantDeliveryOutboxEntry<TAttrs extends Attrs = Attrs>
   error?: unknown;
 }
 
-export interface PendingAssistantDeliveryOutboxEntry<
-  TAttrs extends Attrs = Attrs,
-> {
+export interface PendingAssistantDeliveryOutboxEntry {
   runId: string;
-  entry: AssistantDeliveryOutboxEntry<TAttrs>;
+  entry: AssistantDeliveryOutboxEntry;
 }
 
 export type OnceScope = CheckpointOnceScope;
@@ -130,15 +125,15 @@ export interface OnceBoundary extends CheckpointOnceBoundary {}
 
 type OnceMemoStore = CheckpointOnceMemoStore;
 
-export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
-  agent: PromptTrailRegisteredAgent<TVars, TAttrs>;
+export interface StoredRun<TVars extends Vars> {
+  agent: PromptTrailRegisteredAgent<TVars>;
   agentName: string;
   graphManifest?: AgentGraphManifest;
-  initial: Session<TVars, TAttrs>;
+  initial: Session<TVars>;
   status: 'open' | 'done';
-  result?: Session<TVars, TAttrs>;
+  result?: Session<TVars>;
   once: OnceMemoStore;
-  outbox: AssistantDeliveryOutboxEntry<TAttrs>[];
+  outbox: AssistantDeliveryOutboxEntry[];
   inbox: Inbound[];
   providerSessions?: Record<string, ProviderSessionBinding>;
   graphCursor?: number;
@@ -146,13 +141,10 @@ export interface StoredRun<TVars extends Vars, TAttrs extends Attrs> {
   context?: Record<string, unknown>;
 }
 
-export interface SessionCheckpointDelta<
-  _TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface SessionCheckpointDelta<_TVars extends Vars = Vars> {
   fromVersion: number;
   toVersion: number;
-  appendedMessages: readonly PromptTrailMessage<TAttrs>[];
+  appendedMessages: readonly PromptTrailMessage[];
   varsSet?: Record<string, unknown>;
   varsDeleted?: readonly string[];
   /**
@@ -168,7 +160,7 @@ export interface SessionCheckpointDelta<
 
 export type StoredRunPatch = Partial<
   Pick<
-    StoredRun<any, any>,
+    StoredRun<any>,
     | 'status'
     | 'graphCursor'
     | 'graphSuspendedAt'
@@ -178,19 +170,14 @@ export type StoredRunPatch = Partial<
   >
 >;
 
-export type PromptTrailRegisteredAgent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> = Agent<TVars, TAttrs>;
+export type PromptTrailRegisteredAgent<TVars extends Vars = Vars> =
+  Agent<TVars>;
 
-export interface PromptTrailRunOptions<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  agent: string | PromptTrailRegisteredAgent<TVars, TAttrs>;
+export interface PromptTrailRunOptions<TVars extends Vars = Vars> {
+  agent: string | PromptTrailRegisteredAgent<TVars>;
   runId?: string;
   input?: string | Omit<Inbound, 'offset'>;
-  session?: Session<TVars, TAttrs>;
+  session?: Session<TVars>;
   checkpoint?: CheckpointOption;
   resumable?: boolean;
   context?: Record<string, unknown>;
@@ -213,7 +200,7 @@ export interface InboundRuntimeEvent {
   kind?: InboundKind;
   checkpoint?: CheckpointOption;
   resumable?: boolean;
-  attrs?: Attrs;
+  attrs?: Readonly<Record<string, unknown>>;
 }
 
 export interface AppGateway {
@@ -229,15 +216,15 @@ export interface DurableRunStore {
    * are async so effect -> memo -> persist completes before the next effect can
    * run under the at-least-once checkpoint model.
    */
-  get(runId: string): StoredRun<any, any> | undefined;
+  get(runId: string): StoredRun<any> | undefined;
   has(runId: string): boolean;
-  entries(): Iterable<[string, StoredRun<any, any>]>;
-  create(runId: string, run: StoredRun<any, any>): Promise<void>;
+  entries(): Iterable<[string, StoredRun<any>]>;
+  create(runId: string, run: StoredRun<any>): Promise<void>;
   patch(runId: string, patch: StoredRunPatch): Promise<void>;
   appendInbox(runId: string, inbound: Inbound): Promise<void>;
   appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void>;
   recordOnce(
     runId: string,
@@ -247,7 +234,7 @@ export interface DurableRunStore {
   ): Promise<void>;
   upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void>;
   recordProviderSession(
     runId: string,
@@ -262,13 +249,13 @@ export type RunStore = DurableRunStore;
 export type CheckpointOption = true | RunStore | { store?: RunStore };
 
 export class MemoryRunStore implements DurableRunStore {
-  private runs = new Map<string, StoredRun<any, any>>();
+  private runs = new Map<string, StoredRun<any>>();
 
-  get(runId: string): StoredRun<any, any> | undefined {
+  get(runId: string): StoredRun<any> | undefined {
     return this.runs.get(runId);
   }
 
-  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any>): Promise<void> {
     this.runs.set(runId, run);
   }
 
@@ -297,7 +284,7 @@ export class MemoryRunStore implements DurableRunStore {
 
   async appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -321,7 +308,7 @@ export class MemoryRunStore implements DurableRunStore {
 
   async upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -357,7 +344,7 @@ export class MemoryRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any, any>]> {
+  entries(): Iterable<[string, StoredRun<any>]> {
     return this.runs.entries();
   }
 }
@@ -366,10 +353,10 @@ export interface PromptTrailAppOptions {
   name?: string;
   store?: DurableRunStore;
   defaults?: BindingDefaults;
-  agents?: Record<string, PromptTrailRegisteredAgent<any, any>>;
+  agents?: Record<string, PromptTrailRegisteredAgent<any>>;
   gateways?: Record<string, AppGateway>;
-  middleware?: readonly MiddlewareDefinition<any, any>[];
-  hooks?: readonly HookDefinition<any, any>[];
+  middleware?: readonly MiddlewareDefinition<any>[];
+  hooks?: readonly HookDefinition<any>[];
   observers?: readonly ObserverLike[];
   strictObservers?: boolean;
   observerDeliveryBindings?: ObserverDeliveryBindingOptions;
@@ -383,12 +370,12 @@ export interface PromptTrailAppOptions {
 export class PromptTrailApp {
   private readonly name: string;
   private readonly store: DurableRunStore;
-  private readonly agents = new Map<string, Agent<any, any>>();
+  private readonly agents = new Map<string, Agent<any>>();
   private readonly gateways = new Map<string, AppGateway>();
   private readonly runtimeBindings: RuntimeBinding<TriggerEvent>[] = [];
   private readonly runtimeDefaults: BindingDefaults;
-  private readonly middleware: readonly MiddlewareDefinition<any, any>[];
-  private readonly hooks: readonly HookDefinition<any, any>[];
+  private readonly middleware: readonly MiddlewareDefinition<any>[];
+  private readonly hooks: readonly HookDefinition<any>[];
   private readonly observerBus: ObserverBus;
   private readonly deliveryObserverBus: ObserverBus;
   private readonly strictObservers?: boolean;
@@ -453,14 +440,11 @@ export class PromptTrailApp {
     }
   }
 
-  agent(registeredAgent: PromptTrailRegisteredAgent<any, any>): this;
+  agent(registeredAgent: PromptTrailRegisteredAgent<any>): this;
+  agent(name: string, registeredAgent: PromptTrailRegisteredAgent<any>): this;
   agent(
-    name: string,
-    registeredAgent: PromptTrailRegisteredAgent<any, any>,
-  ): this;
-  agent(
-    nameOrAgent: string | PromptTrailRegisteredAgent<any, any>,
-    maybeAgent?: PromptTrailRegisteredAgent<any, any>,
+    nameOrAgent: string | PromptTrailRegisteredAgent<any>,
+    maybeAgent?: PromptTrailRegisteredAgent<any>,
   ): this {
     const registeredAgent =
       typeof nameOrAgent === 'string' ? maybeAgent : nameOrAgent;
@@ -680,22 +664,19 @@ export class PromptTrailApp {
     }
   }
 
-  async run<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    options: PromptTrailRunOptions<TVars, TAttrs>,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
+  async run<TVars extends Vars = Vars>(
+    options: PromptTrailRunOptions<TVars>,
+  ): Promise<DurableRunResult<TVars>> {
     return this.startRun(options);
   }
 
-  async executeCheckpointRun<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(options: {
-    agent: Agent<TVars, TAttrs>;
+  async executeCheckpointRun<TVars extends Vars = Vars>(options: {
+    agent: Agent<TVars>;
     runId: string;
     input?: string | Omit<Inbound, 'offset'>;
-    session?: Session<TVars, TAttrs>;
+    session?: Session<TVars>;
     context?: Record<string, unknown>;
-  }): Promise<DurableRunResult<TVars, TAttrs>> {
+  }): Promise<DurableRunResult<TVars>> {
     const existing = this.store.get(options.runId);
     if (existing) {
       existing.agent = options.agent;
@@ -705,7 +686,7 @@ export class PromptTrailApp {
       });
     }
     if (!this.store.has(options.runId)) {
-      return this.run<TVars, TAttrs>({
+      return this.run<TVars>({
         agent: options.agent,
         runId: options.runId,
         session: options.session,
@@ -715,9 +696,9 @@ export class PromptTrailApp {
       });
     }
     if (options.input === undefined) {
-      return this.resume<TVars, TAttrs>(options.runId);
+      return this.resume<TVars>(options.runId);
     }
-    return this.send<TVars, TAttrs>({
+    return this.send<TVars>({
       runId: options.runId,
       input: options.input,
       checkpoint: true,
@@ -725,9 +706,9 @@ export class PromptTrailApp {
     });
   }
 
-  async send<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+  async send<TVars extends Vars = Vars>(
     options: PromptTrailSendOptions,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
+  ): Promise<DurableRunResult<TVars>> {
     const checkpoint =
       options.checkpoint ??
       (options.resumable ? true : undefined) ??
@@ -738,7 +719,7 @@ export class PromptTrailApp {
       if (!options.agent) {
         throw new Error(`Unknown durable run: ${options.runId}`);
       }
-      return this.startRun<TVars, TAttrs>({
+      return this.startRun<TVars>({
         agent: options.agent,
         runId: options.runId,
         input: options.input,
@@ -762,13 +743,13 @@ export class PromptTrailApp {
       );
     }
     await this.append(options.runId, normalizeInbound(options.input));
-    return this.resume<TVars, TAttrs>(options.runId);
+    return this.resume<TVars>(options.runId);
   }
 
-  async resume<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
+  async resume<TVars extends Vars = Vars>(
     runId: string,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
-    const run = this.getRun<TVars, TAttrs>(runId);
+  ): Promise<DurableRunResult<TVars>> {
+    const run = this.getRun<TVars>(runId);
     await this.assertGraphRunManifest(runId, run);
     if (
       run.status === 'done' &&
@@ -779,24 +760,23 @@ export class PromptTrailApp {
     }
     return this.resumeAgentRun(
       runId,
-      run as StoredRun<TVars, TAttrs> & {
-        agent: Agent<TVars, TAttrs>;
+      run as StoredRun<TVars> & {
+        agent: Agent<TVars>;
       },
     );
   }
 
-  async prepareAssistantDeliveries<TAttrs extends Attrs = Attrs>(
+  async prepareAssistantDeliveries(
     runId: string,
-    deliveries: readonly AssistantDeliveryOutboxInput<TAttrs>[],
-  ): Promise<AssistantDeliveryOutboxEntry<TAttrs>[]> {
+    deliveries: readonly AssistantDeliveryOutboxInput[],
+  ): Promise<AssistantDeliveryOutboxEntry[]> {
     const run = this.store.get(runId);
     if (!run) {
       return deliveries.map((delivery) =>
         createAssistantDeliveryOutboxEntry(runId, delivery),
       );
     }
-    const outbox = (run.outbox ??=
-      []) as AssistantDeliveryOutboxEntry<TAttrs>[];
+    const outbox = (run.outbox ??= []) as AssistantDeliveryOutboxEntry[];
     for (const delivery of deliveries) {
       const existing = outbox.find(
         (entry) => entry.idempotencyKey === delivery.idempotencyKey,
@@ -897,10 +877,10 @@ export class PromptTrailApp {
     return pending;
   }
 
-  private backfillAssistantDeliveryOutboxMetadata<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): boolean {
+  private backfillAssistantDeliveryOutboxMetadata<TVars extends Vars = Vars>(
+    runId: string,
+    run: StoredRun<TVars>,
+  ): boolean {
     let changed = false;
     for (const entry of run.outbox ?? []) {
       const completed = completeAssistantDeliveryOutboxMetadata(runId, entry);
@@ -922,10 +902,10 @@ export class PromptTrailApp {
     }
   }
 
-  private async materializeAssistantDeliveriesForRun<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
+  private async materializeAssistantDeliveriesForRun<TVars extends Vars = Vars>(
+    runId: string,
+    run: StoredRun<TVars>,
+  ): Promise<void> {
     const target = deliveryTargetFromContext(run.context);
     if (!target || !run.result) {
       return;
@@ -934,7 +914,7 @@ export class PromptTrailApp {
       .filter(
         (
           message,
-        ): message is PromptTrailMessage<TAttrs> & {
+        ): message is PromptTrailMessage & {
           type: 'assistant';
         } => message.type === 'assistant',
       )
@@ -961,12 +941,9 @@ export class PromptTrailApp {
     });
   }
 
-  private async startRun<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(
-    options: PromptTrailRunOptions<TVars, TAttrs>,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
+  private async startRun<TVars extends Vars = Vars>(
+    options: PromptTrailRunOptions<TVars>,
+  ): Promise<DurableRunResult<TVars>> {
     const checkpoint =
       options.checkpoint ??
       (options.resumable ? true : undefined) ??
@@ -981,11 +958,11 @@ export class PromptTrailApp {
       const graph = agent.toGraph();
       const graphManifest = createAgentGraphManifest(graph);
       const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
-      const run: StoredRun<TVars, TAttrs> = {
+      const run: StoredRun<TVars> = {
         agent,
         agentName: graph.name,
         graphManifest,
-        initial: options.session ?? Session.create<TVars, TAttrs>(),
+        initial: options.session ?? Session.create<TVars>(),
         status: 'open',
         once: createCheckpointOnceMemoStore(),
         outbox: [],
@@ -999,7 +976,7 @@ export class PromptTrailApp {
       if (options.input !== undefined) {
         await this.append(runId, normalizeInbound(options.input));
       }
-      return this.resume<TVars, TAttrs>(runId);
+      return this.resume<TVars>(runId);
     }
     return this.executeAgentRun(agent, options);
   }
@@ -1015,13 +992,10 @@ export class PromptTrailApp {
     }
   }
 
-  private async executeAgentRun<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(
-    agent: Agent<TVars, TAttrs>,
-    options: PromptTrailRunOptions<TVars, TAttrs>,
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
+  private async executeAgentRun<TVars extends Vars = Vars>(
+    agent: Agent<TVars>,
+    options: PromptTrailRunOptions<TVars>,
+  ): Promise<DurableRunResult<TVars>> {
     const graph = agent.toGraph();
     const runId = options.runId ?? `${graph.name}-${++this.runCounter}`;
     let eventSeq = 0;
@@ -1063,9 +1037,9 @@ export class PromptTrailApp {
     } catch (error) {
       if (error instanceof GraphExecutionSuspended) {
         const session =
-          (error.session as Session<TVars, TAttrs> | undefined) ??
+          (error.session as Session<TVars> | undefined) ??
           options.session ??
-          Session.create<TVars, TAttrs>();
+          Session.create<TVars>();
         await emitGraphRunEvent('run.suspended', {
           stepId: error.nodePath,
           sessionVersion: session.messages.length,
@@ -1085,13 +1059,10 @@ export class PromptTrailApp {
     }
   }
 
-  private async resumeAgentRun<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(
+  private async resumeAgentRun<TVars extends Vars = Vars>(
     runId: string,
-    run: StoredRun<TVars, TAttrs> & { agent: Agent<TVars, TAttrs> },
-  ): Promise<DurableRunResult<TVars, TAttrs>> {
+    run: StoredRun<TVars> & { agent: Agent<TVars> },
+  ): Promise<DurableRunResult<TVars>> {
     const graph = run.agent.toGraph();
     const checkpoint = await beginCheckpointGraphExecution(run, () =>
       this.persistRun(runId, run),
@@ -1104,26 +1075,23 @@ export class PromptTrailApp {
         )
       : undefined;
     const inbox = checkpoint.inbox.map((input) =>
-      graphInboundFromStoredInbound<TAttrs>(input),
+      graphInboundFromStoredInbound(input),
     );
     const durableBoundary = createCheckpointOnceBoundary(run, (entry) =>
       this.recordOnce(runId, entry),
     );
 
     try {
-      const session = await executeAgentGraph<TVars, TAttrs>(
+      const session = await executeAgentGraph<TVars>(
         {
           ...graph,
           middleware: [
             ...graph.middleware,
-            ...(this.middleware as readonly MiddlewareDefinition<
-              TVars,
-              TAttrs
-            >[]),
+            ...(this.middleware as readonly MiddlewareDefinition<TVars>[]),
           ],
           hooks: [
             ...graph.hooks,
-            ...(this.hooks as readonly HookDefinition<TVars, TAttrs>[]),
+            ...(this.hooks as readonly HookDefinition<TVars>[]),
           ],
         },
         {
@@ -1159,7 +1127,7 @@ export class PromptTrailApp {
     } catch (error) {
       if (error instanceof GraphExecutionSuspended) {
         const session =
-          (error.session as Session<TVars, TAttrs> | undefined) ??
+          (error.session as Session<TVars> | undefined) ??
           run.result ??
           run.initial;
         await recordCheckpointGraphSuspension(
@@ -1182,10 +1150,10 @@ export class PromptTrailApp {
     }
   }
 
-  private async assertGraphRunManifest<
-    TVars extends Vars = Vars,
-    TAttrs extends Attrs = Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
+  private async assertGraphRunManifest<TVars extends Vars = Vars>(
+    runId: string,
+    run: StoredRun<TVars>,
+  ): Promise<void> {
     const graph = run.agent.toGraph();
     const manifest = createAgentGraphManifest(graph);
     if (!run.graphManifest) {
@@ -1202,15 +1170,15 @@ export class PromptTrailApp {
     }
   }
 
-  private async emitObservers<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
+  private async emitObservers<TVars extends Vars>(
+    run: StoredRun<TVars>,
     event: ExecutionEvent,
   ): Promise<void> {
     await this.emitObserverBuses(run, event);
   }
 
-  private async emitObserverBuses<TVars extends Vars, TAttrs extends Attrs>(
-    run: StoredRun<TVars, TAttrs>,
+  private async emitObserverBuses<TVars extends Vars>(
+    run: StoredRun<TVars>,
     event: ExecutionEvent,
   ): Promise<void> {
     const context = observerContextFromRunContext(run.context);
@@ -1244,9 +1212,9 @@ export class PromptTrailApp {
     }
   }
 
-  private async persistRun<TVars extends Vars, TAttrs extends Attrs>(
+  private async persistRun<TVars extends Vars>(
     runId: string,
-    run: StoredRun<TVars, TAttrs>,
+    run: StoredRun<TVars>,
   ): Promise<void> {
     const delta = this.computeSessionCheckpointDelta(runId, run);
     if (delta) {
@@ -1270,9 +1238,9 @@ export class PromptTrailApp {
     await this.store.recordOnce(runId, entry.scope, entry.key, entry.value);
   }
 
-  private async recordProviderSession<TVars extends Vars, TAttrs extends Attrs>(
+  private async recordProviderSession<TVars extends Vars>(
     runId: string,
-    run: StoredRun<TVars, TAttrs>,
+    run: StoredRun<TVars>,
     nodePath: string,
     binding: ProviderSessionBinding,
   ): Promise<void> {
@@ -1283,22 +1251,19 @@ export class PromptTrailApp {
     await this.store.recordProviderSession(runId, nodePath, binding);
   }
 
-  private async persistAssistantDeliveryOutbox<
-    TVars extends Vars,
-    TAttrs extends Attrs,
-  >(runId: string, run: StoredRun<TVars, TAttrs>): Promise<void> {
+  private async persistAssistantDeliveryOutbox<TVars extends Vars>(
+    runId: string,
+    run: StoredRun<TVars>,
+  ): Promise<void> {
     for (const entry of run.outbox ?? []) {
       await this.store.upsertOutbox(runId, entry);
     }
   }
 
-  private computeSessionCheckpointDelta<
-    TVars extends Vars,
-    TAttrs extends Attrs,
-  >(
+  private computeSessionCheckpointDelta<TVars extends Vars>(
     runId: string,
-    run: StoredRun<TVars, TAttrs>,
-  ): SessionCheckpointDelta<TVars, TAttrs> | undefined {
+    run: StoredRun<TVars>,
+  ): SessionCheckpointDelta<TVars> | undefined {
     const session = run.result ?? run.initial;
     const baseline =
       this.persistedSessions.get(runId) ??
@@ -1331,9 +1296,9 @@ export class PromptTrailApp {
     };
   }
 
-  private setPersistedSessionBaseline<TVars extends Vars, TAttrs extends Attrs>(
+  private setPersistedSessionBaseline<TVars extends Vars>(
     runId: string,
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
   ): { version: number; messageCount: number; vars: Record<string, unknown> } {
     const baseline = {
       version: session.version,
@@ -1344,25 +1309,21 @@ export class PromptTrailApp {
     return baseline;
   }
 
-  private resolveAgent<TVars extends Vars, TAttrs extends Attrs>(
-    registeredAgent: string | PromptTrailRegisteredAgent<TVars, TAttrs>,
-  ): Agent<TVars, TAttrs> | undefined {
+  private resolveAgent<TVars extends Vars>(
+    registeredAgent: string | PromptTrailRegisteredAgent<TVars>,
+  ): Agent<TVars> | undefined {
     if (typeof registeredAgent === 'string') {
-      return this.agents.get(registeredAgent) as
-        | Agent<TVars, TAttrs>
-        | undefined;
+      return this.agents.get(registeredAgent) as Agent<TVars> | undefined;
     }
     return registeredAgent;
   }
 
-  private getRun<TVars extends Vars, TAttrs extends Attrs>(
-    runId: string,
-  ): StoredRun<TVars, TAttrs> {
+  private getRun<TVars extends Vars>(runId: string): StoredRun<TVars> {
     const run = this.store.get(runId);
     if (!run) {
       throw new Error(`Unknown durable run: ${runId}`);
     }
-    return run as StoredRun<TVars, TAttrs>;
+    return run as StoredRun<TVars>;
   }
 }
 
@@ -1402,10 +1363,10 @@ function isRetryableAssistantDeliveryStatus(
   return status === 'pending' || status === 'delivering' || status === 'failed';
 }
 
-function createAssistantDeliveryOutboxEntry<TAttrs extends Attrs>(
+function createAssistantDeliveryOutboxEntry(
   conversationId: string,
-  delivery: AssistantDeliveryOutboxInput<TAttrs>,
-): AssistantDeliveryOutboxEntry<TAttrs> {
+  delivery: AssistantDeliveryOutboxInput,
+): AssistantDeliveryOutboxEntry {
   return completeAssistantDeliveryOutboxMetadata(conversationId, {
     ...delivery,
     target: cloneDurableRuntimeValue(delivery.target),
@@ -1414,20 +1375,20 @@ function createAssistantDeliveryOutboxEntry<TAttrs extends Attrs>(
   });
 }
 
-function completeAssistantDeliveryOutboxMetadata<TAttrs extends Attrs>(
+function completeAssistantDeliveryOutboxMetadata(
   conversationId: string,
-  entry: AssistantDeliveryOutboxInput<TAttrs> &
+  entry: AssistantDeliveryOutboxInput &
     Partial<
       Pick<
-        AssistantDeliveryOutboxEntry<TAttrs>,
+        AssistantDeliveryOutboxEntry,
         'id' | 'conversationId' | 'messageRef' | 'platformBinding'
       >
     > &
     Pick<
-      AssistantDeliveryOutboxEntry<TAttrs>,
+      AssistantDeliveryOutboxEntry,
       'status' | 'attempts' | 'lastError' | 'error'
     >,
-): AssistantDeliveryOutboxEntry<TAttrs> {
+): AssistantDeliveryOutboxEntry {
   return {
     ...entry,
     id: entry.id ?? entry.idempotencyKey,
@@ -1453,16 +1414,16 @@ function cloneDurableRuntimeValue<T>(value: T): T {
   }
 }
 
-function applySessionCheckpointDelta<TVars extends Vars, TAttrs extends Attrs>(
-  run: StoredRun<TVars, TAttrs>,
-  delta: SessionCheckpointDelta<TVars, TAttrs>,
+function applySessionCheckpointDelta<TVars extends Vars>(
+  run: StoredRun<TVars>,
+  delta: SessionCheckpointDelta<TVars>,
 ): void {
   const current = run.result ?? run.initial;
   if (current.version >= delta.toVersion) {
     return;
   }
   if (delta.rewrite) {
-    run.result = new Session<TVars, TAttrs>(
+    run.result = new Session<TVars>(
       [...delta.appendedMessages],
       { ...(delta.varsSet ?? {}) } as TVars,
       current.print,
@@ -1476,7 +1437,7 @@ function applySessionCheckpointDelta<TVars extends Vars, TAttrs extends Attrs>(
     delete vars[key];
   }
   Object.assign(vars, delta.varsSet);
-  run.result = new Session<TVars, TAttrs>(
+  run.result = new Session<TVars>(
     [...current.messages, ...delta.appendedMessages],
     vars as TVars,
     current.print,
@@ -1514,26 +1475,24 @@ function registeredAgentName(agent: PromptTrailRegisteredAgent): string {
   throw new Error('PromptTrail.app.agent requires Agent.create(name).');
 }
 
-function graphInboundFromAppInput<TAttrs extends Attrs>(
+function graphInboundFromAppInput(
   input: string | Omit<Inbound, 'offset'>,
-): GraphInboundInput<TAttrs> {
+): GraphInboundInput {
   if (typeof input === 'string') {
     return { kind: 'user', content: input };
   }
   return {
     kind: input.kind,
     content: input.content,
-    attrs: input.attrs as TAttrs | undefined,
+    attrs: input.attrs,
   };
 }
 
-function graphInboundFromStoredInbound<TAttrs extends Attrs>(
-  input: Inbound,
-): GraphInboundInput<TAttrs> {
+function graphInboundFromStoredInbound(input: Inbound): GraphInboundInput {
   return {
     kind: input.kind,
     content: input.content,
-    attrs: input.attrs as TAttrs | undefined,
+    attrs: input.attrs,
   };
 }
 

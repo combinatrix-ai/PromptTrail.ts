@@ -1,5 +1,4 @@
-import type { Session } from '../../session';
-import { Attrs, Vars } from '../../session';
+import type { Session, Vars } from '../../session';
 import { TemplateBase } from '../base';
 import type { TransformFn } from '../template_types';
 
@@ -7,19 +6,15 @@ import type { TransformFn } from '../template_types';
  * A template that applies a transformation function to the session.
  * It doesn't add messages directly but modifies the session state (e.g., metadata).
  */
-// Make TransformTemplate generic
-export class Transform<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
-  private transformFn: TransformFn<TAttrs, TVars>;
+export class Transform<TVars extends Vars = Vars> extends TemplateBase<TVars> {
+  private transformFn: TransformFn<TVars>;
 
   // Update constructor signature
-  constructor(fn: TransformFn<TAttrs, TVars> | TransformFn<TAttrs, TVars>[]) {
+  constructor(fn: TransformFn<TVars> | TransformFn<TVars>[]) {
     super();
     // Higher-order function
     if (Array.isArray(fn)) {
-      this.transformFn = (session: Session<TVars, TAttrs>) => {
+      this.transformFn = (session: Session<TVars>) => {
         let updatedSession = session;
         for (const f of fn) {
           updatedSession = f(updatedSession);
@@ -36,7 +31,7 @@ export class Transform<
   /**
    * @internal
    */
-  getTransformFn(): TransformFn<TAttrs, TVars> {
+  getTransformFn(): TransformFn<TVars> {
     return this.transformFn;
   }
 
@@ -48,15 +43,8 @@ export class Transform<
     };
   }
 
-  // Update execute signature
-  async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
-    // Return Session<any>
+  async execute(session?: Session<TVars>): Promise<Session<TVars>> {
     const currentSession = this.ensureSession(session);
-    // Apply the transformation function
-    const updatedSession = await this.transformFn(currentSession);
-    // Cast the result back to Session<TVars, TAttrs> as the transform might have changed metadata type
-    return updatedSession as Session<TVars, TAttrs>;
+    return this.transformFn(currentSession);
   }
 }

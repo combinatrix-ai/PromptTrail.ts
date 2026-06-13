@@ -16,7 +16,7 @@ import {
   type ProviderSessionBinding,
 } from '../../provider_session';
 import { requireConfiguredCapabilityApprovals } from '../../capabilities';
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import {
   runExecutionPhase,
   runRuntimeMiddlewareWrapper,
@@ -27,14 +27,10 @@ import {
 import type { ExecutionEvent } from '../../execution';
 import type { ResolvedExecutionCommand } from '../../execution';
 import { manifestConfigDigest } from '../../graph';
-import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 
-export class ClaudeTurn<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
-  constructor(private readonly options: ClaudeTurnOptions<TAttrs, TVars>) {
+export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
+  constructor(private readonly options: ClaudeTurnOptions<TVars>) {
     super();
   }
 
@@ -54,9 +50,9 @@ export class ClaudeTurn<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     return this.executeTurn(session, runtime);
   }
 
@@ -68,10 +64,10 @@ export class ClaudeTurn<
    * @internal
    */
   async executeTurn(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
     options: { nodePath?: string } = {},
-  ): Promise<Session<TVars, TAttrs>> {
+  ): Promise<Session<TVars>> {
     let currentSession = this.ensureSession(session);
     if (runtime) {
       const beforeModel = await runRuntimeExecutionPhase(runtime, {
@@ -99,8 +95,8 @@ export class ClaudeTurn<
       runtime.middlewareState = prepared.middlewareState;
       runtime.version = prepared.afterVersion;
       modelSession =
-        (prepared.request as TurnModelRequest<TVars, TAttrs> | undefined)
-          ?.session ?? modelSession;
+        (prepared.request as TurnModelRequest<TVars> | undefined)?.session ??
+        modelSession;
     }
     await materializeClaudeAgentSkills({
       capabilities: this.options.capabilities,
@@ -120,7 +116,7 @@ export class ClaudeTurn<
     const executeProviderCall = async ({
       request,
     }: {
-      request: TurnModelRequest<TVars, TAttrs>;
+      request: TurnModelRequest<TVars>;
     }) => {
       const client =
         this.options.client ?? (await createDefaultClaudeAgentClient());
@@ -219,7 +215,7 @@ export class ClaudeTurn<
     }
     const sessionResult = this.prepareSessionResult(result);
 
-    let nextSession: Session<TVars, TAttrs>;
+    let nextSession: Session<TVars>;
     if (this.options.squashWith) {
       nextSession = await this.options.squashWith(currentSession, result);
     } else if (this.options.retainMessages === false) {
@@ -229,10 +225,7 @@ export class ClaudeTurn<
       );
     } else {
       const attrsKey = this.options.attrsKey ?? 'claudeAgent';
-      const message = claudeAgentResultToMessage<TAttrs>(
-        sessionResult,
-        attrsKey,
-      );
+      const message = claudeAgentResultToMessage(sessionResult, attrsKey);
       const historyFingerprint = createConversationHistoryFingerprint([
         ...currentSession.messages,
         message,
@@ -242,12 +235,12 @@ export class ClaudeTurn<
         attrs: {
           ...message.attrs,
           [attrsKey]: {
-            ...((message.attrs as Record<string, unknown> | undefined)?.[
-              attrsKey
-            ] as Record<string, unknown> | undefined),
+            ...(message.attrs?.[attrsKey] as unknown as
+              | Record<string, unknown>
+              | undefined),
             historyFingerprint,
           },
-        } as TAttrs,
+        },
       });
     }
 
@@ -255,7 +248,7 @@ export class ClaudeTurn<
   }
 
   private async resolveInput(
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     context: Record<string, unknown> | undefined,
   ): Promise<string> {
     if (this.options.input === undefined) {
@@ -270,7 +263,7 @@ export class ClaudeTurn<
   }
 
   private async resolveSessionId(
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     context: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
@@ -290,7 +283,7 @@ export class ClaudeTurn<
   }
 
   private resolveCheckpointBinding(
-    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    runtime: ExecutionRuntimeState<TVars> | undefined,
     nodePath: string | undefined,
   ): ProviderSessionBinding | undefined {
     if (!runtime?.recordProviderSession || !nodePath) {
@@ -301,7 +294,7 @@ export class ClaudeTurn<
   }
 
   private async recordProviderSession(
-    runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+    runtime: ExecutionRuntimeState<TVars> | undefined,
     nodePath: string | undefined,
     binding: ProviderSessionBinding,
   ): Promise<void> {
@@ -316,21 +309,20 @@ export class ClaudeTurn<
   }
 
   private async executeWithUnresumablePolicy(
-    runtime: ExecutionRuntimeState<TVars, TAttrs>,
+    runtime: ExecutionRuntimeState<TVars>,
     nodePath: string | undefined,
-    currentSession: Session<TVars, TAttrs>,
-    modelSession: Session<TVars, TAttrs>,
+    currentSession: Session<TVars>,
+    modelSession: Session<TVars>,
     executeProviderCall: (input: {
-      request: TurnModelRequest<TVars, TAttrs>;
+      request: TurnModelRequest<TVars>;
     }) => Promise<Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>>,
     closeFailedAttempt: (error: unknown) => Promise<void>,
   ) {
     const checkpointBinding = this.resolveCheckpointBinding(runtime, nodePath);
-    const callWrappedModel = (request: TurnModelRequest<TVars, TAttrs>) =>
+    const callWrappedModel = (request: TurnModelRequest<TVars>) =>
       runRuntimeMiddlewareWrapper<
         TVars,
-        TAttrs,
-        TurnModelRequest<TVars, TAttrs>,
+        TurnModelRequest<TVars>,
         Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>
       >(runtime, {
         phase: 'wrapModelCall',
@@ -401,21 +393,15 @@ export class ClaudeTurn<
   }
 }
 
-interface TurnModelRequest<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  session: Session<TVars, TAttrs>;
+interface TurnModelRequest<TVars extends Vars = Vars> {
+  session: Session<TVars>;
   restartNotice?: string;
   restarts?: number;
   ignoreCheckpointBinding?: boolean;
 }
 
-async function emitTurnModelEvent<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+async function emitTurnModelEvent<TVars extends Vars = Vars>(
+  runtime: ExecutionRuntimeState<TVars> | undefined,
   type: 'model.started' | 'model.completed' | 'model.failed',
   stepId: string,
   error?: unknown,

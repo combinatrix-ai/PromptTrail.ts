@@ -17,13 +17,6 @@ type UserContext = {
   };
 };
 
-type MessageMetadata = {
-  role: string;
-  hidden: boolean;
-  priority: 'low' | 'medium' | 'high';
-  timestamp: number;
-};
-
 async function main() {
   console.log('🎯 PromptTrail Gradual Typing API Demo\n');
 
@@ -50,57 +43,15 @@ async function main() {
   console.log(`   Role: ${session2.getVar('role')}`);
   console.log(`   Theme: ${session2.getVar('preferences').theme}\n`);
 
-  // 3. Type-only attrs specification
-  console.log('3. Type-only attrs specification:');
-  const session3 = Session.withAttrsType<MessageMetadata>().create();
+  // 3. Empty session with a vars type
+  console.log('3. Empty session with a vars type:');
+  const session3 = Session.withVarsType<UserContext>().empty();
   console.log(`   Messages: ${session3.messages.length}`);
   console.log(`   Vars: ${session3.varsSize}\n`);
 
-  // 4. Both vars and attrs types
-  console.log('4. Both vars and attrs types:');
-  const session4 = Session.withVarsType<UserContext>()
-    .withAttrsType<MessageMetadata>()
-    .create({
-      vars: {
-        userId: 'user456',
-        role: 'user',
-        preferences: {
-          theme: 'light',
-          notifications: false,
-        },
-      },
-    });
-  console.log(`   User ID: ${session4.getVar('userId')}`);
-  console.log(`   Role: ${session4.getVar('role')}`);
-  console.log(
-    `   Notifications: ${session4.getVar('preferences').notifications}\n`,
-  );
-
-  // 5. Chaining with existing session
-  console.log('5. Chaining attrs type to existing vars session:');
-  const session5 = Session.withVars({
-    userId: 'user789',
-    role: 'guest' as const,
-    preferences: {
-      theme: 'dark' as const,
-      notifications: true,
-    },
-  }).withAttrsType<MessageMetadata>();
-  console.log(`   User ID: ${session5.getVar('userId')}`);
-  console.log(`   Role: ${session5.getVar('role')}`);
-  console.log(`   Theme: ${session5.getVar('preferences').theme}\n`);
-
-  // 6. Empty session with types
-  console.log('6. Empty session with types:');
-  const session6 = Session.withVarsType<UserContext>()
-    .withAttrsType<MessageMetadata>()
-    .empty();
-  console.log(`   Messages: ${session6.messages.length}`);
-  console.log(`   Vars: ${session6.varsSize}\n`);
-
-  // 7. Debug session with types
-  console.log('7. Debug session with types:');
-  const session7 = Session.withVarsType<UserContext>().debug({
+  // 4. Debug session with a vars type
+  console.log('4. Debug session with a vars type:');
+  const session4 = Session.withVarsType<UserContext>().debug({
     vars: {
       userId: 'debug-user',
       role: 'admin',
@@ -110,16 +61,31 @@ async function main() {
       },
     },
   });
-  console.log(`   Print enabled: ${session7.print}`);
-  console.log(`   User ID: ${session7.getVar('userId')}\n`);
+  console.log(`   Print enabled: ${session4.print}`);
+  console.log(`   User ID: ${session4.getVar('userId')}`);
+  console.log(`   Theme: ${session4.getVar('preferences').theme}\n`);
 
-  // 8. Mixed chaining (start with attrs)
-  console.log('8. Mixed chaining (start with attrs):');
-  const session8 = Session.withAttrsType<MessageMetadata>()
+  // 5. Inferred vars from an existing vars session
+  console.log('5. Inferred vars from an existing vars session:');
+  const session5 = Session.withVars({
+    userId: 'user789',
+    role: 'guest' as const,
+    preferences: {
+      theme: 'dark' as const,
+      notifications: true,
+    },
+  });
+  console.log(`   User ID: ${session5.getVar('userId')}`);
+  console.log(`   Role: ${session5.getVar('role')}`);
+  console.log(`   Theme: ${session5.getVar('preferences').theme}\n`);
+
+  // 6. Builder chaining can refine the vars type before creation
+  console.log('6. Builder chaining for vars types:');
+  const session6 = Session.withVarsType<{ traceId: string }>()
     .withVarsType<UserContext>()
     .create({
       vars: {
-        userId: 'mixed-user',
+        userId: 'builder-user',
         role: 'user',
         preferences: {
           theme: 'light',
@@ -127,30 +93,26 @@ async function main() {
         },
       },
     });
-  console.log(`   User ID: ${session8.getVar('userId')}`);
-  console.log(`   Role: ${session8.getVar('role')}\n`);
+  console.log(`   User ID: ${session6.getVar('userId')}`);
+  console.log(`   Role: ${session6.getVar('role')}\n`);
 
-  // 9. Adding attrs type to existing session instance
-  console.log('9. Adding attrs type to existing session:');
+  // 7. Immutable vars growth on an existing session
+  console.log('7. Immutable vars growth on an existing session:');
   const originalSession = Session.create({
-    vars: { userId: 'original-user', score: 42 },
+    vars: { userId: 'original-user' },
   });
-  const typedSession = originalSession.withAttrsType<MessageMetadata>();
+  const scoredSession = originalSession.withVar('score', 42);
+  console.log(`   Original - User ID: ${originalSession.getVar('userId')}`);
   console.log(
-    `   Original - User ID: ${originalSession.getVar('userId')}, Score: ${originalSession.getVar('score')}`,
-  );
-  console.log(
-    `   Typed - User ID: ${typedSession.getVar('userId')}, Score: ${typedSession.getVar('score')}\n`,
+    `   Scored - User ID: ${scoredSession.getVar('userId')}, Score: ${scoredSession.getVar('score')}\n`,
   );
 
   console.log('✅ All examples completed successfully!');
   console.log('\n📝 Key Benefits:');
   console.log('   • Inference first - values define vars when possible');
-  console.log(
-    '   • Explicit typing - withVarsType vs withAttrsType (no confusion)',
-  );
+  console.log('   • Explicit typing - withVarsType when no values exist yet');
   console.log('   • Flexible - support both value inference and type-only');
-  console.log('   • Chainable - compose types step by step');
+  console.log('   • Chainable - refine vars before creating a session');
   console.log('   • Gradual adoption - use when you need better typing');
 }
 

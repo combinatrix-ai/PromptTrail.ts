@@ -112,7 +112,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       username: 'Alice',
     };
     const date = new Date();
-    const template = new Sequence<MessageMetadata, UserContext>()
+    const template = new Sequence<UserContext>()
       .add(new System('You are a helpful assistant.'))
       .add(new Assistant('Hello, ${username}!'))
       .add(new User('My name is not Alice, it is Bob.'))
@@ -264,7 +264,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(
         new Sequence()
           .add(new User('123456789'))
-          .loopIf((session: Session<any, any>) => {
+          .loopIf((session: Session<any>) => {
             return session.messages.length < 3;
           }),
       )

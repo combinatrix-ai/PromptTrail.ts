@@ -3,9 +3,8 @@ import { z } from 'zod';
 import type { ExecutionRuntimeState } from '../../interceptors';
 import { zodToJsonSchema } from '../../json_schema';
 import type { SchemaGenerationMode } from '../../llm_types';
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import { LlmSource, ModelOutput, Source } from '../../source';
-import { Attrs, Vars } from '../../session';
 import { TemplateBase } from '../base';
 import { executeRuntimeModelCall } from './model_runtime';
 
@@ -13,10 +12,7 @@ import { executeRuntimeModelCall } from './model_runtime';
  * Template that enforces structured output according to a Zod schema
  * Now uses the Source abstraction consistently with enhanced LlmSource
  */
-export class Structured<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
+export class Structured<TVars extends Vars = Vars> extends TemplateBase<TVars> {
   private source: Source<ModelOutput>;
   private readonly schema: z.ZodType;
   private readonly mode?: SchemaGenerationMode;
@@ -63,15 +59,15 @@ export class Structured<
   /**
    * Static factory method for easier creation with just schema
    */
-  static withSchema<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+  static withSchema<TVars extends Vars = Vars>(
     schema: z.ZodType,
     options?: {
       mode?: SchemaGenerationMode;
       functionName?: string;
       maxAttempts?: number;
     },
-  ): Structured<TAttrs, TVars> {
-    return new Structured<TAttrs, TVars>({
+  ): Structured<TVars> {
+    return new Structured<TVars>({
       schema,
       ...options,
     });
@@ -80,15 +76,15 @@ export class Structured<
   /**
    * Static factory method for creation with custom source
    */
-  static withSource<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>(
+  static withSource<TVars extends Vars = Vars>(
     source: Source<ModelOutput>,
     schema: z.ZodType,
     options?: {
       mode?: SchemaGenerationMode;
       functionName?: string;
     },
-  ): Structured<TAttrs, TVars> {
-    return new Structured<TAttrs, TVars>({
+  ): Structured<TVars> {
+    return new Structured<TVars>({
       source,
       schema,
       ...options,
@@ -96,9 +92,9 @@ export class Structured<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     return this.executeSource(session, runtime);
   }
 
@@ -109,9 +105,9 @@ export class Structured<
    * @internal
    */
   async executeSource(
-    session?: Session<TVars, TAttrs>,
-    runtime?: ExecutionRuntimeState<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     let validSession = this.ensureSession(session);
 
     if (!this.source) {
@@ -138,7 +134,7 @@ export class Structured<
         ...(output.result.structuredOutput !== undefined
           ? { structuredContent: output.result.structuredOutput }
           : {}),
-        attrs: (output.result.metadata as TAttrs) ?? ({} as TAttrs),
+        attrs: output.result.metadata ?? {},
       });
     } catch (error) {
       const err = error as Error;

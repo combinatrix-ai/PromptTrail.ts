@@ -3,7 +3,6 @@ import type { Message, MessageRole } from '../message';
 import { tool } from 'ai';
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { Attrs } from '../session';
 
 /**
  * Create a weather tool for testing
@@ -36,7 +35,7 @@ export function createWeatherTool() {
  * Test function for message types
  */
 export function expect_types(
-  messages: Message<Attrs>[],
+  messages: Message[],
   expectedtypes: MessageRole[],
 ) {
   expect(messages.length).toBe(expectedtypes.length);
@@ -49,8 +48,8 @@ export function expect_types(
  * Test function for both types and content
  */
 export function expect_messages(
-  messages: Message<Attrs>[],
-  expectedMessages: Message<Attrs>[],
+  messages: Message[],
+  expectedMessages: Message[],
 ) {
   expect(messages.length).toBe(expectedMessages.length);
   messages.forEach((message, index) => {

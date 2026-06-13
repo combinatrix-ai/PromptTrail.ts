@@ -7,7 +7,7 @@ import {
   type ResolvedExecutionTransition,
 } from './execution';
 import type { ProviderSessionBinding } from './provider_session';
-import type { Session, Attrs, Vars } from './session';
+import type { Session, Vars } from './session';
 
 export type ExecutionLifecyclePhase =
   | 'beforeAgent'
@@ -70,12 +70,11 @@ export type ExecutionDurableBoundaryProvider = (
 
 export interface ExecutionPhaseContext<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > {
   phase: ExecutionPhase;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   request?: TRequest;
   result?: TResult;
   context?: Record<string, unknown>;
@@ -88,123 +87,109 @@ export interface ExecutionPhaseContext<
 
 export type MiddlewarePhaseHandler<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > = (
-  context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
-) => ExecutionPatch<TVars, TAttrs> | void;
+  context: ExecutionPhaseContext<TVars, TRequest, TResult>,
+) => ExecutionPatch<TVars> | void;
 
 export interface ExecutionWrapperNextInput<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
 > {
-  session?: Session<TVars, TAttrs>;
+  session?: Session<TVars>;
   request?: TRequest;
 }
 
 export type ExecutionWrapperNext<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
-> = (
-  input?: ExecutionWrapperNextInput<TVars, TAttrs, TRequest>,
-) => Promise<TResult>;
+> = (input?: ExecutionWrapperNextInput<TVars, TRequest>) => Promise<TResult>;
 
 export type MiddlewareWrapperHandler<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > = (
-  context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
-  next: ExecutionWrapperNext<TVars, TAttrs, TRequest, TResult>,
+  context: ExecutionPhaseContext<TVars, TRequest, TResult>,
+  next: ExecutionWrapperNext<TVars, TRequest, TResult>,
 ) =>
-  | ExecutionPatch<TVars, TAttrs>
+  | ExecutionPatch<TVars>
   | TResult
   | void
-  | Promise<ExecutionPatch<TVars, TAttrs> | TResult | void>;
+  | Promise<ExecutionPatch<TVars> | TResult | void>;
 
 export type HookPhaseHandler<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > = (
-  context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult>,
-) => HookExecutionPatch<TVars, TAttrs> | void;
+  context: ExecutionPhaseContext<TVars, TRequest, TResult>,
+) => HookExecutionPatch<TVars> | void;
 
-export type HookExecutionPatch<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> = Pick<ExecutionPatch<TVars, TAttrs>, 'session' | 'command'>;
+export type HookExecutionPatch<TVars extends Vars = Vars> = Pick<
+  ExecutionPatch<TVars>,
+  'session' | 'command'
+>;
 
-export interface MiddlewareDefinition<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface MiddlewareDefinition<TVars extends Vars = Vars> {
   name?: string;
   /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
   /** Required under checkpoint when wrapModelCall or wrapToolCall is defined. */
   effect?: ExecutionEffectDeclaration;
-  beforeAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  afterAgent?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  beforeModel?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  prepareModelInput?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  wrapModelCall?: MiddlewareWrapperHandler<TVars, TAttrs>;
-  afterModel?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  beforeTool?: MiddlewarePhaseHandler<TVars, TAttrs>;
-  wrapToolCall?: MiddlewareWrapperHandler<TVars, TAttrs>;
-  afterTool?: MiddlewarePhaseHandler<TVars, TAttrs>;
+  beforeAgent?: MiddlewarePhaseHandler<TVars>;
+  afterAgent?: MiddlewarePhaseHandler<TVars>;
+  beforeModel?: MiddlewarePhaseHandler<TVars>;
+  prepareModelInput?: MiddlewarePhaseHandler<TVars>;
+  wrapModelCall?: MiddlewareWrapperHandler<TVars>;
+  afterModel?: MiddlewarePhaseHandler<TVars>;
+  beforeTool?: MiddlewarePhaseHandler<TVars>;
+  wrapToolCall?: MiddlewareWrapperHandler<TVars>;
+  afterTool?: MiddlewarePhaseHandler<TVars>;
 }
 
-export interface HookDefinition<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
+export interface HookDefinition<TVars extends Vars = Vars> {
   name?: string;
   /** Controls whether durable runs materialize the whole phase or replay the handler with durable helpers. */
   durability?: HandlerDurabilityMode;
   /** Alias for the agent-level run start phase. */
-  onRunStart?: HookPhaseHandler<TVars, TAttrs>;
+  onRunStart?: HookPhaseHandler<TVars>;
   /** Alias for the agent-level run end phase. */
-  onRunEnd?: HookPhaseHandler<TVars, TAttrs>;
-  onBeforeAgent?: HookPhaseHandler<TVars, TAttrs>;
-  onAfterAgent?: HookPhaseHandler<TVars, TAttrs>;
-  onBeforeTemplate?: HookPhaseHandler<TVars, TAttrs>;
-  onAfterTemplate?: HookPhaseHandler<TVars, TAttrs>;
-  onBeforeModel?: HookPhaseHandler<TVars, TAttrs>;
-  onAfterModel?: HookPhaseHandler<TVars, TAttrs>;
-  onBeforeTool?: HookPhaseHandler<TVars, TAttrs>;
-  onAfterTool?: HookPhaseHandler<TVars, TAttrs>;
-  onSuspend?: HookPhaseHandler<TVars, TAttrs>;
-  onResume?: HookPhaseHandler<TVars, TAttrs>;
+  onRunEnd?: HookPhaseHandler<TVars>;
+  onBeforeAgent?: HookPhaseHandler<TVars>;
+  onAfterAgent?: HookPhaseHandler<TVars>;
+  onBeforeTemplate?: HookPhaseHandler<TVars>;
+  onAfterTemplate?: HookPhaseHandler<TVars>;
+  onBeforeModel?: HookPhaseHandler<TVars>;
+  onAfterModel?: HookPhaseHandler<TVars>;
+  onBeforeTool?: HookPhaseHandler<TVars>;
+  onAfterTool?: HookPhaseHandler<TVars>;
+  onSuspend?: HookPhaseHandler<TVars>;
+  onResume?: HookPhaseHandler<TVars>;
 }
 
 export const Middleware = {
-  create<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    definition: MiddlewareDefinition<TVars, TAttrs>,
-  ): MiddlewareDefinition<TVars, TAttrs> {
+  create<TVars extends Vars = Vars>(
+    definition: MiddlewareDefinition<TVars>,
+  ): MiddlewareDefinition<TVars> {
     return definition;
   },
 };
 
 export const Hook = {
-  create<TVars extends Vars = Vars, TAttrs extends Attrs = Attrs>(
-    definition: HookDefinition<TVars, TAttrs>,
-  ): HookDefinition<TVars, TAttrs> {
+  create<TVars extends Vars = Vars>(
+    definition: HookDefinition<TVars>,
+  ): HookDefinition<TVars> {
     assertHookDefinitionSupported(definition);
     return definition;
   },
 };
 
-export function assertHookDefinitionSupported<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(definition: HookDefinition<TVars, TAttrs>): void {
+export function assertHookDefinitionSupported<TVars extends Vars>(
+  definition: HookDefinition<TVars>,
+): void {
   if (definition.onRunStart && definition.onBeforeAgent) {
     throw new Error(
       `Hook ${definition.name ?? '<anonymous>'} cannot define both onRunStart and onBeforeAgent.`,
@@ -219,63 +204,60 @@ export function assertHookDefinitionSupported<
 
 export interface RunExecutionPhaseOptions<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > {
   phase: ExecutionLifecyclePhase;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   request?: TRequest;
   result?: TResult;
   context?: Record<string, unknown>;
   middlewareState?: Record<string, unknown>;
-  middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
-  hooks?: readonly HookDefinition<TVars, TAttrs>[];
+  middleware?: readonly MiddlewareDefinition<TVars>[];
+  hooks?: readonly HookDefinition<TVars>[];
   beforeVersion?: number;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
 }
 
-export interface ExecutionPhaseStep<TAttrs extends Attrs = Attrs> {
+export interface ExecutionPhaseStep {
   kind: 'middleware' | 'hook';
   name?: string;
   phase: ExecutionPhase;
   registrationIndex: number;
-  transition: ResolvedExecutionTransition<TAttrs>;
+  transition: ResolvedExecutionTransition;
 }
 
 export interface RunExecutionPhaseResult<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > {
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   request?: TRequest;
   result?: TResult;
   middlewareState: Record<string, unknown>;
   command: ResolvedExecutionCommand;
   beforeVersion: number;
   afterVersion: number;
-  steps: ExecutionPhaseStep<TAttrs>[];
+  steps: ExecutionPhaseStep[];
 }
 
 export interface RunMiddlewareWrapperOptions<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > {
   phase: ExecutionWrapperPhase;
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   request: TRequest;
   call: (input: {
-    session: Session<TVars, TAttrs>;
+    session: Session<TVars>;
     request: TRequest;
   }) => Promise<TResult>;
   context?: Record<string, unknown>;
   middlewareState?: Record<string, unknown>;
-  middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+  middleware?: readonly MiddlewareDefinition<TVars>[];
   beforeVersion?: number;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
@@ -283,26 +265,22 @@ export interface RunMiddlewareWrapperOptions<
 
 export interface RunMiddlewareWrapperResult<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 > {
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   request: TRequest;
   result: TResult;
   middlewareState: Record<string, unknown>;
   command: ResolvedExecutionCommand;
   beforeVersion: number;
   afterVersion: number;
-  steps: ExecutionPhaseStep<TAttrs>[];
+  steps: ExecutionPhaseStep[];
 }
 
-export interface ExecutionRuntimeState<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
-> {
-  middleware: readonly MiddlewareDefinition<TVars, TAttrs>[];
-  hooks: readonly HookDefinition<TVars, TAttrs>[];
+export interface ExecutionRuntimeState<TVars extends Vars = Vars> {
+  middleware: readonly MiddlewareDefinition<TVars>[];
+  hooks: readonly HookDefinition<TVars>[];
   middlewareState: Record<string, unknown>;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   version: number;
@@ -320,10 +298,9 @@ export interface ExecutionRuntimeState<
 
 export function createExecutionRuntimeState<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
 >(options?: {
-  middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
-  hooks?: readonly HookDefinition<TVars, TAttrs>[];
+  middleware?: readonly MiddlewareDefinition<TVars>[];
+  hooks?: readonly HookDefinition<TVars>[];
   context?: Record<string, unknown>;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
@@ -335,7 +312,7 @@ export function createExecutionRuntimeState<
     nodePath: string,
     binding: ProviderSessionBinding,
   ) => Promise<void>;
-}): ExecutionRuntimeState<TVars, TAttrs> {
+}): ExecutionRuntimeState<TVars> {
   return {
     middleware: options?.middleware ?? [],
     hooks: options?.hooks ?? [],
@@ -352,17 +329,14 @@ export function createExecutionRuntimeState<
   };
 }
 
-export function extendExecutionRuntimeState<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  parent: ExecutionRuntimeState<TVars, TAttrs> | undefined,
+export function extendExecutionRuntimeState<TVars extends Vars = Vars>(
+  parent: ExecutionRuntimeState<TVars> | undefined,
   extension: {
-    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
-    hooks?: readonly HookDefinition<TVars, TAttrs>[];
+    middleware?: readonly MiddlewareDefinition<TVars>[];
+    hooks?: readonly HookDefinition<TVars>[];
   },
-): ExecutionRuntimeState<TVars, TAttrs> {
-  const base = parent ?? createExecutionRuntimeState<TVars, TAttrs>();
+): ExecutionRuntimeState<TVars> {
+  const base = parent ?? createExecutionRuntimeState<TVars>();
   return {
     ...base,
     middleware: [...base.middleware, ...(extension.middleware ?? [])],
@@ -372,20 +346,19 @@ export function extendExecutionRuntimeState<
 
 export async function runRuntimeExecutionPhase<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 >(
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  runtime: ExecutionRuntimeState<TVars>,
   options: {
     phase: ExecutionLifecyclePhase;
-    session: Session<TVars, TAttrs>;
+    session: Session<TVars>;
     request?: TRequest;
     result?: TResult;
-    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
-    hooks?: readonly HookDefinition<TVars, TAttrs>[];
+    middleware?: readonly MiddlewareDefinition<TVars>[];
+    hooks?: readonly HookDefinition<TVars>[];
   },
-): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
+): Promise<RunExecutionPhaseResult<TVars, TRequest, TResult>> {
   const phaseResult = await runExecutionPhase({
     phase: options.phase,
     session: options.session,
@@ -407,22 +380,21 @@ export async function runRuntimeExecutionPhase<
 
 export async function runRuntimeMiddlewareWrapper<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 >(
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
+  runtime: ExecutionRuntimeState<TVars>,
   options: {
     phase: ExecutionWrapperPhase;
-    session: Session<TVars, TAttrs>;
+    session: Session<TVars>;
     request: TRequest;
     call: (input: {
-      session: Session<TVars, TAttrs>;
+      session: Session<TVars>;
       request: TRequest;
     }) => Promise<TResult>;
-    middleware?: readonly MiddlewareDefinition<TVars, TAttrs>[];
+    middleware?: readonly MiddlewareDefinition<TVars>[];
   },
-): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
+): Promise<RunMiddlewareWrapperResult<TVars, TRequest, TResult>> {
   const wrapperResult = await runMiddlewareWrapper({
     phase: options.phase,
     session: options.session,
@@ -441,12 +413,9 @@ export async function runRuntimeMiddlewareWrapper<
   return wrapperResult;
 }
 
-async function emitPhaseStepEvents<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
-  steps: readonly ExecutionPhaseStep<TAttrs>[],
+async function emitPhaseStepEvents<TVars extends Vars = Vars>(
+  runtime: ExecutionRuntimeState<TVars>,
+  steps: readonly ExecutionPhaseStep[],
 ): Promise<void> {
   if (!runtime.emitEvent || !runtime.nextEventSeq) {
     return;
@@ -482,12 +451,9 @@ async function emitPhaseStepEvents<
   }
 }
 
-function executionPhaseEventIdempotencyKey<
-  TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
->(
-  runtime: ExecutionRuntimeState<TVars, TAttrs>,
-  step: ExecutionPhaseStep<TAttrs>,
+function executionPhaseEventIdempotencyKey<TVars extends Vars = Vars>(
+  runtime: ExecutionRuntimeState<TVars>,
+  step: ExecutionPhaseStep,
   seq: number,
 ): string {
   return [
@@ -504,12 +470,11 @@ function executionPhaseEventIdempotencyKey<
 
 export async function runExecutionPhase<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 >(
-  options: RunExecutionPhaseOptions<TVars, TAttrs, TRequest, TResult>,
-): Promise<RunExecutionPhaseResult<TVars, TAttrs, TRequest, TResult>> {
+  options: RunExecutionPhaseOptions<TVars, TRequest, TResult>,
+): Promise<RunExecutionPhaseResult<TVars, TRequest, TResult>> {
   throwIfAborted(options.signal);
   let session = options.session;
   let request = options.request;
@@ -517,7 +482,7 @@ export async function runExecutionPhase<
   let middlewareState = { ...(options.middlewareState ?? {}) };
   let version = options.beforeVersion ?? 0;
   let command: ResolvedExecutionCommand = { type: 'none' };
-  const steps: ExecutionPhaseStep<TAttrs>[] = [];
+  const steps: ExecutionPhaseStep[] = [];
   const handlerContext = sanitizeExecutionHandlerContext(options.context);
 
   for (const [registrationIndex, middleware] of (
@@ -661,26 +626,25 @@ export async function runExecutionPhase<
 
 export async function runMiddlewareWrapper<
   TVars extends Vars = Vars,
-  TAttrs extends Attrs = Attrs,
   TRequest = unknown,
   TResult = unknown,
 >(
-  options: RunMiddlewareWrapperOptions<TVars, TAttrs, TRequest, TResult>,
-): Promise<RunMiddlewareWrapperResult<TVars, TAttrs, TRequest, TResult>> {
+  options: RunMiddlewareWrapperOptions<TVars, TRequest, TResult>,
+): Promise<RunMiddlewareWrapperResult<TVars, TRequest, TResult>> {
   throwIfAborted(options.signal);
   let middlewareState = { ...(options.middlewareState ?? {}) };
   let version = options.beforeVersion ?? 0;
   let command: ResolvedExecutionCommand = { type: 'none' };
-  const steps: ExecutionPhaseStep<TAttrs>[] = [];
+  const steps: ExecutionPhaseStep[] = [];
   const middleware = options.middleware ?? [];
   const handlerContext = sanitizeExecutionHandlerContext(options.context);
 
   const invoke = async (
     index: number,
-    session: Session<TVars, TAttrs>,
+    session: Session<TVars>,
     request: TRequest,
   ): Promise<{
-    session: Session<TVars, TAttrs>;
+    session: Session<TVars>;
     request: TRequest;
     result: TResult;
   }> => {
@@ -695,7 +659,7 @@ export async function runMiddlewareWrapper<
 
     const definition = middleware[index];
     const handler = definition[options.phase] as
-      | MiddlewareWrapperHandler<TVars, TAttrs, TRequest, TResult>
+      | MiddlewareWrapperHandler<TVars, TRequest, TResult>
       | undefined;
     if (!handler) {
       return invoke(index + 1, session, request);
@@ -703,12 +667,12 @@ export async function runMiddlewareWrapper<
 
     let nextOutcome:
       | {
-          session: Session<TVars, TAttrs>;
+          session: Session<TVars>;
           request: TRequest;
           result: TResult;
         }
       | undefined;
-    const next: ExecutionWrapperNext<TVars, TAttrs, TRequest, TResult> = async (
+    const next: ExecutionWrapperNext<TVars, TRequest, TResult> = async (
       input,
     ) => {
       nextOutcome = await invoke(
@@ -735,7 +699,7 @@ export async function runMiddlewareWrapper<
       definition.effect,
       request,
     );
-    const context: ExecutionPhaseContext<TVars, TAttrs, TRequest, TResult> = {
+    const context: ExecutionPhaseContext<TVars, TRequest, TResult> = {
       phase: options.phase,
       session,
       request,
@@ -756,7 +720,7 @@ export async function runMiddlewareWrapper<
             callHandler,
           );
     throwIfAborted(options.signal);
-    const patch = normalizeWrapperReturn<TVars, TAttrs, TResult>(returned);
+    const patch = normalizeWrapperReturn<TVars, TResult>(returned);
     const baseSession = nextOutcome?.session ?? session;
     const applied = applyPhasePatch(
       baseSession,
@@ -847,18 +811,15 @@ function hasSideEffectingContextHandle(
   );
 }
 
-function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(
-  session: Session<TVars, TAttrs>,
+function applyPhasePatch<TVars extends Vars>(
+  session: Session<TVars>,
   middlewareState: Record<string, unknown>,
-  patch:
-    | ExecutionPatch<TVars, TAttrs>
-    | HookExecutionPatch<TVars, TAttrs>
-    | void,
+  patch: ExecutionPatch<TVars> | HookExecutionPatch<TVars> | void,
   beforeVersion: number,
 ): {
-  session: Session<TVars, TAttrs>;
+  session: Session<TVars>;
   middlewareState: Record<string, unknown>;
-  transition: ResolvedExecutionTransition<TAttrs>;
+  transition: ResolvedExecutionTransition;
 } {
   const transition = resolveExecutionTransition(session, patch ?? {}, {
     beforeVersion,
@@ -873,25 +834,21 @@ function applyPhasePatch<TVars extends Vars, TAttrs extends Attrs>(
   };
 }
 
-function normalizeWrapperReturn<
-  TVars extends Vars,
-  TAttrs extends Attrs,
-  TResult,
->(
-  returned: ExecutionPatch<TVars, TAttrs> | TResult | void,
-): ExecutionPatch<TVars, TAttrs> {
+function normalizeWrapperReturn<TVars extends Vars, TResult>(
+  returned: ExecutionPatch<TVars> | TResult | void,
+): ExecutionPatch<TVars> {
   if (returned === undefined) {
     return {};
   }
   if (isExecutionPatch(returned)) {
-    return returned as ExecutionPatch<TVars, TAttrs>;
+    return returned as ExecutionPatch<TVars>;
   }
   return { result: returned };
 }
 
-function isExecutionPatch<TVars extends Vars, TAttrs extends Attrs>(
-  value: ExecutionPatch<TVars, TAttrs> | unknown,
-): value is ExecutionPatch<TVars, TAttrs> {
+function isExecutionPatch<TVars extends Vars>(
+  value: ExecutionPatch<TVars> | unknown,
+): value is ExecutionPatch<TVars> {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -903,10 +860,10 @@ function isExecutionPatch<TVars extends Vars, TAttrs extends Attrs>(
   );
 }
 
-function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
-  hook: HookDefinition<TVars, TAttrs>,
+function hookHandlerForPhase<TVars extends Vars>(
+  hook: HookDefinition<TVars>,
   phase: ExecutionLifecyclePhase,
-): HookPhaseHandler<TVars, TAttrs> | undefined {
+): HookPhaseHandler<TVars> | undefined {
   assertHookDefinitionSupported(hook);
   switch (phase) {
     case 'beforeAgent':
@@ -934,10 +891,10 @@ function hookHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-function middlewareHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
-  middleware: MiddlewareDefinition<TVars, TAttrs>,
+function middlewareHandlerForPhase<TVars extends Vars>(
+  middleware: MiddlewareDefinition<TVars>,
   phase: ExecutionLifecyclePhase,
-): MiddlewarePhaseHandler<TVars, TAttrs> | undefined {
+): MiddlewarePhaseHandler<TVars> | undefined {
   switch (phase) {
     case 'beforeAgent':
       return middleware.beforeAgent;
@@ -962,15 +919,15 @@ function middlewareHandlerForPhase<TVars extends Vars, TAttrs extends Attrs>(
   }
 }
 
-function assertHookPatchAuthority<TVars extends Vars, TAttrs extends Attrs>(
+function assertHookPatchAuthority<TVars extends Vars>(
   hookName: string | undefined,
   phase: ExecutionLifecyclePhase,
-  patch: HookExecutionPatch<TVars, TAttrs> | void,
+  patch: HookExecutionPatch<TVars> | void,
 ): void {
   if (!patch) {
     return;
   }
-  const escaped = patch as ExecutionPatch<TVars, TAttrs>;
+  const escaped = patch as ExecutionPatch<TVars>;
   if ('request' in escaped || 'result' in escaped) {
     throw new Error(
       `Hook ${hookName ?? '<anonymous>'} cannot return request/result patches in ${phase}. Use middleware for request/result transformations.`,
