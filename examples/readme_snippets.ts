@@ -11,7 +11,6 @@ import {
   PromptTrail,
   Session,
   Source,
-  Structured,
   Tool,
   memoryStore,
   type Vars,
@@ -153,14 +152,22 @@ void researcher;
 declare function escalate(category: string): void;
 
 const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
+type TriageVars = Vars<{ triage?: z.infer<typeof triageSchema> }>;
 
-const classifier = Agent.create('classifier').inbox().structured(triageSchema); // a zod schema directly; Structured.withSchema for options
+const classifier = Agent.create<TriageVars>('classifier')
+  .inbox()
+  .structured('triage', triageSchema, (triage, session) =>
+    session.withVar('triage', triage),
+  );
 
 const classified = await classifier.execute({
   input: 'My payment failed twice!',
 });
-const triage = classified.getStructured(triageSchema);
+const triage = classified.getVar('triage');
 if (triage?.urgent) escalate(triage.category);
+
+const latestTriage = classified.getStructured(triageSchema);
+void latestTriage;
 
 // --- Subroutines ---------------------------------------------------------
 

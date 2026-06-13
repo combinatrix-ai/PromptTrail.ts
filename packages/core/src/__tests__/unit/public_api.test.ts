@@ -245,6 +245,32 @@ describe('public API surface', () => {
     expect(options.interaction).toBe('required');
   });
 
+  it('types structured folds from their zod schema', () => {
+    const triageSchema = z.object({
+      category: z.string(),
+      urgent: z.boolean(),
+    });
+    const explicitGraph = prompttrail.Agent.create('public-structured-fold')
+      .structured('triage', triageSchema, (obj, session) => {
+        const category: string = obj.category;
+        const urgent: boolean = obj.urgent;
+        // @ts-expect-error folded objects are inferred from the schema only.
+        const missing = obj.missing;
+        void missing;
+        return session.withVars({ category, urgent });
+      })
+      .toGraph('v1');
+    const optionalGraph = prompttrail.Agent.create('public-structured-fold')
+      .structured(triageSchema, (obj, session) => {
+        const urgent: boolean = obj.urgent;
+        return session.withVar('urgent', urgent);
+      })
+      .toGraph('v1');
+
+    expect(explicitGraph.nodes[0]?.id).toBe('triage');
+    expect(optionalGraph.nodes[0]?.id).toBe('structured-1');
+  });
+
   it('keeps graph execution internals out of the package root', () => {
     expect(prompttrail).toHaveProperty('createAgentGraph');
     expect(prompttrail).toHaveProperty('createAgentGraphManifest');

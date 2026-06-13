@@ -72,6 +72,23 @@ class GraphFakeClaudeAgentClient implements ClaudeAgentClient {
   }
 }
 
+class GraphStaticModelSource extends Source<ModelOutput> {
+  constructor(private readonly output: ModelOutput) {
+    super();
+  }
+
+  async getContent(): Promise<ModelOutput> {
+    return this.output;
+  }
+}
+
+function graphStructuredTemplate(
+  schema: z.ZodType,
+  output: ModelOutput,
+): Structured {
+  return Structured.withSource(new GraphStaticModelSource(output), schema);
+}
+
 describe('Agent graph authoring', () => {
   it('builds a named agent graph with explicit node ids', () => {
     const lookup = Tool.create({
@@ -756,6 +773,120 @@ describe('Agent graph authoring', () => {
     expect(events).toContain('model.completed');
   });
 
+  it('runs schema structured folds and keeps structured messages', async () => {
+    const schema = z.object({
+      category: z.string(),
+      urgent: z.boolean(),
+    });
+    const source = Source.llm()
+      .mock()
+      .mockResponse({
+        content: 'triage ready',
+        structuredOutput: { category: 'billing', urgent: true },
+      });
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(source);
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured('triage', schema, (obj, current) =>
+          current.withVar('triage', obj),
+        )
+        .execute();
+
+      expect(source.getCallCount()).toBe(1);
+      expect(session.getVar('triage')).toEqual({
+        category: 'billing',
+        urgent: true,
+      });
+      expect(session.getLastMessage()).toMatchObject({
+        type: 'assistant',
+        content: 'triage ready',
+        structuredContent: { category: 'billing', urgent: true },
+      });
+    } finally {
+      schemaSpy.mockRestore();
+    }
+  });
+
+  it('passes structured fold output by node data-flow, not session scan', async () => {
+    const schema = z.object({ value: z.string() });
+    const source = Source.llm()
+      .mock()
+      .mockResponses(
+        {
+          content: 'earlier',
+          structuredOutput: { value: 'earlier' },
+        },
+        {
+          content: 'current',
+          structuredOutput: { value: 'current' },
+        },
+      );
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(source);
+    const getStructuredSpy = vi
+      .spyOn(Session.prototype, 'getStructured')
+      .mockImplementation(() => {
+        throw new Error('session scan should not be used');
+      });
+    const folded: unknown[] = [];
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured('earlier', schema)
+        .structured('current', schema, (obj, current) => {
+          folded.push(obj);
+          return current.withVar('current', obj.value);
+        })
+        .execute();
+
+      expect(folded).toEqual([{ value: 'current' }]);
+      expect(session.getVar('current')).toBe('current');
+      expect(
+        session.messages.map((message) => message.structuredContent),
+      ).toEqual([{ value: 'earlier' }, { value: 'current' }]);
+    } finally {
+      getStructuredSpy.mockRestore();
+      schemaSpy.mockRestore();
+    }
+  });
+
+  it('keeps existing structured overloads executable', async () => {
+    const schema = z.object({ ok: z.boolean() });
+    const schemaSource = Source.llm()
+      .mock()
+      .mockResponses(
+        { content: 'schema explicit', structuredOutput: { ok: true } },
+        { content: 'schema optional', structuredOutput: { ok: false } },
+      );
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(schemaSource);
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured(
+          'template',
+          graphStructuredTemplate(schema, {
+            content: 'template explicit',
+            structuredOutput: { ok: true },
+          }),
+        )
+        .structured('schema', schema)
+        .structured(
+          graphStructuredTemplate(schema, {
+            content: 'template optional',
+            structuredOutput: { ok: true },
+          }),
+        )
+        .structured(schema)
+        .execute();
+
+      expect(
+        session.messages.map((message) => message.structuredContent),
+      ).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: false }]);
+    } finally {
+      schemaSpy.mockRestore();
+    }
+  });
+
   it('executes empty graph parallel nodes as no-ops without template adapter', async () => {
     const parallel = new Parallel();
     parallel.execute = async () => {
@@ -911,6 +1042,38 @@ describe('Agent graph authoring', () => {
         Agent.create('assistant').structured(schema).toGraph('v1'),
       ).nodes.map((node) => [node.path, node.type]),
     ).toEqual([['assistant/structured-1', 'structured']]);
+  });
+
+  it('keeps schema structured folds in manifests with derived ids', () => {
+    const schema = z.object({ ok: z.boolean() });
+    const changedSchema = z.object({
+      ok: z.boolean(),
+      reason: z.string(),
+    });
+    const fold = (obj: z.infer<typeof schema>, session: Session) =>
+      session.withVar('reply', obj);
+    const optionalGraph = Agent.create('assistant')
+      .structured(schema, fold)
+      .toGraph('v1');
+    const explicitGraph = Agent.create('assistant')
+      .structured('structured-1', schema, fold)
+      .toGraph('v1');
+    const optionalManifest = createAgentGraphManifest(optionalGraph);
+    const explicitManifest = createAgentGraphManifest(explicitGraph);
+    const changedManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .structured('structured-1', changedSchema, (obj, session) =>
+          session.withVar('reply', obj),
+        )
+        .toGraph('v1'),
+    );
+    const manifestData = JSON.stringify(optionalManifest.nodes[0]?.data);
+
+    expect(optionalGraph.nodes[0]?.id).toBe('structured-1');
+    expect(optionalManifest.hash).toBe(explicitManifest.hash);
+    expect(optionalManifest.hash).not.toBe(changedManifest.hash);
+    expect(manifestData).toContain('jsonSchema');
+    expect(manifestData).toContain('ok');
   });
 
   it('changes the manifest when graph content or structured schemas change', () => {

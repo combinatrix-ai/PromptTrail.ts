@@ -146,6 +146,10 @@ export class Structured<
     }
   }
 
+  parseStructuredContent(content: unknown): unknown {
+    return this.schema.parse(content);
+  }
+
   getManifestDescriptor() {
     return {
       kind: 'template',

@@ -958,11 +958,48 @@ async function executeStructuredNode<TVars extends Vars, TAttrs extends Attrs>(
   nodePath: string,
   state: GraphExecutionState<TVars, TAttrs>,
 ): Promise<void> {
-  const template = graphNodeData(node).template;
+  const data = graphNodeData(node);
+  const template = data.template;
   if (!(template instanceof Structured)) {
     throw new Error(`Graph node ${nodePath} requires a Structured template.`);
   }
-  state.session = await template.executeSource(state.session, state.runtime);
+  const producedSession = await template.executeSource(
+    state.session,
+    state.runtime,
+  );
+  const fold = data.fold;
+  if (fold === undefined) {
+    state.session = producedSession;
+    return;
+  }
+  if (typeof fold !== 'function') {
+    throw new Error(
+      `Graph node ${nodePath} structured fold must be a callback.`,
+    );
+  }
+  const message = producedSession.getLastMessage();
+  const structuredContent = message?.structuredContent;
+  if (structuredContent === undefined) {
+    throw new Error(
+      `Graph node ${nodePath} structured fold requires structuredContent.`,
+    );
+  }
+  const obj = template.parseStructuredContent(structuredContent);
+  const result = fold(obj, producedSession);
+  if (isThenable(result)) {
+    throw new Error(
+      `Graph node ${nodePath} structured fold returned a Promise; structured folds must be synchronous.`,
+    );
+  }
+  if (!(result instanceof Session)) {
+    throw new Error(
+      `Graph node ${nodePath} returned an invalid structured fold result.`,
+    );
+  }
+  state.session = adoptSessionResult(
+    producedSession,
+    result as Session<TVars, TAttrs>,
+  );
 }
 
 async function executeParallelNode<TVars extends Vars, TAttrs extends Attrs>(

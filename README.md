@@ -317,24 +317,39 @@ follows.
 ## Structured Output
 
 `structured` nodes validate the model's answer against a schema and expose the
-parsed value. Read it back with `session.getStructured(schema)` — the schema
-types the result (`z.infer`), backed by a runtime re-validation, so the typing
-also holds for payloads revived from a persistent store:
+parsed value. Inside a graph, prefer the fold form: the parsed object is passed
+directly from the structured node to your callback, and the assistant message
+still records the original `structuredContent` for transcript/UI use.
 
 ```ts
-import { Structured } from '@prompttrail/core';
+import { Agent, type Vars } from '@prompttrail/core';
 import { z } from 'zod';
 
 const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
+type TriageVars = Vars<{ triage?: z.infer<typeof triageSchema> }>;
 
-const classifier = Agent.create('classifier').inbox().structured(triageSchema); // a zod schema directly; Structured.withSchema for options
+const classifier = Agent.create<TriageVars>('classifier')
+  .inbox()
+  .structured('triage', triageSchema, (triage, session) =>
+    session.withVar('triage', triage),
+  );
 
 const session = await classifier.execute({
   input: 'My payment failed twice!',
 });
-const triage = session.getStructured(triageSchema);
+
+const triage = session.getVar('triage');
 // triage: { category: string; urgent: boolean } | undefined
 if (triage?.urgent) escalate(triage.category);
+```
+
+Use `session.getStructured(schema)` when you are away from the data-flow, such
+as at an API boundary reading a revived session. It scans backward for the
+latest structured payload and re-validates it with the schema:
+
+```ts
+const latestTriage = session.getStructured(triageSchema);
+// latestTriage: { category: string; urgent: boolean } | undefined
 ```
 
 ## Subroutines

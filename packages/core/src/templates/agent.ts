@@ -67,6 +67,12 @@ type AgentGraphPureTransformHandler<TC extends Vars, TM extends Attrs> = (
   session: Session<TC, TM>,
 ) => Session<TC, TM>;
 
+type AgentGraphStructuredFold<
+  TSchema extends z.ZodType,
+  TC extends Vars,
+  TM extends Attrs,
+> = (obj: z.infer<TSchema>, session: Session<TC, TM>) => Session<any, TM>;
+
 export interface AgentGraphTransformEffectContext {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
@@ -682,12 +688,25 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
   }
 
   structured(template: Structured<TM, TC>): this;
-  structured(schema: z.ZodType): this;
+  structured<TSchema extends z.ZodType>(schema: TSchema): this;
+  structured<TSchema extends z.ZodType>(
+    schema: TSchema,
+    fold: AgentGraphStructuredFold<TSchema, TC, TM>,
+  ): this;
   structured(id: string, template: Structured<TM, TC>): this;
-  structured(id: string, schema: z.ZodType): this;
+  structured<TSchema extends z.ZodType>(id: string, schema: TSchema): this;
+  structured<TSchema extends z.ZodType>(
+    id: string,
+    schema: TSchema,
+    fold: AgentGraphStructuredFold<TSchema, TC, TM>,
+  ): this;
   structured(
     idOrValue: string | Structured<TM, TC> | z.ZodType,
-    maybeValue?: Structured<TM, TC> | z.ZodType,
+    maybeValue?:
+      | Structured<TM, TC>
+      | z.ZodType
+      | AgentGraphStructuredFold<z.ZodType, TC, TM>,
+    maybeFold?: AgentGraphStructuredFold<z.ZodType, TC, TM>,
   ) {
     if (typeof idOrValue === 'string') {
       if (!maybeValue) {
@@ -695,22 +714,59 @@ export class Agent<TC extends Vars = Vars, TM extends Attrs = Attrs> {
           'Agent.structured(id, value) requires a Structured template or a schema.',
         );
       }
+      if (maybeFold !== undefined && typeof maybeFold !== 'function') {
+        throw new Error('Agent.structured fold must be a callback.');
+      }
+      if (maybeFold && maybeValue instanceof Structured) {
+        throw new Error(
+          'Agent.structured(id, schema, fold) requires a schema.',
+        );
+      }
+      if (!isStructuredValue<TM, TC>(maybeValue)) {
+        throw new Error(
+          'Agent.structured(id, value) requires a Structured template or a schema.',
+        );
+      }
       this.graphNodes.push({
         id: idOrValue,
         type: 'structured',
-        data: { template: normalizeStructuredValue<TM, TC>(maybeValue) },
+        data: compactGraphData({
+          template: normalizeStructuredValue<TM, TC>(maybeValue),
+          fold: maybeFold,
+        }),
       });
       return this;
     }
+    if (maybeValue !== undefined && typeof maybeValue !== 'function') {
+      throw new Error('Agent.structured fold must be a callback.');
+    }
+    if (maybeValue && idOrValue instanceof Structured) {
+      throw new Error('Agent.structured(schema, fold) requires a schema.');
+    }
     const template = normalizeStructuredValue<TM, TC>(idOrValue);
+    const fold = maybeValue as
+      | AgentGraphStructuredFold<z.ZodType, TC, TM>
+      | undefined;
     if (this.isGraphAuthoringMode()) {
       this.graphNodes.push({
         type: 'structured',
-        data: { template },
+        data: compactGraphData({ template, fold }),
       });
       return this;
     }
     this.root.add(template);
+    if (fold) {
+      this.root.add(
+        new Transform((session) => {
+          const structuredContent = session.getLastMessage()?.structuredContent;
+          if (structuredContent === undefined) {
+            throw new Error('Structured fold requires structuredContent.');
+          }
+          const obj = template.parseStructuredContent(structuredContent);
+          return fold(obj, session);
+        }),
+      );
+    }
     return this;
   }
 
@@ -1777,6 +1833,20 @@ function normalizeStructuredValue<TM extends Attrs, TC extends Vars>(
   return value instanceof Structured
     ? value
     : Structured.withSchema<TM, TC>(value);
+}
+
+function isStructuredValue<TM extends Attrs, TC extends Vars>(
+  value: unknown,
+): value is Structured<TM, TC> | z.ZodType {
+  return value instanceof Structured || isZodSchema(value);
+}
+
+function isZodSchema(value: unknown): value is z.ZodType {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { safeParse?: unknown }).safeParse === 'function'
+  );
 }
 
 function graphSubroutineScopeData<TM extends Attrs, TC extends Vars>(
