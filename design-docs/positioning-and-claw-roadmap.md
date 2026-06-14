@@ -168,6 +168,10 @@ core capability; ordering follows core readiness.
 Positioning phrase for claw: **verified self-improvement** — Hermes's learning
 loop with a typechecker and test gate where Hermes has prose.
 
+The full mechanism design for this section lives in `claw-self-authoring.md`
+(skill = trigger + behavior subroutine + provenance; registry-dispatch over a
+static graph; the pre-activation gate; phased Phase 0/1/2 roadmap).
+
 ## Security Posture
 
 Self-authoring is arbitrary code execution by construction, and the OpenClaw
