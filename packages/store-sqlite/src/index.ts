@@ -258,6 +258,10 @@ export class SqliteRunStore implements DurableRunStore {
       inbound.content,
       jsonOrNull(inbound.attrs),
     );
+    // Keep the in-memory inbox in sync with the DB (INSERT OR IGNORE semantics)
+    if (!run.inbox[inbound.offset]) {
+      run.inbox.push(inbound);
+    }
     this.recordJournal(
       runId,
       'appendInbox',
