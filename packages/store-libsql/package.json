@@ -1,0 +1,41 @@
+{
+  "name": "@prompttrail/store-libsql",
+  "version": "0.0.1",
+  "description": "libSQL durable run store for PromptTrail",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
+    "test": "vitest --run --watch=false",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-libsql/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/store-libsql/src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist coverage",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*",
+    "@prompttrail/store-common": "workspace:*",
+    "@libsql/client": "^0.14.0"
+  },
+  "devDependencies": {
+    "@prompttrail/store-conformance": "workspace:*",
+    "@types/node": "^20.17.19",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}
