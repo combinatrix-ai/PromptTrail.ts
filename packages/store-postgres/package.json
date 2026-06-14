@@ -1,0 +1,41 @@
+{
+  "name": "@prompttrail/store-postgres",
+  "version": "0.0.1",
+  "description": "PostgreSQL durable run store for PromptTrail",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
+    "test": "vitest --run --watch=false",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-postgres/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/store-postgres/src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist coverage",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@prompttrail/store-conformance": "workspace:*",
+    "@types/node": "^20.17.19",
+    "@types/pg": "^8.11.0",
+    "pg-mem": "^3.0.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}
