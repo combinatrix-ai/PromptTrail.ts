@@ -11,7 +11,7 @@ where Hermes and OpenClaw have markdown prose.
 
 It is a design-before-implementation record. Decisions that the author is
 confident in are marked `[x]`; genuinely open choices are marked `[ ]` and
-collected in §10.
+collected in §11.
 
 It complements:
 
@@ -122,7 +122,7 @@ invalidating the parent's resume identity. See §8.
 ## 4. The self-authoring loop (the meta layer)
 
 ```
-1. Instruction arrives in a privileged authoring channel (§7 authorization).
+1. Instruction arrives in a privileged authoring channel (§6 authorization).
 2. Interpret → a skill spec: { trigger, behavior intent, examples }.
 3. Synthesize code → a TS skill module (trigger + behavior + tests),
    written into a staging directory, never directly into the live registry.
@@ -131,11 +131,11 @@ invalidating the parent's resume identity. See §8.
      b. vitest run the skill's tests + a standard smoke harness.
      c. validateAgentGraph on the behavior subroutine; assign a manifest hash.
      d. Capability check: the behavior's effect declarations are within the
-        bounds granted to self-authored skills (§7).
+        bounds granted to self-authored skills (§6).
    ANY failure → the skill is discarded, the gate errors are reported back to
    the author in-channel, nothing activates.
 6. Hot-load: persist {trigger, hash, module ref, provenance, gate results} to
-   the skill registry (§9) and make the dispatcher aware of it. No restart, no
+   the skill registry (§7) and make the dispatcher aware of it. No restart, no
    parent-graph recompile.
 7. Confirm to the author with the provenance record (what was built, what the
    gate checked, how to revoke).
@@ -254,7 +254,81 @@ in-flight runs stays out of scope, consistent with the roadmap.
 
 ---
 
-## 9. Phased roadmap
+## 9. Supervision and lifecycle (control plane)
+
+Self-authored skills also need a runtime that notices when one breaks and can
+promote, demote, or roll it back. This is the **control plane** beside the data
+plane (the dispatcher of §3). Governing rule: **instrument every skill run, but
+never proxy them through a blocking supervisor.**
+
+`[x]` **Data plane vs control plane.** The dispatcher routes trigger → skill
+directly (fast, and unaffected if the supervisor is down). A thin
+middleware/hook (`Hook` / `Middleware` already exist) wraps every skill run and
+records its outcome to a per-skill **health record**. The supervisor is a
+*separate* agent, never on the per-message hot path. Routing every wakeup
+through a blocking supervisor is rejected: it adds latency, becomes a single
+chokepoint, and raises "who supervises the supervisor" with no good answer.
+
+`[x]` **What "broken" means — concrete signals.** The health record per skill
+tracks invocations, successes, consecutive failures, p95 latency, last error,
+and current tier. It is fed by signals the runtime already surfaces: run
+`status` (failed), the assistant-delivery outbox status / attempts / lastError,
+effect capability violations (an undeclared external write), and
+wall-clock/turn-budget overruns. Vague "wrong output" is out of scope for
+*automatic* detection — it arrives as a user report → an on-demand supervisor
+command.
+
+`[x]` **Supervisor invocation — three modes, none per-wakeup:**
+- **on-demand** via privileged channel commands (`skills`, `promote X`,
+  `rollback X`, `quarantine X`, `why-did-X-fail`),
+- **scheduled** — a cron scan that auto-quarantines skills over threshold,
+- **reactive** — a skill tripping its consecutive-failure threshold wakes the
+  supervisor.
+
+`[x]` **Trust tiers; promotion is a registry write.**
+
+```
+staged (gated, not yet live)
+  → canary  (live but read-only, full health logging, low blast radius)
+  → trusted (promoted after N clean invocations; broader capabilities)
+  ↘ quarantined (auto-demoted past the failure threshold; dispatcher skips it)
+```
+
+"Rewiring" a skill = moving its tier in the registry, **not** recompiling the
+graph (the §3 payoff). Promotion *within* read-only tiers may be automatic;
+promotion that grants external-write capability requires human confirmation
+(the §6 posture). How closely a skill is watched is a property of its tier, not
+a global proxy.
+
+`[x]` **Rollback = an active-version pointer, not a git op in the hot path.**
+Each gated skill build is versioned by its manifest hash (§8); past versions
+are immutable; the registry holds an `active = hash` pointer per skill.
+Rollback moves the pointer — instant — and because the skill subroutine's hash
+is excluded from the parent manifest (§8) it disturbs neither the parent graph
+nor live conversations (except a run suspended inside that exact skill, which
+fail-fasts per §8).
+
+`[ ]` **Git is the audit archive, not the live switch.** One commit per gated
+skill version (message = provenance) gives human-reviewable diffs of the code
+claw wrote — attractive given the security posture — plus history and blame for
+free. But the *live* tier / active-pointer / health state changes far too often
+to live in git (it would commit on every invocation); that is durable-store
+state (§7). Open: whether the synthesized source tree is literally a git repo,
+or a content-addressed store keyed by hash with git as an optional export.
+
+`[x]` **Who supervises the supervisor.** The supervisor is human-authored,
+trusted, in-repo code — **outside** the self-authoring loop. Its
+promote/demote/rollback actions are logged with provenance. If it breaks, that
+is a normal dev-loop bug, not a runtime self-heal. This deliberately ends the
+watcher-of-the-watcher regress.
+
+Open holes (collected in §11): how to bound a canary's blast radius
+(author-only / test channel / shadow execution), and the concrete per-tier
+capability sets.
+
+---
+
+## 10. Phased roadmap
 
 `[ ]` **Phase 0 — registry-dispatch skeleton (no code-gen).** Re-shape claw's
 object layer to `inbox → dispatch(registry lookup) → matched skill | default`.
@@ -276,9 +350,16 @@ data-driven dispatch, persistence) before Phase 1 introduces the *hard part*
 (running synthesized code safely). Building them in the other order would mean
 debugging code-gen and live-dispatch simultaneously.
 
+`[x]` Supervision (§9) threads through the phases rather than being a fourth:
+the health-record instrumentation wrapper lands in **Phase 0** (cheap, no
+code-gen, useful even for the one hand-written skill); trust tiers
+(staged/canary) and the active-version pointer land with authoring in **Phase
+1**; automatic promotion, scheduled quarantine, rollback commands, and the
+Curator come in **Phase 2**.
+
 ---
 
-## 10. Open questions (collected)
+## 11. Open questions (collected)
 
 - **Gate execution site** — in-process (ts-morph + vitest API) vs sandboxed
   subprocess. Leaning subprocess for the trust boundary (§5).
@@ -295,10 +376,21 @@ debugging code-gen and live-dispatch simultaneously.
   the gate (an arbitrary predicate is itself code to verify).
 - **Mid-conversation skill upgrade** — confirmed fail-fast-the-run for v1;
   revisit if it bites (§8).
+- **Canary blast radius** — how a probationary skill is contained:
+  author-only, a test channel, or shadow execution (run but don't deliver)
+  (§9).
+- **Per-tier capability sets** — the concrete capability ceiling at each tier
+  (canary read-only; what exactly trusted may add) and where human
+  confirmation is mandatory (§9).
+- **Skill source backing** — synthesized source tree as a literal git repo vs
+  a content-addressed store keyed by hash with git as an optional audit export
+  (§9).
+- **Supervisor scan cadence / auto-vs-human promotion boundary** — how often
+  the scheduled scan runs and which promotions may be automatic (§9).
 
 ---
 
-## 11. Decisions summary
+## 12. Decisions summary
 
 - `[x]` Skill = `trigger + behavior(subroutine) + provenance`, as typed TS, not
   prose.
@@ -311,3 +403,13 @@ debugging code-gen and live-dispatch simultaneously.
   delete.
 - `[x]` Phase 0 (dispatch skeleton) before Phase 1 (authoring + gate) before
   Phase 2 (bounds + Curator).
+- `[x]` Control plane separated from data plane: instrument every skill run
+  (health record), never proxy through a blocking supervisor.
+- `[x]` Supervisor is invoked on-demand (channel command), scheduled (cron
+  scan), or reactively (failure threshold) — never on the per-wakeup path.
+- `[x]` Trust tiers (staged → canary → trusted; quarantined); promotion and
+  rollback are registry writes, not graph recompiles.
+- `[x]` Rollback = move the active-version pointer (skills versioned by
+  manifest hash, past versions immutable); git is the audit archive, live
+  tier/health state lives in the durable store.
+- `[x]` The supervisor is human-authored and outside the self-authoring loop.
