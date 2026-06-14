@@ -298,6 +298,25 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.17.32)(lightningcss@1.29.2)
 
+  packages/store-common:
+    dependencies:
+      '@prompttrail/core':
+        specifier: link:../core
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^20.17.19
+        version: 20.17.32
+      tsup:
+        specifier: ^8.3.6
+        version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(tsx@4.19.4)(typescript@5.8.3)(yaml@2.7.1)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.17.32)(lightningcss@1.29.2)
+
   packages/store-conformance:
     dependencies:
       '@prompttrail/core':
@@ -319,6 +338,9 @@ importers:
       '@prompttrail/core':
         specifier: link:../core
         version: link:../core
+      '@prompttrail/store-common':
+        specifier: workspace:*
+        version: link:../store-common
       pg:
         specifier: ^8.13.0
         version: 8.21.0
@@ -350,6 +372,9 @@ importers:
       '@prompttrail/core':
         specifier: link:../core
         version: link:../core
+      '@prompttrail/store-common':
+        specifier: workspace:*
+        version: link:../store-common
       better-sqlite3:
         specifier: ^12.10.0
         version: 12.10.0

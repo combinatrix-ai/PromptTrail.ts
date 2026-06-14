@@ -3,19 +3,25 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { cwd } from 'node:process';
 import {
-  Session,
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
-  type Message,
   type OnceScope,
   type ProviderSessionBinding,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
-  type Vars,
 } from '@prompttrail/core';
+import {
+  applySessionDelta,
+  jsonOrNull,
+  normalizeStoredMessages,
+  parseJson,
+  parseJsonRequired,
+  reconstructStoredRun,
+  type ReconstructOnceEntry,
+} from '@prompttrail/store-common';
 
 interface SqliteRunStoreOptions {
   path?: string;
@@ -476,79 +482,77 @@ export class SqliteRunStore implements DurableRunStore {
       .prepare('SELECT * FROM provider_sessions ORDER BY run_id, node_path')
       .all() as ProviderSessionRow[];
 
+    // Group child rows per run_id, preserving the SELECT ordering so each
+    // run's components (deltas in seq order, inbox in offset order, etc.) are
+    // assembled exactly as before.
+    const deltasByRun = groupBy(deltaRows, (row) => row.run_id);
+    const onceByRun = groupBy(onceRows, (row) => row.run_id);
+    const inboxByRun = groupBy(inboxRows, (row) => row.run_id);
+    const outboxByRun = groupBy(outboxRows, (row) => row.run_id);
+    const providerByRun = groupBy(providerRows, (row) => row.run_id);
+
     for (const row of runRows) {
-      const agent = agents[row.agent_name];
-      if (!agent) {
-        throw new Error(
-          `Cannot hydrate durable run ${row.run_id}: unknown agent "${row.agent_name}".`,
-        );
-      }
-      const run: StoredRun<any> = {
-        agent,
-        agentName: row.agent_name,
-        graphManifest: parseJson(row.graph_manifest_json),
-        initial: Session.fromJSON(parseJsonRequired(row.initial_session_json)),
-        status: row.status,
-        once: { run: new Map(), conversation: new Map() },
-        outbox: [],
-        inbox: [],
-        providerSessions: {},
-        graphCursor: row.graph_cursor ?? undefined,
-        graphSuspendedAt: row.graph_suspended_at ?? undefined,
-        context: parseJson(row.context_json),
-      };
-      this.runs.set(row.run_id, run);
-    }
-
-    for (const row of deltaRows) {
-      const run = this.runs.get(row.run_id);
-      if (!run) {
-        continue;
-      }
-      applySessionDelta(run, {
-        fromVersion: row.from_version,
-        toVersion: row.to_version,
+      const deltas: SessionCheckpointDelta<any>[] = (
+        deltasByRun.get(row.run_id) ?? []
+      ).map((drow) => ({
+        fromVersion: drow.from_version,
+        toVersion: drow.to_version,
         appendedMessages: normalizeStoredMessages(
-          parseJsonRequired(row.appended_messages_json),
+          parseJsonRequired(drow.appended_messages_json),
         ),
-        varsSet: parseJson(row.vars_set_json),
-        varsDeleted: parseJson(row.vars_deleted_json),
-        rewrite: row.rewrite === 1,
-      });
-    }
+        varsSet: parseJson(drow.vars_set_json),
+        varsDeleted: parseJson(drow.vars_deleted_json),
+        rewrite: drow.rewrite === 1,
+      }));
 
-    for (const row of onceRows) {
-      this.runs
-        .get(row.run_id)
-        ?.once[row.scope].set(row.key, parseJson(row.value_json));
-    }
+      const once: ReconstructOnceEntry[] = (
+        onceByRun.get(row.run_id) ?? []
+      ).map((orow) => ({
+        scope: orow.scope,
+        key: orow.key,
+        value: parseJson(orow.value_json),
+      }));
 
-    for (const row of inboxRows) {
-      this.runs.get(row.run_id)?.inbox.push({
-        offset: row.offset,
-        kind: row.kind,
-        content: row.content,
-        attrs: parseJson(row.attrs_json),
-      });
-    }
+      const inbox: Inbound[] = (inboxByRun.get(row.run_id) ?? []).map(
+        (irow) => ({
+          offset: irow.offset,
+          kind: irow.kind,
+          content: irow.content,
+          attrs: parseJson(irow.attrs_json),
+        }),
+      );
 
-    for (const row of outboxRows) {
-      this.runs
-        .get(row.run_id)
-        ?.outbox.push(
-          parseJson(row.entry_json) as AssistantDeliveryOutboxEntry,
-        );
-    }
+      const outbox: AssistantDeliveryOutboxEntry[] = (
+        outboxByRun.get(row.run_id) ?? []
+      ).map(
+        (brow) => parseJson(brow.entry_json) as AssistantDeliveryOutboxEntry,
+      );
 
-    for (const row of providerRows) {
-      const run = this.runs.get(row.run_id);
-      if (!run) {
-        continue;
+      const providerSessions: Record<string, ProviderSessionBinding> = {};
+      for (const prow of providerByRun.get(row.run_id) ?? []) {
+        providerSessions[prow.node_path] = parseJson(
+          prow.binding_json,
+        ) as ProviderSessionBinding;
       }
-      run.providerSessions = {
-        ...(run.providerSessions ?? {}),
-        [row.node_path]: parseJson(row.binding_json) as ProviderSessionBinding,
-      };
+
+      const run = reconstructStoredRun(
+        {
+          agentName: row.agent_name,
+          status: row.status,
+          graphCursor: row.graph_cursor ?? undefined,
+          graphSuspendedAt: row.graph_suspended_at ?? undefined,
+          context: parseJson(row.context_json),
+          initialSession: parseJsonRequired(row.initial_session_json),
+          graphManifest: parseJson(row.graph_manifest_json),
+          deltas,
+          once,
+          inbox,
+          outbox,
+          providerSessions,
+        },
+        agents,
+      );
+      this.runs.set(row.run_id, run);
     }
   }
 
@@ -581,59 +585,21 @@ export class SqliteRunStore implements DurableRunStore {
   }
 }
 
-function applySessionDelta<TVars extends Vars>(
-  run: StoredRun<TVars>,
-  delta: SessionCheckpointDelta<TVars>,
-): void {
-  const current = run.result ?? run.initial;
-  if (current.version >= delta.toVersion) {
-    return;
+function groupBy<T>(
+  rows: readonly T[],
+  key: (row: T) => string,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const id = key(row);
+    const bucket = grouped.get(id);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      grouped.set(id, [row]);
+    }
   }
-  if (delta.rewrite) {
-    run.result = new Session<TVars>(
-      [...delta.appendedMessages],
-      { ...(delta.varsSet ?? {}) } as TVars,
-      current.print,
-      delta.toVersion,
-      delta.toVersion,
-    );
-    return;
-  }
-  const vars = { ...current.vars } as Record<string, unknown>;
-  for (const key of delta.varsDeleted ?? []) {
-    delete vars[key];
-  }
-  Object.assign(vars, delta.varsSet);
-  run.result = new Session<TVars>(
-    [...current.messages, ...delta.appendedMessages],
-    vars as TVars,
-    current.print,
-    delta.toVersion,
-  );
-}
-
-function normalizeStoredMessages(messages: readonly Message[]): Message[] {
-  return messages.map(normalizeStoredMessage);
-}
-
-function normalizeStoredMessage(message: Message): Message {
-  if (message.type !== 'tool_result' || message.toolCallId !== undefined) {
-    return message;
-  }
-  const toolCallId = message.attrs?.toolCallId;
-  return typeof toolCallId === 'string' ? { ...message, toolCallId } : message;
-}
-
-function jsonOrNull(value: unknown): string | null {
-  return value === undefined ? null : JSON.stringify(value);
-}
-
-function parseJson<T = any>(json: string | null): T | undefined {
-  return json === null ? undefined : (JSON.parse(json) as T);
-}
-
-function parseJsonRequired<T = any>(json: string): T {
-  return JSON.parse(json) as T;
+  return grouped;
 }
 
 function quoteOneLine(value: string): string {

@@ -1,21 +1,23 @@
 import type { Pool, PoolClient } from 'pg';
 import {
-  Session,
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
-  type Message,
   type OnceScope,
   type ProviderSessionBinding,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
-  type Vars,
 } from '@prompttrail/core';
-
-// TODO: when redis/libsql land, extract applySessionDelta, normalizeStoredMessages,
-// and the reconstruction logic into a shared @prompttrail/store-common package.
+import {
+  jsonOrNull,
+  normalizeStoredMessages,
+  parseJson,
+  parseJsonRequired,
+  reconstructStoredRun,
+  type ReconstructOnceEntry,
+} from '@prompttrail/store-common';
 
 export interface PostgresRunStoreOptions {
   pool?: Pool;
@@ -458,29 +460,7 @@ export class PostgresRunStore implements DurableRunStore {
       graph_manifest_json: string | null;
     };
 
-    const agent = this.agents[row.agent_name];
-    if (!agent) {
-      throw new Error(
-        `Cannot reconstruct durable run ${runId}: unknown agent "${row.agent_name}".`,
-      );
-    }
-
-    const run: StoredRun<any> = {
-      agent,
-      agentName: row.agent_name,
-      graphManifest: parseJson(row.graph_manifest_json),
-      initial: Session.fromJSON(parseJsonRequired(row.initial_session_json)),
-      status: row.status,
-      once: { run: new Map(), conversation: new Map() },
-      outbox: [],
-      inbox: [],
-      providerSessions: {},
-      graphCursor: row.graph_cursor ?? undefined,
-      graphSuspendedAt: row.graph_suspended_at ?? undefined,
-      context: parseJson(row.context_json),
-    };
-
-    // 2. Apply session deltas in order
+    // 2. Gather session deltas in seq order (parsed + normalized).
     const deltaRes = await client.query(
       `SELECT from_version, to_version, appended_messages_json,
               vars_set_json, vars_deleted_json, rewrite
@@ -489,147 +469,104 @@ export class PostgresRunStore implements DurableRunStore {
        ORDER BY seq ASC`,
       [runId],
     );
-    for (const drow of deltaRes.rows as {
-      from_version: number;
-      to_version: number;
-      appended_messages_json: string;
-      vars_set_json: string | null;
-      vars_deleted_json: string | null;
-      rewrite: number;
-    }[]) {
-      applySessionDelta(run, {
-        fromVersion: drow.from_version,
-        toVersion: drow.to_version,
-        appendedMessages: normalizeStoredMessages(
-          parseJsonRequired(drow.appended_messages_json),
-        ),
-        varsSet: parseJson(drow.vars_set_json),
-        varsDeleted: parseJson(drow.vars_deleted_json),
-        rewrite: drow.rewrite === 1,
-      });
-    }
+    const deltas: SessionCheckpointDelta<any>[] = (
+      deltaRes.rows as {
+        from_version: number;
+        to_version: number;
+        appended_messages_json: string;
+        vars_set_json: string | null;
+        vars_deleted_json: string | null;
+        rewrite: number;
+      }[]
+    ).map((drow) => ({
+      fromVersion: drow.from_version,
+      toVersion: drow.to_version,
+      appendedMessages: normalizeStoredMessages(
+        parseJsonRequired(drow.appended_messages_json),
+      ),
+      varsSet: parseJson(drow.vars_set_json),
+      varsDeleted: parseJson(drow.vars_deleted_json),
+      rewrite: drow.rewrite === 1,
+    }));
 
-    // 3. Load once_memo
+    // 3. Gather once_memo entries.
     const onceRes = await client.query(
       `SELECT scope, key, value_json FROM once_memo WHERE run_id = $1`,
       [runId],
     );
-    for (const orow of onceRes.rows as {
-      scope: OnceScope;
-      key: string;
-      value_json: string;
-    }[]) {
-      run.once[orow.scope].set(orow.key, parseJson(orow.value_json));
-    }
+    const once: ReconstructOnceEntry[] = (
+      onceRes.rows as {
+        scope: OnceScope;
+        key: string;
+        value_json: string;
+      }[]
+    ).map((orow) => ({
+      scope: orow.scope,
+      key: orow.key,
+      value: parseJson(orow.value_json),
+    }));
 
-    // 4. Load inbox ordered by offset
+    // 4. Gather inbox entries ordered by offset.
     const inboxRes = await client.query(
       `SELECT offset_num, kind, content, attrs_json
        FROM inbox WHERE run_id = $1 ORDER BY offset_num ASC`,
       [runId],
     );
-    for (const irow of inboxRes.rows as {
-      offset_num: number;
-      kind: Inbound['kind'];
-      content: string;
-      attrs_json: string | null;
-    }[]) {
-      run.inbox.push({
-        offset: irow.offset_num,
-        kind: irow.kind,
-        content: irow.content,
-        attrs: parseJson(irow.attrs_json),
-      });
-    }
+    const inbox: Inbound[] = (
+      inboxRes.rows as {
+        offset_num: number;
+        kind: Inbound['kind'];
+        content: string;
+        attrs_json: string | null;
+      }[]
+    ).map((irow) => ({
+      offset: irow.offset_num,
+      kind: irow.kind,
+      content: irow.content,
+      attrs: parseJson(irow.attrs_json),
+    }));
 
-    // 5. Load outbox
+    // 5. Gather outbox entries.
     const outboxRes = await client.query(
       `SELECT entry_json FROM outbox WHERE run_id = $1`,
       [runId],
     );
-    for (const brow of outboxRes.rows as { entry_json: string }[]) {
-      run.outbox.push(
-        parseJson(brow.entry_json) as AssistantDeliveryOutboxEntry,
-      );
-    }
+    const outbox: AssistantDeliveryOutboxEntry[] = (
+      outboxRes.rows as { entry_json: string }[]
+    ).map((brow) => parseJson(brow.entry_json) as AssistantDeliveryOutboxEntry);
 
-    // 6. Load provider_sessions
+    // 6. Gather provider_sessions.
     const provRes = await client.query(
       `SELECT node_path, binding_json FROM provider_sessions WHERE run_id = $1`,
       [runId],
     );
+    const providerSessions: Record<string, ProviderSessionBinding> = {};
     for (const prow of provRes.rows as {
       node_path: string;
       binding_json: string;
     }[]) {
-      run.providerSessions = {
-        ...(run.providerSessions ?? {}),
-        [prow.node_path]: parseJson(
-          prow.binding_json,
-        ) as ProviderSessionBinding,
-      };
+      providerSessions[prow.node_path] = parseJson(
+        prow.binding_json,
+      ) as ProviderSessionBinding;
     }
 
-    return run;
-  }
-}
-
-// -------------------------------------------------------------------------
-// Helpers (ported from SqliteRunStore — identical logic)
-// TODO: extract to @prompttrail/store-common when redis/libsql land.
-// -------------------------------------------------------------------------
-
-function applySessionDelta<TVars extends Vars>(
-  run: StoredRun<TVars>,
-  delta: SessionCheckpointDelta<TVars>,
-): void {
-  const current = run.result ?? run.initial;
-  if (current.version >= delta.toVersion) {
-    return;
-  }
-  if (delta.rewrite) {
-    run.result = new Session<TVars>(
-      [...delta.appendedMessages],
-      { ...(delta.varsSet ?? {}) } as TVars,
-      current.print,
-      delta.toVersion,
-      delta.toVersion,
+    // 7. Delegate assembly to the shared reconstruction helper.
+    return reconstructStoredRun(
+      {
+        agentName: row.agent_name,
+        status: row.status,
+        graphCursor: row.graph_cursor ?? undefined,
+        graphSuspendedAt: row.graph_suspended_at ?? undefined,
+        context: parseJson(row.context_json),
+        initialSession: parseJsonRequired(row.initial_session_json),
+        graphManifest: parseJson(row.graph_manifest_json),
+        deltas,
+        once,
+        inbox,
+        outbox,
+        providerSessions,
+      },
+      this.agents,
     );
-    return;
   }
-  const vars = { ...current.vars } as Record<string, unknown>;
-  for (const key of delta.varsDeleted ?? []) {
-    delete vars[key];
-  }
-  Object.assign(vars, delta.varsSet);
-  run.result = new Session<TVars>(
-    [...current.messages, ...delta.appendedMessages],
-    vars as TVars,
-    current.print,
-    delta.toVersion,
-  );
-}
-
-function normalizeStoredMessages(messages: readonly Message[]): Message[] {
-  return messages.map(normalizeStoredMessage);
-}
-
-function normalizeStoredMessage(message: Message): Message {
-  if (message.type !== 'tool_result' || message.toolCallId !== undefined) {
-    return message;
-  }
-  const toolCallId = message.attrs?.toolCallId;
-  return typeof toolCallId === 'string' ? { ...message, toolCallId } : message;
-}
-
-function jsonOrNull(value: unknown): string | null {
-  return value === undefined || value === null ? null : JSON.stringify(value);
-}
-
-function parseJson<T = any>(json: string | null | undefined): T | undefined {
-  return json == null ? undefined : (JSON.parse(json) as T);
-}
-
-function parseJsonRequired<T = any>(json: string): T {
-  return JSON.parse(json) as T;
 }

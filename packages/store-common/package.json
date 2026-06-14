@@ -1,7 +1,7 @@
 {
-  "name": "@prompttrail/store-sqlite",
+  "name": "@prompttrail/store-common",
   "version": "0.0.1",
-  "description": "SQLite durable run store for PromptTrail",
+  "description": "Shared reconstruction helpers for PromptTrail durable run stores",
   "main": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
@@ -18,23 +18,18 @@
     "test": "vitest --run --watch=false",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
-    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-sqlite/src",
-    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/store-sqlite/src --fix",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-common/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/store-common/src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
   "dependencies": {
-    "@prompttrail/core": "workspace:*",
-    "@prompttrail/store-common": "workspace:*",
-    "better-sqlite3": "^12.10.0"
+    "@prompttrail/core": "workspace:*"
   },
   "devDependencies": {
-    "@prompttrail/store-conformance": "workspace:*",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.17.19",
-    "@vitest/coverage-v8": "^1.6.1",
     "tsup": "^8.3.6",
     "typescript": "^5.7.3",
     "vitest": "^1.6.1"

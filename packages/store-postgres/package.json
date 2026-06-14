@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@prompttrail/core": "workspace:*",
+    "@prompttrail/store-common": "workspace:*",
     "pg": "^8.13.0"
   },
   "devDependencies": {
