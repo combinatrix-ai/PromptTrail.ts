@@ -20,7 +20,7 @@ import {
   resetSupportDemoRecords,
 } from '../lib/support-agent';
 import { getInspectorPayload } from '../lib/inspector';
-import { SqliteRunStore } from '../lib/sqlite-store';
+import { SqliteRunStore } from '@prompttrail/store-sqlite';
 import { readSupportAgentSourceSnippets } from '../lib/source-snippets';
 
 const returnChoicesPayload = {
@@ -339,7 +339,7 @@ describe('customer support chat runtime', () => {
         path: dbPath,
         agents,
       });
-      const message = secondStore.get(runId)?.result?.messages[0];
+      const message = (await secondStore.get(runId))?.result?.messages[0];
       expect(message).toMatchObject({
         type: 'tool_result',
         content: 'done',
@@ -383,7 +383,7 @@ describe('customer support chat runtime', () => {
 
       await runtime.handleMessage(runId, 'Hello', 'support');
 
-      const existing = getInspectorPayload({
+      const existing = await getInspectorPayload({
         conversationId: runId,
         agentName: 'support',
         durableStore,
@@ -402,7 +402,7 @@ describe('customer support chat runtime', () => {
       expect(existing.persistence.counts.runs).toBe(1);
       expect(existing.persistence.writes.length).toBeGreaterThan(0);
 
-      const missing = getInspectorPayload({
+      const missing = await getInspectorPayload({
         conversationId: 'support:missing',
         agentName: 'support',
         durableStore,
@@ -469,13 +469,13 @@ describe('customer support chat runtime', () => {
         'returns',
       );
 
-      const supportBefore = readConversation(supportRunId, firstStore);
-      const returnsBefore = readConversation(returnsRunId, firstStore);
+      const supportBefore = await readConversation(supportRunId, firstStore);
+      const returnsBefore = await readConversation(returnsRunId, firstStore);
       expect(suspended.status).toBe('suspended');
       expect(returnsBefore.messages.at(-1)?.structuredContent).toEqual(
         returnChoicesPayload,
       );
-      expect(listStoredUsers(firstStore)).toEqual([user]);
+      expect(await listStoredUsers(firstStore)).toEqual([user]);
       firstStore.close();
 
       const secondAgents = createSupportAgents(supportSource, returnsSource);
@@ -489,10 +489,10 @@ describe('customer support chat runtime', () => {
         secondStore,
       );
 
-      expect(readConversation(supportRunId, secondStore)).toEqual(
+      expect(await readConversation(supportRunId, secondStore)).toEqual(
         supportBefore,
       );
-      expect(readConversation(returnsRunId, secondStore)).toEqual(
+      expect(await readConversation(returnsRunId, secondStore)).toEqual(
         returnsBefore,
       );
 

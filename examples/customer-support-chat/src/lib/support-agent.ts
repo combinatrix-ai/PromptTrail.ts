@@ -12,7 +12,8 @@ import {
   type Vars,
 } from '@prompttrail/core';
 import { z } from 'zod';
-import { SqliteRunStore } from './sqlite-store';
+import { SqliteRunStore } from '@prompttrail/store-sqlite';
+import { defaultSupportDbPath } from './db-path';
 
 export type SupportAgentName = 'support' | 'returns';
 type SupportMessageType = Exclude<MessageType['type'], 'system'>;
@@ -328,7 +329,10 @@ export function createSupportRuntime(
 }
 
 export const agents = createSupportAgents();
-export const store = new SqliteRunStore({ agents });
+export const store = new SqliteRunStore({
+  agents,
+  path: defaultSupportDbPath(),
+});
 
 export const app = PromptTrail.app({
   agents,
@@ -363,11 +367,11 @@ export function conversationIdFor(
   return `${agent}:${sanitizeUserName(userName)}`;
 }
 
-export function listStoredUsers(
+export async function listStoredUsers(
   durableStore: DurableRunStore = store,
-): string[] {
+): Promise<string[]> {
   const users = new Set<string>();
-  for (const [runId] of durableStore.entries()) {
+  for (const [runId] of await durableStore.entries()) {
     const match = /^(?:support|returns):([a-z0-9-]+)$/.exec(runId);
     if (match) {
       users.add(match[1]);
@@ -376,10 +380,10 @@ export function listStoredUsers(
   return [...users].sort();
 }
 
-export function readConversation(
+export async function readConversation(
   conversationId: string,
   durableStore: DurableRunStore = store,
-): SupportChatResponse {
+): Promise<SupportChatResponse> {
   return readConversationFromStore(durableStore, conversationId);
 }
 
@@ -402,11 +406,11 @@ async function handleMessageWithApp(
   };
 }
 
-function readConversationFromStore(
+async function readConversationFromStore(
   durableStore: DurableRunStore,
   conversationId: string,
-): SupportChatResponse {
-  const run = durableStore.get(conversationId);
+): Promise<SupportChatResponse> {
+  const run = await durableStore.get(conversationId);
   if (!run) {
     return { status: 'done', messages: [] };
   }

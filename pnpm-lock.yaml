@@ -102,18 +102,15 @@ importers:
 
   claw:
     dependencies:
-      '@ai-sdk/openai':
-        specifier: ^1.3.21
-        version: 1.3.21(zod@3.24.4)
       '@prompttrail/core':
         specifier: link:../packages/core
         version: link:../packages/core
       '@prompttrail/discord':
         specifier: workspace:*
         version: link:../packages/discord
-      ai:
-        specifier: ^4.3.13
-        version: 4.3.15(react@19.2.7)(zod@3.24.4)
+      '@prompttrail/store-sqlite':
+        specifier: workspace:*
+        version: link:../packages/store-sqlite
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -155,6 +152,9 @@ importers:
       '@prompttrail/core':
         specifier: link:../../packages/core
         version: link:../../packages/core
+      '@prompttrail/store-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/store-sqlite
       better-sqlite3:
         specifier: ^12.10.0
         version: 12.10.0
@@ -282,6 +282,34 @@ importers:
         specifier: ^14.26.4
         version: 14.26.4
     devDependencies:
+      '@types/node':
+        specifier: ^20.17.19
+        version: 20.17.32
+      '@vitest/coverage-v8':
+        specifier: ^1.6.1
+        version: 1.6.1(vitest@1.6.1(@types/node@20.17.32)(lightningcss@1.29.2))
+      tsup:
+        specifier: ^8.3.6
+        version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(tsx@4.19.4)(typescript@5.8.3)(yaml@2.7.1)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.17.32)(lightningcss@1.29.2)
+
+  packages/store-sqlite:
+    dependencies:
+      '@prompttrail/core':
+        specifier: link:../core
+        version: link:../core
+      better-sqlite3:
+        specifier: ^12.10.0
+        version: 12.10.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/node':
         specifier: ^20.17.19
         version: 20.17.32

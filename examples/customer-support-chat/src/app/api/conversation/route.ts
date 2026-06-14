@@ -12,5 +12,5 @@ export async function GET(req: Request) {
     );
   }
 
-  return NextResponse.json(readConversation(conversationId));
+  return NextResponse.json(await readConversation(conversationId));
 }

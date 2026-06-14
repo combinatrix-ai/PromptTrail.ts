@@ -8,7 +8,7 @@ import {
   type SqliteRunCounts,
   type SqliteRunStore,
   type SqliteWriteJournalEntry,
-} from './sqlite-store';
+} from '@prompttrail/store-sqlite';
 import { readSupportAgentSourceSnippets } from './source-snippets';
 
 export interface InspectorRunState {
@@ -45,15 +45,15 @@ interface InspectorPayloadOptions {
   agentRegistry?: Record<string, Agent>;
 }
 
-export function getInspectorPayload({
+export async function getInspectorPayload({
   conversationId,
   agentName,
   durableStore = store,
   agentRegistry = agents,
-}: InspectorPayloadOptions): InspectorPayload {
+}: InspectorPayloadOptions): Promise<InspectorPayload> {
   const agent = agentRegistry[agentName];
   const manifest = createAgentGraphManifest(agent.toGraph());
-  const run = durableStore.get(conversationId);
+  const run = await durableStore.get(conversationId);
   const session = run ? (run.result ?? run.initial) : undefined;
 
   return {

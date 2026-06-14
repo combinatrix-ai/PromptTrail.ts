@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prompttrail/core": "workspace:*",
+    "@prompttrail/store-sqlite": "workspace:*",
     "better-sqlite3": "^12.10.0",
     "next": "15.3.2",
     "react": "19.2.7",

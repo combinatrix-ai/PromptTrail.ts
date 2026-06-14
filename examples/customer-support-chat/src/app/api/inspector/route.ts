@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getInspectorPayload } from '@/lib/inspector';
 import type { SupportAgentName } from '@/lib/support-agent';
 
-export function GET(req: Request) {
+export async function GET(req: Request) {
   const url = new URL(req.url);
   const conversationId = url.searchParams.get('conversationId');
   const agentParam = url.searchParams.get('agent');
@@ -20,7 +20,7 @@ export function GET(req: Request) {
       : 'support';
 
   return NextResponse.json(
-    getInspectorPayload({
+    await getInspectorPayload({
       conversationId,
       agentName,
     }),

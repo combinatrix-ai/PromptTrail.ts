@@ -97,10 +97,11 @@ interface ProviderSessionRow {
 /**
  * SQLite restart substrate for PromptTrail durable runs.
  *
- * Reads (`get`/`has`/`entries`) are served from hydrated in-memory
- * `StoredRun` objects, matching `MemoryRunStore`. SQLite owns process restart
- * recovery: each granular durable write maps directly to one SQL statement and
- * construction replays those rows into live runs.
+ * Reads (`get`/`has`/`entries`) are async to match the `DurableRunStore`
+ * interface, but are still served from the hydrated in-memory `runs` Map —
+ * construction replays all SQLite rows into live runs, so each read resolves
+ * immediately without hitting the database. SQLite owns process-restart
+ * recovery: each granular durable write maps directly to one SQL statement.
  */
 export class SqliteRunStore implements DurableRunStore {
   private static readonly maxJournalEntriesPerRun = 50;
@@ -120,7 +121,7 @@ export class SqliteRunStore implements DurableRunStore {
   private readonly upsertProviderSessionStmt: Database.Statement;
 
   constructor(options: SqliteRunStoreOptions) {
-    const dbPath = options.path ?? defaultSupportDbPath();
+    const dbPath = options.path ?? join(cwd(), '.data', 'prompttrail.db');
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
@@ -196,15 +197,15 @@ export class SqliteRunStore implements DurableRunStore {
     this.hydrate(options.agents);
   }
 
-  get(runId: string): StoredRun<any> | undefined {
+  async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
-  has(runId: string): boolean {
+  async has(runId: string): Promise<boolean> {
     return this.runs.has(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any>]> {
+  async entries(): Promise<Iterable<[string, StoredRun<any>]>> {
     return this.runs.entries();
   }
 
@@ -574,19 +575,6 @@ export class SqliteRunStore implements DurableRunStore {
     }
     this.writeJournal.set(runId, entries);
   }
-}
-
-export function defaultSupportDbPath(): string {
-  if (cwd().endsWith(join('examples', 'customer-support-chat'))) {
-    return join(cwd(), '.data', 'support.db');
-  }
-  return join(
-    cwd(),
-    'examples',
-    'customer-support-chat',
-    '.data',
-    'support.db',
-  );
 }
 
 function applySessionDelta<TVars extends Vars>(
