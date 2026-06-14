@@ -816,7 +816,7 @@ describe('RuntimeServer', () => {
       second.result.session.messages.map((message) => message.content),
     ).toEqual(['SYS', 'hello', 'reply:hello', 'again', 'reply:again']);
 
-    const run = store.get('fake-chat:graph')!;
+    const run = (await store.get('fake-chat:graph'))!;
     expect(run).toMatchObject({
       status: 'done',
       graphCursor: 2,
@@ -1694,9 +1694,9 @@ describe('RuntimeServer', () => {
       },
     ]);
 
-    const run = store.get(runId)!;
+    const run = (await store.get(runId))!;
     run.outbox = [];
-    expect(store.get(runId)?.outbox).toEqual([]);
+    expect((await store.get(runId))?.outbox).toEqual([]);
 
     const server = PromptTrail.server({
       bundle,
@@ -1856,7 +1856,7 @@ describe('RuntimeServer', () => {
       runId: otherRunId,
       checkpoint: true,
     });
-    const run = store.get(runId)!;
+    const run = (await store.get(runId))!;
     run.outbox = [];
     await store.upsertOutbox(runId, {
       assistantIndex: 0,
@@ -1866,7 +1866,7 @@ describe('RuntimeServer', () => {
       status: 'pending',
       attempts: 0,
     } as never);
-    const otherRun = store.get(otherRunId)!;
+    const otherRun = (await store.get(otherRunId))!;
     otherRun.outbox = [];
     await store.upsertOutbox(otherRunId, {
       assistantIndex: 0,
@@ -1887,7 +1887,7 @@ describe('RuntimeServer', () => {
         },
       }),
     ]);
-    expect(store.get(otherRunId)?.outbox?.[0]).toEqual(
+    expect((await store.get(otherRunId))?.outbox?.[0]).toEqual(
       expect.not.objectContaining({
         id: otherDeliveryKey,
         conversationId: otherRunId,

@@ -212,13 +212,19 @@ export interface AppGateway {
 
 export interface DurableRunStore {
   /**
-   * Reads remain synchronous for the current whole-run store API, while writes
-   * are async so effect -> memo -> persist completes before the next effect can
-   * run under the at-least-once checkpoint model.
+   * Reads are now async so networked store backends (Postgres, Redis, libsql)
+   * can serve from the backend or a lazy cache rather than hydrating all runs
+   * at construction. The in-memory and SQLite implementations still serve from
+   * a hydrated Map, so the overhead is a resolved Promise. Writes were already
+   * async; this completes the async-on-all-sides contract.
+   *
+   * Note: `entries()` returns `Promise<Iterable>` (not `AsyncIterable`) to
+   * preserve snapshot semantics — callers await the call once and then iterate
+   * the materialized snapshot synchronously.
    */
-  get(runId: string): StoredRun<any> | undefined;
-  has(runId: string): boolean;
-  entries(): Iterable<[string, StoredRun<any>]>;
+  get(runId: string): Promise<StoredRun<any> | undefined>;
+  has(runId: string): Promise<boolean>;
+  entries(): Promise<Iterable<[string, StoredRun<any>]>>;
   create(runId: string, run: StoredRun<any>): Promise<void>;
   patch(runId: string, patch: StoredRunPatch): Promise<void>;
   appendInbox(runId: string, inbound: Inbound): Promise<void>;
@@ -251,7 +257,7 @@ export type CheckpointOption = true | RunStore | { store?: RunStore };
 export class MemoryRunStore implements DurableRunStore {
   private runs = new Map<string, StoredRun<any>>();
 
-  get(runId: string): StoredRun<any> | undefined {
+  async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
@@ -259,7 +265,7 @@ export class MemoryRunStore implements DurableRunStore {
     this.runs.set(runId, run);
   }
 
-  has(runId: string): boolean {
+  async has(runId: string): Promise<boolean> {
     return this.runs.has(runId);
   }
 
@@ -344,7 +350,7 @@ export class MemoryRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any>]> {
+  async entries(): Promise<Iterable<[string, StoredRun<any>]>> {
     return this.runs.entries();
   }
 }
@@ -677,7 +683,7 @@ export class PromptTrailApp {
     session?: Session<TVars>;
     context?: Record<string, unknown>;
   }): Promise<DurableRunResult<TVars>> {
-    const existing = this.store.get(options.runId);
+    const existing = await this.store.get(options.runId);
     if (existing) {
       existing.agent = options.agent;
       existing.agentName = options.agent.toGraph().name;
@@ -685,7 +691,7 @@ export class PromptTrailApp {
         agentName: existing.agentName,
       });
     }
-    if (!this.store.has(options.runId)) {
+    if (!(await this.store.has(options.runId))) {
       return this.run<TVars>({
         agent: options.agent,
         runId: options.runId,
@@ -714,7 +720,7 @@ export class PromptTrailApp {
       (options.resumable ? true : undefined) ??
       this.defaultCheckpoint;
     this.assertAppCheckpointStore(checkpoint);
-    const existing = this.store.get(options.runId);
+    const existing = await this.store.get(options.runId);
     if (!existing) {
       if (!options.agent) {
         throw new Error(`Unknown durable run: ${options.runId}`);
@@ -749,7 +755,7 @@ export class PromptTrailApp {
   async resume<TVars extends Vars = Vars>(
     runId: string,
   ): Promise<DurableRunResult<TVars>> {
-    const run = this.getRun<TVars>(runId);
+    const run = await this.getRun<TVars>(runId);
     await this.assertGraphRunManifest(runId, run);
     if (
       run.status === 'done' &&
@@ -770,7 +776,7 @@ export class PromptTrailApp {
     runId: string,
     deliveries: readonly AssistantDeliveryOutboxInput[],
   ): Promise<AssistantDeliveryOutboxEntry[]> {
-    const run = this.store.get(runId);
+    const run = await this.store.get(runId);
     if (!run) {
       return deliveries.map((delivery) =>
         createAssistantDeliveryOutboxEntry(runId, delivery),
@@ -808,7 +814,7 @@ export class PromptTrailApp {
     error?: unknown,
     platformBinding?: unknown,
   ): Promise<void> {
-    const run = this.store.get(runId);
+    const run = await this.store.get(runId);
     if (!run) {
       return;
     }
@@ -847,7 +853,7 @@ export class PromptTrailApp {
   async assistantDeliveryOutbox(
     runId: string,
   ): Promise<readonly AssistantDeliveryOutboxEntry[]> {
-    const run = this.store.get(runId);
+    const run = await this.store.get(runId);
     if (!run) {
       return [];
     }
@@ -863,7 +869,7 @@ export class PromptTrailApp {
   > {
     await this.materializePendingAssistantDeliveries();
     const pending: PendingAssistantDeliveryOutboxEntry[] = [];
-    for (const [runId, run] of this.store.entries()) {
+    for (const [runId, run] of await this.store.entries()) {
       const changed = this.backfillAssistantDeliveryOutboxMetadata(runId, run);
       for (const entry of run.outbox ?? []) {
         if (isRetryableAssistantDeliveryStatus(entry.status)) {
@@ -897,7 +903,7 @@ export class PromptTrailApp {
   }
 
   async materializePendingAssistantDeliveries(): Promise<void> {
-    for (const [runId, run] of this.store.entries()) {
+    for (const [runId, run] of await this.store.entries()) {
       await this.materializeAssistantDeliveriesForRun(runId, run);
     }
   }
@@ -1202,7 +1208,7 @@ export class PromptTrailApp {
     runId: string,
     message: Omit<Inbound, 'offset'>,
   ): Promise<void> {
-    const run = this.getRun(runId);
+    const run = await this.getRun(runId);
     const inbound = { ...message, offset: run.inbox.length };
     run.inbox.push(inbound);
     await this.store.appendInbox(runId, inbound);
@@ -1318,8 +1324,10 @@ export class PromptTrailApp {
     return registeredAgent;
   }
 
-  private getRun<TVars extends Vars>(runId: string): StoredRun<TVars> {
-    const run = this.store.get(runId);
+  private async getRun<TVars extends Vars>(
+    runId: string,
+  ): Promise<StoredRun<TVars>> {
+    const run = await this.store.get(runId);
     if (!run) {
       throw new Error(`Unknown durable run: ${runId}`);
     }

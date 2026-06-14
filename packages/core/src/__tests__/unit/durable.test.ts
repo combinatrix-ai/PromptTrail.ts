@@ -30,7 +30,7 @@ class TrackingRunStore implements DurableRunStore {
     outbox?: number;
   }> = [];
 
-  get(runId: string): StoredRun<any, any> | undefined {
+  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
     return this.runs.get(runId);
   }
 
@@ -46,7 +46,7 @@ class TrackingRunStore implements DurableRunStore {
     });
   }
 
-  has(runId: string): boolean {
+  async has(runId: string): Promise<boolean> {
     return this.runs.has(runId);
   }
 
@@ -160,7 +160,7 @@ class TrackingRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any, any>]> {
+  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
     return this.runs.entries();
   }
 }
@@ -178,7 +178,7 @@ class ControlledDelayRunStore implements DurableRunStore {
     resolve: () => void;
   }> = [];
 
-  get(runId: string): StoredRun<any, any> | undefined {
+  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
     return this.runs.get(runId);
   }
 
@@ -200,7 +200,7 @@ class ControlledDelayRunStore implements DurableRunStore {
     });
   }
 
-  has(runId: string): boolean {
+  async has(runId: string): Promise<boolean> {
     return this.runs.has(runId);
   }
 
@@ -280,7 +280,7 @@ class ControlledDelayRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any, any>]> {
+  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
     return this.runs.entries();
   }
 
@@ -351,15 +351,15 @@ class RecordingRunStore implements DurableRunStore {
   readonly runs = new Map<string, StoredRun<any, any>>();
   readonly writes: RecordedWrite[] = [];
 
-  get(runId: string): StoredRun<any, any> | undefined {
+  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
     return this.runs.get(runId);
   }
 
-  has(runId: string): boolean {
+  async has(runId: string): Promise<boolean> {
     return this.runs.has(runId);
   }
 
-  entries(): Iterable<[string, StoredRun<any, any>]> {
+  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
     return this.runs.entries();
   }
 
@@ -525,7 +525,7 @@ describe('checkpoint app runtime', () => {
     expect(result.status).toBe('done');
     expect(result.runId).toBe('graphAssistant-1');
     expect(result.session.getLastMessage()?.content).toBe('ok');
-    expect(store.get(result.runId)).toMatchObject({
+    expect(await store.get(result.runId)).toMatchObject({
       status: 'done',
       graphCursor: 0,
     });
@@ -810,11 +810,9 @@ describe('checkpoint app runtime', () => {
       deltas[1]?.delta.appendedMessages.map((message) => message.content),
     ).toEqual(['continue', 'done']);
     expect(
-      store.runs
-        .get('run-rewrite-delta')
-        ?.result?.messages.map(
-          (message: { content: string }) => message.content,
-        ),
+      (await store.get('run-rewrite-delta'))?.result?.messages.map(
+        (message: { content: string }) => message.content,
+      ),
     ).toEqual(['redacted', 'continue', 'done']);
   });
 
@@ -939,8 +937,10 @@ describe('checkpoint app runtime', () => {
       input: 'hello',
     });
 
-    expect(defaultStore.get('run-send-default-durable')).toBeDefined();
-    expect(disabledStore.get('run-source-default-ephemeral')).toBeUndefined();
+    expect(await defaultStore.get('run-send-default-durable')).toBeDefined();
+    expect(
+      await disabledStore.get('run-source-default-ephemeral'),
+    ).toBeUndefined();
   });
 
   it('emits checkpoint app lifecycle observer events across resume', async () => {

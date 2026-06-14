@@ -374,10 +374,10 @@ describe('Agent graph authoring', () => {
       'hello',
       'reply:hello',
     ]);
-    expect(store.get('direct-no-inbox')?.inbox).toEqual([
+    expect((await store.get('direct-no-inbox'))?.inbox).toEqual([
       { offset: 0, kind: 'user', content: 'hello' },
     ]);
-    expect(store.get('direct-no-inbox')?.graphCursor).toBe(1);
+    expect((await store.get('direct-no-inbox'))?.graphCursor).toBe(1);
   });
 
   it('rejects follow-up input for completed direct durable graph runs', async () => {
@@ -404,10 +404,12 @@ describe('Agent graph authoring', () => {
         input: 'again',
       }),
     ).rejects.toThrow(/Cannot send input to completed graph run/);
-    expect(store.get('direct-completed')?.inbox).toEqual([
+    expect((await store.get('direct-completed'))?.inbox).toEqual([
       { offset: 0, kind: 'user', content: 'hello' },
     ]);
-    expect(store.get('direct-completed')?.result?.getVar('runCount')).toBe(1);
+    expect(
+      (await store.get('direct-completed'))?.result?.getVar('runCount'),
+    ).toBe(1);
   });
 
   it('continues completed graph runs without replaying pre-inbox leaf nodes', async () => {
@@ -1221,7 +1223,7 @@ describe('Agent graph authoring', () => {
       input: 'hello',
       runId: 'direct-graph',
     });
-    const run = store.get('direct-graph');
+    const run = await store.get('direct-graph');
 
     expect(result.session.messages.map((message) => message.content)).toEqual([
       'hello',
@@ -1445,7 +1447,7 @@ describe('Agent graph authoring', () => {
       checkpoint: store,
       runId: 'direct-graph-tool-effects',
     });
-    const run = store.get('direct-graph-tool-effects');
+    const run = await store.get('direct-graph-tool-effects');
 
     expect(result.session.messages.map((message) => message.content)).toEqual([
       'need lookup',

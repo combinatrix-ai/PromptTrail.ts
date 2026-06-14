@@ -139,6 +139,35 @@ execution first breaks that path. Tag the pre-deletion commit
       Reads (`get`/`has`/`entries`) stay sync — deferred with async reads.
       Provider thread/session-id persistence moved to §1.8 where resume
       consumes it.
+- [x] **1.6b Make the DurableRunStore READ side async.** `get`/`has`/`entries`
+      now return `Promise<StoredRun<any> | undefined>`, `Promise<boolean>`, and
+      `Promise<Iterable<[string, StoredRun<any>]>>` respectively.
+      `entries()` returns `Promise<Iterable>` (not `AsyncIterable`) to preserve
+      snapshot semantics — callers await the call once and then iterate the
+      materialized snapshot synchronously with a plain `for...of` loop.
+      Rationale: enables networked store backends (Postgres, Redis, libsql)
+      without requiring full in-memory hydration at construction.
+      Both `MemoryRunStore` and `SqliteRunStore` continue to serve reads from a
+      hydrated in-memory Map (constructor `hydrate()` is unchanged), so each
+      read resolves immediately; the cost is purely the Promise allocation.
+      Async propagation was contained: all nine read call sites in
+      `durable.ts` (inside `PromptTrailApp`) now `await` the call; `getRun`
+      was the only private helper that changed colour from sync to async, and
+      both its callers (`resume`, `append`) were already async. The two
+      `entries()` loops (`pendingAssistantDeliveryOutbox`,
+      `materializePendingAssistantDeliveries`) use `await ...entries()` then
+      plain `for...of` — NOT `for await...of`.
+      FLAG — latent constraint for future networked stores: several sites
+      (`prepareAssistantDeliveries` ~779-794, `markAssistantDelivery`
+      ~815-844) mutate the object returned by `store.get()` in place before
+      the subsequent `upsertOutbox` write. This is safe for Memory/Sqlite
+      (same reference as the hydrated Map value), but a networked store that
+      returns a fresh deserialized copy per `get()` call will NOT see those
+      in-place mutations reflected in later reads. Those sites already pass
+      the mutated entry as a write-method argument, so the persist side is
+      correct; the risk is only if another `get()` is issued in-between.
+      Future networked-store implementations must account for this (e.g. an
+      optimistic write-through cache or transactional get-modify-put).
 - [x] **1.7 Introduce a session identity.** `Session` has no version field
       (`transitionVersion` is legacy replay state) and loop counters are
       executor-local. Add a monotonic session identity/version used as the default
@@ -276,18 +305,18 @@ structured/codex/claude/goal`).
       stay stable. Goals gained the same inner tool loop per satisfaction
       attempt.
 - [x] **3.5 Decompose remaining compatibility template nodes** into native graph
-  nodes so nothing routes through the generic legacy `template` adapter node.
-  (`graph_executor.ts`, `templates/agent.ts`)
-  Done: the whole-tree `{ type: 'template' }` wrapper and the `'template'`
-  node type are deleted; legacy trees compile per-kind to native nodes
-  (loop/conditional/subroutine/user/messages/transform/structured/parallel/
-  codexTurn/claudeTurn) with legacy lifecycle preserved via node metadata
-  (`legacyTemplateLifecycle`, sibling-halt, warn-on-max-iterations).
-  Completed with §3.4: `System` and `Assistant` leaves now compile to native
-  `system`/`assistant` nodes — the executor carries the Source resolution,
-  model middleware, validator retry, `raiseError`, and tool-result handling
-  the templates had. The generic transform fallback survives only for
-  unknown template types.
+      nodes so nothing routes through the generic legacy `template` adapter node.
+      (`graph_executor.ts`, `templates/agent.ts`)
+      Done: the whole-tree `{ type: 'template' }` wrapper and the `'template'`
+      node type are deleted; legacy trees compile per-kind to native nodes
+      (loop/conditional/subroutine/user/messages/transform/structured/parallel/
+      codexTurn/claudeTurn) with legacy lifecycle preserved via node metadata
+      (`legacyTemplateLifecycle`, sibling-halt, warn-on-max-iterations).
+      Completed with §3.4: `System` and `Assistant` leaves now compile to native
+      `system`/`assistant` nodes — the executor carries the Source resolution,
+      model middleware, validator retry, `raiseError`, and tool-result handling
+      the templates had. The generic transform fallback survives only for
+      unknown template types.
 - [x] **3.6 Rename provider turn methods (decided).** `Agent.codexTurn(...)` →
       **`.codex(...)`** (Codex app-server), `Agent.claudeTurn(...)` →
       **`.claude(...)`** (Claude Agent SDK). Drops the "turn" collision and pairs
