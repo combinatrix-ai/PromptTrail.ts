@@ -1,13 +1,8 @@
 import 'dotenv/config';
-import { openai } from '@ai-sdk/openai';
-import { generateText } from 'ai';
-import { Agent, PromptTrail, memoryStore } from '@prompttrail/core';
-import type { Session } from '@prompttrail/core';
-import {
-  collectCodexTurnResult,
-  createCodexAppServerWebSocketClient,
-} from '@prompttrail/core/codex_app_server';
+import { join } from 'node:path';
+import { Agent, PromptTrail, Source } from '@prompttrail/core';
 import { discord, discordGateway } from '@prompttrail/discord';
+import { SqliteRunStore } from '@prompttrail/store-sqlite';
 
 interface ClawConfig {
   token: string;
@@ -25,13 +20,55 @@ interface ClawConfig {
 
 const config = readConfig();
 
-const mainAgent = Agent.create('main').assistant('reply', async (session) =>
-  generateReply(session),
-);
+let mainAgent: Agent;
+
+if (config.replyMode === 'echo') {
+  mainAgent = Agent.create('main').assistant(
+    'reply',
+    (session) => `ack: ${session.getLastMessage()?.content ?? ''}`,
+  );
+} else if (config.replyMode === 'openai') {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('CLAW_REPLY_MODE=openai requires OPENAI_API_KEY.');
+  }
+  if (!config.openaiModel) {
+    throw new Error('CLAW_REPLY_MODE=openai requires CLAW_OPENAI_MODEL.');
+  }
+  mainAgent = Agent.create('main')
+    .system(
+      'persona',
+      'You are Claw, a concise Discord-native PromptTrail agent.',
+    )
+    .assistant(
+      'reply',
+      Source.llm().openai({ adapter: 'ai-sdk', modelName: config.openaiModel }),
+    );
+} else {
+  // codex
+  mainAgent = Agent.create('main').codex('reply', {
+    transport: {
+      kind: 'websocket',
+      url: config.codexAppServerUrl,
+      timeoutMs: config.codexTimeoutMs,
+    },
+    cwd: config.codexCwd,
+    model: config.codexModel,
+    sandboxPolicy: { type: 'readOnly' },
+    approvalPolicy: 'never',
+  });
+}
+
+const clawDbPath =
+  readOptionalString('CLAW_DB_PATH') ?? join(process.cwd(), '.data', 'claw.db');
+
+const store = new SqliteRunStore({
+  agents: { main: mainAgent },
+  path: clawDbPath,
+});
 
 const runtime = PromptTrail.app({
   name: 'claw-discord',
-  store: memoryStore(),
+  store,
   defaults: {
     checkpoint: true,
   },
@@ -61,8 +98,6 @@ const runtime = PromptTrail.app({
   );
 const bundle = runtime.bundle('claw-discord');
 
-const codexThreadIds = new Map<string, string>();
-
 const server = PromptTrail.server({
   bundle,
   runtime,
@@ -82,117 +117,6 @@ const server = PromptTrail.server({
 });
 
 await server.start();
-
-async function generateReply(session: Session): Promise<string> {
-  const last = session.getLastMessage();
-  const latest = last?.content ?? '';
-  if (config.replyMode === 'echo') {
-    return `ack: ${latest}`;
-  }
-  if (config.replyMode === 'codex') {
-    return generateCodexReply(session, latest);
-  }
-  if (!process.env.OPENAI_API_KEY) {
-    return 'CLAW_REPLY_MODE=openai requires OPENAI_API_KEY.';
-  }
-  if (!config.openaiModel) {
-    return 'CLAW_REPLY_MODE=openai requires CLAW_OPENAI_MODEL.';
-  }
-
-  const result = await generateText({
-    model: openai(config.openaiModel),
-    system: 'You are Claw, a concise Discord-native PromptTrail agent.',
-    messages: session.messages
-      .filter((message) => message.type !== 'tool_result')
-      .map((message) => ({
-        role: message.type === 'assistant' ? 'assistant' : 'user',
-        content: message.content,
-      })),
-  });
-  return result.text;
-}
-
-async function generateCodexReply(
-  session: Session,
-  latest: string,
-): Promise<string> {
-  const runtimeContext = getRuntimeContext(session);
-  const conversationId = runtimeContext?.conversationId ?? 'default';
-  const client = createCodexAppServerWebSocketClient({
-    url: config.codexAppServerUrl,
-    timeoutMs: config.codexTimeoutMs,
-    clientInfo: {
-      name: 'prompttrail_claw',
-      title: 'PromptTrail Claw',
-      version: '0.0.1',
-    },
-  });
-
-  try {
-    const threadId =
-      codexThreadIds.get(conversationId) ??
-      (
-        await client.startThread({
-          cwd: config.codexCwd,
-          model: config.codexModel,
-          sandboxPolicy: { type: 'readOnly' },
-          approvalPolicy: 'never',
-        })
-      ).threadId;
-    codexThreadIds.set(conversationId, threadId);
-
-    const rawResult = await client.startTurn({
-      threadId,
-      input: [
-        {
-          type: 'text',
-          text: latest,
-        },
-      ],
-      cwd: config.codexCwd,
-      model: config.codexModel,
-      sandboxPolicy: { type: 'readOnly' },
-      approvalPolicy: 'never',
-    });
-    const result = isAsyncIterable(rawResult)
-      ? await collectCodexTurnResult(rawResult, { threadId })
-      : rawResult;
-
-    const finalAnswer = result.finalAnswer?.trim();
-    if (!finalAnswer) {
-      throw new Error('Codex App Server returned no final answer.');
-    }
-    return finalAnswer;
-  } catch (error) {
-    codexThreadIds.delete(conversationId);
-    console.error('Codex App Server reply failed', error);
-    return codexFailureMessage(error);
-  } finally {
-    await client.close?.();
-  }
-}
-
-function codexFailureMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes('timed out')) {
-    return 'Codex App Server の応答がタイムアウトしました。次のメッセージでは新しい Codex thread で再試行します。';
-  }
-  return 'Codex App Server から応答を取得できませんでした。次のメッセージでは新しい Codex thread で再試行します。';
-}
-
-function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
-  return (
-    typeof value === 'object' && value !== null && Symbol.asyncIterator in value
-  );
-}
-
-function getRuntimeContext(
-  session: Session,
-): { conversationId?: string } | undefined {
-  return session.getLastMessage()?.attrs?.runtimeContext as
-    | { conversationId?: string }
-    | undefined;
-}
 
 function readConfig(): ClawConfig {
   const token = process.env.DISCORD_TOKEN;

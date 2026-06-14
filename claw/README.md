@@ -28,6 +28,7 @@ Fill in `DISCORD_TOKEN`, then run:
 
 ```bash
 pnpm -C packages/core build
+pnpm -C packages/store-sqlite build
 pnpm -C packages/discord build
 pnpm -C claw dev
 ```
