@@ -322,6 +322,13 @@ promote/demote/rollback actions are logged with provenance. If it breaks, that
 is a normal dev-loop bug, not a runtime self-heal. This deliberately ends the
 watcher-of-the-watcher regress.
 
+`[x]` **Validating a whole new version before promotion** — replaying the
+durable request history through the candidate build, diffing its behavior
+against what actually happened, and only then handing over the single-writer
+lease — is its own subsystem, designed in `replay-and-self-deploy.md`. That is
+where self-modification of claw's *own code* (vs additive skill authoring) and
+blue/green self-deploy are worked out.
+
 Open holes (collected in §11): how to bound a canary's blast radius
 (author-only / test channel / shadow execution), and the concrete per-tier
 capability sets.
