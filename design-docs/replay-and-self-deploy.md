@@ -40,6 +40,58 @@ Module ownership up front, because it drives every boundary below:
 
 ---
 
+## Review revisions (verified against code)
+
+A code-grounded review (Codex, independently re-verified against the cited
+files) found the first draft over-credited existing primitives. Corrections,
+each confirmed in code — these supersede the optimistic claims in §1–§5 below:
+
+- **The store records outputs, not requests or paths.** `StoredRun`
+  (`durable.ts:128-142`) has agent/initial/result/once/outbox/inbox/
+  providerSessions/cursor/context — **no executed node path and no model/tool/
+  provider request envelopes.** So §1's "pure transform / reconstruct the
+  request key from the message prefix" is **not** sound (prompt assembly
+  depends on current code, capabilities, and tool defs; the manifest can't even
+  detect closure-body edits, `graph.ts:190-194`). → A new **execution-time
+  recording layer (B0)** must persist normalized `{nodePath, phase,
+  normalizedRequest, normalizedResponse, toolDefsDigest, provider, callIndex}`
+  records and node-enter breadcrumbs. Cassette keys hash the *persisted*
+  request, never a recomputed one.
+- **`Source.llm().mock()` is not a keyed replay seam.** It is sequential
+  (cyclic index) or a `(session, options)` callback only (`source.ts:1304-1393`)
+  — no request-key lookup, no miss classification. → B1 is a new **replay
+  middleware**, not built on `.mock()`.
+- **Tool/provider interception is fragmented, not "one new injection point."**
+  Graph and native loops use `wrapToolCall` (`graph_executor.ts:1161`,
+  `generate.ts:624`), but ai-sdk `generateText` tools run inside ai-sdk with no
+  wrapper (`generate.ts:273`), and Codex/Claude/OpenAI/Gemini each have separate
+  tool paths. → Replay must intercept at one unified boundary
+  (`executePromptTrailTool`/capability) before B1.
+- **No lease exists, and handoff needs fencing.** `DurableRunStore` has no
+  lease (`durable.ts:213-250`); the only lock is in-process per conversation
+  (`runtime_server.ts:138`). Checkpoint advances `graphCursor` optimistically
+  (`checkpoint_continuation.ts:76`) and persists with no holder check, so a
+  paused blue can double-write after handoff. → Every mutating store method and
+  every delivery must require a **monotonic fencing token**, not just a lease.
+- **Green can't resume blue's in-flight runs across a graph change.** Resume
+  throws `AgentGraphVersionError` on manifest-hash mismatch (`durable.ts:1176`).
+  → In-flight policy: blue keeps old-manifest runs until they finish (green
+  takes only new + compatible runs), or add graph migration.
+- **Trust-boundary contradiction in §5.** The pseudocode ran
+  `green.replayDiffOverCorpus(...)` / `green.runAcceptance(...)` — green grading
+  itself contradicts §6. Corrected below: the **trusted runner executes**
+  replay, diff, scope, and acceptance against green as a *target* process.
+
+**Revised build order:** **B0 (execution-time recording of normalized calls +
+node breadcrumbs)** → B1 (positional replay on B0) → B2 (keyed replay + differ)
+→ B3 (acceptance, trusted-runner-executed) → B4 (lease + fencing tokens) → B5
+(launcher). Also unresolved before production: store-schema migration across
+blue/green versions; replay clock/RNG injection (`Math.random`/`Date.now` used
+directly today, `source.ts:452,967`); live-LLM diff pass bar (forbid live text
+from gating in B1/B2); corpus privacy/redaction.
+
+---
+
 ## 0. End-to-end shape
 
 ```
@@ -68,11 +120,14 @@ and tools.
 
 ## 1. Recording extraction (`StoredRun → Cassette + GoldenOutcome`)
 
-`[x]` Pure transform, no execution. A `StoredRun` already carries everything:
-`initial` (Session), `inbox` (`Inbound[]` — the requests), `result` (the folded
-Session = full message timeline, including assistant outputs and
-`tool_use`/`tool_result` parts), `outbox` (what was delivered), `graphManifest`,
-`context`.
+`[!]` **Revised (see "Review revisions"):** a `StoredRun` carries enough for a
+*weak golden transcript* (`inbox` requests, `result` message timeline with
+`tool_use`/`tool_result` parts, `outbox` deliveries, `context`) — but **not**
+the executed node path nor the normalized model/provider *requests*. The
+cassette therefore cannot be a pure transform of today's `StoredRun`; it
+consumes the **B0 recording layer** (normalized call records + node
+breadcrumbs persisted at execution time). The keying below hashes the persisted
+request, not a recomputed prefix.
 
 Two products:
 
@@ -272,10 +327,11 @@ async function deploy(newTag) {
   const green = launch(newTag, { mode: 'canary' });   // silent: no lease, sealed effects
   await green.ready();
 
-  // green self-validates with trusted-root-owned corpus + comparator
-  const replay = await green.replayDiffOverCorpus(change.scope); // §1–§3
-  const accept = await green.runAcceptance(fakeRequests);        // §4
-  const probe  = await launcher.probe(green, knownProbes);       // independent check
+  // the TRUSTED RUNNER (not green) executes replay/diff/acceptance against
+  // green as a target process — green cannot grade itself (see Review revisions)
+  const replay = await runner.replayDiffOverCorpus(green, change.scope); // §1–§3
+  const accept = await runner.runAcceptance(green, fakeRequests);        // §4
+  const probe  = await launcher.probe(green, knownProbes);              // independent check
 
   const ok = replay.every(r => r.kind !== 'REGRESSION') && accept.ok && probe.ok;
   if (!ok) { green.kill(); return report(replay, accept); }      // blue keeps serving
