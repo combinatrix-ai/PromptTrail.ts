@@ -463,5 +463,111 @@ the launcher (B5) is last because it composes the others.
   instant rollback; durability makes drain lossless.
 - `[x]` core owns replay/diff/lease; claw owns scope+acceptance values; the
   launcher is the immutable trust root.
-- `[x]` Build order B1 (replay v1) → B2 (keying+differ) → B3 (acceptance) →
-  B4 (lease) → B5 (launcher).
+- `[x]` Build order **B0 (recording layer)** → B1 (replay v1) → B2
+  (keying+differ) → B3 (acceptance) → B4 (lease+fencing) → B5 (launcher). B0
+  detailed in the appendix.
+
+---
+
+## Appendix B0 — Recording layer (detailed design)
+
+The review established that replay cannot read what it needs from today's
+`StoredRun`. B0 adds a minimal, opt-in recording layer at the boundaries that
+**already funnel every call**, plus node breadcrumbs. It reuses the existing
+wrapper machinery — no parallel interpreter.
+
+### The unified boundaries (confirmed in code)
+
+Codex flagged tool interception as "fragmented." Reading the code, the
+*middleware wrapping* is fragmented but the **execution funnels are single**:
+
+- **Tool calls → `executePromptTrailTool` (`tool.ts:87`).** Every path calls it:
+  graph tools (`graph_executor.ts:1204`), native loops (`generate.ts:775`),
+  ai-sdk tools (`ai_sdk_tools.ts:56`), and Codex/Claude/OpenAI/Gemini provider
+  tools (`codex_app_server.ts:1037`, `claude_agent.ts:182`,
+  `openai_responses.ts:741`, `google_gemini.ts:1015`). The context here already
+  carries `durable`/`effect`/`idempotencyKey`. → record + replay hook this one
+  function; each of the call sites threads a `recorder` handle + `nodePath` into
+  the context (uniform, mechanical — the *logic* stays in one place).
+- **Model/provider calls → the `wrapModelCall` phase.** Assistant
+  (`model_runtime.ts:62-78`), Codex (`codex_turn.ts:380`), and Claude
+  (`claude_turn.ts:328`) all route the provider invocation through
+  `runRuntimeMiddlewareWrapper({ phase: 'wrapModelCall', call })`. → one built-in
+  **recording middleware** on `wrapModelCall` captures (normalized request,
+  response) for all three uniformly. The prepared, post-`prepareModelInput`
+  session (`model_runtime.ts:47-49`) is the normalized request input.
+- **Node path → graph executor.** `executeGraphNode(node, nodePath, state)`
+  (`graph_executor.ts:390`) has the path in hand but emits only run/model/tool
+  events. → add a **node-enter breadcrumb** (path + node type + chosen branch).
+
+### Record schema (persisted, durable)
+
+```ts
+interface NodeBreadcrumb  { seq; nodePath; nodeType; branch?; at }
+interface ModelCallRecord {
+  nodePath; callIndex; provider;        // 'assistant' | 'codex' | 'claude' | ...
+  requestDigest;                        // hash of the normalized request AT RECORD TIME
+  request?: NormalizedModelRequest;     // messages + system + toolDefsDigest + params (full only)
+  response: ModelOutput; at;
+}
+interface ToolCallRecord  {
+  nodePath; callIndex; toolName; argsDigest;
+  input?: unknown;                      // parsed input (full only)
+  result: CallToolResult; effect?; at;
+}
+```
+
+`[x]` **Keys are computed at record time from the real request** — not
+recomputed from a message prefix (the review's blocker). Replay digests the
+candidate's live request the same way: `request-hash` = `requestDigest` match;
+`node-path` = `(nodePath, callIndex)` match. Both keyings come from the record,
+so divergence is well-defined.
+
+### Storage
+
+`StoredRun` gains `recording?: { nodes; model; tool }`; `DurableRunStore` gains
+`appendRecord(runId, record)` (async; fenced under B4). `store-common`'s
+reconstruction and the conformance suite extend by one collection + one case
+(so all five backends inherit it). Provider-turn raw replay (Codex/Claude)
+needs `retain: 'full'` (`codex_turn.ts:443`) — opt-in, since summarized
+retention drops the raw result.
+
+### Recording control (volume + privacy)
+
+`[x]` `RecordLevel = 'off' | 'decisions' | 'full'`, per agent/run, default
+`off`:
+
+- `decisions` — node breadcrumbs + tool calls (name/argsDigest/result) +
+  structured outputs + model `requestDigest`/response. Cheap; powers the
+  deterministic diff dimensions (routing / control-flow / tool-args /
+  structured).
+- `full` — adds normalized model request bytes + parsed tool input, needed for
+  `request-hash` keying and faithful replay. Larger and sensitive — this is the
+  privacy surface, so it is retention-bounded + redaction-policied.
+
+claw records `full` for a sampled fraction of runs plus always for the routes a
+pending deploy will replay.
+
+### Determinism injection
+
+`Math.random` / `Date.now` are used directly today (`source.ts:452,967`;
+`graph_executor.ts:350`). B0 adds a `RuntimeClock` / `RuntimeRng` the recorder
+captures and the replayer pins, and bans direct use on replay-critical paths.
+
+### What B0 unblocks
+
+The §1 cassette becomes a real transform of the **recording** (not the message
+prefix); §2 keying is sound (it hashes the persisted request); §3
+routing/control-flow diffs have a golden node path; B1 positional replay is
+"feed the records in order to the same agent and assert an identical trace."
+
+### B0 work items
+
+1. `recorder` handle + `nodePath` on `ToolExecutionContext`; record/replay
+   branch inside `executePromptTrailTool`.
+2. built-in recording middleware on `wrapModelCall` (covers assistant/codex/
+   claude).
+3. node-enter breadcrumb in `executeGraphNode`.
+4. `StoredRun.recording` + `appendRecord` across the store family +
+   store-common reconstruction + conformance case.
+5. `RecordLevel` plumbing + `RuntimeClock`/`RuntimeRng`.
