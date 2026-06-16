@@ -492,10 +492,18 @@ Codex flagged tool interception as "fragmented." Reading the code, the
 - **Model/provider calls → the `wrapModelCall` phase.** Assistant
   (`model_runtime.ts:62-78`), Codex (`codex_turn.ts:380`), and Claude
   (`claude_turn.ts:328`) all route the provider invocation through
-  `runRuntimeMiddlewareWrapper({ phase: 'wrapModelCall', call })`. → one built-in
-  **recording middleware** on `wrapModelCall` captures (normalized request,
-  response) for all three uniformly. The prepared, post-`prepareModelInput`
-  session (`model_runtime.ts:47-49`) is the normalized request input.
+  `runRuntimeMiddlewareWrapper({ phase: 'wrapModelCall', call })`, so one
+  built-in **recording middleware** there captures the **response** for all
+  three uniformly. **Caveat (verified):** `ModelRuntimeRequest` is `{ session }`
+  only (`model_runtime.ts:12-14`); the system prompt, tool definitions, and
+  model params live inside the per-node `call` closure, **not** in the request
+  the middleware sees. So a wrapModelCall middleware cannot digest the *full*
+  provider request from the session alone — request-hash keying would be unsound
+  if it hashed only the session. → Either thread the resolved `LLMOptions`
+  (system + `toolDefsDigest` + params) into `ModelRuntimeRequest` so the single
+  middleware can hash the full request, or capture inside each `call` closure
+  (3 sites, each with the full payload). Threading into the request keeps the
+  one-middleware design; pick that unless it proves leaky.
 - **Node path → graph executor.** `executeGraphNode(node, nodePath, state)`
   (`graph_executor.ts:390`) has the path in hand but emits only run/model/tool
   events. → add a **node-enter breadcrumb** (path + node type + chosen branch).
