@@ -579,3 +579,52 @@ routing/control-flow diffs have a golden node path; B1 positional replay is
 4. `StoredRun.recording` + `appendRecord` across the store family +
    store-common reconstruction + conformance case.
 5. `RecordLevel` plumbing + `RuntimeClock`/`RuntimeRng`.
+
+### B0 — round-2 code verification (findings)
+
+A second pass read the provider/tool paths directly. Results, each grounded:
+
+- **Tool funnel is split by tool kind.** `executePromptTrailTool` covers
+  PromptTrail tools and ai-sdk-wrapped tools (the ai-sdk wrapper's `execute`
+  calls it, `ai_sdk_tools.ts:55-60`). But `kind: 'builtin'` and `kind: 'mcp'`
+  tools carry `executionMode: Exclude<ExecutionMode, 'prompttrail'>`
+  (`capabilities.ts:105-108`) — they execute **provider-/MCP-side, outside**
+  `executePromptTrailTool`. → Record/replay PromptTrail+ai-sdk tools at the
+  funnel; builtin/MCP tool calls and results ride the **model/provider
+  response** and are captured by the `wrapModelCall` response side, with the
+  differ extracting their args from the response, not from tool records.
+- **Internal loops do many model turns inside one `wrapModelCall`.** The native
+  streaming tool loop iterates `maxToolRounds`, calling the provider each round
+  inside a single outer model call (`generate.ts:600-656`); Codex/Claude turns
+  loop internally too. So a `wrapModelCall` recorder captures the node's
+  **aggregate output**, not each internal turn (tools inside are still recorded
+  individually via `wrapToolCall`→`executePromptTrailTool`, `generate.ts:715-733`).
+  → **Decision:** B1 replays at **node-output granularity** — the cassette entry
+  for a model node is the full message delta it produced, and replay
+  short-circuits the whole node/loop with that recorded output. Per-internal-turn
+  replay (to localize divergence *inside* a loop) is a later refinement needing
+  stream-level interception.
+- **Node breadcrumbs are sufficient for control-flow.** `executeGraphNode`
+  dispatches scope/loop/conditional/parallel/structured/tools/transform/
+  codexTurn/claudeTurn, each with `nodePath` (`graph_executor.ts:392-454`). A
+  breadcrumb of `{seq, nodePath, nodeType, branch}` reconstructs: conditional
+  branch (which child entered), loop iterations (repeated body entries by seq),
+  scope/subroutine entry, and parallel (entered set; order is nondeterministic →
+  compare as a set).
+- **Byte/file content breaks faithful replay.** `makeContentPartsPersistenceSafe`
+  rewrites `bytes` parts to `prompttrail://omitted-bytes/...`
+  (`content_parts.ts:131-146`) and `providerFile` references expire
+  (`content_parts.ts:60-86`). A persisted run with image/file input cannot be
+  re-digested or re-sent faithfully (two different images both hash as
+  "omitted"). → Record a stable `bytesDigest` at record time for keying, and for
+  v1 **exclude/flag byte-or-file-content runs** from the replay corpus.
+- **Records are a separate collection, not a session delta.** Like `outbox` and
+  `once`, recording is append-only run-scoped state, not session content — a
+  `StoredRun.recording` collection with `appendRecord`, fenced under B4, rather
+  than folding into `appendSessionDelta`.
+
+**Verdict:** B0 is implementable. The two scoping calls baked into B1 are
+node-output-granularity replay (not per-internal-turn) and excluding
+byte/file-content runs from the corpus; the model-request capture must thread
+resolved `LLMOptions` into `ModelRuntimeRequest`; builtin/MCP tools are captured
+via the model response. No remaining blocker.
