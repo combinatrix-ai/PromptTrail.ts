@@ -627,4 +627,61 @@ A second pass read the provider/tool paths directly. Results, each grounded:
 node-output-granularity replay (not per-internal-turn) and excluding
 byte/file-content runs from the corpus; the model-request capture must thread
 resolved `LLMOptions` into `ModelRuntimeRequest`; builtin/MCP tools are captured
-via the model response. No remaining blocker.
+via the model response. (Model-request capture and the keying model are
+corrected by the round-3 cross-check below.)
+
+### B0 — round-3 cross-check (independent Opus review, verified)
+
+A second independent reviewer (Opus) re-verified round-2 against the same code.
+The fundamentals held; it **corrected several points**, each re-confirmed here:
+
+- **Model-request capture is three normalizers, not one.** Codex/Claude use a
+  separate `TurnModelRequest` (`codex_turn.ts:468-473`, `claude_turn.ts:396`)
+  with no `LLMOptions` — not `ModelRuntimeRequest`. Request-hash keying is
+  **per-provider** (assistant via LLMOptions threaded into `ModelRuntimeRequest`;
+  Codex/Claude via their own turn request + provider config), not one unified
+  hash function.
+- **"Model node = one request" is loose even without tools.**
+  `LlmSource.getContent` re-calls the model in a validator-retry loop
+  (`source.ts:1497-1518`), and Structured runs once per attempt
+  (`structured.ts:118-121`) — N model turns inside one `wrapModelCall`. Confirms
+  node-output-granularity replay; the recorder must not assume one turn per node.
+- **Loop and parallel break the `(nodePath, callIndex)` keying.**
+  Loop/goalAttempts re-run `executeChildren` under the **same** `nodePath`
+  (`graph_executor.ts:562,692`), so iterations collide — breadcrumbs must be a
+  **seq-ordered stream**, not a `nodePath→record` map. `executeParallelNode`
+  (`958-990`) calls `executeSource` (not `executeGraphNode`) under one nodePath,
+  so it emits **no per-branch breadcrumbs** and runs **deterministically
+  sequentially** — parallel branches are reconstructed from model/tool record
+  *order*, not a breadcrumb set (and the round-2 "order nondeterministic" was
+  wrong).
+- **`bytesDigest` at record time is unimplementable.**
+  `makeMessagePersistenceSafe` runs in the **`Session` constructor**
+  (`session.ts:18,244-251`), so bytes are placeholders on every `addMessage`;
+  the recorder sees `request.session`, never the real bytes. → drop record-time
+  bytesDigest; v1 relies solely on **excluding byte/file-content runs from the
+  corpus** (capture upstream of Session construction only if faithful byte
+  replay is later needed).
+- **Threading `nodePath`/recorder is not uniformly "mechanical."**
+  `ToolExecutionContext` has no `nodePath` (`capabilities.ts:32-42`), and the
+  provider tool funnels (`anthropic_messages.ts:985`, `openai_responses.ts:741`,
+  `google_gemini.ts:1015`) run as vendor-loop callbacks with no nodePath/`durable`
+  in scope — threading there crosses the provider API boundary. The graph
+  tools-node path does have it (`graph_executor.ts:1198`); the two regimes differ.
+- **Wider determinism inventory:** `crypto.randomUUID`/`Date.now` seed the
+  `eventScopeId` (`graph_executor.ts:~354`) that feeds idempotency keys
+  (`model_runtime.ts:119`); pin it too if replay compares idempotency keys.
+  (Recording does **not** perturb `once` — keys are pure functions of input,
+  `tool.ts:144-154`.)
+- **Tool-funnel bypass set** is builtin + mcp + `skill` (skills map to
+  `runtime`, `capabilities.ts:227-228`), though skills are not tool *calls* so
+  the practical bypass remains builtin/MCP.
+
+**Corrected verdict:** B0 is sound *in shape* and implementable, but round-2's
+"no remaining blocker" was too strong. Three things to fix before coding:
+1. **Per-provider request normalization** (assistant vs Codex vs Claude), not
+   one unified request hash.
+2. **Seq-ordered breadcrumb keying** with explicit loop (shared nodePath) and
+   parallel (no breadcrumbs, sequential, reconstruct from record order)
+   handling — not `(nodePath, callIndex)`.
+3. **Drop record-time `bytesDigest`**; v1 = corpus exclusion of byte/file runs.
