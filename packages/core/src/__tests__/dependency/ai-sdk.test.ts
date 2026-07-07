@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 // Keep API_KEY secret to variable and unset environment variable
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openAIAvailable = !!OPENAI_API_KEY;
 if (!OPENAI_API_KEY) {
   console.error('OPENAI_API_KEY environment variable is not set');
 }
@@ -17,7 +18,7 @@ delete process.env.OPENAI_API_KEY;
 // API key or related setting are passed when openai instance is created
 const openai = createOpenAI({ apiKey: OPENAI_API_KEY });
 
-describe('Basic Text Generation', () => {
+describe.skipIf(!openAIAvailable)('Basic Text Generation', () => {
   it('should demonstrate generateText with a simple prompt', async () => {
     // Example of how to use generateText
     const result = await generateText({
@@ -79,7 +80,7 @@ describe('Basic Text Generation', () => {
   });
 });
 
-describe('Tool Integration', () => {
+describe.skipIf(!openAIAvailable)('Tool Integration', () => {
   it('should demonstrate tools with function calling', async () => {
     // Define a weather tool with a simple schema
     const weatherTool = tool({

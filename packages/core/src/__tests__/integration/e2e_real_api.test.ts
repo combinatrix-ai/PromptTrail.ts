@@ -38,6 +38,9 @@ import { createWeatherTool, expect_types } from '../utils';
  * - This test should be run with real API keys
  */
 
+const openAIAvailable = !!process.env.OPENAI_API_KEY;
+const anthropicAvailable = !!process.env.ANTHROPIC_API_KEY;
+
 const openAILLMSource = Source.llm()
   .openai()
   .model('gpt-5.4-nano')
@@ -49,31 +52,37 @@ const anthropicLLMSource = Source.llm()
   .temperature(0.7);
 
 describe('End-to-End Workflows with Real APIs', () => {
-  it('should execute a simple conversation with OpenAI', async () => {
-    const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, how are you?'))
-      .add(new Assistant(openAILLMSource));
+  it.skipIf(!openAIAvailable)(
+    'should execute a simple conversation with OpenAI',
+    async () => {
+      const template = new Sequence()
+        .add(new System('You are a helpful assistant.'))
+        .add(new User('Hello, how are you?'))
+        .add(new Assistant(openAILLMSource));
 
-    const session = await template.execute();
+      const session = await template.execute();
 
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect_types(messages, ['system', 'user', 'assistant']);
-  });
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(3);
+      expect_types(messages, ['system', 'user', 'assistant']);
+    },
+  );
 
-  it('should execute a simple conversation with Anthropic', async () => {
-    const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('Hello, how are you?'))
-      .add(new Assistant(anthropicLLMSource));
+  it.skipIf(!anthropicAvailable)(
+    'should execute a simple conversation with Anthropic',
+    async () => {
+      const template = new Sequence()
+        .add(new System('You are a helpful assistant.'))
+        .add(new User('Hello, how are you?'))
+        .add(new Assistant(anthropicLLMSource));
 
-    const session = await template.execute();
+      const session = await template.execute();
 
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect_types(messages, ['system', 'user', 'assistant']);
-  });
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(3);
+      expect_types(messages, ['system', 'user', 'assistant']);
+    },
+  );
 
   it('should handle print mode with console.log', async () => {
     // Spy on console.log
@@ -150,7 +159,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     ).toBe(true);
   });
 
-  it('should execute agent and sequence', async () => {
+  it.skipIf(!openAIAvailable)('should execute agent and sequence', async () => {
     const sequence = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
@@ -174,20 +183,25 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(agenMessages[2].content).toContain('123456789');
   });
 
-  it('should handle UserTemplate with InputSource', async () => {
-    const template = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User(new LiteralSource('123456789')))
-      .add(new Assistant(openAILLMSource));
-    const session = await template.execute();
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect_types(messages, ['system', 'user', 'assistant']);
-    expect(messages[2].content).toBeDefined();
-    expect(messages[2].content).toContain('123456789');
-  });
+  it.skipIf(!openAIAvailable)(
+    'should handle UserTemplate with InputSource',
+    async () => {
+      const template = new Sequence()
+        .add(
+          new System('This is automated API testing. Repeat what user says.'),
+        )
+        .add(new User(new LiteralSource('123456789')))
+        .add(new Assistant(openAILLMSource));
+      const session = await template.execute();
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(3);
+      expect_types(messages, ['system', 'user', 'assistant']);
+      expect(messages[2].content).toBeDefined();
+      expect(messages[2].content).toContain('123456789');
+    },
+  );
 
-  it('should execute a if template', async () => {
+  it.skipIf(!openAIAvailable)('should execute a if template', async () => {
     // thenTemplate
     const template = new Sequence()
       .add(new System('This is automated API testing. Repeat what user says.'))
@@ -278,7 +292,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[3].content).toBe('Loop ended');
   });
 
-  it('should Agent have addXXXX methods', async () => {
+  it.skipIf(!openAIAvailable)('should Agent have addXXXX methods', async () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
     // Each have system, user, assistant, conditional
@@ -380,103 +394,115 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Removed misplaced commented code
   });
 
-  it('should execute a subroutine template', async () => {
-    // Inherit from parent and merge back to parent
-    const subroutineBody = new Sequence()
-      .add(new System('This is automated API testing. Repeat what user says.'))
-      .add(new User('123456789'))
-      .add(new Assistant(openAILLMSource));
+  it.skipIf(!openAIAvailable)(
+    'should execute a subroutine template',
+    async () => {
+      // Inherit from parent and merge back to parent
+      const subroutineBody = new Sequence()
+        .add(
+          new System('This is automated API testing. Repeat what user says.'),
+        )
+        .add(new User('123456789'))
+        .add(new Assistant(openAILLMSource));
 
-    // Create a subroutine template with the body
-    const subroutine = new Subroutine(subroutineBody);
+      // Create a subroutine template with the body
+      const subroutine = new Subroutine(subroutineBody);
 
-    // Execute the subroutine
-    const session = await subroutine.execute();
+      // Execute the subroutine
+      const session = await subroutine.execute();
 
-    // Verify the result
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(3);
-    expect_types(messages, ['system', 'user', 'assistant']);
-    expect(messages[1].type).toBe('user');
-    expect(messages[1].content).toBe('123456789');
-    expect(messages[2].type).toBe('assistant');
-    expect(messages[2].content).toBeDefined();
-    expect(messages[2].content).toContain('123456789');
-  }, 15000);
+      // Verify the result
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(3);
+      expect_types(messages, ['system', 'user', 'assistant']);
+      expect(messages[1].type).toBe('user');
+      expect(messages[1].content).toBe('123456789');
+      expect(messages[2].type).toBe('assistant');
+      expect(messages[2].content).toBeDefined();
+      expect(messages[2].content).toContain('123456789');
+    },
+    15000,
+  );
 
-  it('should execute a conversation with weather tool', async () => {
-    const weatherTool = createWeatherTool();
+  it.skipIf(!openAIAvailable)(
+    'should execute a conversation with weather tool',
+    async () => {
+      const weatherTool = createWeatherTool();
 
-    // The ai-sdk adapter surfaces toolCalls/tool_result messages on the
-    // session, which is the contract this test pins. The native Responses
-    // adapter runs its provider-internal tool loop and returns only the
-    // final assistant message.
-    const openAIgenerateOptionsWith = Source.llm()
-      .openai({ adapter: 'ai-sdk' })
-      .model('gpt-5.4-nano')
-      .temperature(0.7)
-      .addTool('weather', weatherTool);
+      // The ai-sdk adapter surfaces toolCalls/tool_result messages on the
+      // session, which is the contract this test pins. The native Responses
+      // adapter runs its provider-internal tool loop and returns only the
+      // final assistant message.
+      const openAIgenerateOptionsWith = Source.llm()
+        .openai({ adapter: 'ai-sdk' })
+        .model('gpt-5.4-nano')
+        .temperature(0.7)
+        .addTool('weather', weatherTool);
 
-    const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(new User('What is the weather in Tokyo?'))
-      .add(new Assistant(openAIgenerateOptionsWith));
+      const template = new Sequence()
+        .add(new System('You are a helpful assistant.'))
+        .add(new User('What is the weather in Tokyo?'))
+        .add(new Assistant(openAIgenerateOptionsWith));
 
-    const session = await template.execute();
+      const session = await template.execute();
 
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(4);
-    expect_types(messages, ['system', 'user', 'assistant', 'tool_result']);
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(4);
+      expect_types(messages, ['system', 'user', 'assistant', 'tool_result']);
 
-    expect(messages[2].toolCalls).toBeDefined();
-    const toolCalls = messages[2].toolCalls!;
-    expect(toolCalls[0].name).toBe('weather');
+      expect(messages[2].toolCalls).toBeDefined();
+      const toolCalls = messages[2].toolCalls!;
+      expect(toolCalls[0].name).toBe('weather');
 
-    // Verify the tool result message
-    expect(messages[3].type).toBe('tool_result');
-    expect(messages[3].content).toBeDefined();
-  });
+      // Verify the tool result message
+      expect(messages[3].type).toBe('tool_result');
+      expect(messages[3].content).toBeDefined();
+    },
+  );
 
-  it('should execute a conversation with a loop and user input', async () => {
-    // Use StaticSource instead of CLISource to avoid waiting for user input
-    // Only one response: "no" to exit the loop immediately
-    const continueResponses = new ListSource(['Yes', 'No']);
+  it.skipIf(!openAIAvailable)(
+    'should execute a conversation with a loop and user input',
+    async () => {
+      // Use StaticSource instead of CLISource to avoid waiting for user input
+      // Only one response: "no" to exit the loop immediately
+      const continueResponses = new ListSource(['Yes', 'No']);
 
-    const template = new Sequence()
-      .add(new System('You are a helpful assistant.'))
-      .add(
-        new Loop({
-          bodyTemplate: new Sequence()
-            .add(new User(new LiteralSource('What is your name?')))
-            .add(new Assistant(openAILLMSource))
-            .add(new User(continueResponses)),
-          loopIf: (session) => {
-            // User(continueResponses) is the last message
-            const lastMessage = session.getLastMessage();
-            return (
-              lastMessage?.type === 'system' ||
-              (lastMessage?.type === 'user' &&
-                lastMessage.content.toLowerCase().includes('yes'))
-            );
-          },
-        }),
-      );
+      const template = new Sequence()
+        .add(new System('You are a helpful assistant.'))
+        .add(
+          new Loop({
+            bodyTemplate: new Sequence()
+              .add(new User(new LiteralSource('What is your name?')))
+              .add(new Assistant(openAILLMSource))
+              .add(new User(continueResponses)),
+            loopIf: (session) => {
+              // User(continueResponses) is the last message
+              const lastMessage = session.getLastMessage();
+              return (
+                lastMessage?.type === 'system' ||
+                (lastMessage?.type === 'user' &&
+                  lastMessage.content.toLowerCase().includes('yes'))
+              );
+            },
+          }),
+        );
 
-    const session = await template.execute();
+      const session = await template.execute();
 
-    const messages = Array.from(session.messages);
-    expect(messages).toHaveLength(7);
-    expect_types(messages, [
-      'system',
-      'user',
-      'assistant',
-      'user',
-      'user',
-      'assistant',
-      'user',
-    ]);
-    expect(messages[1].content).toBe('What is your name?');
-    expect(messages[3].content).toBe('Yes');
-    expect(messages[6].content).toBe('No');
-  });
+      const messages = Array.from(session.messages);
+      expect(messages).toHaveLength(7);
+      expect_types(messages, [
+        'system',
+        'user',
+        'assistant',
+        'user',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(messages[1].content).toBe('What is your name?');
+      expect(messages[3].content).toBe('Yes');
+      expect(messages[6].content).toBe('No');
+    },
+  );
 });
