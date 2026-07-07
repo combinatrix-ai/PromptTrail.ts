@@ -11,7 +11,7 @@ describe('Source.llm().mock() examples', () => {
     });
 
     // Use it in an Agent
-    const agent = Agent.create()
+    const agent = Agent.create('source-mock-example')
       .system('You are a helpful assistant')
       .assistant(mockSource);
 
@@ -31,10 +31,10 @@ describe('Source.llm().mock() examples', () => {
       .mockResponse({ content: 'Configured mock response' });
 
     // The configuration is available for assertions
-    const lastCall = mockSource.getCallHistory()[0];
+    const _lastCall = mockSource.getCallHistory()[0];
 
-    const agent = Agent.create().assistant(mockSource);
-    const session = await agent.execute();
+    const agent = Agent.create('source-mock-example').assistant(mockSource);
+    const _session = await agent.execute();
 
     // After execution, we can check what configuration was used
     const history = mockSource.getCallHistory();
@@ -52,7 +52,7 @@ describe('Source.llm().mock() examples', () => {
         { content: 'Third response' },
       );
 
-    const agent = Agent.create()
+    const agent = Agent.create('source-mock-example')
       .assistant(mockSource)
       .assistant(mockSource)
       .assistant(mockSource)
@@ -68,7 +68,7 @@ describe('Source.llm().mock() examples', () => {
 
   it('should demonstrate dynamic responses with callback', async () => {
     const mockSource = Source.llm()
-      .model('claude-3')
+      .model('claude-haiku-4-5')
       .mock()
       .mockCallback(async (session, options) => {
         // Access session variables
@@ -82,13 +82,15 @@ describe('Source.llm().mock() examples', () => {
         };
       });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.create('source-mock-example').assistant(mockSource);
 
-    const session = await agent.execute(
-      Session.withVars({ userName: 'Alice' }),
+    const session = await agent.execute({
+      session: Session.withVars({ userName: 'Alice' }),
+    });
+
+    expect(session.messages[0].content).toBe(
+      "Hello Alice, I'm using claude-haiku-4-5",
     );
-
-    expect(session.messages[0].content).toBe("Hello Alice, I'm using claude-3");
   });
 
   it('should demonstrate mocking tool calls', async () => {
@@ -111,7 +113,7 @@ describe('Source.llm().mock() examples', () => {
         ],
       });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.create('source-mock-example').assistant(mockSource);
     const session = await agent.execute();
 
     const lastMessage = session.messages[0];
@@ -126,7 +128,7 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Valid response text' });
 
-    const agent = Agent.create().assistant(mockSource);
+    const agent = Agent.create('source-mock-example').assistant(mockSource);
     const session = await agent.execute();
 
     // The response passes validation
@@ -139,7 +141,9 @@ describe('Source.llm().mock() examples', () => {
       .mock()
       .mockResponse({ content: 'Too short' });
 
-    const invalidAgent = Agent.create().assistant(invalidMock);
+    const invalidAgent = Agent.create('source-mock-example').assistant(
+      invalidMock,
+    );
 
     // This should throw because content is too short
     await expect(invalidAgent.execute()).rejects.toThrow();

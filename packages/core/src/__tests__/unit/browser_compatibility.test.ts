@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../session';
 import { Assistant, Sequence, System, User } from '../../templates';
 
 // Mock modules
@@ -30,7 +29,7 @@ describe('Browser Compatibility', () => {
   });
 
   it('should work with templates in browser context', async () => {
-    const llm: Source = Source.llm();
+    const _llm: Source = Source.llm();
 
     // Create a template
     const template = new Sequence()

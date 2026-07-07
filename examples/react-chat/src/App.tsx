@@ -146,7 +146,7 @@ function App() {
         provider: {
           type: 'openai',
           apiKey: apiKey,
-          modelName: 'gpt-4o-mini',
+          modelName: 'gpt-5.4-nano',
           dangerouslyAllowBrowser: true,
         },
         temperature: 0.7,

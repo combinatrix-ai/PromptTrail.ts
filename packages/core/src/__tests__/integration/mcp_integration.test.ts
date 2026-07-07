@@ -53,7 +53,7 @@ describe('MCP Integration', () => {
 //       provider: {
 //         type: 'anthropic',
 //         apiKey: 'test-api-key',
-//         modelName: 'claude-3-5-haiku-latest',
+//         modelName: 'claude-haiku-4-5',
 //       },
 //     })
 //       .addMCPServer({
@@ -77,7 +77,7 @@ describe('MCP Integration', () => {
 //       provider: {
 //         type: 'anthropic',
 //         apiKey: 'test-api-key',
-//         modelName: 'claude-3-5-haiku-latest',
+//         modelName: 'claude-haiku-4-5',
 //       },
 //       temperature: 0.7,
 //     }).addMCPServer({

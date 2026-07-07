@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateText } from '../../../generate';
+import { z } from 'zod';
+import { generateText, generateTextStream } from '../../../generate';
+import { createExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
 import { LlmSource, Source } from '../../../source';
+import { Tool } from '../../../tool';
 import { CustomValidator } from '../../../validators/custom';
 
 // Mock the generate module
 vi.mock('../../../generate', () => ({
   generateText: vi.fn(),
+  generateTextStream: vi.fn(),
 }));
 
 describe('LlmSource', () => {
@@ -15,6 +19,12 @@ describe('LlmSource', () => {
     vi.mocked(generateText).mockResolvedValue({
       type: 'assistant',
       content: 'Mock response',
+    });
+    vi.mocked(generateTextStream).mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        content: 'Mock streamed response',
+      };
     });
   });
 
@@ -33,7 +43,9 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'openai',
-            modelName: 'gpt-4o-mini',
+            modelName: 'gpt-5.4-nano',
+            api: 'responses',
+            adapter: 'native',
           }),
         }),
       );
@@ -63,6 +75,38 @@ describe('LlmSource', () => {
         expect.objectContaining({
           temperature: 0.7,
         }),
+      );
+    });
+  });
+
+  describe('runtime tool loop', () => {
+    it('uses generateTextStream when runtime is provided for native tool sources', async () => {
+      const runtime = createExecutionRuntimeState({
+        context: { channel: 'runtime' },
+        middleware: [],
+      });
+      const lookup = Tool.create({
+        name: 'lookup',
+        description: 'Lookup docs',
+        inputSchema: z.object({ query: z.string() }),
+        execute: () => ({ value: 'docs' }),
+      });
+      const source = Source.llm().withTool('lookup', lookup);
+      const session = Session.create().addMessage({
+        type: 'user',
+        content: 'Lookup docs.',
+      });
+
+      const result = await source.getContent(session, runtime);
+
+      expect(result.content).toBe('Mock streamed response');
+      expect(generateText).not.toHaveBeenCalled();
+      expect(generateTextStream).toHaveBeenCalledWith(
+        session,
+        expect.objectContaining({
+          tools: expect.objectContaining({ lookup }),
+        }),
+        runtime,
       );
     });
   });
@@ -137,6 +181,8 @@ describe('LlmSource', () => {
             modelName: 'gpt-3.5-turbo',
             apiKey: 'openai-key',
             organization: 'org-123',
+            api: 'responses',
+            adapter: 'native',
           }),
         }),
       );
@@ -153,8 +199,9 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
             apiKey: 'anthropic-key',
+            adapter: 'native',
           }),
         }),
       );
@@ -162,7 +209,7 @@ describe('LlmSource', () => {
 
     it('should configure Anthropic with custom settings', async () => {
       const source = Source.llm().anthropic({
-        modelName: 'claude-3-5-haiku-latest',
+        modelName: 'claude-haiku-4-5',
         apiKey: 'custom-anthropic-key',
         baseURL: 'https://custom.anthropic.com',
       });
@@ -174,9 +221,10 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
             apiKey: 'custom-anthropic-key',
             baseURL: 'https://custom.anthropic.com',
+            adapter: 'native',
           }),
         }),
       );
@@ -184,7 +232,13 @@ describe('LlmSource', () => {
 
     it('should configure Google provider', async () => {
       process.env.GOOGLE_API_KEY = 'google-key';
-      const source = Source.llm().google();
+      const source = Source.llm().google({
+        retry: {
+          maxRetries: 2,
+          initialDelayMs: 100,
+          maxDelayMs: 1000,
+        },
+      });
 
       await source.getContent(Session.create());
 
@@ -193,8 +247,30 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'google',
-            modelName: 'gemini-pro',
+            modelName: 'gemini-3.1-flash-lite',
             apiKey: 'google-key',
+            adapter: 'native',
+            retry: {
+              maxRetries: 2,
+              initialDelayMs: 100,
+              maxDelayMs: 1000,
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should keep explicit ai-sdk adapter selection available', async () => {
+      const source = Source.llm().openai({ adapter: 'ai-sdk' });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          provider: expect.objectContaining({
+            type: 'openai',
+            api: 'responses',
+            adapter: 'ai-sdk',
           }),
         }),
       );
@@ -257,14 +333,71 @@ describe('LlmSource', () => {
         }),
       );
     });
+
+    it('should set provider-neutral conversation binding mode', async () => {
+      const source = Source.llm().conversationBinding('auto');
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          conversationBinding: 'auto',
+        }),
+      );
+    });
+
+    it('should set runtime skill injection policy', async () => {
+      const source = Source.llm().skillInjection('error');
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          skillInjection: 'error',
+        }),
+      );
+    });
+
+    it('should set approval handler', async () => {
+      const approvalHandler = async () => ({ type: 'approve' as const });
+      const source = Source.llm().approvalHandler(approvalHandler);
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          approvalHandler,
+        }),
+      );
+    });
+
+    it('should keep raw ai-sdk options scoped under aiSdk', async () => {
+      const source = Source.llm({
+        aiSdk: {
+          providerOptions: { openai: { store: false } },
+          sdkOptions: { headers: { 'x-test': 'yes' } },
+        },
+      });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          aiSdk: {
+            providerOptions: { openai: { store: false } },
+            sdkOptions: { headers: { 'x-test': 'yes' } },
+          },
+        }),
+      );
+    });
   });
 
   describe('Fluent API - Tool configuration', () => {
-    it('should add tools', async () => {
+    it('should adapt raw ai-sdk tools into PromptTrail tools', async () => {
       const weatherTool = {
-        name: 'get_weather',
         description: 'Get weather',
-        parameters: { type: 'object' },
+        parameters: z.object({ location: z.string() }),
+        execute: async ({ location }: { location: string }) => ({ location }),
       };
 
       const source = Source.llm().addTool('weather', weatherTool);
@@ -274,10 +407,24 @@ describe('LlmSource', () => {
         expect.anything(),
         expect.objectContaining({
           tools: expect.objectContaining({
-            weather: weatherTool,
+            weather: expect.objectContaining({
+              kind: 'tool',
+              name: 'weather',
+              description: 'Get weather',
+            }),
           }),
         }),
       );
+    });
+
+    it('should reject tools that are neither PromptTrail nor ai-sdk tools', () => {
+      expect(() =>
+        Source.llm().addTool('weather', {
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: { type: 'object' },
+        }),
+      ).toThrow(/must use a Zod parameters schema/);
     });
 
     it('should set tool choice', async () => {
@@ -292,9 +439,41 @@ describe('LlmSource', () => {
       );
     });
 
+    it('should set Anthropic-specific tool choice', async () => {
+      const source = Source.llm().anthropic().anthropicToolChoice({
+        type: 'tool',
+        name: 'lookup',
+        disable_parallel_tool_use: true,
+      });
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          anthropic: {
+            toolChoice: {
+              type: 'tool',
+              name: 'lookup',
+              disable_parallel_tool_use: true,
+            },
+          },
+        }),
+      );
+    });
+
     it('should add multiple tools', async () => {
-      const weatherTool = { name: 'weather' };
-      const calculatorTool = { name: 'calculator' };
+      const weatherTool = Tool.create({
+        name: 'weather',
+        description: 'Get weather',
+        inputSchema: z.object({ location: z.string() }),
+        execute: ({ location }) => ({ location }),
+      });
+      const calculatorTool = Tool.create({
+        name: 'calculator',
+        description: 'Calculate',
+        inputSchema: z.object({ expression: z.string() }),
+        execute: ({ expression }) => ({ expression }),
+      });
 
       const source = Source.llm()
         .addTool('weather', weatherTool)
@@ -316,11 +495,12 @@ describe('LlmSource', () => {
     });
 
     it('should add tool with withTool method', async () => {
-      const weatherTool = {
+      const weatherTool = Tool.create({
         name: 'get_weather',
         description: 'Get weather',
-        parameters: { type: 'object' },
-      };
+        inputSchema: z.object({ location: z.string() }),
+        execute: ({ location }) => ({ location }),
+      });
 
       const source = Source.llm().withTool('weather', weatherTool);
       await source.getContent(Session.create());
@@ -337,9 +517,24 @@ describe('LlmSource', () => {
 
     it('should add multiple tools with withTools method', async () => {
       const tools = {
-        weather: { name: 'weather', description: 'Get weather' },
-        calculator: { name: 'calculator', description: 'Calculate' },
-        search: { name: 'search', description: 'Search web' },
+        weather: Tool.create({
+          name: 'weather',
+          description: 'Get weather',
+          inputSchema: z.object({ location: z.string() }),
+          execute: ({ location }) => ({ location }),
+        }),
+        calculator: Tool.create({
+          name: 'calculator',
+          description: 'Calculate',
+          inputSchema: z.object({ expression: z.string() }),
+          execute: ({ expression }) => ({ expression }),
+        }),
+        search: Tool.create({
+          name: 'search',
+          description: 'Search web',
+          inputSchema: z.object({ query: z.string() }),
+          execute: ({ query }) => ({ query }),
+        }),
       };
 
       const source = Source.llm().withTools(tools);
@@ -355,12 +550,32 @@ describe('LlmSource', () => {
 
     it('should merge tools when using withTools multiple times', async () => {
       const firstTools = {
-        weather: { name: 'weather' },
-        calculator: { name: 'calculator' },
+        weather: Tool.create({
+          name: 'weather',
+          description: 'Get weather',
+          inputSchema: z.object({ location: z.string() }),
+          execute: ({ location }) => ({ location }),
+        }),
+        calculator: Tool.create({
+          name: 'calculator',
+          description: 'Calculate',
+          inputSchema: z.object({ expression: z.string() }),
+          execute: ({ expression }) => ({ expression }),
+        }),
       };
       const secondTools = {
-        search: { name: 'search' },
-        translate: { name: 'translate' },
+        search: Tool.create({
+          name: 'search',
+          description: 'Search',
+          inputSchema: z.object({ query: z.string() }),
+          execute: ({ query }) => ({ query }),
+        }),
+        translate: Tool.create({
+          name: 'translate',
+          description: 'Translate',
+          inputSchema: z.object({ text: z.string() }),
+          execute: ({ text }) => ({ text }),
+        }),
       };
 
       const source = Source.llm().withTools(firstTools).withTools(secondTools);
@@ -380,12 +595,34 @@ describe('LlmSource', () => {
 
     it('should override tools with same name when using withTools', async () => {
       const firstTools = {
-        weather: { name: 'weather', version: 1 },
-        calculator: { name: 'calculator' },
+        weather: Tool.create({
+          name: 'weather',
+          description: 'Get weather v1',
+          inputSchema: z.object({ location: z.string() }),
+          execute: ({ location }) => ({ location, version: 1 }),
+          metadata: { version: 1 },
+        }),
+        calculator: Tool.create({
+          name: 'calculator',
+          description: 'Calculate',
+          inputSchema: z.object({ expression: z.string() }),
+          execute: ({ expression }) => ({ expression }),
+        }),
       };
       const secondTools = {
-        weather: { name: 'weather', version: 2 }, // Should override
-        search: { name: 'search' },
+        weather: Tool.create({
+          name: 'weather',
+          description: 'Get weather v2',
+          inputSchema: z.object({ location: z.string() }),
+          execute: ({ location }) => ({ location, version: 2 }),
+          metadata: { version: 2 },
+        }),
+        search: Tool.create({
+          name: 'search',
+          description: 'Search',
+          inputSchema: z.object({ query: z.string() }),
+          execute: ({ query }) => ({ query }),
+        }),
       };
 
       const source = Source.llm().withTools(firstTools).withTools(secondTools);
@@ -396,9 +633,9 @@ describe('LlmSource', () => {
         expect.anything(),
         expect.objectContaining({
           tools: expect.objectContaining({
-            weather: { name: 'weather', version: 2 },
-            calculator: { name: 'calculator' },
-            search: { name: 'search' },
+            weather: secondTools.weather,
+            calculator: firstTools.calculator,
+            search: secondTools.search,
           }),
         }),
       );
@@ -406,10 +643,25 @@ describe('LlmSource', () => {
 
     it('should combine withTool and withTools methods', async () => {
       const tools = {
-        weather: { name: 'weather' },
-        calculator: { name: 'calculator' },
+        weather: Tool.create({
+          name: 'weather',
+          description: 'Get weather',
+          inputSchema: z.object({ location: z.string() }),
+          execute: ({ location }) => ({ location }),
+        }),
+        calculator: Tool.create({
+          name: 'calculator',
+          description: 'Calculate',
+          inputSchema: z.object({ expression: z.string() }),
+          execute: ({ expression }) => ({ expression }),
+        }),
       };
-      const searchTool = { name: 'search', description: 'Search' };
+      const searchTool = Tool.create({
+        name: 'search',
+        description: 'Search',
+        inputSchema: z.object({ query: z.string() }),
+        execute: ({ query }) => ({ query }),
+      });
 
       const source = Source.llm()
         .withTools(tools)
@@ -423,6 +675,32 @@ describe('LlmSource', () => {
           tools: expect.objectContaining({
             ...tools,
             search: searchTool,
+          }),
+        }),
+      );
+    });
+
+    it('should add PromptTrail tools through withCapabilities', async () => {
+      const lookupTool = Tool.create({
+        name: 'lookup',
+        description: 'Lookup docs',
+        inputSchema: z.object({ query: z.string() }),
+        execute: ({ query }) => ({ query }),
+      });
+
+      const source = Source.llm()
+        .withCapabilities([lookupTool])
+        .temperature(0.1);
+
+      await source.getContent(Session.create());
+
+      expect(generateText).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          temperature: 0.1,
+          capabilities: [lookupTool],
+          tools: expect.objectContaining({
+            lookup: lookupTool,
           }),
         }),
       );
@@ -554,7 +832,7 @@ describe('LlmSource', () => {
     });
 
     it('should throw error after max attempts with raiseError=true', async () => {
-      const validator = new CustomValidator((content) => ({
+      const validator = new CustomValidator((_content) => ({
         isValid: false,
         instruction: 'Always fails',
       }));
@@ -579,7 +857,7 @@ describe('LlmSource', () => {
     });
 
     it('should return invalid content with raiseError=false', async () => {
-      const validator = new CustomValidator((content) => ({
+      const validator = new CustomValidator((_content) => ({
         isValid: false,
         instruction: 'Always fails',
       }));
@@ -616,7 +894,7 @@ describe('LlmSource', () => {
       const base = Source.llm();
       const _ = base.openai({ modelName: 'gpt-4' });
       const anthropicSource = base.anthropic({
-        modelName: 'claude-3-5-haiku-latest',
+        modelName: 'claude-haiku-4-5',
       });
 
       // Since it's the same instance, the last configuration wins
@@ -627,7 +905,7 @@ describe('LlmSource', () => {
         expect.objectContaining({
           provider: expect.objectContaining({
             type: 'anthropic',
-            modelName: 'claude-3-5-haiku-latest',
+            modelName: 'claude-haiku-4-5',
           }),
         }),
       );

@@ -1,13 +1,33 @@
 // content_source.ts
 import * as readline from 'node:readline/promises';
 import { z } from 'zod';
+import type {
+  ApprovalHandler,
+  CapabilitySet,
+  McpTransport,
+} from './capabilities';
+import type { PromptTrailTool } from './capabilities';
 import { ValidationError } from './errors';
 import {
   generateText,
+  generateTextStream,
   generateWithSchema,
-  SchemaGenerationOptions,
 } from './generate';
+import type { ExecutionRuntimeState } from './interceptors';
+import type {
+  AnthropicProviderConfig,
+  AnthropicToolChoice,
+  GoogleProviderConfig,
+  LLMOptions,
+  ModelOutput,
+  OpenAIProviderConfig,
+  ProviderConfig,
+  SchemaGenerationMode,
+  SchemaGenerationOptions,
+} from './llm_types';
+import { aiSdkToolToPromptTrailTool } from './ai_sdk_tools';
 import type { Session, Vars } from './session';
+import { isPromptTrailTool } from './tool';
 import { interpolateTemplate } from './utils/template_interpolation';
 import type {
   IValidator,
@@ -34,83 +54,288 @@ function getMaxLLMCalls(): number {
  */
 const llmCallCounter = new Map<string, number>();
 
-// --- Provider Types ---
-
-/**
- * OpenAI provider configuration
- */
-export interface OpenAIProviderConfig {
-  type: 'openai';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
-  organization?: string;
-  dangerouslyAllowBrowser?: boolean;
+function manifestDescriptorValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  key?: string,
+): unknown {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value;
+  }
+  if (typeof value === 'function') {
+    if (key === 'shape') {
+      try {
+        return manifestDescriptorValue(value(), seen);
+      } catch {
+        return { kind: 'function', name: value.name || undefined };
+      }
+    }
+    return { kind: 'function', name: value.name || undefined };
+  }
+  if (typeof value !== 'object') {
+    return { kind: typeof value };
+  }
+  if (seen.has(value)) {
+    return { kind: 'circular' };
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => manifestDescriptorValue(item, seen));
+    }
+    if (value instanceof RegExp) {
+      return { kind: 'regexp', source: value.source, flags: value.flags };
+    }
+    if (isZodSchemaLike(value)) {
+      return zodSchemaManifestDescriptor(value, seen);
+    }
+    if (!isPlainObject(value)) {
+      return {
+        kind: 'object',
+        ctor: value.constructor?.name || undefined,
+      };
+    }
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((entryKey) => [
+          entryKey,
+          manifestDescriptorValue(record[entryKey], seen, entryKey),
+        ]),
+    );
+  } finally {
+    seen.delete(value);
+  }
 }
 
-/**
- * Anthropic provider configuration
- */
-export interface AnthropicProviderConfig {
-  type: 'anthropic';
-  apiKey: string;
-  modelName: string;
-  baseURL?: string;
+function isPlainObject(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
-/**
- * Google provider configuration
- */
-export interface GoogleProviderConfig {
-  type: 'google';
-  apiKey?: string;
-  modelName: string;
-  baseURL?: string;
+function isZodSchemaLike(value: object): value is z.ZodType {
+  const definition = (value as { _def?: unknown })._def;
+  return (
+    typeof definition === 'object' &&
+    definition !== null &&
+    typeof (definition as { typeName?: unknown }).typeName === 'string'
+  );
 }
 
-/**
- * Provider configuration union type
- */
-export type ProviderConfig =
-  | OpenAIProviderConfig
-  | AnthropicProviderConfig
-  | GoogleProviderConfig;
-
-/**
- * LLM Generation Options
- */
-export interface LLMOptions {
-  provider: ProviderConfig;
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  topK?: number;
-  tools?: Record<string, unknown>;
-  toolChoice?: 'auto' | 'required' | 'none';
-  dangerouslyAllowBrowser?: boolean;
-  sdkOptions?: Record<string, unknown>;
-  maxCallLimit?: number;
+function zodSchemaManifestDescriptor(
+  schema: z.ZodType,
+  seen = new WeakSet<object>(),
+) {
+  const definition = (schema as { _def?: unknown })._def;
+  return {
+    typeName:
+      typeof definition === 'object' && definition !== null
+        ? (definition as { typeName?: unknown }).typeName
+        : schema.constructor?.name || undefined,
+    definition: manifestDescriptorValue(definition, seen),
+  };
 }
 
-// --- Temporary Definitions (Move to appropriate files later) ---
+function llmProviderManifestDescriptor(provider: ProviderConfig) {
+  const base = {
+    type: provider.type,
+    modelName: provider.modelName,
+    adapter: provider.adapter,
+    baseURL: provider.baseURL ? { present: true } : undefined,
+    apiKey: provider.apiKey ? { present: true } : undefined,
+  };
+  switch (provider.type) {
+    case 'openai':
+      return {
+        ...base,
+        api: provider.api,
+        organization: provider.organization ? { present: true } : undefined,
+        dangerouslyAllowBrowser: provider.dangerouslyAllowBrowser,
+      };
+    case 'anthropic':
+      return base;
+    case 'google':
+      return {
+        ...base,
+        retry: provider.retry,
+      };
+  }
+}
 
-/**
- * Interface for AI model outputs with metadata and structured data
- * (Equivalent to ModelContentOutput in the original file)
- */
-export interface ModelOutput {
-  content: string;
-  toolCalls?: Array<{
-    name: string;
-    arguments: Record<string, unknown>;
-    id: string;
-  }>;
-  toolResults?: Array<{
-    toolCallId: string;
-    result: unknown;
-  }>;
-  structuredOutput?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+function llmGenerationManifestDescriptor(options: LLMOptions) {
+  return {
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+    topP: options.topP,
+    topK: options.topK,
+    toolChoice: options.toolChoice,
+    toolLoop: options.toolLoop,
+    retain: options.retain,
+    conversationBinding: options.conversationBinding,
+    skillInjection: options.skillInjection,
+    maxCallLimit: options.maxCallLimit,
+    dangerouslyAllowBrowser: options.dangerouslyAllowBrowser,
+    cacheKey: options.cacheKey ? { present: true } : undefined,
+    cacheRetention: options.cacheRetention,
+    compaction: options.compaction,
+    thinking: options.thinking,
+    aiSdk: options.aiSdk
+      ? {
+          providerOptionProviders: options.aiSdk.providerOptions
+            ? Object.keys(options.aiSdk.providerOptions).sort()
+            : undefined,
+          sdkOptionKeys: options.aiSdk.sdkOptions
+            ? Object.keys(options.aiSdk.sdkOptions).sort()
+            : undefined,
+        }
+      : undefined,
+    anthropic: options.anthropic,
+    approvalHandler: options.approvalHandler
+      ? { present: true, name: options.approvalHandler.name || undefined }
+      : undefined,
+    context: options.context ? { present: true } : undefined,
+  };
+}
+
+function capabilitySetManifestDescriptor(
+  capabilities: CapabilitySet | undefined,
+) {
+  if (!capabilities?.length) {
+    return undefined;
+  }
+  return capabilities?.map((capability) => {
+    switch (capability.kind) {
+      case 'tool':
+        return promptTrailToolManifestDescriptor(capability);
+      case 'skill':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          description: capability.description,
+          instructions: capability.instructions,
+          path: capability.path,
+          skillId: capability.skillId,
+          materialize: capability.materialize,
+          cache: capability.cache,
+          metadataKeys: objectKeysManifestDescriptor(capability.metadata),
+        };
+      case 'builtin':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          provider: capability.provider,
+          executionMode: capability.executionMode,
+          configKeys: objectKeysManifestDescriptor(capability.config),
+          approval: approvalManifestDescriptor(capability.approval),
+          cache: capability.cache,
+          metadataKeys: objectKeysManifestDescriptor(capability.metadata),
+        };
+      case 'mcp':
+        return {
+          kind: capability.kind,
+          name: capability.name,
+          transport: mcpTransportManifestDescriptor(capability.transport),
+          tools: capability.tools,
+          effects: capability.effects
+            ? {
+                defaults: capability.effects.defaults,
+                perTool: capability.effects.perTool,
+              }
+            : undefined,
+          approval: approvalManifestDescriptor(capability.approval),
+          cache: capability.cache,
+        };
+    }
+  });
+}
+
+function promptTrailToolManifestDescriptor(tool: PromptTrailTool<any, any>) {
+  return {
+    kind: tool.kind,
+    name: tool.name,
+    description: tool.description,
+    inputSchema: zodSchemaManifestDescriptor(tool.inputSchema),
+    execute: { kind: 'function', name: tool.execute.name || undefined },
+    effect: tool.effect ?? tool.metadata?.effect,
+    approval: approvalManifestDescriptor(tool.approval),
+    cache: tool.cache,
+    metadataKeys: objectKeysManifestDescriptor(tool.metadata),
+  };
+}
+
+function promptTrailToolsManifestDescriptor(
+  tools: Record<string, PromptTrailTool<any, any>> | undefined,
+) {
+  const entries = Object.values(tools ?? {}).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+  return entries.length
+    ? entries.map((tool) => promptTrailToolManifestDescriptor(tool))
+    : undefined;
+}
+
+function approvalManifestDescriptor(approval: unknown) {
+  return typeof approval === 'function'
+    ? { kind: 'function', name: approval.name || undefined }
+    : approval;
+}
+
+function objectKeysManifestDescriptor(
+  value: Record<string, unknown> | undefined,
+) {
+  return value ? Object.keys(value).sort() : undefined;
+}
+
+function mcpTransportManifestDescriptor(transport: McpTransport) {
+  if (transport.kind === 'stdio') {
+    return {
+      kind: transport.kind,
+      command: transport.command,
+      args: transport.args,
+      envKeys: transport.env ? Object.keys(transport.env).sort() : undefined,
+    };
+  }
+  if (transport.kind === 'http') {
+    return {
+      kind: transport.kind,
+      url: transport.url,
+      headerKeys: transport.headers
+        ? Object.keys(transport.headers).sort()
+        : undefined,
+    };
+  }
+  return {
+    kind: transport.kind,
+    server: { present: true },
+  };
+}
+
+export type {
+  AnthropicProviderConfig,
+  GoogleProviderConfig,
+  LLMOptions,
+  ModelOutput,
+  OpenAIProviderConfig,
+  ProviderConfig,
+  SchemaGenerationOptions,
+} from './llm_types';
+
+export interface SourceManifestDescriptor {
+  kind: 'source';
+  sourceType: string;
+  validation?: {
+    validator?: string;
+    maxAttempts: number;
+    raiseError: boolean;
+  };
+  config?: unknown;
 }
 
 /**
@@ -141,7 +366,10 @@ export abstract class Source<T = unknown> {
    * @param session Session context for content generation
    * @returns Promise resolving to content of type T
    */
-  abstract getContent(session: Session<any, any>): Promise<T>;
+  abstract getContent(
+    session: Session<any>,
+    runtime?: ExecutionRuntimeState<any>,
+  ): Promise<T>;
 
   /**
    * Validates the given content once using the assigned validator.
@@ -149,7 +377,7 @@ export abstract class Source<T = unknown> {
    */
   protected async validateContent(
     content: string,
-    session: Session<any, any>,
+    session: Session<any>,
   ): Promise<ValidationResult> {
     if (!this.validator) {
       return { isValid: true }; // No validator means content is considered valid
@@ -172,6 +400,27 @@ export abstract class Source<T = unknown> {
    */
   getValidator(): IValidator | undefined {
     return this.validator;
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      kind: 'source',
+      sourceType: this.constructor?.name || 'Source',
+      validation: this.validationManifestDescriptor(),
+    };
+  }
+
+  protected validationManifestDescriptor():
+    | SourceManifestDescriptor['validation']
+    | undefined {
+    if (!this.validator && this.maxAttempts === 1 && this.raiseError === true) {
+      return undefined;
+    }
+    return {
+      validator: this.validator?.constructor?.name || undefined,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+    };
   }
 }
 
@@ -200,9 +449,16 @@ export class RandomSource extends StringSource {
     super(options);
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(_session: Session<any>): Promise<string> {
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: { itemCount: this.contentList.length },
+    };
   }
 }
 
@@ -223,7 +479,7 @@ export class ListSource extends StringSource {
     this.loop = options?.loop ?? false;
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     if (this.index < this.contentList.length) {
       const content = this.contentList[this.index++];
       // Apply validation if a validator exists
@@ -268,6 +524,16 @@ export class ListSource extends StringSource {
    */
   atEnd(): boolean {
     return !this.loop && this.index >= this.contentList.length;
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        itemCount: this.contentList.length,
+        loop: this.loop,
+      },
+    };
   }
 }
 
@@ -340,7 +606,7 @@ export class CLISource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -386,6 +652,16 @@ export class CLISource extends StringSource {
     } finally {
       rl.close();
     }
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        prompt: this.promptText,
+        hasDefault: this.defaultVal !== undefined,
+      },
+    };
   }
 }
 
@@ -451,7 +727,7 @@ export class CallbackSource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     let attempts = 0;
     let lastResult: ValidationResult | undefined;
     let currentInput = '';
@@ -493,6 +769,15 @@ export class CallbackSource extends StringSource {
         `Callback input validation failed unexpectedly after ${this.maxAttempts} attempts.`,
       );
     }
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        callback: this.callback.name || undefined,
+      },
+    };
   }
 }
 
@@ -553,7 +838,7 @@ export class LiteralSource extends StringSource {
     });
   }
 
-  async getContent(session: Session<any, any>): Promise<string> {
+  async getContent(session: Session<any>): Promise<string> {
     const interpolatedContent = interpolateTemplate(this.content, session);
     const validationResult = await this.validateContent(
       interpolatedContent,
@@ -564,6 +849,15 @@ export class LiteralSource extends StringSource {
       throw new ValidationError(errorMessage);
     }
     return interpolatedContent;
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        content: this.content,
+      },
+    };
   }
 }
 
@@ -589,7 +883,7 @@ export interface MockResponse {
  * Mock callback function type
  */
 export type MockCallback = (
-  session: Session<any, any>,
+  session: Session<any>,
   options: LLMOptions,
 ) => Promise<MockResponse> | MockResponse;
 
@@ -601,7 +895,7 @@ interface MockState {
   mockCallback?: MockCallback;
   currentResponseIndex: number;
   callHistory: Array<{
-    session: Session<any, any>;
+    session: Session<any>;
     options: LLMOptions;
     response: MockResponse;
   }>;
@@ -616,19 +910,29 @@ export interface MockedLlmSource extends LlmSource {
   mockResponses(...responses: MockResponse[]): MockedLlmSource;
   mockCallback(callback: MockCallback): MockedLlmSource;
   getCallHistory(): Array<{
-    session: Session<any, any>;
+    session: Session<any>;
     options: LLMOptions;
     response: MockResponse;
   }>;
   getLastCall():
     | {
-        session: Session<any, any>;
+        session: Session<any>;
         options: LLMOptions;
         response: MockResponse;
       }
     | undefined;
   getCallCount(): number;
   reset(): MockedLlmSource;
+}
+
+function normalizeLlmSourceTool(
+  name: string,
+  tool: unknown,
+): PromptTrailTool<any, any> {
+  if (isPromptTrailTool(tool)) {
+    return tool;
+  }
+  return aiSdkToolToPromptTrailTool(name, tool as never);
 }
 
 /**
@@ -652,7 +956,9 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'openai',
         apiKey: process.env.OPENAI_API_KEY || '',
-        modelName: 'gpt-4o-mini',
+        modelName: 'gpt-5.4-nano',
+        api: 'responses',
+        adapter: 'native',
       },
       temperature: 0.7,
       ...options,
@@ -668,6 +974,33 @@ export class LlmSource extends ModelSource {
     if (isDebugMode()) {
       llmCallCounter.set(this.instanceId, 0);
     }
+  }
+
+  getManifestDescriptor(): SourceManifestDescriptor {
+    return {
+      ...super.getManifestDescriptor(),
+      config: {
+        provider: llmProviderManifestDescriptor(this.options.provider),
+        generation: llmGenerationManifestDescriptor(this.options),
+        schema: this.schemaConfig
+          ? {
+              mode: this.schemaConfig.mode ?? 'native',
+              functionName: this.schemaConfig.functionName,
+              schema: zodSchemaManifestDescriptor(this.schemaConfig.schema),
+            }
+          : undefined,
+        tools: promptTrailToolsManifestDescriptor(this.options.tools),
+        capabilities: capabilitySetManifestDescriptor(
+          this.options.capabilities,
+        ),
+        mocked: this._mockState
+          ? {
+              responseCount: this._mockState.mockResponses.length,
+              callback: this._mockState.mockCallback?.name || undefined,
+            }
+          : undefined,
+      },
+    };
   }
 
   // Helper method to create new instance with merged options
@@ -688,6 +1021,14 @@ export class LlmSource extends ModelSource {
         ...this.options.tools,
         ...newOptions.tools,
       },
+      capabilities: [
+        ...(this.options.capabilities ?? []),
+        ...(newOptions.capabilities ?? []),
+      ],
+      anthropic: {
+        ...this.options.anthropic,
+        ...newOptions.anthropic,
+      },
       // Preserve maxCallLimit unless explicitly overridden
       maxCallLimit: newOptions.maxCallLimit ?? this.maxCallLimit,
     };
@@ -706,7 +1047,6 @@ export class LlmSource extends ModelSource {
 
     // In debug mode, share the same counter for cloned instances
     if (isDebugMode() && llmCallCounter.has(this.instanceId)) {
-      const currentCount = llmCallCounter.get(this.instanceId) || 0;
       llmCallCounter.delete(newSource.instanceId);
       newSource.instanceId = this.instanceId;
     }
@@ -720,7 +1060,9 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'openai',
         apiKey: config?.apiKey || process.env.OPENAI_API_KEY || '',
-        modelName: config?.modelName || 'gpt-4o-mini',
+        modelName: config?.modelName || 'gpt-5.4-nano',
+        api: config?.api ?? 'responses',
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
         organization: config?.organization,
         dangerouslyAllowBrowser: config?.dangerouslyAllowBrowser,
@@ -735,7 +1077,8 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'anthropic',
         apiKey: config?.apiKey || process.env.ANTHROPIC_API_KEY || '',
-        modelName: config?.modelName || 'claude-3-5-haiku-latest',
+        modelName: config?.modelName || 'claude-haiku-4-5',
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
       },
     });
@@ -746,8 +1089,10 @@ export class LlmSource extends ModelSource {
       provider: {
         type: 'google',
         apiKey: config?.apiKey || process.env.GOOGLE_API_KEY,
-        modelName: config?.modelName || 'gemini-pro',
+        modelName: config?.modelName || 'gemini-3.1-flash-lite',
+        adapter: config?.adapter ?? 'native',
         baseURL: config?.baseURL,
+        retry: config?.retry,
       },
     });
   }
@@ -771,6 +1116,19 @@ export class LlmSource extends ModelSource {
     });
   }
 
+  openaiApi(api: 'chat' | 'responses'): LlmSource {
+    if (this.options.provider.type !== 'openai') {
+      throw new Error('openaiApi() can only be used with the OpenAI provider.');
+    }
+
+    return this.clone({
+      provider: {
+        ...this.options.provider,
+        api,
+      },
+    });
+  }
+
   // Generation parameters - all return new instances
   temperature(value: number): LlmSource {
     return this.clone({ temperature: value });
@@ -788,36 +1146,78 @@ export class LlmSource extends ModelSource {
     return this.clone({ topK: value });
   }
 
-  // Tool configuration - all return new instances
-  addTool(name: string, tool: unknown): LlmSource {
+  // Tool configuration - all return new instances. Raw ai-sdk tools are
+  // adapted on entry: downstream tool plumbing only handles PromptTrail
+  // tools, and an unadapted ai-sdk tool would otherwise never reach the
+  // model request.
+  addTool(name: string, tool: PromptTrailTool<any, any> | unknown): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
-        [name]: tool,
+        [name]: normalizeLlmSourceTool(name, tool),
       },
     });
   }
 
-  withTool(name: string, tool: unknown): LlmSource {
+  withTool(name: string, tool: PromptTrailTool<any, any> | unknown): LlmSource {
     return this.clone({
       tools: {
         ...this.options.tools,
-        [name]: tool,
+        [name]: normalizeLlmSourceTool(name, tool),
       },
     });
   }
 
-  withTools(tools: Record<string, unknown>): LlmSource {
+  withTools(
+    tools: Record<string, PromptTrailTool<any, any> | unknown>,
+  ): LlmSource {
     return this.clone({
-      tools: {
-        ...this.options.tools,
-        ...tools,
-      },
+      tools: Object.fromEntries(
+        Object.entries({ ...this.options.tools, ...tools }).map(
+          ([name, tool]) => [name, normalizeLlmSourceTool(name, tool)],
+        ),
+      ),
+    });
+  }
+
+  withCapabilities(capabilities: CapabilitySet): LlmSource {
+    return this.clone({
+      capabilities,
+      tools: Object.fromEntries(
+        capabilities
+          .filter(isPromptTrailTool)
+          .map((capability) => [capability.name, capability]),
+      ),
     });
   }
 
   toolChoice(choice: 'auto' | 'required' | 'none'): LlmSource {
     return this.clone({ toolChoice: choice });
+  }
+
+  toolLoop(loop: 'vendor'): LlmSource {
+    return this.clone({ toolLoop: loop });
+  }
+
+  anthropicToolChoice(choice: AnthropicToolChoice): LlmSource {
+    return this.clone({
+      anthropic: {
+        ...this.options.anthropic,
+        toolChoice: choice,
+      },
+    });
+  }
+
+  conversationBinding(mode: 'off' | 'auto' = 'auto'): LlmSource {
+    return this.clone({ conversationBinding: mode });
+  }
+
+  skillInjection(policy: 'warn' | 'error' | 'silent'): LlmSource {
+    return this.clone({ skillInjection: policy });
+  }
+
+  approvalHandler(handler: ApprovalHandler): LlmSource {
+    return this.clone({ approvalHandler: handler });
   }
 
   // Browser compatibility - returns new instance
@@ -846,14 +1246,14 @@ export class LlmSource extends ModelSource {
   withSchema<T>(
     schema: z.ZodType<T>,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
     },
   ): LlmSource {
     const newSource = this.clone({});
     newSource.schemaConfig = {
       schema,
-      mode: options?.mode || 'structured_output',
+      mode: options?.mode,
       functionName: options?.functionName || 'generateStructuredOutput',
     };
     return newSource;
@@ -964,7 +1364,7 @@ export class LlmSource extends ModelSource {
    * Generate mock response and apply validation
    */
   private async _generateMockResponse(
-    session: Session<any, any>,
+    session: Session<any>,
   ): Promise<ModelOutput> {
     if (!this._mockState) {
       throw new Error('_generateMockResponse called on non-mocked source');
@@ -1069,7 +1469,10 @@ export class LlmSource extends ModelSource {
     );
   }
 
-  async getContent(session: Session<any, any>): Promise<ModelOutput> {
+  async getContent(
+    session: Session<any>,
+    runtime?: ExecutionRuntimeState<any>,
+  ): Promise<ModelOutput> {
     // Check if this is a mocked source
     if (this._mockState) {
       return this._generateMockResponse(session);
@@ -1104,6 +1507,12 @@ export class LlmSource extends ModelSource {
             this.options,
             this.schemaConfig,
           );
+        } else if (
+          runtime &&
+          isFirstPartyNativeProvider(this.options) &&
+          hasPromptTrailTools(this.options)
+        ) {
+          response = await this.generateWithRuntimeToolLoop(session, runtime);
         } else {
           // Use regular generation
           response = await generateText(session, this.options);
@@ -1180,6 +1589,66 @@ export class LlmSource extends ModelSource {
       `LLM content generation failed unexpectedly after ${this.maxAttempts} attempts.`,
     );
   }
+
+  private async generateWithRuntimeToolLoop(
+    session: Session<any>,
+    runtime: ExecutionRuntimeState<any>,
+  ) {
+    let lastAssistant:
+      | {
+          type: 'assistant';
+          content: string;
+          toolCalls?: Array<{
+            name: string;
+            arguments: Record<string, unknown>;
+            id: string;
+          }>;
+          attrs?: Record<string, unknown>;
+          structuredContent?: unknown;
+        }
+      | undefined;
+
+    for await (const message of generateTextStream(
+      session,
+      this.options,
+      runtime,
+    )) {
+      if (message.type === 'assistant') {
+        lastAssistant = message;
+      }
+    }
+
+    if (!lastAssistant) {
+      throw new Error('LLM generation did not return assistant response.');
+    }
+
+    return {
+      type: 'assistant',
+      content: lastAssistant.content,
+      toolCalls: lastAssistant.toolCalls,
+      attrs: lastAssistant.attrs,
+      structuredOutput: lastAssistant.structuredContent,
+    };
+  }
+}
+
+function isFirstPartyNativeProvider(options: LLMOptions): boolean {
+  return (
+    (options.provider.type === 'openai' &&
+      options.provider.api === 'responses' &&
+      options.provider.adapter !== 'ai-sdk') ||
+    (options.provider.type === 'anthropic' &&
+      options.provider.adapter !== 'ai-sdk') ||
+    (options.provider.type === 'google' &&
+      options.provider.adapter !== 'ai-sdk')
+  );
+}
+
+function hasPromptTrailTools(options: LLMOptions): boolean {
+  return (
+    Object.keys(options.tools ?? {}).length > 0 ||
+    (options.capabilities ?? []).some(isPromptTrailTool)
+  );
 }
 
 /**
@@ -1246,7 +1715,7 @@ export namespace Source {
   export function schema<T extends Record<string, unknown>>(
     schema: z.ZodType<T>,
     options?: {
-      mode?: 'tool' | 'structured_output';
+      mode?: SchemaGenerationMode;
       functionName?: string;
       maxAttempts?: number;
       raiseError?: boolean;

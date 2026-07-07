@@ -1,30 +1,27 @@
-import { Agent, Session, Source } from '../packages/core/src/index';
+import { Agent, Session, Source } from '@prompttrail/core';
 
 async function main() {
-  // Create the main conversation flow using the new function-based API
-  const chatAgent = Agent.system(
-    'You are a helpful AI assistant. Be concise and friendly in your responses.',
-  ).loop(
-    // Function-based loop body
-    (agent) =>
-      agent
-        // User message from CLI with custom prompt
-        .user(Source.cli('Your message (type "exit" to end): '))
-        // Assistant message using the default model
-        .assistant(),
-    // Loop condition: continue until user types "exit"
-    (session) => {
-      const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
-      return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
-    },
-  );
+  const chatAgent = Agent.create('chat')
+    .system(
+      'You are a helpful AI assistant. Be concise and friendly in your responses.',
+    )
+    .loop(
+      'chatLoop',
+      (agent) =>
+        agent
+          .user(Source.cli('Your message (type "exit" to end): '))
+          .assistant(Source.llm()),
+      ({ session }) => {
+        const lastUserMessage = session.getMessagesByType('user').slice(-1)[0];
+        return lastUserMessage?.content.toLowerCase().trim() !== 'exit';
+      },
+    );
 
-  // Create an initial session, enabling 'print' to log messages to the console
+  // Create an initial session, enabling print to log messages to the console.
   const session = Session.debug();
 
-  // Execute the chat agent
-  console.log('\nStarting chat with gpt-4o-mini (type "exit" to end)...\n');
-  await chatAgent.execute(session);
+  console.log('\nStarting chat (type "exit" to end)...\n');
+  await chatAgent.execute({ session });
   console.log('\nChat ended. Goodbye!\n');
 }
 

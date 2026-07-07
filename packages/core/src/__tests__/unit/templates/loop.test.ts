@@ -29,7 +29,7 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop condition function
-    const loopIf = (session: Session) => {
+    const loopIf = (_session: Session) => {
       counter++;
       return counter < 3; // Exit after 3 iterations
     };
@@ -72,7 +72,7 @@ describe('Loop Template', () => {
     let counter = 0;
 
     // Create the loop condition function
-    const loopIf = (session: Session) => {
+    const loopIf = (_session: Session) => {
       counter++;
       return counter < 3; // Exit after 3 iterations
     };
@@ -106,7 +106,7 @@ describe('Loop Template', () => {
     // Create the inner loop template
     const innerLoopTemplate = new Loop({
       bodyTemplate: new User('Inner iteration'),
-      loopIf: (session: Session) => {
+      loopIf: (_session: Session) => {
         innerCounter++; // 1, 2, ...
         return innerCounter % 2 != 0; // 1, 0, 1, 0... Exit after 2 inner iterations for each outer iteration
       },
@@ -117,7 +117,7 @@ describe('Loop Template', () => {
       bodyTemplate: new Sequence()
         .add(new User('Outer iteration'))
         .add(innerLoopTemplate),
-      loopIf: (session: Session) => {
+      loopIf: (_session: Session) => {
         outerCounter++; // 1, 2, 3...
         return outerCounter < 2; // Exit after 2 outer iterations
       },
@@ -216,7 +216,7 @@ describe('Loop Template', () => {
     // Create the loop template
     const loopTemplate = new Loop({
       bodyTemplate: new User(listSource),
-      loopIf: (session: Session) => {
+      loopIf: (_session: Session) => {
         counter++;
         return counter < 3; // Exit after 3 iterations
       },
@@ -236,7 +236,7 @@ describe('Loop Template', () => {
   it('should update and use session metadata in the exit condition', async () => {
     // Create the loop template with a metadata-based exit condition
     const loopTemplate = new Loop({
-      bodyTemplate: Agent.create()
+      bodyTemplate: Agent.create('loop-template')
         .add(new User('Adding to counter'))
         .transform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
@@ -272,7 +272,7 @@ describe('Loop Template', () => {
 
     // Create the loop template with a conditional branch
     const loopTemplate = new Loop({
-      bodyTemplate: Agent.create()
+      bodyTemplate: Agent.create('loop-template')
         .add(new User('User input'))
         .conditional(
           // Condition based on iteration count

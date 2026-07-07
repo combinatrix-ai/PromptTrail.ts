@@ -1,0 +1,30 @@
+{
+  "name": "@prompttrail/customer-support-chat",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --watch=false"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*",
+    "@prompttrail/store-sqlite": "workspace:*",
+    "better-sqlite3": "^12.10.0",
+    "next": "15.3.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.17.32",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.1"
+  }
+}

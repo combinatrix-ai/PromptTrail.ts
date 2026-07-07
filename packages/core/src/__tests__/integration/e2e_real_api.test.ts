@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../message';
 import { Session } from '../../session';
 import { ListSource, LiteralSource, Source } from '../../source';
-import { Attrs, Vars } from '../../session';
+import { Vars } from '../../session';
 import {
   Agent,
   Assistant,
@@ -40,12 +40,12 @@ import { createWeatherTool, expect_types } from '../utils';
 
 const openAILLMSource = Source.llm()
   .openai()
-  .model('gpt-4o-mini')
+  .model('gpt-5.4-nano')
   .temperature(0.7);
 
 const anthropicLLMSource = Source.llm()
   .anthropic()
-  .model('claude-3-5-haiku-latest')
+  .model('claude-haiku-4-5')
   .temperature(0.7);
 
 describe('End-to-End Workflows with Real APIs', () => {
@@ -112,7 +112,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       username: 'Alice',
     };
     const date = new Date();
-    const template = new Sequence<MessageMetadata, UserContext>()
+    const template = new Sequence<UserContext>()
       .add(new System('You are a helpful assistant.'))
       .add(new Assistant('Hello, ${username}!'))
       .add(new User('My name is not Alice, it is Bob.'))
@@ -163,7 +163,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     expect(messages[2].content).toBeDefined();
     expect(messages[2].content).toContain('123456789');
 
-    const agent = Agent.create()
+    const agent = Agent.create('e2e-add-templates')
       .add(new System('This is automated API testing. Repeat what user says.'))
       .add(new User('123456789'))
       .add(new Assistant(openAILLMSource));
@@ -264,7 +264,7 @@ describe('End-to-End Workflows with Real APIs', () => {
       .add(
         new Sequence()
           .add(new User('123456789'))
-          .loopIf((session: Session<any, any>) => {
+          .loopIf((session: Session<any>) => {
             return session.messages.length < 3;
           }),
       )
@@ -283,7 +283,7 @@ describe('End-to-End Workflows with Real APIs', () => {
     // Increase the timeout for this test
     vi.setConfig({ testTimeout: 15000 });
     // Each have system, user, assistant, conditional
-    const sequence = Agent.create()
+    const sequence = Agent.create('e2e-builder-methods')
       .system('This is automated API testing. Repeat what user says.')
       .user('123456789')
       .assistant(openAILLMSource)
@@ -306,7 +306,9 @@ describe('End-to-End Workflows with Real APIs', () => {
     const userContentSource = new ListSource(['123456789', '987654321']);
 
     // Define the body of the loop as a Agent
-    const loopBodySequence = Agent.create<Vars<{ count: number }>>()
+    const loopBodySequence = Agent.create<Vars<{ count: number }>>(
+      'e2e-loop-body',
+    )
       .system('This is automated API testing. Repeat what user says.')
       .user(userContentSource)
       .assistant(openAILLMSource)
@@ -406,10 +408,15 @@ describe('End-to-End Workflows with Real APIs', () => {
   it('should execute a conversation with weather tool', async () => {
     const weatherTool = createWeatherTool();
 
-    const openAIgenerateOptionsWith = openAILLMSource.addTool(
-      'weather',
-      weatherTool,
-    );
+    // The ai-sdk adapter surfaces toolCalls/tool_result messages on the
+    // session, which is the contract this test pins. The native Responses
+    // adapter runs its provider-internal tool loop and returns only the
+    // final assistant message.
+    const openAIgenerateOptionsWith = Source.llm()
+      .openai({ adapter: 'ai-sdk' })
+      .model('gpt-5.4-nano')
+      .temperature(0.7)
+      .addTool('weather', weatherTool);
 
     const template = new Sequence()
       .add(new System('You are a helpful assistant.'))

@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Session } from '../../../session';
-import { Agent, Assistant, User } from '../../../templates';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { Agent } from '../../../templates';
 
 describe('Agent', () => {
   beforeEach(() => {
@@ -10,7 +9,7 @@ describe('Agent', () => {
   // Original functionality tests
 
   it('should support short methods', async () => {
-    const sequence = Agent.create()
+    const sequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .user('Hello, who are you?')
       .assistant('I am an AI assistant.');
@@ -28,7 +27,7 @@ describe('Agent', () => {
   });
 
   it('should support conditional method', async () => {
-    const sequence = Agent.create()
+    const sequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .user('Hello')
       .conditional(
@@ -47,7 +46,7 @@ describe('Agent', () => {
     expect(messages[2].type).toBe('assistant');
     expect(messages[2].content).toBe('Hello there!');
 
-    const sequence2 = Agent.create()
+    const sequence2 = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .user('Goodbye')
       .conditional(
@@ -64,13 +63,13 @@ describe('Agent', () => {
   it('should support loop method with function builder', async () => {
     let counter = 0;
 
-    const sequence = Agent.create()
+    const sequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .user('Start the loop')
       .loop(
         // Use function-based loop
         (agent) => agent.user('This is iteration message'),
-        (session) => {
+        (_session) => {
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
           // The check runs *before* the body, so check if counter will exceed 3 *after* incrementing
@@ -97,12 +96,12 @@ describe('Agent', () => {
   it('should support loop method with function builder (alternative)', async () => {
     let counter = 0;
 
-    const sequence = Agent.create()
+    const sequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .user('Start the loop')
       .loop(
         (agent) => agent.user('This is iteration message'),
-        (session) => {
+        (_session) => {
           // Use function-based loop
           counter++;
           // Exit condition should be true *after* the 3rd iteration completes
@@ -126,11 +125,11 @@ describe('Agent', () => {
   });
 
   it('should support nested linear sequences', async () => {
-    const nestedSequence = Agent.create()
+    const nestedSequence = Agent.create('agent-template')
       .user('Nested message 1')
       .user('Nested message 2');
 
-    const mainSequence = Agent.create()
+    const mainSequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .add(nestedSequence)
       .user('Final message');
@@ -155,7 +154,7 @@ describe('Agent', () => {
     let innerCounter = 0;
 
     // Define the main sequence containing nested loops
-    const mainSequence = Agent.create()
+    const mainSequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
       .loop(
         (agent) =>
@@ -163,7 +162,7 @@ describe('Agent', () => {
             .user('Outer loop start')
             .loop(
               (innerAgent) => innerAgent.user('Inner loop message'),
-              (session) => {
+              (_session) => {
                 // Inner loop definition
                 innerCounter++;
                 // Exit inner loop when counter *exceeds* 2 (after 2 iterations)
@@ -173,7 +172,7 @@ describe('Agent', () => {
               },
             )
             .user('Outer loop end'),
-        (session) => {
+        (_session) => {
           // Outer loop definition
           outerCounter++;
           // Reset inner counter *before* the outer loop body executes for this iteration

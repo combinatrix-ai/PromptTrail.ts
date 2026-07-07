@@ -1,0 +1,41 @@
+{
+  "name": "@prompttrail/store-redis",
+  "version": "0.0.1",
+  "description": "Redis durable run store for PromptTrail",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
+    "test": "vitest --run --watch=false",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-redis/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/store-redis/src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist coverage",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*",
+    "@prompttrail/store-common": "workspace:*",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@prompttrail/store-conformance": "workspace:*",
+    "ioredis-mock": "^8.9.0",
+    "@types/node": "^20.17.19",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}

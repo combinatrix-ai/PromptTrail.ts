@@ -7,8 +7,19 @@ import unusedImports from 'eslint-plugin-unused-imports';
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      '**/coverage/**',
+      '**/.turbo/**',
+      '**/.vercel/**',
+      'references/**',
+    ],
+  },
+  {
     files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'],
-    languageOptions: { globals: globals.browser },
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
     plugins: {
       'unused-imports': unusedImports,
     },
@@ -34,6 +45,16 @@ export default [
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    rules: {
+      '@typescript-eslint/no-empty-object-type': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-namespace': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'react/prop-types': 'off',
+      'react/react-in-jsx-scope': 'off',
     },
   },
 ];

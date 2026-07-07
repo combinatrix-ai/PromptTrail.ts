@@ -1,7 +1,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['coding_agent.ts'],
+  entry: [
+    'autonomous_researcher.ts',
+    'chat.ts',
+    'coding_agent.ts',
+    'gradual_typing_demo.ts',
+  ],
   format: ['esm'],
   dts: false,
   sourcemap: true,

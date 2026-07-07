@@ -2,21 +2,51 @@
   "name": "@prompttrail/core",
   "version": "0.0.1",
   "description": "Core package for PromptTrail",
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./templates": {
+      "types": "./dist/templates/index.d.ts",
+      "import": "./dist/templates/index.mjs"
+    },
+    "./graph_executor": {
+      "types": "./dist/graph_executor.d.ts",
+      "import": "./dist/graph_executor.mjs"
+    },
+    "./codex_app_server": {
+      "types": "./dist/codex_app_server.d.ts",
+      "import": "./dist/codex_app_server.mjs"
+    },
+    "./claude_agent": {
+      "types": "./dist/claude_agent.d.ts",
+      "import": "./dist/claude_agent.mjs"
+    },
+    "./runtime_server": {
+      "types": "./dist/runtime_server.d.ts",
+      "import": "./dist/runtime_server.mjs"
+    },
+    "./runtime_dispatch": {
+      "types": "./dist/runtime_dispatch.d.ts",
+      "import": "./dist/runtime_dispatch.mjs"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup && tsc --emitDeclarationOnly -p tsconfig.json",
+    "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
     "test": "vitest --run --watch=false",
     "test:cline": "tmpfile=\"/tmp/vitest_output_$(date +%s%N).log\" && pnpm exec vitest --run --watch=false > \"$tmpfile\" 2>&1 && cat \"$tmpfile\" && rm \"$tmpfile\"",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/core/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/core/src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.type-tests.json",
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
@@ -36,6 +66,7 @@
     "@ai-sdk/google": "^1.2.16",
     "@ai-sdk/openai": "^1.2.6",
     "@anthropic-ai/sdk": "^0.36.3",
+    "@google/genai": "^2.8.0",
     "@modelcontextprotocol/sdk": "^1.6.0",
     "ai": "^4.1.63",
     "openai": "^4.85.4",

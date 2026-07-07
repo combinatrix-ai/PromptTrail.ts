@@ -1,569 +1,535 @@
-# 🚀 PromptTrail
+# PromptTrail.ts
 
-Type-safe, composable framework for building LLM conversations in TypeScript.
+PromptTrail.ts is a TypeScript framework for building LLM conversations and
+event-driven agents that survive restarts. You describe a conversation as a
+typed, composable graph; PromptTrail executes it, checkpoints progress at node
+boundaries, and resumes interrupted runs — with an honest durability contract
+(at-least-once plus remote deduplication, never a false promise of
+exactly-once).
 
-Built on [Vercel's ai-sdk](https://github.com/vercel/ai), PromptTrail provides a fluent API for creating structured conversations with immutable state management.
+What that buys you:
 
-## 🔧 Installation
+- **One authoring model.** `Agent.create('name')` builds everything from a
+  three-line prompt chain to a multi-agent event-driven app. Node ids are
+  optional; state is an immutable, typed `Session`.
+- **Durability you can reason about.** `checkpoint:` runs persist session
+  deltas, suspend mid-flow (`awaitInput`), and resume forward. Tools declare
+  whether they are safe to re-run or carry an idempotency key — and the
+  registration gate refuses checkpoint agents that stay silent about it.
+- **An app runtime for real surfaces.** `PromptTrail.app(...)` routes platform
+  events (Discord, cron, your own triggers) to agents through a declarative
+  binding DSL, with delivery, presence, and conversation resume handled by the
+  runtime.
+- **Vendor agents as graph nodes.** `.codex(...)` and `.claude(...)` embed
+  Codex App Server and Claude Agent SDK turns, including provider-session
+  reconnect on resume.
+
+Sections: [Installation](#installation) · [Quick Start](#quick-start) ·
+[Sessions](#sessions) · [Agent Authoring](#agent-authoring) ·
+[Tools and Effects](#tools-and-effects) ·
+[Checkpoint Durability](#checkpoint-durability) ·
+[Vendor Tool Loops](#vendor-tool-loops) · [Transforms](#transforms) ·
+[Goals and Tool Loops](#goals-and-tool-loops) ·
+[Structured Output](#structured-output) · [Subroutines](#subroutines) ·
+[Provider Turns](#provider-turns) · [App Runtime](#app-runtime) ·
+[Run Per Event](#run-per-event) ·
+[Binding and Routing DSL](#binding-and-routing-dsl) ·
+[Version Gate](#version-gate) · [Examples](#examples) ·
+[Development](#development) · [Migration](#migration)
+
+## Installation
 
 ```bash
-# Using pnpm (recommended)
-pnpm add github:combinatrix-ai/PromptTrail.ts
-
-# Using npm
-npm install github:combinatrix-ai/PromptTrail.ts
+pnpm add @prompttrail/core      # agents, sessions, sources, tools, checkpoint runtime
+pnpm add @prompttrail/discord   # Discord trigger, delivery, presence, test adapters
+pnpm add @prompttrail/cron      # cron trigger and test helpers
 ```
 
-## 🚀 Quick Start
+Platform packages implement core's generic `Trigger<TEvent>` contract — adding
+a new platform does not require editing core.
 
-### 30-Second Example
+## Quick Start
 
-```typescript
-import { Agent } from '@prompttrail/core';
+```ts
+import { Agent, Source } from '@prompttrail/core';
 
-const chat = Agent.create()
-  .system("You're a helpful assistant.")
-  .user("What's TypeScript?")
-  .assistant(); // Uses OpenAI GPT-4o-mini by default
+const assistant = Agent.create('support')
+  .system('You are a concise support assistant.')
+  .user('How do I reset my password?')
+  .assistant(Source.llm().openai({ modelName: 'gpt-5.4-nano' }));
 
-const session = await chat.execute();
+const session = await assistant.execute();
 console.log(session.getLastMessage()?.content);
 ```
 
-### Interactive Chat Loop
+To feed runtime input instead of hardcoding the user message, consume it with
+an `inbox` node:
 
-```typescript
-import { Agent } from '@prompttrail/core';
+```ts
+const assistant = Agent.create('support')
+  .system('Answer the latest inbound user message.')
+  .inbox()
+  .assistant(Source.llm());
 
-const agent = Agent.create()
-  .system('You are a helpful assistant.')
-  .loop(
-    (l) =>
-      l
-        .user() // CLI input from user
-        .assistant(), // LLM response
-  );
-
-await agent.execute(); // Runs forever until user exits
-```
-
-### Customizing the LLM
-
-```typescript
-import { Agent, Source } from '@prompttrail/core';
-
-const agent = Agent.create()
-  .system('You are a creative writer.')
-  .user('Write a haiku about TypeScript.')
-  .assistant(
-    Source.llm()
-      .openai()
-      .model('gpt-4')
-      .temperature(0.9)
-      .apiKey(process.env.OPENAI_API_KEY),
-  );
-
-await agent.execute();
-```
-
-## ✨ Key Features
-
-- **🔒 TypeScript-First** - Full type safety with inference
-- **🧩 Composable** - Mix and match conversation patterns
-- **🔄 Immutable** - Predictable state management
-- **🔌 Multi-Provider** - OpenAI, Anthropic, Google support
-- **🛠️ Tool Integration** - Function calling via ai-sdk
-- **🌊 Streaming** - Real-time response streaming
-- **🛡️ Validation** - Input/output validation with retries
-- **🧪 Structured Output** - Force LLMs to return typed data
-
-## 📘 Core Concepts
-
-### Session & Variables
-
-Sessions store conversation state with type-safe variables:
-
-```typescript
-import { Session } from '@prompttrail/core';
-
-// Variables for interpolation and state
-const session = Session.create({
-  vars: { userName: 'Alice', language: 'TypeScript' },
+const session = await assistant.execute({
+  input: 'What is the status of my order?',
 });
-
-// Use variables in templates with ${variable} syntax
-const agent = Agent.create()
-  .system('Help ${userName} learn ${language}')
-  .user('Explain generics')
-  .assistant();
-
-await agent.execute(session);
 ```
 
-### Sources - Where Content Comes From
+## Sessions
 
-```typescript
-import { Source } from '@prompttrail/core';
+A `Session` is the immutable conversation value: messages plus typed `vars`.
+Every change returns a new session, so handlers can never corrupt shared
+state:
 
-// Different content sources
-.user(Source.literal('Fixed text'))      // Static content
-.user(Source.cli())                      // User input from terminal
-.user(Source.random(['A', 'B', 'C']))    // Random selection
-.user(Source.callback(session => '...')) // Custom logic
+```ts
+import { Session, type Vars } from '@prompttrail/core';
 
-.assistant(Source.llm())                 // LLM generation (default)
-.assistant(Source.cli())                 // Manual assistant input
-```
-
-### Control Flow
-
-PromptTrail offers two ways to build agents with sophisticated control flow:
-
-#### 1. Agent Builder (Template-Level Control)
-
-```typescript
-import { Agent } from '@prompttrail/core';
-
-const agent = Agent.create()
-  .system('You are helpful.')
-
-  // Conditional logic
-  .conditional(
-    (session) => session.getVar('isVip'),
-    (agent) => agent.assistant('Welcome VIP!'),
-    (agent) => agent.assistant('Welcome!'),
-  )
-
-  // Loops with conditions
-  .loop(
-    (agent) => agent.user().assistant(),
-    (session) => session.getVar('continue', true),
-  )
-
-  // Subroutines with isolation
-  .subroutine(
-    (agent) =>
-      agent
-        .user('Process this data')
-        .assistant()
-        .transform((session) => session.withVar('processed', true)),
-    {
-      isolatedContext: true, // Fresh context
-      retainMessages: false, // Don't keep internal messages
-      squashWith: (parent, sub) =>
-        parent.withVar('result', sub.getVar('processed')),
-    },
-  )
-
-  // Parallel execution
-  .add(
-    new Parallel()
-      .addSource(Source.llm().openai(), 2) // Run OpenAI twice
-      .addSource(Source.llm().anthropic(), 1) // Run Anthropic once
-      .setStrategy('best'), // Keep best result
-  );
-```
-
-#### 2. Scenario API (Goal-Oriented Flow)
-
-```typescript
-import { Scenario } from '@prompttrail/core';
-
-const scenario = Scenario.system(
-  'You are a research assistant with access to tools.',
-)
-  .step("Get the user's research question", {
-    allow_interaction: true, // Uses built-in ask_user tool
-  })
-  .step('Research the topic thoroughly', {
-    max_attempts: 6,
-    is_satisfied: (session, goal) => {
-      // Custom validation for goal completion
-      const toolCalls = getToolCallsFromSession(session);
-      return toolCalls.length >= 3;
-    },
-  })
-  .step('Provide a comprehensive answer');
-```
-
-**Key Differences:**
-
-- **Agent**: Low-level template composition, full control
-- **Scenario**: High-level goal tracking with built-in tools (`ask_user`, `check_goal`)
-
-## 🛠️ Advanced Features
-
-### Session Typing
-
-PromptTrail provides **gradual typing** - start simple and add types as your app grows:
-
-```typescript
-// 1. Start simple - types inferred automatically
-const session = Session.create({
-  vars: { userName: 'Alice', score: 100 },
+const session = Session.create<Vars<{ userId: string }>>({
+  vars: { userId: 'u-1' },
 });
-
-// 2. Convenience method with type inference
-const sessionWithVars = Session.withVars({
-  userId: 'user123',
-  role: 'admin',
-  preferences: { theme: 'dark', notifications: true },
-});
-
-// 3. Add explicit types when you need them
-type UserContext = {
-  userId: string;
-  role: 'admin' | 'user' | 'guest';
-  preferences: {
-    theme: 'light' | 'dark';
-    notifications: boolean;
-  };
-};
-
-type MessageMeta = {
-  timestamp: number;
-  priority: 'low' | 'medium' | 'high';
-  source: 'user' | 'system';
-};
-
-// 4. Type-only specification (no runtime values)
-const typedSession = Session.withVarsType<UserContext>()
-  .withAttrsType<MessageMeta>()
-  .create({
-    vars: {
-      userId: 'user123',
-      role: 'admin',
-      preferences: { theme: 'dark', notifications: true },
-    },
-  });
-
-// 5. Mix and match approaches
-const session1 = Session.withVarsType<UserContext>().debug();
-const session2 = Session.withAttrsType<MessageMeta>().empty();
-const session3 = Session.withVars({ count: 42 }).withAttrsType<MessageMeta>();
-
-// 6. Type-safe access with full IntelliSense
-const userId = typedSession.getVar('userId'); // string
-const role = typedSession.getVar('role'); // 'admin' | 'user' | 'guest'
-const theme = typedSession.getVar('preferences').theme; // 'light' | 'dark'
-
-// 7. Template with typed interpolation
-const typedAgent = Agent.create<UserContext>()
-  .system('Welcome ${role} user ${userId}')
-  .user('My theme is ${preferences.theme}')
-  .assistant();
+const next = session.withVar('plan', 'pro'); // new session; original untouched
+next.getVar('userId'); // typed: string
 ```
 
-### Tool Integration
+Type the vars on the agent when handlers read them —
+`Agent.create<Vars<{ userId: string }>>('name')` — and `session.getVar(...)`
+stays checked end to end. Sessions also carry a monotonic `version` used
+internally as the checkpoint delta pointer and the default effect-memo
+dependency.
 
-```typescript
-import { tool } from 'ai';
+## Agent Authoring
+
+Node ids are optional. A single string passed to `.system(...)`, `.user(...)`,
+`.assistant(...)`, or `.goal(...)` is content, not an id; a single function or
+`Source` is the content provider:
+
+```ts
+const triage = Agent.create('triage')
+  .system('Classify the request and ask one clarifying question if needed.')
+  .inbox()
+  .assistant(Source.llm());
+```
+
+Use the two-argument form when a stable authored id matters:
+
+```ts
+const triage = Agent.create('triage')
+  .system('policy', 'Use the current support policy.')
+  .inbox('customer-message')
+  .assistant('draft', Source.llm());
+```
+
+Derived ids follow structural position (`assistant-1`, `assistant-1-loop`,
+...). Inserting, removing, or reordering nodes shifts them — which
+intentionally invalidates checkpoint resume through the version gate. Write
+explicit ids for long-lived checkpoint runs, loops, and suspend points; the
+runtime warns at registration when a resume-sensitive node (such as
+`awaitInput`) has a derived id.
+
+The full vocabulary:
+
+- Leaf nodes: `system`, `user`, `assistant`, `transform`, `inbox`,
+  `awaitInput`, `tools`, `structured`
+- Containers: `loop`, `conditional`, `subroutine`, `parallel`
+- Intent and provider turns: `goal`, `codex`, `claude`
+
+If you knew an earlier API (`quick`, `turn`, `repeat`, `sequence`, `patch`,
+`messages`, ...), see [MIGRATION.md](MIGRATION.md).
+
+## Tools and Effects
+
+Tools are model-callable effect boundaries. A tool declares one of two things
+about its effect:
+
+```ts
+import { Tool } from '@prompttrail/core';
 import { z } from 'zod';
 
-const weatherTool = tool({
-  description: 'Get weather info',
-  parameters: z.object({
-    location: z.string(),
-  }),
-  execute: async ({ location }) => {
-    return { temp: 72, condition: 'sunny' };
+// Safe to re-run: reads, pure computation, idempotent calls.
+const searchDocs = Tool.create({
+  name: 'searchDocs',
+  description: 'Search documentation.',
+  inputSchema: z.object({ query: z.string() }),
+  effect: { repeatable: true },
+  execute: async ({ query }) => searchDocumentation(query),
+});
+
+// Must be deduplicated: the key may depend on the input.
+const chargeCard = Tool.create({
+  name: 'chargeCard',
+  description: 'Charge a card for an order.',
+  inputSchema: z.object({ orderId: z.string(), cents: z.number() }),
+  effect: {
+    idempotencyKey: (input) =>
+      `charge:${(input as { orderId: string }).orderId}`,
   },
+  execute: async ({ orderId, cents }, ctx) =>
+    chargeRemoteSystem({ orderId, cents, idempotencyKey: ctx.idempotencyKey }),
 });
-
-const agent = Agent.create()
-  .system('You can check weather.')
-  .user('Weather in SF?')
-  .assistant(Source.llm().openai().addTool('weather', weatherTool));
 ```
 
-### Structured Output
+The axis is _must-dedup_ versus _repeatable_, not read versus write — an
+idempotent PUT is repeatable; a counter increment must be deduplicated. For
+keyed tools the resolved key becomes the local memo identity and arrives in
+the tool body as `ctx.idempotencyKey`; forward it to the remote system, which
+is where effective-once is actually enforced.
 
-```typescript
-import { Structured } from '@prompttrail/core';
-import { z } from 'zod';
+Under ephemeral execution declarations are optional. Under checkpoint
+execution they are required: registering a checkpoint agent whose tool
+declares neither form is a hard error at registration time, not a surprise at
+resume time.
 
-const userSchema = z.object({
-  name: z.string(),
-  age: z.number(),
-  interests: z.array(z.string()),
+## Checkpoint Durability
+
+A checkpoint run persists progress at node boundaries and can suspend mid-flow
+and resume later — across process restarts, given a persistent store:
+
+```ts
+import { Agent, Source, memoryStore } from '@prompttrail/core';
+
+const store = memoryStore();
+
+const support = Agent.create('support')
+  .system('Collect the order id, then resolve the issue.')
+  .inbox('issue')
+  .assistant('clarify', Source.llm())
+  .awaitInput('order-id')
+  .assistant('resolve', Source.llm());
+
+const first = await support.execute({
+  runId: 'ticket-42',
+  input: 'My order never arrived.',
+  checkpoint: store,
 });
+// first.status === 'suspended', first.awaiting === 'support/order-id'
 
-const agent = Agent.create()
-  .system('Extract user info from text.')
-  .user("Hi, I'm Alice, 25, love coding and music.")
-  .add(
-    new Structured({
-      schema: userSchema,
-      source: Source.llm().openai(),
-    }),
-  );
-
-const session = await agent.execute();
-const userData = session.getLastMessage()?.structuredContent;
-// userData is typed as { name: string, age: number, interests: string[] }
+const done = await support.execute({
+  runId: 'ticket-42',
+  input: 'Order #1234',
+  checkpoint: store,
+});
+// done.status === 'done'; done.session has the full conversation
 ```
 
-### Validation
+With a `checkpoint` option, `execute` returns the run envelope
+`{ status, runId, session, awaiting? }`; without one it returns the `Session`
+directly. `checkpoint: true` uses the ambient app store (and fails fast with
+guidance when there is none). Stores persist session _deltas_ — appended
+messages and var diffs — not full-session rewrites.
 
-PromptTrail provides comprehensive validation for all content sources with automatic retry:
+The guarantee is honest and intentionally limited:
 
-```typescript
-import { Validation } from '@prompttrail/core';
+- Checkpoint resume gives **at-least-once** effect execution: completed nodes
+  are skipped on resume, incomplete nodes may re-run.
+- Keyed tools are memoized locally (`once`) after the effect commits, but the
+  crash window between a remote commit and the local persist cannot be closed
+  locally. **Effective-once requires the remote system to honor the
+  idempotency key.**
+- The runtime orders effect → memo → persist and awaits persistence at effect
+  boundaries, so a committed write is never silently dropped — but the local
+  store and a remote service are never atomically coordinated.
+- PromptTrail does not provide exactly-once delivery or exactly-once external
+  effects. Nothing does without the remote system's cooperation.
 
-// Simple validation with Source.llm()
-const simpleValidation = Source.llm()
-  .openai()
-  .validate(Validation.length({ max: 100 }))
-  .withMaxAttempts(3)
-  .withRaiseError(true);
+## Vendor Tool Loops
 
-// Complex multi-criteria validation
-const complexValidation = Source.llm()
-  .openai()
-  .validate(
-    Validation.all([
-      Validation.length({ min: 10, max: 500 }),
-      Validation.keyword(['explanation', 'example'], { mode: 'include' }),
-      Validation.regex(/^\w+.*\w+$/), // Must start and end with word characters
-    ]),
-  )
-  .withMaxAttempts(5);
+Some surfaces let the _vendor_ own the tool loop: `.codex(...)`,
+`.claude(...)`, and the native provider adapters (OpenAI Responses, Anthropic
+Messages, Gemini) when the source carries tools. Inside a vendor loop, tool
+calls execute within the provider turn — they do not appear on the session as
+`toolCalls`/`tool_result` messages, and they sit outside the local `once`
+memo. An interrupted turn re-runs wholesale on resume: best-effort and
+self-healing, not a durable local boundary. `ctx.idempotencyKey` still reaches
+tool bodies, so remote deduplication keeps working.
 
-// Use in templates
-const agent = Agent.create()
-  .system('Explain concepts clearly with examples.')
-  .user('What is TypeScript?')
-  .assistant(complexValidation);
+Under checkpoint execution this trade-off must be explicit. A native-adapter
+source with tools fails registration unless you either acknowledge it:
 
-// CLI validation with retries
-const userInput = Source.cli('Enter your name (2-50 chars):')
-  .validate(
-    Validation.all([
-      Validation.length({ min: 2, max: 50 }),
-      Validation.regex(/^[a-zA-Z\s]+$/), // Only letters and spaces
-    ]),
-  )
-  .withMaxAttempts(3)
-  .withRaiseError(false); // Don't throw, just warn
+```ts
+Source.llm().openai().toolLoop('vendor').addTool('searchDocs', searchDocs);
+```
 
-// Schema validation for structured data
-const structuredResponse = Source.schema(
-  z.object({
-    answer: z.string(),
-    confidence: z.number().min(0).max(1),
-    reasoning: z.array(z.string()),
-  }),
-  {
-    mode: 'structured_output',
-    maxAttempts: 3,
+or switch to the ai-sdk adapter, which surfaces tool calls and results on the
+session where the graph (and the checkpoint machinery) can see them:
+
+```ts
+Source.llm().openai({ adapter: 'ai-sdk' }).addTool('searchDocs', searchDocs);
+```
+
+## Transforms
+
+`transform` is the single programmatic node. The pure form is synchronous by
+type — IO cannot be awaited into an undeclared step, and a handler returning a
+Promise throws:
+
+```ts
+const agent = Agent.create('with-vars')
+  .transform((session) => session.withVar('attempt', 1))
+  .assistant('Ready.');
+```
+
+Declaring an effect unlocks the async form, with `ctx.once` and
+`ctx.idempotencyKey` available — this is the graph-invoked effect step (tools
+remain model-invoked):
+
+```ts
+import { type Vars } from '@prompttrail/core';
+
+const agent = Agent.create<Vars<{ userId: string }>>('fetch-profile').transform(
+  { effect: { repeatable: true } },
+  async (session) => {
+    const profile = await fetchProfile(session.getVar('userId'));
+    return session.withVar('profile', profile);
   },
 );
-
-// Custom validation with context access
-const contextAwareValidation = Source.llm()
-  .validate(
-    Validation.custom((content, session) => {
-      const maxWords = session?.getVar('maxWords', 50);
-      const wordCount = content.split(/\s+/).length;
-
-      if (wordCount <= maxWords) {
-        return { isValid: true };
-      }
-
-      return {
-        isValid: false,
-        instruction: `Response must be ${maxWords} words or less (got ${wordCount})`,
-      };
-    }),
-  )
-  .withMaxAttempts(2);
 ```
 
-**Validation Features:**
+Decision handlers — `conditional` and `loop` conditions, `goal.isSatisfied` —
+are synchronous for the same reason. Fetch in a tool or an effect transform,
+store the result in the session, then branch.
 
-- **Automatic retry** - Failed validations trigger new attempts
-- **Rich feedback** - Validation instructions help LLMs improve
-- **All sources** - Works with LLM, CLI, callback, and literal sources
-- **Composable** - Combine multiple validators with AND/OR logic
-- **Context-aware** - Access session state in custom validators
+## Goals and Tool Loops
 
-### Advanced Control Flow
+`goal(...)` is the intent-level API: state what must be achieved and let the
+compiled graph loop tools and model turns until satisfied.
 
-Beyond basic patterns, PromptTrail offers sophisticated control structures:
-
-```typescript
-// Nested subroutines for memory management
-const agent = Agent.create()
-  .system('Complex data processor')
-  .subroutine(
-    (agent) =>
-      agent
-        .user('Stage 1: Parse data')
-        .assistant()
-        .subroutine(
-          (innerAgent) =>
-            innerAgent.user('Sub-process: Validate format').assistant(),
-          {
-            isolatedContext: true, // Clean slate for validation
-            retainMessages: false, // Don't pollute main conversation
-          },
-        )
-        .transform((session) => session.withVar('stage1Complete', true)),
-    {
-      squashWith: (parent, sub) =>
-        parent.withVars({
-          processed: sub.getVar('stage1Complete'),
-          result: sub.getLastMessage()?.content,
-        }),
-    },
-  );
-
-// Multi-LLM parallel processing
-const researchAgent = Agent.create()
-  .system('Research assistant')
-  .user('Compare machine learning frameworks')
-  .add(
-    new Parallel()
-      .addSource(Source.llm().openai().temperature(0.2), 1) // Conservative
-      .addSource(Source.llm().anthropic().temperature(0.8), 1) // Creative
-      .addSource(Source.llm().google().temperature(0.5), 1) // Balanced
-      .setAggregationFunction(
-        (session) => session.getLastMessage()?.content?.length || 0,
-      )
-      .setStrategy('best'), // Keep longest response
-  );
-
-// Goal-oriented research with custom satisfaction
-const smartScenario = Scenario.system('You are an expert researcher.')
-  .step('Understand research requirements', { allow_interaction: true })
-  .step('Gather comprehensive information', {
-    max_attempts: 8,
-    is_satisfied: (session, goal) => {
-      const messages = session.getMessagesByType('assistant');
-      const hasToolCalls = messages.some((m) => m.toolCalls?.length > 0);
-      const hasDetailedAnalysis = messages.some(
-        (m) => m.content?.length > 500 && m.content.includes('analysis'),
-      );
-      return hasToolCalls && hasDetailedAnalysis;
-    },
+```ts
+const researcher = Agent.create('researcher')
+  .system('Research before answering.')
+  .tool('searchDocs', searchDocs)
+  .goal('Gather evidence for the inbound question.', {
+    tools: ['searchDocs'],
+    maxAttempts: 4,
+    isSatisfied: ({ session }) =>
+      session.getMessagesByType('tool_result').length >= 2,
   })
-  .step('Synthesize findings and provide recommendations');
-
-// Dynamic flow with error handling
-const robustAgent = Agent.create()
-  .system('Fault-tolerant processor')
-  .transform((session) => session.withVar('retryCount', 0))
-  .loop(
-    (agent) =>
-      agent.conditional(
-        (session) => session.getVar('retryCount') < 3,
-        (agent) =>
-          agent
-            .user('Attempt operation')
-            .assistant()
-            .transform((session) => {
-              const success = session
-                .getLastMessage()
-                ?.content?.includes('success');
-              return session.withVars({
-                success,
-                retryCount: session.getVar('retryCount') + 1,
-              });
-            }),
-        (agent) =>
-          agent.transform((session) => session.withVar('failed', true)),
-      ),
-    (session) => !session.getVar('success') && !session.getVar('failed'),
-  );
+  .goal('Write the final answer.');
 ```
 
-**Advanced Patterns:**
+A top-level `assistant(...)` on an agent with registered tools gets the same
+treatment automatically: it compiles to `assistant` plus a tool loop with
+deterministic node ids. PromptTrail owns the loop — there is no hidden
+provider-internal looping on this path. When you need direct control, write
+`loop(...)` and `tools(...)` yourself; the sugar steps aside if a manual loop
+follows.
 
-- **Nested isolation** - Subroutines within subroutines for memory management
-- **Multi-provider consensus** - Run multiple LLMs and aggregate results
-- **Custom goal validation** - Define complex satisfaction criteria for scenarios
-- **Error recovery** - Retry logic with fallback strategies
+## Structured Output
 
-### Streaming Responses
+`structured` nodes validate the model's answer against a schema and expose the
+parsed value. Inside a graph, prefer the fold form: the parsed object is passed
+directly from the structured node to your callback, and the assistant message
+still records the original `structuredContent` for transcript/UI use.
 
-```typescript
-import { generateTextStream } from '@prompttrail/core';
+```ts
+import { Agent, type Vars } from '@prompttrail/core';
+import { z } from 'zod';
 
-const session = Session.create().addMessage({
-  type: 'user',
-  content: 'Explain async/await',
+const triageSchema = z.object({ category: z.string(), urgent: z.boolean() });
+type TriageVars = Vars<{ triage?: z.infer<typeof triageSchema> }>;
+
+const classifier = Agent.create<TriageVars>('classifier')
+  .inbox()
+  .structured('triage', triageSchema, (triage, session) =>
+    session.withVar('triage', triage),
+  );
+
+const session = await classifier.execute({
+  input: 'My payment failed twice!',
 });
 
-for await (const chunk of generateTextStream(session, Source.llm().openai())) {
-  process.stdout.write(chunk.content);
-}
+const triage = session.getVar('triage');
+// triage: { category: string; urgent: boolean } | undefined
+if (triage?.urgent) escalate(triage.category);
 ```
 
-## 🔧 Provider Configuration
+Use `session.getStructured(schema)` when you are away from the data-flow, such
+as at an API boundary reading a revived session. It scans backward for the
+latest structured payload and re-validates it with the schema:
 
-### OpenAI
-
-```typescript
-const openaiConfig = Source.llm()
-  .openai()
-  .model('gpt-4')
-  .temperature(0.7)
-  .maxTokens(1000)
-  .apiKey(process.env.OPENAI_API_KEY);
+```ts
+const latestTriage = session.getStructured(triageSchema);
+// latestTriage: { category: string; urgent: boolean } | undefined
 ```
 
-### Anthropic
+## Subroutines
 
-```typescript
-const anthropicConfig = Source.llm()
-  .anthropic()
-  .model('claude-3-5-haiku-latest')
-  .temperature(0.5)
-  .apiKey(process.env.ANTHROPIC_API_KEY);
+`subroutine(...)` is an isolation boundary. By default it enters with a fresh
+session and, on exit, appends the subroutine's messages to the parent while
+keeping parent vars unchanged — re-establish system prompts inside, or project
+state explicitly with `init` and `squash`:
+
+```ts
+import { type Vars } from '@prompttrail/core';
+
+const agent = Agent.create<Vars<{ draft: string }>>('review').subroutine(
+  'draft-review',
+  (draft) =>
+    draft
+      .system('Review the draft in isolation.')
+      .user('Please check tone and clarity.')
+      .assistant(Source.llm()),
+  {
+    init: (parent) => parent.withVars({ draft: parent.getVar('draft') }),
+    squash: (parent, sub) =>
+      parent.withVar('review', sub.getLastMessage()?.content ?? ''),
+  },
+);
 ```
 
-### Google
+## Provider Turns
 
-```typescript
-const googleConfig = Source.llm()
-  .google()
-  .model('gemini-pro')
-  .temperature(0.8)
-  .apiKey(process.env.GOOGLE_API_KEY);
+`.codex(...)` runs a Codex App Server turn; `.claude(...)` runs a Claude Agent
+SDK turn. The provider owns its internal loop, so PromptTrail cannot
+checkpoint inside the turn. Instead, under checkpoint execution the provider
+thread/session id is persisted the moment the provider returns it, and resume
+reconnects to the same provider session.
+
+When reconnect is impossible (expired thread, refused resume), the default is
+fail-fast. Restarting the whole turn re-runs any vendor-internal tool side
+effects, so it is opt-in:
+
+```ts
+const agent = Agent.create('coding').codex({
+  transport: { kind: 'websocket', url: 'ws://127.0.0.1:8390' },
+  cwd: process.cwd(),
+  onUnresumable: 'restart',
+  restartNotice:
+    'The previous provider turn was interrupted. Restart and continue.',
+  maxRestarts: 1,
+});
 ```
 
-## 🌐 Browser Support
+## App Runtime
 
-```typescript
-// Enable browser mode (⚠️ Don't expose API keys in production!)
-const browserConfig = Source.llm()
-  .openai()
-  .apiKey('sk-...')
-  .dangerouslyAllowBrowser(true);
+Apps connect triggers to agents. Defaults are constructor-only; per-binding
+needs are expressed on the binding, not by mutating app state:
+
+```ts
+import { Agent, PromptTrail, Source, memoryStore } from '@prompttrail/core';
+import { discord, discordGateway } from '@prompttrail/discord';
+
+const support = Agent.create('support')
+  .system('Answer Discord support questions.')
+  .inbox()
+  .assistant(Source.llm());
+
+const app = PromptTrail.app({
+  name: 'support-bot',
+  store: memoryStore(),
+  defaults: { checkpoint: true },
+  adapters: [discordGateway({ token: process.env.DISCORD_TOKEN })],
+  presence: { kind: 'typing' },
+})
+  .agent(support)
+  .on(discord.messages(), (b) =>
+    b
+      .where(discord.notBot())
+      .to(support)
+      .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+      .input((event) => event.content)
+      .reply(discord.replyToOriginThread()),
+  );
+
+await app.start();
 ```
 
-## 📦 Package Structure
+`app.on(trigger, builder)` wires an event source to an agent;
+`app.gateway(...)` registers custom inbound gateways, `app.delivery(...)`
+delivery drivers, and `app.presence(...)` typing/processing indicators.
 
-- `@prompttrail/core` - Main framework
-- `@prompttrail/react` - React integration (coming soon)
+## Run Per Event
 
-## 💡 Examples
+The standard event-driven shape is one run per inbound event: an agent handles
+one event, reaches the end of its graph, and stops. Continuity lives in the
+app layer — the binding's `.conversation(...)` resolver maps related events to
+the same conversation id, so the next event resumes the checkpointed
+conversation.
 
-Check the [`examples/`](./examples) directory for more:
+Do not model a chat bot as an infinite graph loop that waits forever. Use
+`awaitInput` only for mid-flow suspension, such as a clarifying answer the
+current flow needs before it can finish.
 
-- [`chat.ts`](./examples/chat.ts) - Simple chat interface
-- [`coding_agent.ts`](./examples/coding_agent.ts) - AI coding assistant
-- [`autonomous_researcher.ts`](./examples/autonomous_researcher.ts) - Research agent
-- [`gradual_typing_demo.ts`](./examples/gradual_typing_demo.ts) - TypeScript typing patterns
+## Binding and Routing DSL
 
-## 🤝 Contributing
+A binding is a pure transform from a platform event to a normalized routing
+decision. The fluent chain fills slots in a record — it is not an ordered
+pipeline:
 
-1. Fork the repository
-2. Run tests: `cd packages/core && pnpm test`
-3. Check types: `pnpm -C packages/core typecheck`
-4. Format code: `pnpm format`
-5. Submit a pull request
+```ts
+app.on(discord.messages(), (b) =>
+  b
+    .to('support')
+    .conversation(discord.sessionKey({ groupSessionsPerUser: true }))
+    .input((event) => event.content)
+    .reply(discord.replyToOriginThread())
+    .where(discord.notBot())
+    .context((event) => ({ channel: event.channel })),
+);
+```
 
-## 📄 License
+Slots hold resolvers — `(event) => value` projections evaluated per event.
+Platform factories such as `discord.sessionKey(...)` and `cron.schedule(...)`
+produce those resolvers, so platform knowledge stays in the platform package.
+The chain compiles to a `RuntimeBinding` and into the `RuntimeBundle` IR,
+which is inspectable and testable:
 
-MIT - See [LICENSE](LICENSE) for details.
+```ts
+const bundle = app.bundle();
+console.log(bundle.bindings[0].agent);
+```
+
+Inbound and outbound routing are symmetric: `.conversation(...)` projects the
+event to the conversation id that selects the checkpoint to resume;
+`.reply(...)` projects the same event to a delivery description, executed
+later by the delivery driver and outbox so bindings stay side-effect free. The
+mental model is an HTTP router whose route slots are event projections instead
+of fixed path strings.
+
+## Version Gate
+
+Checkpoint resume is invalidated by graph edits — a silent half-old/half-new
+run is worse than failing fast. The manifest hash covers graph structure and
+serializable node content (prompt text, source configuration, effect
+declarations); non-serializable members such as closures and provider clients
+are represented by stable stand-ins, and secret-bearing config reduces to
+edit-detecting digests rather than plaintext.
+
+One documented limit: closure-body edits are invisible to any hash. Durable
+runs that span code edits are unsupported unless the application owns a
+migration path.
+
+## Examples
+
+```bash
+bun run examples/chat.ts
+bun run examples/autonomous_researcher.ts
+bun run examples/coding_agent.ts
+```
+
+[examples/customer-support-chat](examples/customer-support-chat) is the
+React/Next integration example for durable, server-owned conversations, and
+choice buttons via `structured` plus `awaitInput`.
+
+[examples/readme_snippets.ts](examples/readme_snippets.ts) mirrors the code
+blocks in this README and is typechecked by `pnpm -C examples typecheck` —
+update both together.
+
+## Development
+
+```bash
+pnpm install -w
+pnpm -r build
+pnpm -C packages/core typecheck
+pnpm -C packages/core vitest run src/__tests__/unit
+```
+
+Public APIs are exported from package roots or documented subpaths such as
+`@prompttrail/core/codex_app_server` and `@prompttrail/core/runtime_server`.
+Design decisions live in `design-docs/`, including the binding/routing model
+(`design-docs/binding-routing-dsl.md`).
+
+## Migration
+
+There is no backward-compatibility layer. [MIGRATION.md](MIGRATION.md) lists
+every rename and removal from earlier APIs, one line each.

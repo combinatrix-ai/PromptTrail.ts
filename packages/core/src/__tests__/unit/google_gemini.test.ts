@@ -1,0 +1,1038 @@
+import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import {
+  assertGeminiProviderCompactionUnsupported,
+  attachGeminiCachedContentMetadata,
+  buildGeminiGenerationConfig,
+  buildGeminiCachedContentCreateParams,
+  collectGeminiFunctionCalls,
+  countGeminiCachedContentTokens,
+  convertMessagesToGeminiContents,
+  convertSessionToGeminiContents,
+  createGeminiCachedContent,
+  createGeminiStructuredOutputConfig,
+  createGeminiFunctionResponsePart,
+  getGeminiExplicitCacheMinTokens,
+  getGeminiCacheablePrefixSession,
+  getGeminiToolDefinitions,
+  getGeminiSystemInstruction,
+  getGeminiTurnExtraConfig,
+  getGeminiToolLoopContinuationOptions,
+  getGoogleRetryDelayMs,
+  getGoogleGenAIClientOptions,
+  isGoogleRetryableError,
+  normalizeGeminiContentStream,
+  promptTrailBuiltinToGeminiTool,
+  promptTrailToolToGeminiTool,
+  retainGeminiResponseMetadata,
+  resolveGeminiCachedContent,
+  shouldCreateGeminiCachedContent,
+  withGoogleProviderRetry,
+} from '../../google_gemini';
+import { deriveConversationBinding } from '../../conversation';
+import { Session } from '../../session';
+import { Tool } from '../../tool';
+
+describe('Google Gemini native adapter helpers', () => {
+  it('converts PromptTrail messages into Gemini contents and system instruction', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Be concise.' })
+      .addMessage({ type: 'user', content: 'Hello' })
+      .addMessage({ type: 'assistant', content: 'Hi' });
+
+    expect(getGeminiSystemInstruction(session)).toBe('Be concise.');
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      { role: 'user', parts: [{ text: 'Hello' }] },
+      { role: 'model', parts: [{ text: 'Hi' }] },
+    ]);
+  });
+
+  it('replays PromptTrail tool calls and results as Gemini function parts', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Lookup docs.' })
+      .addMessage({
+        type: 'assistant',
+        content: ' ',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { query: 'streaming' },
+          },
+        ],
+      })
+      .addMessage({
+        type: 'tool_result',
+        content: JSON.stringify({ value: 'ok' }),
+        toolCallId: 'call-1',
+      })
+      .addMessage({ type: 'user', content: 'Use the result.' });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      { role: 'user', parts: [{ text: 'Lookup docs.' }] },
+      {
+        role: 'model',
+        parts: [
+          {
+            functionCall: {
+              id: 'call-1',
+              name: 'lookup',
+              args: { query: 'streaming' },
+            },
+          },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'call-1',
+              name: 'lookup',
+              response: { value: 'ok' },
+            },
+          },
+        ],
+      },
+      { role: 'user', parts: [{ text: 'Use the result.' }] },
+    ]);
+  });
+
+  it('maps Google provider baseURL into GenAI httpOptions', () => {
+    expect(
+      getGoogleGenAIClientOptions({
+        type: 'google',
+        apiKey: 'test-key',
+        modelName: 'gemini-3.1-flash-lite',
+        baseURL: 'https://google.test',
+      }),
+    ).toEqual({
+      apiKey: 'test-key',
+      httpOptions: { baseUrl: 'https://google.test' },
+    });
+  });
+
+  it('retries Google provider calls using RetryInfo delays', async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+    const quotaError = new Error(
+      JSON.stringify({
+        error: {
+          code: 429,
+          status: 'RESOURCE_EXHAUSTED',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+              retryDelay: '1.25s',
+            },
+          ],
+        },
+      }),
+    );
+    Object.assign(quotaError, { status: 429 });
+
+    await expect(
+      withGoogleProviderRetry(
+        async () => {
+          attempts++;
+          if (attempts === 1) {
+            throw quotaError;
+          }
+          return 'ok';
+        },
+        { maxRetries: 2 },
+        async (delayMs) => {
+          delays.push(delayMs);
+        },
+      ),
+    ).resolves.toBe('ok');
+
+    expect(attempts).toBe(2);
+    expect(delays).toEqual([1250]);
+    expect(getGoogleRetryDelayMs(quotaError)).toBe(1250);
+    expect(isGoogleRetryableError(quotaError, undefined)).toBe(true);
+  });
+
+  it('does not retry non-retryable Google provider errors', async () => {
+    const badRequest = new Error(JSON.stringify({ error: { code: 400 } }));
+    Object.assign(badRequest, { status: 400 });
+    let attempts = 0;
+
+    await expect(
+      withGoogleProviderRetry(
+        async () => {
+          attempts++;
+          throw badRequest;
+        },
+        { maxRetries: 2 },
+        async () => {
+          throw new Error('should not sleep');
+        },
+      ),
+    ).rejects.toBe(badRequest);
+
+    expect(attempts).toBe(1);
+    expect(isGoogleRetryableError(badRequest, undefined)).toBe(false);
+  });
+
+  it('injects RuntimeSkill instructions into Gemini system text and applies loss policy', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const session = Session.create().addMessage({
+        type: 'system',
+        content: 'Be concise.',
+      });
+      const skill = {
+        kind: 'skill' as const,
+        name: 'Review',
+        description: 'Review risky changes',
+        instructions: 'Prefer focused findings.',
+        materialize: 'temporary' as const,
+      };
+
+      expect(
+        getGeminiSystemInstruction(session, { capabilities: [skill] }),
+      ).toBe(
+        [
+          'Be concise.',
+          'Available runtime skills:',
+          'Skill: Review\nReview risky changes\nPrefer focused findings.',
+        ].join('\n\n'),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        'RuntimeSkill "Review" carries files or materialization metadata that cannot be represented by instruction injection.',
+      );
+      expect(() =>
+        getGeminiSystemInstruction(session, {
+          capabilities: [skill],
+          skillInjection: 'error',
+        }),
+      ).toThrow(
+        'RuntimeSkill "Review" carries files or materialization metadata that cannot be represented by instruction injection.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('converts content parts into Gemini content parts', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Inspect this.',
+      contentParts: [
+        { kind: 'text', text: 'Inspect this.' },
+        {
+          kind: 'image',
+          mimeType: 'image/png',
+          source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+        },
+      ],
+    });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { text: 'Inspect this.' },
+          {
+            fileData: {
+              mimeType: 'image/png',
+              fileUri: 'prompttrail://omitted-bytes/image',
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('replays pinned Gemini thought signatures in model parts', () => {
+    const session = Session.create()
+      .addMessage({ type: 'user', content: 'Use thinking.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Done.',
+        attrs: {
+          google: {
+            replayRequired: [
+              {
+                provider: 'google',
+                type: 'thoughtSignature',
+                id: '0:0',
+                artifact: {
+                  text: 'hidden',
+                  thought: true,
+                  thoughtSignature: 'sig',
+                },
+              },
+            ],
+          },
+        },
+      })
+      .addMessage({ type: 'user', content: 'Continue' });
+
+    expect(convertSessionToGeminiContents(session)).toEqual([
+      { role: 'user', parts: [{ text: 'Use thinking.' }] },
+      {
+        role: 'model',
+        parts: [
+          { text: 'hidden', thought: true, thoughtSignature: 'sig' },
+          { text: 'Done.' },
+        ],
+      },
+      { role: 'user', parts: [{ text: 'Continue' }] },
+    ]);
+  });
+
+  it('converts only messages after a cachedContent binding', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cached system.' })
+      .addMessage({ type: 'user', content: 'Cached prompt.' })
+      .addMessage({
+        type: 'assistant',
+        content: 'Cached answer.',
+        attrs: { google: { cachedContent: 'cachedContents/abc' } },
+      })
+      .addMessage({ type: 'user', content: 'Fresh tail.' });
+
+    expect(convertMessagesToGeminiContents(session.messages.slice(3))).toEqual([
+      { role: 'user', parts: [{ text: 'Fresh tail.' }] },
+    ]);
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        {
+          provider: {
+            type: 'google',
+            modelName: 'gemini-3.1-flash-lite',
+          },
+          toolChoice: 'required',
+        },
+        [
+          {
+            kind: 'tool',
+            name: 'lookup',
+            description: 'Lookup docs',
+            inputSchema: z.object({ query: z.string() }),
+            execute: ({ query }) => ({ query }),
+          },
+        ],
+        [{ functionDeclarations: [{ name: 'lookup' }] }],
+        { provider: 'google', id: 'cachedContents/abc', messageIndex: 2 },
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/abc',
+      systemInstruction: undefined,
+      tools: undefined,
+      toolConfig: undefined,
+    });
+  });
+
+  it('builds Gemini CachedContent create params from canonical session history', () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prompt.' });
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(
+      buildGeminiCachedContentCreateParams(session, {
+        provider: {
+          type: 'google',
+          modelName: 'gemini-3.1-flash-lite',
+        },
+        cacheKey: 'repo-prefix',
+        capabilities: [tool],
+        toolChoice: 'required',
+      }),
+    ).toEqual({
+      model: 'gemini-3.1-flash-lite',
+      config: {
+        displayName: 'repo-prefix',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prompt.' }] }],
+        systemInstruction: 'Cache this system.',
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: 'lookup',
+                description: 'Lookup docs',
+                parametersJsonSchema: {
+                  type: 'object',
+                  properties: { query: { type: 'string' } },
+                  required: ['query'],
+                  additionalProperties: false,
+                },
+              },
+            ],
+          },
+        ],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+            allowedFunctionNames: ['lookup'],
+          },
+        },
+      },
+    });
+  });
+
+  it('creates Gemini CachedContent through an injectable client', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/abc' };
+        },
+      },
+    };
+
+    await expect(
+      createGeminiCachedContent(client, { model: 'gemini-3.1-flash-lite' }),
+    ).resolves.toBe('cachedContents/abc');
+    expect(calls).toEqual([{ model: 'gemini-3.1-flash-lite' }]);
+    await expect(
+      createGeminiCachedContent(
+        { caches: { create: async () => ({}) } },
+        { model: 'gemini-3.1-flash-lite' },
+      ),
+    ).rejects.toThrow(
+      'Gemini CachedContent create response did not include name.',
+    );
+  });
+
+  it('counts Gemini CachedContent tokens with Developer API-compatible params', async () => {
+    const countCalls: unknown[] = [];
+    const params = {
+      model: 'gemini-3.1-flash-lite',
+      config: {
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        systemInstruction: 'Cache this system.',
+        tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        toolConfig: { ignoredByCountTokens: true },
+      },
+    };
+    const client = {
+      caches: {
+        create: async () => ({ name: 'cachedContents/abc' }),
+      },
+      models: {
+        countTokens: async (call: Record<string, unknown>) => {
+          countCalls.push(call);
+          return { totalTokens: 4096 };
+        },
+      },
+    };
+
+    await expect(countGeminiCachedContentTokens(client, params)).resolves.toBe(
+      4096,
+    );
+    await expect(shouldCreateGeminiCachedContent(client, params)).resolves.toBe(
+      true,
+    );
+    expect(countCalls).toEqual([
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: {
+          tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        },
+      },
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: {
+          tools: [{ functionDeclarations: [{ name: 'lookup' }] }],
+        },
+      },
+    ]);
+  });
+
+  it('uses documented Gemini CachedContent minimum token thresholds', () => {
+    expect(getGeminiExplicitCacheMinTokens('gemini-3.1-flash-lite')).toBe(4096);
+    expect(getGeminiExplicitCacheMinTokens('models/other-model')).toBe(4096);
+  });
+
+  it('resolves cache hints into Gemini CachedContent bindings', async () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prefix.', cache: true })
+      .addMessage({ type: 'user', content: 'Use the cached prefix.' });
+    const calls: unknown[] = [];
+    const countCalls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/prefix' };
+        },
+      },
+      models: {
+        countTokens: async (params: Record<string, unknown>) => {
+          countCalls.push(params);
+          return { totalTokens: 4096 };
+        },
+      },
+    };
+
+    const prefix = getGeminiCacheablePrefixSession(session);
+    expect(prefix?.messageIndex).toBe(1);
+    expect(convertSessionToGeminiContents(prefix!.session)).toEqual([
+      { role: 'user', parts: [{ text: 'Cache this prefix.' }] },
+    ]);
+
+    const cache = await resolveGeminiCachedContent(client, session, {
+      provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+      cacheKey: 'repo-prefix',
+    });
+
+    expect(calls).toEqual([
+      {
+        model: 'gemini-3.1-flash-lite',
+        config: {
+          displayName: 'repo-prefix',
+          contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+          systemInstruction: 'Cache this system.',
+          tools: undefined,
+          toolConfig: undefined,
+        },
+      },
+    ]);
+    expect(countCalls).toEqual([
+      {
+        model: 'gemini-3.1-flash-lite',
+        contents: [{ role: 'user', parts: [{ text: 'Cache this prefix.' }] }],
+        config: undefined,
+      },
+    ]);
+    expect(cache).toEqual({
+      cachedContent: 'cachedContents/prefix',
+      binding: {
+        provider: 'google',
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+      metadataBinding: {
+        provider: 'google',
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+    });
+    expect(convertMessagesToGeminiContents(session.messages.slice(2))).toEqual([
+      { role: 'user', parts: [{ text: 'Use the cached prefix.' }] },
+    ]);
+  });
+
+  it('silently ignores sub-threshold Gemini cache hints', async () => {
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Short system.' })
+      .addMessage({ type: 'user', content: 'Short prefix.', cache: true })
+      .addMessage({ type: 'user', content: 'Continue.' });
+    const calls: unknown[] = [];
+    const client = {
+      caches: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return { name: 'cachedContents/prefix' };
+        },
+      },
+      models: {
+        countTokens: async () => ({ totalTokens: 128 }),
+      },
+    };
+
+    await expect(
+      resolveGeminiCachedContent(client, session, {
+        provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+        cacheKey: 'short-prefix',
+      }),
+    ).resolves.toEqual({});
+    expect(calls).toEqual([]);
+  });
+
+  it('retains the Gemini CachedContent prefix index for later turns', () => {
+    const metadata = attachGeminiCachedContentMetadata(
+      { provider: 'google', api: 'gemini' },
+      {
+        cachedContent: 'cachedContents/prefix',
+        metadataBinding: {
+          provider: 'google',
+          id: 'cachedContents/prefix',
+          messageIndex: 1,
+        },
+      },
+    );
+    const session = Session.create()
+      .addMessage({ type: 'system', content: 'Cache this system.' })
+      .addMessage({ type: 'user', content: 'Cache this prefix.', cache: true })
+      .addMessage({
+        type: 'assistant',
+        content: 'Cached.',
+        attrs: { google: metadata },
+      })
+      .addMessage({ type: 'user', content: 'Continue.' });
+
+    expect(metadata).toMatchObject({
+      cachedContent: 'cachedContents/prefix',
+      cachedContentBinding: {
+        id: 'cachedContents/prefix',
+        messageIndex: 1,
+      },
+    });
+    expect(deriveConversationBinding(session, 'google')).toEqual({
+      provider: 'google',
+      id: 'cachedContents/prefix',
+      messageIndex: 1,
+    });
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        { provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' } },
+        [],
+        [],
+        deriveConversationBinding(session, 'google'),
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/prefix',
+      systemInstruction: undefined,
+    });
+  });
+
+  it('maps PromptTrail tools to Gemini function declarations', () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }) => ({ query }),
+    });
+
+    expect(promptTrailToolToGeminiTool(tool)).toEqual({
+      name: 'lookup',
+      description: 'Lookup docs',
+      parametersJsonSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it('maps Gemini provider-hosted builtins into tool definitions', () => {
+    const builtin = {
+      kind: 'builtin' as const,
+      name: 'google_search',
+      provider: 'google' as const,
+      executionMode: 'provider' as const,
+      config: {},
+    };
+
+    expect(promptTrailBuiltinToGeminiTool(builtin)).toEqual({
+      googleSearch: {},
+    });
+    expect(getGeminiToolDefinitions({ capabilities: [builtin] })).toEqual([
+      { googleSearch: {} },
+    ]);
+  });
+
+  it('collects function calls and creates function response parts', async () => {
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ query: z.string() }),
+      execute: ({ query }, context) => ({
+        query,
+        provider: context.provider,
+        channel: context.context?.channel,
+      }),
+    });
+    const calls = collectGeminiFunctionCalls({
+      functionCalls: [],
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                functionCall: {
+                  id: 'call-1',
+                  name: 'lookup',
+                  args: { query: 'capabilities' },
+                },
+                thoughtSignature: 'sig',
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(calls).toEqual([
+      {
+        id: 'call-1',
+        name: 'lookup',
+        args: { query: 'capabilities' },
+        raw: {
+          functionCall: {
+            id: 'call-1',
+            name: 'lookup',
+            args: { query: 'capabilities' },
+          },
+          thoughtSignature: 'sig',
+        },
+      },
+    ]);
+    await expect(
+      createGeminiFunctionResponsePart(
+        calls[0],
+        [tool],
+        Session.create(),
+        undefined,
+        { channel: 'claw-test' },
+      ),
+    ).resolves.toEqual({
+      functionResponse: {
+        id: 'call-1',
+        name: 'lookup',
+        response: {
+          query: 'capabilities',
+          provider: 'google',
+          channel: 'claw-test',
+        },
+      },
+    });
+  });
+
+  it('uses approval handlers for native Gemini function responses', async () => {
+    let executed = false;
+    const tool = Tool.create({
+      name: 'deleteRepo',
+      description: 'Delete repo',
+      inputSchema: z.object({ path: z.string() }),
+      approval: 'always',
+      execute: () => {
+        executed = true;
+        return { ok: true };
+      },
+    });
+
+    await expect(
+      createGeminiFunctionResponsePart(
+        {
+          id: 'call-approval',
+          name: 'deleteRepo',
+          args: { path: '/repo' },
+          raw: { functionCall: { name: 'deleteRepo' } },
+        },
+        [tool],
+        Session.create(),
+        async (request) => {
+          expect(request).toMatchObject({
+            provider: 'google',
+            action: 'tool.execute',
+            capability: 'deleteRepo',
+            input: { path: '/repo' },
+          });
+          return { type: 'deny', reason: 'too risky' };
+        },
+      ),
+    ).resolves.toEqual({
+      functionResponse: {
+        id: 'call-approval',
+        name: 'deleteRepo',
+        response: {
+          content: [{ type: 'text', text: 'Tool execution denied: too risky' }],
+          isError: true,
+        },
+      },
+    });
+    expect(executed).toBe(false);
+  });
+
+  it('relaxes required Gemini tool choice after tool responses are appended', () => {
+    const options = {
+      provider: {
+        type: 'google' as const,
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      toolChoice: 'required' as const,
+    };
+
+    expect(getGeminiToolLoopContinuationOptions(options)).toEqual({
+      provider: {
+        type: 'google',
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      toolChoice: 'auto',
+    });
+    expect(
+      getGeminiToolLoopContinuationOptions({ ...options, toolChoice: 'auto' }),
+    ).toEqual({ ...options, toolChoice: 'auto' });
+  });
+
+  it('delays Gemini responseJsonSchema until after a required tool call', () => {
+    const session = Session.create().addMessage({
+      type: 'user',
+      content: 'Call lookup, then return JSON.',
+    });
+    const tool = Tool.create({
+      name: 'lookup',
+      description: 'Lookup docs',
+      inputSchema: z.object({ key: z.string() }),
+      execute: ({ key }) => ({ value: key }),
+    });
+    const options = {
+      provider: {
+        type: 'google' as const,
+        modelName: 'gemini-3.1-flash-lite',
+      },
+      capabilities: [tool],
+      toolChoice: 'required' as const,
+    };
+    const toolDefinitions = getGeminiToolDefinitions(options);
+    const schemaConfig = createGeminiStructuredOutputConfig({
+      schema: z.object({
+        value: z.string(),
+      }),
+    });
+
+    const initialConfig = buildGeminiGenerationConfig(
+      session,
+      options,
+      [tool],
+      toolDefinitions,
+      undefined,
+      getGeminiTurnExtraConfig(options, [tool], schemaConfig),
+    );
+    expect(initialConfig).toMatchObject({
+      tools: toolDefinitions,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'ANY',
+          allowedFunctionNames: ['lookup'],
+        },
+      },
+    });
+    expect(initialConfig).not.toHaveProperty('responseMimeType');
+    expect(initialConfig).not.toHaveProperty('responseJsonSchema');
+
+    expect(
+      buildGeminiGenerationConfig(
+        session,
+        getGeminiToolLoopContinuationOptions(options, schemaConfig),
+        [tool],
+        toolDefinitions,
+        undefined,
+        getGeminiTurnExtraConfig(
+          getGeminiToolLoopContinuationOptions(options, schemaConfig),
+          [tool],
+          schemaConfig,
+        ),
+      ),
+    ).toMatchObject({
+      responseMimeType: 'application/json',
+      responseJsonSchema: expect.objectContaining({
+        properties: {
+          value: { type: 'string' },
+        },
+      }),
+      tools: toolDefinitions,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'NONE',
+          allowedFunctionNames: undefined,
+        },
+      },
+    });
+  });
+
+  it('rejects unsupported Gemini provider compaction explicitly', () => {
+    expect(() =>
+      assertGeminiProviderCompactionUnsupported({
+        mode: 'provider',
+        threshold: 0.8,
+      }),
+    ).toThrow(
+      'Gemini does not support provider compaction; use compaction mode "local" or "off".',
+    );
+    expect(() =>
+      buildGeminiGenerationConfig(
+        Session.create(),
+        {
+          provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+          compaction: { mode: 'provider' },
+        },
+        [],
+        [],
+      ),
+    ).toThrow(
+      'Gemini does not support provider compaction; use compaction mode "local" or "off".',
+    );
+    expect(() =>
+      buildGeminiGenerationConfig(
+        Session.create(),
+        {
+          provider: { type: 'google', modelName: 'gemini-3.1-flash-lite' },
+          compaction: { mode: 'local', threshold: 0.8 },
+        },
+        [],
+        [],
+      ),
+    ).not.toThrow();
+  });
+
+  it('normalizes native Gemini async streams without an API call', async () => {
+    await expect(
+      collectAsync(
+        normalizeGeminiContentStream(
+          stream([
+            {
+              candidates: [
+                {
+                  finishReason: 'STOP',
+                  content: {
+                    parts: [{ text: 'Hi' }],
+                  },
+                },
+              ],
+              usageMetadata: { promptTokenCount: 1 },
+            },
+          ]),
+        ),
+      ),
+    ).resolves.toEqual([
+      { type: 'text.delta', index: 0, delta: 'Hi' },
+      {
+        type: 'message.done',
+        finishReason: 'STOP',
+        usage: { promptTokenCount: 1 },
+      },
+    ]);
+  });
+
+  it('applies metadata retention levels', () => {
+    const response = {
+      usageMetadata: { promptTokenCount: 1 },
+      candidates: [{ finishReason: 'STOP', safetyRatings: [{ ok: true }] }],
+    };
+
+    expect(retainGeminiResponseMetadata(response, 'none')).toEqual({
+      provider: 'google',
+      api: 'gemini',
+      finishReason: 'STOP',
+      cachedContent: undefined,
+      replayRequired: [],
+    });
+    expect(retainGeminiResponseMetadata(response, 'summary')).toEqual({
+      provider: 'google',
+      api: 'gemini',
+      finishReason: 'STOP',
+      cachedContent: undefined,
+      replayRequired: [],
+      usage: { promptTokenCount: 1 },
+      candidates: [
+        {
+          finishReason: 'STOP',
+          safetyRatings: [{ ok: true }],
+        },
+      ],
+    });
+    expect(retainGeminiResponseMetadata(response, 'full')).toMatchObject({
+      raw: response,
+      candidates: response.candidates,
+    });
+  });
+
+  it('pins Gemini thought signatures even when retention is none', () => {
+    expect(
+      retainGeminiResponseMetadata(
+        {
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [
+                  {
+                    text: 'hidden',
+                    thought: true,
+                    thoughtSignature: 'sig',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      replayRequired: [
+        {
+          provider: 'google',
+          type: 'thoughtSignature',
+          id: '0:0',
+          artifact: {
+            text: 'hidden',
+            thought: true,
+            thoughtSignature: 'sig',
+          },
+        },
+      ],
+    });
+  });
+
+  it('retains Gemini cachedContent binding metadata', () => {
+    expect(
+      retainGeminiResponseMetadata(
+        {
+          cachedContent: { name: 'cachedContents/abc' },
+          candidates: [{ finishReason: 'STOP' }],
+        },
+        'none',
+      ),
+    ).toMatchObject({
+      cachedContent: 'cachedContents/abc',
+    });
+  });
+
+  it('creates response JSON schema config for native structured output', () => {
+    expect(
+      createGeminiStructuredOutputConfig({
+        schema: z.object({
+          status: z.literal('ok'),
+          count: z.number(),
+        }),
+      }),
+    ).toEqual({
+      responseMimeType: 'application/json',
+      responseJsonSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', const: 'ok' },
+          count: { type: 'number' },
+        },
+        required: ['status', 'count'],
+        additionalProperties: false,
+        propertyOrdering: ['status', 'count'],
+      },
+    });
+  });
+});
+
+async function collectAsync<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function* stream(events: unknown[]) {
+  for (const event of events) {
+    yield event;
+  }
+}

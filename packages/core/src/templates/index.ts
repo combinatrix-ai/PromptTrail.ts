@@ -9,7 +9,11 @@ export { Parallel } from './composite/parallel';
 export { Sequence } from './composite/sequence';
 export { Subroutine } from './composite/subroutine';
 export { Assistant } from './primitives/assistant';
+export { ClaudeTurn } from './primitives/claude_turn';
+export { CodexTurn } from './primitives/codex_turn';
 export { Conditional } from './primitives/conditional';
+export { GenerateMessages } from './primitives/messages';
+export type { GenerateMessagesFn } from './primitives/messages';
 export { Structured } from './primitives/structured';
 export { System } from './primitives/system';
 export { Transform } from './primitives/transform';
@@ -17,20 +21,17 @@ export { User } from './primitives/user';
 
 // Export Agent (Template Builder)
 export { Agent } from './agent';
-
-// Export Scenario API
-export {
-  Scenario,
-  StepTemplates,
-  Scenarios,
-  isInteractiveStep,
-} from './scenario';
 export type {
-  StepOptions,
-  InteractiveStepOptions,
-  NonInteractiveStepOptions,
-  ScenarioConfig,
-} from './scenario';
+  AgentCheckpointOption,
+  AgentCheckpointOptions,
+  AgentExecuteOptions,
+  AgentExecuteOptionsWithCheckpoint,
+  AgentExecuteOptionsWithoutCheckpoint,
+  AgentExecutionOptions,
+  AgentGraphExecutionOptions,
+  AgentGoalOptions,
+  AgentGoalSatisfactionContext,
+} from './agent';
 
 // Export Parallel template types
 export type {
