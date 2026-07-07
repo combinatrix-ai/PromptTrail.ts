@@ -65,6 +65,17 @@ export interface CheckpointGraphExecutionStart<TVars extends Vars, TInbound> {
  * so retries can reuse the recorded value when the store has it; effective-once
  * still requires the remote system to deduplicate by the declared idempotency
  * key. Repeatable effects deliberately bypass this memo.
+ *
+ * Error rollback invariant: the persisted `(graphCursor, session)` pair MUST
+ * stay mutually consistent at rest — both must agree on how much of the inbox
+ * has been consumed. The cursor is advanced optimistically before the graph
+ * runs, so a non-suspend error must discard the whole attempt via
+ * {@link restoreCheckpointGraphEntryPoint}, resetting the cursor, the session,
+ * and the suspension coordinate to the entry point captured here. Otherwise a
+ * retry would replay already-consumed inbox messages against an advanced
+ * session and duplicate them. A suspension is NOT a failure and never rolls
+ * back. If the rollback persist itself fails, both the original run error and
+ * the rollback error are surfaced together via {@link CheckpointRollbackError}.
  */
 export async function beginCheckpointGraphExecution<
   TVars extends Vars,
@@ -186,16 +197,57 @@ export async function recordCheckpointGraphSuspension<
   await persist();
 }
 
-export async function restoreCheckpointGraphCursor<
+/**
+ * Error raised when a checkpoint rollback cannot be persisted after a run
+ * error. Both the original run error and the rollback error are retained so
+ * neither is lost: `cause` and `runError` carry the original failure that
+ * triggered the rollback, `rollbackError` carries the persist failure.
+ */
+export class CheckpointRollbackError extends Error {
+  readonly cause: unknown;
+  constructor(
+    readonly runError: unknown,
+    readonly rollbackError: unknown,
+  ) {
+    super(
+      `Failed to persist checkpoint rollback after a run error. ` +
+        `Rollback error: ${describeError(rollbackError)}. ` +
+        `Original run error: ${describeError(runError)}.`,
+    );
+    this.name = 'CheckpointRollbackError';
+    this.cause = runError;
+  }
+}
+
+/**
+ * Rolls a run's mutable checkpoint state back to the entry point captured by
+ * {@link beginCheckpointGraphExecution} after a non-suspend error, keeping the
+ * persisted `(graphCursor, session)` pair mutually consistent (see the module
+ * doc comment). The failed attempt is discarded wholesale: the inbox cursor,
+ * the session, and the suspension coordinate are all reset to their pre-attempt
+ * values so a retry re-runs from a consistent point. Keyed effects still dedupe
+ * via the once memo and deliveries via the outbox, so at-least-once semantics
+ * survive the rollback.
+ */
+export async function restoreCheckpointGraphEntryPoint<
   TVars extends Vars,
   TInbound,
 >(
   run: CheckpointGraphRunState<TVars, TInbound>,
-  cursor: number,
+  entry: CheckpointGraphExecutionStart<TVars, TInbound>,
   persist: () => Promise<void>,
 ): Promise<void> {
-  run.graphCursor = cursor;
+  run.graphCursor = entry.cursor;
+  run.graphSuspendedAt = entry.resumeFromNode;
+  run.result = entry.isContinuation ? entry.session : undefined;
   await persist();
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 export function createCheckpointOnceMemoStore(): CheckpointOnceMemoStore {
