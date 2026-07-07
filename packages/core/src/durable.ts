@@ -779,6 +779,27 @@ export class PromptTrailApp {
     return this.runLocks.run(runId, () => this.resumeImpl<TVars>(runId));
   }
 
+  /**
+   * Deletes a run from the store and prunes the process-local maps keyed by
+   * runId so they do not grow unboundedly across a long-lived process.
+   *
+   * Pruning happens only on delete, never on completion: a completed run whose
+   * graph has an inbound consumer can still be continued via `send` (which
+   * flips status back to `open` and resumes), and continuation relies on
+   * `runEventSeqs` staying monotonic and `persistedSessions` holding the delta
+   * baseline. Once the run is deleted those invariants no longer matter.
+   *
+   * Acquires the per-run mutex so a delete cannot interleave with an in-flight
+   * send/resume/run for the same runId.
+   */
+  async delete(runId: string): Promise<void> {
+    await this.runLocks.run(runId, async () => {
+      await this.store.delete(runId);
+      this.runEventSeqs.delete(runId);
+      this.persistedSessions.delete(runId);
+    });
+  }
+
   private async resumeImpl<TVars extends Vars = Vars>(
     runId: string,
   ): Promise<DurableRunResult<TVars>> {
