@@ -17,7 +17,7 @@ import {
   type CodexTurnEvent,
 } from '../../codex_app_server';
 import { createSession } from '../../session';
-import { Tool } from '../../tool';
+import { Tool, type PromptTrailTool } from '../../tool';
 import { z } from 'zod';
 
 describe('Codex App Server helpers', () => {
@@ -341,7 +341,11 @@ describe('Codex App Server helpers', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    expect(promptTrailToolToCodexDynamicTool(tool)).toEqual({
+    expect(
+      promptTrailToolToCodexDynamicTool(
+        tool as PromptTrailTool<unknown, unknown>,
+      ),
+    ).toEqual({
       name: 'lookup',
       description: 'Lookup docs',
       inputSchema: {
@@ -493,7 +497,7 @@ describe('Codex App Server helpers', () => {
       }),
     });
     const handler = createCodexToolRequestHandler(
-      [tool],
+      [tool] as PromptTrailTool<unknown, unknown>[],
       createSession(),
       undefined,
       undefined,
@@ -539,7 +543,7 @@ describe('Codex App Server helpers', () => {
       },
     });
     const handler = createCodexToolRequestHandler(
-      [tool],
+      [tool] as PromptTrailTool<unknown, unknown>[],
       createSession(),
       undefined,
       async (request) => {

@@ -173,9 +173,9 @@ describe('Source.llm().mock()', () => {
 
       const lastCall = mockSource.getLastCall();
       expect(lastCall).toBeDefined();
-      expect(lastCall.session).toBe(session);
-      expect(lastCall.options.provider.modelName).toBe('gpt-4');
-      expect(lastCall.options.temperature).toBe(0.7);
+      expect(lastCall!.session).toBe(session);
+      expect(lastCall!.options.provider.modelName).toBe('gpt-4');
+      expect(lastCall!.options.temperature).toBe(0.7);
     });
 
     it('should support reset', async () => {

@@ -84,7 +84,7 @@ describe('AgentGraph', () => {
       description: 'Lookup',
       inputSchema: z.object({ id: z.string() }),
       effect: { idempotencyKey },
-      execute: ({ id }) => ({ id }),
+      execute: (input) => input,
     });
     const keyedGraph = createAgentGraph({
       name: 'tools',
@@ -121,7 +121,7 @@ describe('AgentGraph', () => {
       description: 'Lookup',
       inputSchema: z.object({ id: z.string() }),
       effect: { idempotencyKey },
-      execute: ({ id }) => ({ id }),
+      execute: (input) => input,
     });
     const firstKey = function lookupKey(): string {
       return 'first';

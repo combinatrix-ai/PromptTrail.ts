@@ -4,6 +4,7 @@ import {
   createCheckpointOnceBoundary,
   type CheckpointOnceMemoStore,
 } from '../../checkpoint_continuation';
+import type { PromptTrailTool } from '../../capabilities';
 import { createAgentGraph } from '../../graph';
 import {
   executeAgentGraph,
@@ -157,7 +158,7 @@ describe('GraphExecutor', () => {
   });
 
   it('executes named graph loops with node-local max iterations', async () => {
-    const graph = Agent.create('assistant')
+    const graph = Agent.create<{ count: number }>('assistant')
       .transform('init', (session) => session.withVar('count', 0))
       .loop(
         'retry',
@@ -172,7 +173,7 @@ describe('GraphExecutor', () => {
 
     const session = await executeAgentGraph(graph, { maxLoopIterations: 1 });
 
-    expect(session.getVar('count')).toBe(3);
+    expect((session.getVarsObject() as Record<string, unknown>).count).toBe(3);
   });
 
   it('throws when a pure transform returns a Promise', async () => {
@@ -213,8 +214,8 @@ describe('GraphExecutor', () => {
     const second = await executeWithCheckpoint();
 
     expect(calls).toBe(1);
-    expect(first.getVar('calls')).toBe(1);
-    expect(second.getVar('calls')).toBe(1);
+    expect((first.getVarsObject() as Record<string, unknown>).calls).toBe(1);
+    expect((second.getVarsObject() as Record<string, unknown>).calls).toBe(1);
     expect(recordOnceEntries).toHaveLength(1);
   });
 
@@ -227,7 +228,7 @@ describe('GraphExecutor', () => {
           effect: {
             idempotencyKey: (input) => {
               receivedKeyInput = input;
-              return `key:${(input as Session).getVar('seed')}`;
+              return `key:${(input as Session<{ seed: string }>).getVar('seed')}`;
             },
           },
         },
@@ -243,7 +244,9 @@ describe('GraphExecutor', () => {
     });
 
     expect(receivedKeyInput).toBeInstanceOf(Session);
-    expect(session.getVar('key')).toBe('key:alpha');
+    expect((session.getVarsObject() as Record<string, unknown>).key).toBe(
+      'key:alpha',
+    );
   });
 
   it('re-runs repeatable effect transforms on checkpoint re-execution', async () => {
@@ -267,7 +270,7 @@ describe('GraphExecutor', () => {
     const second = await executeWithCheckpoint();
 
     expect(calls).toBe(2);
-    expect(second.getVar('calls')).toBe(2);
+    expect((second.getVarsObject() as Record<string, unknown>).calls).toBe(2);
     expect(recordOnceEntries).toHaveLength(0);
   });
 
@@ -335,7 +338,7 @@ describe('GraphExecutor', () => {
     });
     const graph = createAgentGraph({
       name: 'assistant',
-      tools: { lookup },
+      tools: { lookup } as Record<string, PromptTrailTool<unknown, unknown>>,
       nodes: [
         {
           id: 'reply',
@@ -389,7 +392,7 @@ describe('GraphExecutor', () => {
     });
     const graph = createAgentGraph({
       name: 'assistant',
-      tools: { lookup },
+      tools: { lookup } as Record<string, PromptTrailTool<unknown, unknown>>,
       nodes: [
         {
           id: 'reply',
@@ -576,7 +579,10 @@ describe('GraphExecutor', () => {
         {
           init: () => Session.create({ vars: { seed: 'custom' } }),
           squash: (parent, subroutine) =>
-            parent.withVar('summary', subroutine.getVar('seed')),
+            parent.withVar(
+              'summary',
+              (subroutine.getVarsObject() as Record<string, unknown>).seed,
+            ),
         },
       )
       .toGraph();

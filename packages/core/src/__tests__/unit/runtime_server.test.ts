@@ -8,6 +8,7 @@ import {
   type TriggerEvent,
 } from '../../runtime_bindings';
 import { Agent } from '../../templates';
+import type { Session } from '../../session';
 import {
   assistantDeliveryKey,
   dispatchRuntimeEvent,
@@ -184,7 +185,10 @@ function resolveFakeChatChannelSkills(
   return exactThread?.skills ?? parent?.skills ?? defaults.skills;
 }
 
-function chatAgent(name: string, handler: any): Agent {
+function chatAgent(
+  name: string,
+  handler: (session: Session) => unknown,
+): Agent {
   return Agent.create(name).inbox('inbox').assistant('reply', handler);
 }
 
@@ -291,7 +295,7 @@ describe('RuntimeServer', () => {
         {
           platform: 'fake-chat',
           deliver(_ctx, target, message) {
-            const fakeChatTarget = target as { channel: string };
+            const fakeChatTarget = target as unknown as { channel: string };
             deliveries.push(`${fakeChatTarget.channel}:${message.content}`);
             fakeChatTarget.channel = 'driver-mutated';
             return returnedBinding;
@@ -345,7 +349,7 @@ describe('RuntimeServer', () => {
           }
           if (event.type === 'delivery.pending') {
             await context.deliveryBindings?.checkWrite(
-              event.idempotencyKey,
+              event.idempotencyKey!,
               () => 'server',
             );
           }
@@ -559,7 +563,7 @@ describe('RuntimeServer', () => {
       name: 'graph-runtime-app',
       defaults: {
         context: { appScope: 'runtime-app' },
-        delivery: Delivery.origin(),
+        delivery: Delivery.origin() as DeliveryTarget,
       },
     }).on(fakeChat.messages(), (binding) => {
       binding
@@ -1026,7 +1030,7 @@ describe('RuntimeServer', () => {
     const middlewareDelivery: unknown[] = [];
     const observerDelivery: unknown[] = [];
     const main = chatAgent('main', (session) => ({
-      content: `reply:${session.getVarsObject().channelPrompt}`,
+      content: `reply:${(session.getVarsObject() as Record<string, unknown>).channelPrompt}`,
     }));
     const bundle = PromptTrail.runtimeBundle({
       name: 'server-context-test',

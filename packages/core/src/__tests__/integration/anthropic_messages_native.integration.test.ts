@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type { CapabilitySet } from '../../capabilities';
 import { Session } from '../../session';
 import { Source } from '../../source';
 import { Tool } from '../../tool';
@@ -52,7 +53,7 @@ describe.skipIf(!anthropicAvailable)(
         .model('claude-haiku-4-5')
         .temperature(0)
         .maxTokens(64)
-        .withCapabilities([lookup])
+        .withCapabilities([lookup] as CapabilitySet)
         .toolChoice('required')
         .getContent(
           Session.create({
@@ -109,7 +110,7 @@ describe.skipIf(!anthropicAvailable)(
         .model('claude-haiku-4-5')
         .temperature(0)
         .maxTokens(128)
-        .withCapabilities([lookup])
+        .withCapabilities([lookup] as CapabilitySet)
         .toolChoice('required')
         .withSchema(
           z.object({

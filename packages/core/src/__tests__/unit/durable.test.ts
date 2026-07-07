@@ -20,21 +20,21 @@ import { Agent } from '../../templates';
 import { executePromptTrailTool, Tool } from '../../tool';
 
 class TrackingRunStore implements DurableRunStore {
-  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly runs = new Map<string, StoredRun<any>>();
   readonly snapshots: Array<{
     type: string;
     runId: string;
-    status?: StoredRun<any, any>['status'];
+    status?: StoredRun<any>['status'];
     onceRunEntries?: number;
     resultMessages?: number;
     outbox?: number;
   }> = [];
 
-  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
+  async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
-  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any>): Promise<void> {
     this.runs.set(runId, run);
     this.snapshots.push({
       type: 'create',
@@ -76,7 +76,7 @@ class TrackingRunStore implements DurableRunStore {
 
   async appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -116,7 +116,7 @@ class TrackingRunStore implements DurableRunStore {
 
   async upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -160,29 +160,29 @@ class TrackingRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
+  async entries(): Promise<Iterable<[string, StoredRun<any>]>> {
     return this.runs.entries();
   }
 }
 
 class ControlledDelayRunStore implements DurableRunStore {
-  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly runs = new Map<string, StoredRun<any>>();
   readonly pending: Array<{
     type: string;
     runId: string;
     snapshot: {
-      status: StoredRun<any, any>['status'];
+      status: StoredRun<any>['status'];
       onceRunEntries: number;
       resultMessages?: number;
     };
     resolve: () => void;
   }> = [];
 
-  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
+  async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
-  create(runId: string, run: StoredRun<any, any>): Promise<void> {
+  create(runId: string, run: StoredRun<any>): Promise<void> {
     return new Promise((resolve) => {
       this.pending.push({
         type: 'create',
@@ -224,7 +224,7 @@ class ControlledDelayRunStore implements DurableRunStore {
 
   appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -250,7 +250,7 @@ class ControlledDelayRunStore implements DurableRunStore {
 
   upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -280,7 +280,7 @@ class ControlledDelayRunStore implements DurableRunStore {
     this.runs.delete(runId);
   }
 
-  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
+  async entries(): Promise<Iterable<[string, StoredRun<any>]>> {
     return this.runs.entries();
   }
 
@@ -296,7 +296,7 @@ class ControlledDelayRunStore implements DurableRunStore {
   private delayWrite(
     type: string,
     runId: string,
-    run: StoredRun<any, any>,
+    run: StoredRun<any>,
     apply: () => void,
   ): Promise<void> {
     return new Promise((resolve) => {
@@ -330,7 +330,7 @@ type RecordedWrite =
   | {
       type: 'appendSessionDelta';
       runId: string;
-      delta: SessionCheckpointDelta<any, any>;
+      delta: SessionCheckpointDelta<any>;
     }
   | { type: 'recordOnce'; runId: string; scope: OnceScope; key: string }
   | {
@@ -348,10 +348,10 @@ type RecordedWrite =
   | { type: 'delete'; runId: string };
 
 class RecordingRunStore implements DurableRunStore {
-  readonly runs = new Map<string, StoredRun<any, any>>();
+  readonly runs = new Map<string, StoredRun<any>>();
   readonly writes: RecordedWrite[] = [];
 
-  async get(runId: string): Promise<StoredRun<any, any> | undefined> {
+  async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
@@ -359,11 +359,11 @@ class RecordingRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
-  async entries(): Promise<Iterable<[string, StoredRun<any, any>]>> {
+  async entries(): Promise<Iterable<[string, StoredRun<any>]>> {
     return this.runs.entries();
   }
 
-  async create(runId: string, run: StoredRun<any, any>): Promise<void> {
+  async create(runId: string, run: StoredRun<any>): Promise<void> {
     this.runs.set(runId, run);
     this.writes.push({
       type: 'create',
@@ -394,7 +394,7 @@ class RecordingRunStore implements DurableRunStore {
 
   async appendSessionDelta(
     runId: string,
-    delta: SessionCheckpointDelta<any, any>,
+    delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -420,7 +420,7 @@ class RecordingRunStore implements DurableRunStore {
 
   async upsertOutbox(
     runId: string,
-    entry: AssistantDeliveryOutboxEntry<any>,
+    entry: AssistantDeliveryOutboxEntry,
   ): Promise<void> {
     const run = this.runs.get(runId);
     if (!run) {
@@ -1061,8 +1061,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 function applyDelta(
-  run: StoredRun<any, any>,
-  delta: SessionCheckpointDelta<any, any>,
+  run: StoredRun<any>,
+  delta: SessionCheckpointDelta<any>,
 ): void {
   const current = run.result ?? run.initial;
   if (current.version >= delta.toVersion) {
@@ -1092,8 +1092,8 @@ function applyDelta(
 }
 
 function upsertOutbox(
-  run: StoredRun<any, any>,
-  entry: AssistantDeliveryOutboxEntry<any>,
+  run: StoredRun<any>,
+  entry: AssistantDeliveryOutboxEntry,
 ): void {
   const index = run.outbox.findIndex(
     (candidate) => candidate.idempotencyKey === entry.idempotencyKey,

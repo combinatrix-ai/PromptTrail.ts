@@ -236,7 +236,7 @@ describe('Loop Template', () => {
   it('should update and use session metadata in the exit condition', async () => {
     // Create the loop template with a metadata-based exit condition
     const loopTemplate = new Loop({
-      bodyTemplate: Agent.create('loop-template')
+      bodyTemplate: Agent.create<{ counter: number }>('loop-template')
         .add(new User('Adding to counter'))
         .transform((session) => {
           // Get the current counter value, default to 0, ensure it's a number
@@ -244,8 +244,9 @@ describe('Loop Template', () => {
             (session.getVar('counter') as number | undefined) ?? 0;
           // Increment the counter
           return session.withVars({ counter: counter + 1 });
-        }),
-      loopIf: (session: Session) => {
+        })
+        .build(),
+      loopIf: (session) => {
         // Exit when counter reaches 3
         // Get counter, default to 0, ensure it's a number before comparing
         return ((session.getVar('counter') as number | undefined) ?? 0) < 3;

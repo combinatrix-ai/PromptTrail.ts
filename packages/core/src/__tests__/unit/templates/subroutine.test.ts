@@ -37,7 +37,8 @@ describe('SubroutineTemplate', () => {
       Agent.create('subroutine-template')
         .system('You are a helpful assistant.')
         .user('What is your name?')
-        .assistant('I am an AI assistant.'),
+        .assistant('I am an AI assistant.')
+        .build(),
     );
 
     // Execute the subroutine
@@ -64,14 +65,17 @@ describe('SubroutineTemplate', () => {
           return session.withVars({
             extractedData: { name: 'Alice', age: 30 },
           }) as Session<any>;
-        }),
+        })
+        .build(),
     );
 
     // Execute the subroutine
     const session = await subroutine.execute();
 
     // Verify subroutine vars were isolated from the parent result.
-    expect(session.getVar('extractedData')).toBeUndefined();
+    expect(
+      (session.getVarsObject() as Record<string, unknown>).extractedData,
+    ).toBeUndefined();
   });
 
   it('should support custom squash projections for messages', async () => {
@@ -79,7 +83,8 @@ describe('SubroutineTemplate', () => {
       Agent.create('subroutine-template')
         .system('Internal system message')
         .user('Internal user message')
-        .assistant('Internal assistant message'),
+        .assistant('Internal assistant message')
+        .build(),
       { squash: (parent) => parent },
     );
 
@@ -94,7 +99,8 @@ describe('SubroutineTemplate', () => {
       Agent.create('subroutine-template')
         .system('Visible system message')
         .user('Visible user message')
-        .assistant('Visible assistant message'),
+        .assistant('Visible assistant message')
+        .build(),
     );
 
     // Execute the subroutine
@@ -128,7 +134,8 @@ describe('SubroutineTemplate', () => {
             }
           })(),
         )
-        .assistant('Nice to meet you!'),
+        .assistant('Nice to meet you!')
+        .build(),
     );
 
     // Execute the subroutine with the parent session
@@ -175,7 +182,8 @@ describe('SubroutineTemplate', () => {
               condition: weatherCondition,
             },
           }) as Session<any>;
-        }),
+        })
+        .build(),
     );
 
     // Execute the subroutine
@@ -186,7 +194,8 @@ describe('SubroutineTemplate', () => {
     expect(messages).toHaveLength(2); // User, Assistant
 
     // Verify the extracted context stayed isolated from the parent result.
-    const weatherData = session.getVar('weatherData') as any;
+    const weatherData = (session.getVarsObject() as Record<string, unknown>)
+      .weatherData;
     expect(weatherData).toBeUndefined();
   });
 
@@ -200,7 +209,8 @@ describe('SubroutineTemplate', () => {
           return session.withVars({
             inner: 'completed',
           }) as Session<any>;
-        }),
+        })
+        .build(),
     );
 
     // Create an outer subroutine that includes the inner one
@@ -213,7 +223,8 @@ describe('SubroutineTemplate', () => {
           return session.withVars({
             outer: 'completed',
           }) as Session<any>;
-        }),
+        })
+        .build(),
     );
 
     // Execute the nested subroutines
@@ -228,8 +239,9 @@ describe('SubroutineTemplate', () => {
     expect(messages[3].content).toBe('Outer subroutine end');
 
     // Verify subroutine context remains isolated by default.
-    expect(session.getVar('inner')).toBeUndefined();
-    expect(session.getVar('outer')).toBeUndefined();
+    const vars = session.getVarsObject() as Record<string, unknown>;
+    expect(vars.inner).toBeUndefined();
+    expect(vars.outer).toBeUndefined();
   });
 
   it('should support explicit init and squash projections', async () => {
@@ -249,7 +261,8 @@ describe('SubroutineTemplate', () => {
             isolatedData: 'not visible to parent',
             parentDataVisible: parentData !== undefined, // This will be false
           }) as Session<any>;
-        }),
+        })
+        .build(),
     );
 
     // Execute the subroutine
@@ -281,7 +294,8 @@ describe('SubroutineTemplate', () => {
             sharedData: 'visible to parent',
             parentDataVisible: parentData !== undefined, // This will be true
           }) as Session<any>;
-        }),
+        })
+        .build(),
       {
         init: (parent) => Session.create({ vars: parent.getVarsObject() }),
         squash: (parent, subroutine) =>
@@ -321,18 +335,20 @@ describe('SubroutineTemplate', () => {
       .withVars({ sensitiveData: 'should not be copied' });
 
     const subroutine = new Subroutine(
-      Agent.create('subroutine-template').user(
-        new (class extends Source<string> {
-          async getContent(session: Session) {
-            const userName = session.getVar('userName');
-            const customInit = session.getVar('customInit');
-            const sensitiveData = session.getVar('sensitiveData');
-            return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
-              sensitiveData === undefined ? 'protected' : 'exposed'
-            }`;
-          }
-        })(),
-      ),
+      Agent.create('subroutine-template')
+        .user(
+          new (class extends Source<string> {
+            async getContent(session: Session<Record<string, unknown>>) {
+              const userName = session.getVar('userName');
+              const customInit = session.getVar('customInit');
+              const sensitiveData = session.getVar('sensitiveData');
+              return `User: ${userName}, Custom: ${customInit}, Sensitive: ${
+                sensitiveData === undefined ? 'protected' : 'exposed'
+              }`;
+            }
+          })(),
+        )
+        .build(),
       { init: customInit },
     );
 
@@ -348,9 +364,10 @@ describe('SubroutineTemplate', () => {
       'User: Charlie, Custom: true, Sensitive: protected',
     );
     // Verify parent context was preserved but subroutine init vars were isolated.
-    expect(resultSession.getVar('userName')).toBe('Charlie');
-    expect(resultSession.getVar('customInit')).toBeUndefined();
-    expect(resultSession.getVar('sensitiveData')).toBe('should not be copied');
+    const resultVars = resultSession.getVarsObject() as Record<string, unknown>;
+    expect(resultVars.userName).toBe('Charlie');
+    expect(resultVars.customInit).toBeUndefined();
+    expect(resultVars.sensitiveData).toBe('should not be copied');
   });
 
   it('should use the squash function when provided', async () => {
@@ -416,7 +433,8 @@ describe('SubroutineTemplate', () => {
             preferences: { notifications: true }, // Overwrite preferences
             status: 'updated', // Add new key
           }) as Session;
-        }),
+        })
+        .build(),
       { squash: customSquash },
     );
 
@@ -430,13 +448,14 @@ describe('SubroutineTemplate', () => {
     expect(messages).toHaveLength(0); // Parent session started empty
 
     // Verify the deep-merged context according to custom logic
-    const user = resultSession.getVar('user');
+    const finalVars = resultSession.getVarsObject() as Record<string, unknown>;
+    const user = finalVars.user;
     expect(user).toEqual({ name: 'Dave', age: 31, occupation: 'Engineer' });
 
-    const preferences = resultSession.getVar('preferences');
+    const preferences = finalVars.preferences;
     expect(preferences).toEqual({ notifications: true }); // Overwritten
 
-    expect(resultSession.getVar('status')).toBe('updated');
+    expect(finalVars.status).toBe('updated');
   });
 
   // New functionality tests for list of templates and method chaining
@@ -492,7 +511,8 @@ describe('SubroutineTemplate', () => {
         .assistant('Inner subroutine answer')
         .transform((session: Session<any>) => {
           return session.withVars({ inner: 'completed' });
-        }),
+        })
+        .build(),
     );
 
     // Create an outer subroutine that includes the inner one via method chaining
@@ -503,7 +523,8 @@ describe('SubroutineTemplate', () => {
         .user('Outer subroutine end')
         .transform((session: Session<any>) => {
           return session.withVars({ outer: 'completed' });
-        }),
+        })
+        .build(),
     );
     // Execute the nested subroutines
     const session = await outerSubroutine.execute();
@@ -517,8 +538,9 @@ describe('SubroutineTemplate', () => {
     expect(messages[3].content).toBe('Outer subroutine end');
 
     // Verify subroutine context remains isolated by default.
-    expect(session.getVar('inner')).toBeUndefined();
-    expect(session.getVar('outer')).toBeUndefined();
+    const vars = session.getVarsObject() as Record<string, unknown>;
+    expect(vars.inner).toBeUndefined();
+    expect(vars.outer).toBeUndefined();
   });
 
   it('should support adding subroutines to LinearTemplate (Sequence)', async () => {
@@ -526,7 +548,8 @@ describe('SubroutineTemplate', () => {
     const nestedSubroutine = new Subroutine(
       Agent.create('subroutine-template')
         .user('Message from nested subroutine')
-        .assistant('Response from nested subroutine'),
+        .assistant('Response from nested subroutine')
+        .build(),
     );
 
     // Create a sequence that includes the subroutine
@@ -550,17 +573,17 @@ describe('SubroutineTemplate', () => {
   it('should support adding subroutines to LoopTemplate', async () => {
     // Create a subroutine to be used in the loop body
     const loopSubroutine = new Subroutine(
-      Agent.create('subroutine-template')
+      Agent.create<{ count: number }>('subroutine-template')
         .user('Message from loop subroutine')
-        .transform((session: Session<any>) => {
+        .transform((session) => {
           return session.withVars({
             // count at the end of agent is 1, 2, 3...
             count: session.getVar('count', 0) + 1,
           });
-        }),
+        })
+        .build(),
       {
-        init: (parent) =>
-          Session.create({ vars: parent.getVarsObject() as any }),
+        init: (parent) => Session.create({ vars: parent.getVarsObject() }),
         squash: (parent, subroutine) => {
           let next = parent.withVars(subroutine.getVarsObject());
           for (const message of subroutine.messages) {
@@ -595,9 +618,7 @@ describe('SubroutineTemplate', () => {
   });
 
   it('should work with direct loop implementation', async () => {
-    interface CounterContext extends Vars {
-      count: number;
-    }
+    type CounterContext = Vars<{ count: number }>;
 
     const counterTemplate = new Transform(
       (session: Session<CounterContext>) => {

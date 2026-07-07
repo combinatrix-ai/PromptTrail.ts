@@ -173,7 +173,10 @@ describe('Nested Templates', () => {
       .add(
         new Conditional({
           // Use add()
-          condition: (session) => Boolean(session.getVar('condition')),
+          condition: (session) =>
+            Boolean(
+              (session.getVarsObject() as Record<string, unknown>).condition,
+            ),
           thenTemplate: new Sequence() // Use Sequence
             .add(new User('Question when condition is true')) // Use add()
             .add(new Assistant(llm)) // Removed comma

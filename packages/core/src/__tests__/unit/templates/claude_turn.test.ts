@@ -6,7 +6,7 @@ import type {
   ClaudeAgentClient,
   ClaudeAgentQueryParams,
 } from '../../../claude_agent';
-import { Session } from '../../../session';
+import { Session, type Vars } from '../../../session';
 import { Agent } from '../../../templates';
 import { Middleware, createExecutionRuntimeState } from '../../../interceptors';
 import { ProviderTurnUnresumableError } from '../../../provider_session';
@@ -293,7 +293,7 @@ describe('ClaudeTurn template', () => {
 
     await Agent.create('claude-turn')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'claudeContext',
           beforeModel: () => ({
             session: { vars: { injected: 'from-before-model' } },
@@ -409,7 +409,7 @@ describe('ClaudeTurn template', () => {
     await expect(
       Agent.create('claude-turn')
         .use(
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'badPrepare',
             prepareModelInput: () => ({
               session: { vars: { persistent: true } },

@@ -117,7 +117,7 @@ export interface AgentGoalOptions<TC extends Vars = Vars> {
   interaction?: 'none' | 'optional' | 'required';
   maxAttempts?: number;
   tools?: readonly string[] | Record<string, PromptTrailTool<any, any>>;
-  model?: Source<ModelOutput> | AgentGraphAssistantHandler<TC>;
+  model?: Source<ModelOutput> | Source<string> | AgentGraphAssistantHandler<TC>;
   isSatisfied?: (context: AgentGoalSatisfactionContext<TC>) => boolean;
   onUnsatisfied?: 'retry' | 'continue' | 'halt';
 }

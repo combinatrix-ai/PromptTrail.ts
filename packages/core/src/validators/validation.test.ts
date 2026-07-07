@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { Session } from '../session';
 import { Validation } from './validation';
 
 describe('Validation namespace', () => {
   describe('regex', () => {
     it('should create a regex match validator', async () => {
       const validator = Validation.regex(/test/);
-      const result = await validator.validate('this is a test');
+      const result = await validator.validate(
+        'this is a test',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
 
     it('should create a regex no-match validator', async () => {
       const validator = Validation.regex(/test/, { noMatch: true });
-      const result = await validator.validate('this has no match');
+      const result = await validator.validate(
+        'this has no match',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
 
     it('should accept string patterns', async () => {
       const validator = Validation.regex('\\d+', { flags: 'g' });
-      const result = await validator.validate('123');
+      const result = await validator.validate('123', Session.create());
       expect(result.isValid).toBe(true);
     });
   });
@@ -25,19 +32,25 @@ describe('Validation namespace', () => {
   describe('keyword', () => {
     it('should create an include keyword validator', async () => {
       const validator = Validation.keyword(['foo', 'bar']);
-      const result = await validator.validate('this has foo in it');
+      const result = await validator.validate(
+        'this has foo in it',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
 
     it('should create an exclude keyword validator', async () => {
       const validator = Validation.keyword('forbidden', { mode: 'exclude' });
-      const result = await validator.validate('this is clean');
+      const result = await validator.validate(
+        'this is clean',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
 
     it('should handle case sensitivity', async () => {
       const validator = Validation.keyword('FOO', { caseSensitive: true });
-      const result = await validator.validate('foo');
+      const result = await validator.validate('foo', Session.create());
       expect(result.isValid).toBe(false);
     });
   });
@@ -45,19 +58,19 @@ describe('Validation namespace', () => {
   describe('length', () => {
     it('should validate minimum length', async () => {
       const validator = Validation.length({ min: 5 });
-      const result = await validator.validate('hello');
+      const result = await validator.validate('hello', Session.create());
       expect(result.isValid).toBe(true);
     });
 
     it('should validate maximum length', async () => {
       const validator = Validation.length({ max: 5 });
-      const result = await validator.validate('hi');
+      const result = await validator.validate('hi', Session.create());
       expect(result.isValid).toBe(true);
     });
 
     it('should validate both min and max', async () => {
       const validator = Validation.length({ min: 2, max: 5 });
-      const result = await validator.validate('hey');
+      const result = await validator.validate('hey', Session.create());
       expect(result.isValid).toBe(true);
     });
   });
@@ -65,13 +78,19 @@ describe('Validation namespace', () => {
   describe('json', () => {
     it('should validate JSON', async () => {
       const validator = Validation.json();
-      const result = await validator.validate('{"key": "value"}');
+      const result = await validator.validate(
+        '{"key": "value"}',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
 
     it('should validate JSON with schema', async () => {
       const validator = Validation.json({ schema: { name: true } });
-      const result = await validator.validate('{"name": "test"}');
+      const result = await validator.validate(
+        '{"name": "test"}',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
   });
@@ -80,12 +99,15 @@ describe('Validation namespace', () => {
     it('should validate against schema', async () => {
       const validator = Validation.schema({
         properties: {
-          name: { type: 'string' },
-          age: { type: 'number' },
+          name: { type: 'string', description: 'Name' },
+          age: { type: 'number', description: 'Age' },
         },
         required: ['name'],
       });
-      const result = await validator.validate('{"name": "John", "age": 30}');
+      const result = await validator.validate(
+        '{"name": "John", "age": 30}',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
   });
@@ -93,7 +115,7 @@ describe('Validation namespace', () => {
   describe('custom', () => {
     it('should accept boolean validators', async () => {
       const validator = Validation.custom((content) => content.length > 5);
-      const result = await validator.validate('hello world');
+      const result = await validator.validate('hello world', Session.create());
       expect(result.isValid).toBe(true);
     });
 
@@ -102,7 +124,7 @@ describe('Validation namespace', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
         return content === 'valid';
       });
-      const result = await validator.validate('valid');
+      const result = await validator.validate('valid', Session.create());
       expect(result.isValid).toBe(true);
     });
 
@@ -111,8 +133,11 @@ describe('Validation namespace', () => {
         isValid: false,
         instruction: 'Custom error',
       }));
-      const result = await validator.validate('anything');
+      const result = await validator.validate('anything', Session.create());
       expect(result.isValid).toBe(false);
+      if (result.isValid) {
+        throw new Error('expected invalid result');
+      }
       expect(result.instruction).toBe('Custom error');
     });
   });
@@ -123,7 +148,7 @@ describe('Validation namespace', () => {
         Validation.length({ min: 5 }),
         Validation.regex(/hello/),
       ]);
-      const result = await validator.validate('hello world');
+      const result = await validator.validate('hello world', Session.create());
       expect(result.isValid).toBe(true);
     });
 
@@ -132,7 +157,7 @@ describe('Validation namespace', () => {
         Validation.length({ min: 5 }),
         Validation.regex(/goodbye/),
       ]);
-      const result = await validator.validate('hello');
+      const result = await validator.validate('hello', Session.create());
       expect(result.isValid).toBe(false);
     });
   });
@@ -143,7 +168,7 @@ describe('Validation namespace', () => {
         Validation.regex(/hello/),
         Validation.regex(/world/),
       ]);
-      const result = await validator.validate('hello there');
+      const result = await validator.validate('hello there', Session.create());
       expect(result.isValid).toBe(true);
     });
 
@@ -152,7 +177,10 @@ describe('Validation namespace', () => {
         Validation.length({ max: 3 }),
         Validation.regex(/long/),
       ]);
-      const result = await validator.validate('this is a long string');
+      const result = await validator.validate(
+        'this is a long string',
+        Session.create(),
+      );
       expect(result.isValid).toBe(true);
     });
   });

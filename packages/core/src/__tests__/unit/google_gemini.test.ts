@@ -29,6 +29,7 @@ import {
   shouldCreateGeminiCachedContent,
   withGoogleProviderRetry,
 } from '../../google_gemini';
+import type { CapabilitySet, PromptTrailTool } from '../../capabilities';
 import { deriveConversationBinding } from '../../conversation';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
@@ -308,14 +309,13 @@ describe('Google Gemini native adapter helpers', () => {
           toolChoice: 'required',
         },
         [
-          {
-            kind: 'tool',
+          Tool.create({
             name: 'lookup',
             description: 'Lookup docs',
             inputSchema: z.object({ query: z.string() }),
             execute: ({ query }) => ({ query }),
-          },
-        ],
+          }),
+        ] as PromptTrailTool[],
         [{ functionDeclarations: [{ name: 'lookup' }] }],
         { provider: 'google', id: 'cachedContents/abc', messageIndex: 2 },
       ),
@@ -345,7 +345,7 @@ describe('Google Gemini native adapter helpers', () => {
           modelName: 'gemini-3.1-flash-lite',
         },
         cacheKey: 'repo-prefix',
-        capabilities: [tool],
+        capabilities: [tool] as CapabilitySet,
         toolChoice: 'required',
       }),
     ).toEqual({
@@ -610,7 +610,7 @@ describe('Google Gemini native adapter helpers', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    expect(promptTrailToolToGeminiTool(tool)).toEqual({
+    expect(promptTrailToolToGeminiTool(tool as PromptTrailTool)).toEqual({
       name: 'lookup',
       description: 'Lookup docs',
       parametersJsonSchema: {
@@ -690,7 +690,7 @@ describe('Google Gemini native adapter helpers', () => {
     await expect(
       createGeminiFunctionResponsePart(
         calls[0],
-        [tool],
+        [tool] as PromptTrailTool[],
         Session.create(),
         undefined,
         { channel: 'claw-test' },
@@ -729,7 +729,7 @@ describe('Google Gemini native adapter helpers', () => {
           args: { path: '/repo' },
           raw: { functionCall: { name: 'deleteRepo' } },
         },
-        [tool],
+        [tool] as PromptTrailTool[],
         Session.create(),
         async (request) => {
           expect(request).toMatchObject({
@@ -791,7 +791,7 @@ describe('Google Gemini native adapter helpers', () => {
         type: 'google' as const,
         modelName: 'gemini-3.1-flash-lite',
       },
-      capabilities: [tool],
+      capabilities: [tool] as CapabilitySet,
       toolChoice: 'required' as const,
     };
     const toolDefinitions = getGeminiToolDefinitions(options);
@@ -804,10 +804,14 @@ describe('Google Gemini native adapter helpers', () => {
     const initialConfig = buildGeminiGenerationConfig(
       session,
       options,
-      [tool],
+      [tool] as PromptTrailTool[],
       toolDefinitions,
       undefined,
-      getGeminiTurnExtraConfig(options, [tool], schemaConfig),
+      getGeminiTurnExtraConfig(
+        options,
+        [tool] as PromptTrailTool[],
+        schemaConfig,
+      ),
     );
     expect(initialConfig).toMatchObject({
       tools: toolDefinitions,
@@ -825,12 +829,12 @@ describe('Google Gemini native adapter helpers', () => {
       buildGeminiGenerationConfig(
         session,
         getGeminiToolLoopContinuationOptions(options, schemaConfig),
-        [tool],
+        [tool] as PromptTrailTool[],
         toolDefinitions,
         undefined,
         getGeminiTurnExtraConfig(
           getGeminiToolLoopContinuationOptions(options, schemaConfig),
-          [tool],
+          [tool] as PromptTrailTool[],
           schemaConfig,
         ),
       ),

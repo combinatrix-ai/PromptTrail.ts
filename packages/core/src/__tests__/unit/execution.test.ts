@@ -73,7 +73,7 @@ describe('execution transitions', () => {
         createSession({
           context: { count: current.getVar('count') + 1 },
           messages: [...current.messages, Message.assistant('next')],
-        }),
+        }) as typeof session,
     });
 
     expect(transition.session).toMatchObject({

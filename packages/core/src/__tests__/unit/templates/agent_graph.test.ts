@@ -26,7 +26,7 @@ import {
   type ExecutionRuntimeState,
 } from '../../../interceptors';
 import { Message } from '../../../message';
-import { Session } from '../../../session';
+import { Session, type Vars } from '../../../session';
 import { type ModelOutput, Source } from '../../../source';
 import { Agent, Parallel, Structured } from '../../../templates';
 import { Tool } from '../../../tool';
@@ -382,7 +382,7 @@ describe('Agent graph authoring', () => {
 
   it('rejects follow-up input for completed direct durable graph runs', async () => {
     const store = memoryStore();
-    const agent = Agent.create('assistant')
+    const agent = Agent.create<{ runCount: number }>('assistant')
       .transform('countRun', (session) =>
         session.withVar(
           'runCount',
@@ -414,7 +414,7 @@ describe('Agent graph authoring', () => {
 
   it('continues completed graph runs without replaying pre-inbox leaf nodes', async () => {
     const store = memoryStore();
-    const agent = Agent.create('assistant')
+    const agent = Agent.create<{ inputCount: number }>('assistant')
       .assistant('prelude', 'ready')
       .inbox('input')
       .transform('countInput', (session) =>
@@ -534,10 +534,10 @@ describe('Agent graph authoring', () => {
       execute: ({ id }) => `value:${id}`,
     });
 
-    const session = await Agent.create('assistant')
+    const session = await Agent.create<{ beforeAgent: boolean }>('assistant')
       .tool('lookup', lookup)
       .use(
-        Middleware.create({
+        Middleware.create<Vars<{ beforeAgent: boolean }>>({
           name: 'graphMiddleware',
           beforeAgent: () => {
             calls.push('beforeAgent');
@@ -650,7 +650,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('builds top-level graph transform nodes', async () => {
-    const agent = Agent.create('assistant')
+    const agent = Agent.create<{ marked: boolean }>('assistant')
       .transform('derived', (session) =>
         session.addMessage({ type: 'user', content: 'derived input' }),
       )
@@ -673,7 +673,9 @@ describe('Agent graph authoring', () => {
     const calls: string[] = [];
     const events: string[] = [];
     const structuredSource = new (class extends Source<ModelOutput> {
-      async getContent(session: Session): Promise<ModelOutput> {
+      async getContent(
+        session: Session<Record<string, unknown>>,
+      ): Promise<ModelOutput> {
         calls.push(`source:${String(session.getVar('beforeModel'))}`);
         return {
           content: 'structured reply',
@@ -689,7 +691,9 @@ describe('Agent graph authoring', () => {
       throw new Error('structured template adapter should not execute');
     };
     const parallelSource = {
-      getContent: async (session: Session): Promise<ModelOutput> => {
+      getContent: async (
+        session: Session<Record<string, unknown>>,
+      ): Promise<ModelOutput> => {
         calls.push(
           `parallelSource:${session.messages.length}:${String(
             session.getVar('beforeModel'),
@@ -712,11 +716,16 @@ describe('Agent graph authoring', () => {
 
     const agent = Agent.create('assistant')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'structuredRuntime',
           effect: { repeatable: true },
           beforeModel: ({ session }) => {
-            calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
+            calls.push(
+              `beforeModel:${String(
+                (session.getVarsObject() as Record<string, unknown>)
+                  .beforeAgent,
+              )}`,
+            );
             return { session: { vars: { beforeModel: true } } };
           },
           wrapModelCall: async (_context, next) => {
@@ -789,7 +798,9 @@ describe('Agent graph authoring', () => {
     const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(source);
 
     try {
-      const session = await Agent.create('assistant')
+      const session = await Agent.create<{
+        triage: z.infer<typeof schema>;
+      }>('assistant')
         .structured('triage', schema, (obj, current) =>
           current.withVar('triage', obj),
         )
@@ -833,7 +844,7 @@ describe('Agent graph authoring', () => {
     const folded: unknown[] = [];
 
     try {
-      const session = await Agent.create('assistant')
+      const session = await Agent.create<{ current: string }>('assistant')
         .structured('earlier', schema)
         .structured('current', schema, (obj, current) => {
           folded.push(obj);
@@ -908,7 +919,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('executes graph transform template nodes', async () => {
-    const session = await Agent.create('assistant')
+    const session = await Agent.create<{ marked: boolean }>('assistant')
       .user('input', 'hello')
       .transform('mark', (current) => current.withVar('marked', true))
       .assistant(
@@ -1362,7 +1373,7 @@ describe('Agent graph authoring', () => {
       .assistant('reply', Source.literal('ok'));
     const transformOnlyAgent = Agent.create('assistant')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'modelPatch',
           beforeModel: () => ({ session: { vars: { patched: true } } }),
         }),
@@ -1492,7 +1503,7 @@ describe('Agent graph authoring', () => {
 
   it('resumes direct durable graph loops from suspended input nodes', async () => {
     const store = memoryStore();
-    const agent = Agent.create('assistant')
+    const agent = Agent.create<{ count: number }>('assistant')
       .inbox('first')
       .loop(
         'waitLoop',
@@ -1540,7 +1551,9 @@ describe('Agent graph authoring', () => {
 
   it('clears graph resume targets after consuming resumed input in nested loops', async () => {
     const store = memoryStore();
-    const agent = Agent.create('assistant')
+    const agent = Agent.create<{ count: number; needInput: boolean }>(
+      'assistant',
+    )
       .inbox('first')
       .loop(
         'outer',
@@ -1767,7 +1780,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('compiles named graph conditionals and loops into stable subgraphs', () => {
-    const graph = Agent.create('assistant')
+    const graph = Agent.create<{ ready: boolean }>('assistant')
       .conditional(
         'branch',
         ({ session }) => session.getVar('ready') === true,
@@ -1830,7 +1843,7 @@ describe('Agent graph authoring', () => {
       .parallel(new Parallel())
       .structured(
         Structured.withSource(
-          Source.literal({ content: '{"ok":true}' }),
+          Source.llm().mock().mockResponse({ content: '{"ok":true}' }),
           z.object({ ok: z.boolean() }),
         ),
       )
@@ -1860,7 +1873,7 @@ describe('Agent graph authoring', () => {
   });
 
   it('executes representative optional-id graph node forms', async () => {
-    const session = await Agent.create('optional-execute')
+    const session = await Agent.create<{ count: number }>('optional-execute')
       .system('System')
       .user('User')
       .assistant('Assistant')
@@ -1875,7 +1888,7 @@ describe('Agent graph authoring', () => {
         ({ session: current }) => Number(current.getVar('count')) < 1,
       )
       .conditional(
-        ({ session: current }) => current.getVar('count') === 1,
+        (current) => current.getVar('count') === 1,
         (then) => then.assistant('Then'),
         (otherwise) => otherwise.assistant('Else'),
       )
@@ -2093,9 +2106,11 @@ describe('Content-first graph execution through GraphExecutor', () => {
   it('passes middleware runtime through nested legacy agents', async () => {
     const modelCalls: string[] = [];
 
-    const session = await Agent.create('agent-graph')
+    const session = await Agent.create<{ fromMiddleware: boolean }>(
+      'agent-graph',
+    )
       .use(
-        Middleware.create({
+        Middleware.create<Vars<{ fromMiddleware: boolean }>>({
           name: 'trackMiddleware',
           beforeModel: () => {
             modelCalls.push('beforeModel');

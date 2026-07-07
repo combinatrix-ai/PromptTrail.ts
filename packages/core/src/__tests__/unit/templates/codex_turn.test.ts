@@ -4,10 +4,12 @@ import type {
   CodexSkillListResult,
   CodexThreadStartParams,
   CodexThreadStartResult,
+  CodexTurnResult,
   CodexTurnStartParams,
 } from '../../../codex_app_server';
+import type { Capability } from '../../../capabilities';
 import { Agent } from '../../../templates';
-import { Session } from '../../../session';
+import { Session, type Vars } from '../../../session';
 import { Tool } from '../../../tool';
 import { Middleware, createExecutionRuntimeState } from '../../../interceptors';
 import { ProviderTurnUnresumableError } from '../../../provider_session';
@@ -30,7 +32,7 @@ class FakeCodexClient implements CodexAppServerClient {
     return { threadId: 'thread-1' };
   }
 
-  async startTurn(params: CodexTurnStartParams) {
+  async startTurn(params: CodexTurnStartParams): Promise<CodexTurnResult> {
     this.turnStarts.push(params);
     return {
       threadId: params.threadId,
@@ -62,14 +64,18 @@ class FakeCodexClient implements CodexAppServerClient {
 }
 
 class FailingCodexClient extends FakeCodexClient {
-  async startTurn(params: CodexTurnStartParams) {
+  override async startTurn(
+    params: CodexTurnStartParams,
+  ): Promise<CodexTurnResult> {
     this.turnStarts.push(params);
     throw new Error('codex unavailable');
   }
 }
 
 class RestartingCodexClient extends FakeCodexClient {
-  override async startTurn(params: CodexTurnStartParams) {
+  override async startTurn(
+    params: CodexTurnStartParams,
+  ): Promise<CodexTurnResult> {
     this.turnStarts.push(params);
     if (params.threadId === 'thread-old') {
       throw new Error('thread expired');
@@ -127,7 +133,9 @@ describe('CodexTurn template', () => {
   it('records a checkpoint provider thread immediately when Codex returns it', async () => {
     const writes: string[] = [];
     class AssertingCodexClient extends FakeCodexClient {
-      override async startTurn(params: CodexTurnStartParams) {
+      override async startTurn(
+        params: CodexTurnStartParams,
+      ): Promise<CodexTurnResult> {
         writes.push(`turn:${params.threadId}`);
         expect(writes).toContain('record:test-agent/codex:thread-1:0');
         return super.startTurn(params);
@@ -311,7 +319,7 @@ describe('CodexTurn template', () => {
 
     await Agent.create('codex-turn')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'codexContext',
           beforeModel: () => ({
             session: { vars: { injected: 'from-before-model' } },
@@ -430,7 +438,7 @@ describe('CodexTurn template', () => {
     await expect(
       Agent.create('codex-turn')
         .use(
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'badPrepare',
             prepareModelInput: () => ({
               session: { vars: { persistent: true } },
@@ -706,7 +714,7 @@ describe('CodexTurn template', () => {
       .user('Use the tool')
       .codex({
         client,
-        capabilities: [lookupTool],
+        capabilities: [lookupTool as Capability],
       })
       .execute({ session: Session.create() });
 

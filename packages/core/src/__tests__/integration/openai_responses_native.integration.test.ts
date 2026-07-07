@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type { CapabilitySet } from '../../capabilities';
 import { Session } from '../../session';
 import { Source } from '../../source';
 import { Tool } from '../../tool';
@@ -50,7 +51,7 @@ describe.skipIf(!openAIAvailable)('OpenAI Responses native integration', () => {
       .model('gpt-5.4-nano')
       .temperature(0)
       .maxTokens(64)
-      .withCapabilities([lookup])
+      .withCapabilities([lookup] as CapabilitySet)
       .toolChoice('required')
       .getContent(
         Session.create({
@@ -109,7 +110,7 @@ describe.skipIf(!openAIAvailable)('OpenAI Responses native integration', () => {
       .model('gpt-5.4-nano')
       .temperature(0)
       .maxTokens(128)
-      .withCapabilities([lookup])
+      .withCapabilities([lookup] as CapabilitySet)
       .toolChoice('required')
       .withSchema(
         z.object({
