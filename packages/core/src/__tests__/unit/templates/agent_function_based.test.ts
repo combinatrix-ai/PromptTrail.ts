@@ -158,7 +158,9 @@ describe('Agent Function-Based Templates', () => {
       expect(messages[2].content).toBe('Back to main');
 
       // Context should still have mainVar
-      expect(session.getVar('mainVar')).toBe('value');
+      expect((session.getVarsObject() as Record<string, unknown>).mainVar).toBe(
+        'value',
+      );
     });
 
     it('should support custom squash function in subroutine', async () => {
@@ -174,7 +176,10 @@ describe('Agent Function-Based Templates', () => {
           },
         })
         .assistant(
-          Source.callback(({ context }) => `The result is ${context.result}`),
+          Source.callback(async ({ context }) => {
+            const vars = context as Record<string, unknown> | undefined;
+            return `The result is ${vars?.result}`;
+          }),
         );
 
       const session = await agent.execute();
@@ -182,7 +187,9 @@ describe('Agent Function-Based Templates', () => {
       const messages = Array.from(session.messages);
       expect(messages).toHaveLength(2);
       expect(messages[1].content).toBe('The result is 42');
-      expect(session.getVar('result')).toBe(42);
+      expect((session.getVarsObject() as Record<string, unknown>).result).toBe(
+        42,
+      );
     });
   });
 
@@ -246,9 +253,10 @@ describe('Agent Function-Based Templates', () => {
           (sub) =>
             sub.user('In subroutine').loop(
               (l) => l.assistant('Loop in subroutine'),
-              (s) =>
-                s.messages.filter((m) => m.content === 'Loop in subroutine')
-                  .length < 2,
+              ({ session }) =>
+                session.messages.filter(
+                  (m) => m.content === 'Loop in subroutine',
+                ).length < 2,
             ),
           {
             squash: (parent, sub) => {
@@ -295,7 +303,7 @@ describe('Agent Function-Based Templates', () => {
     it('should work in function builders with short names', async () => {
       const agent = Agent.create('agent-function-based').loop(
         (l) => l.user('Question').assistant(Source.literal('Answer')),
-        (s) => s.messages.length < 4, // Stop after 2 iterations
+        ({ session }) => session.messages.length < 4, // Stop after 2 iterations
       );
 
       const session = await agent.execute();
@@ -373,7 +381,7 @@ describe('Agent Function-Based Templates', () => {
         .system('You are a helpful assistant.')
         .loop(
           (l) => l.user('Test input').assistant('Test response'),
-          (s) => s.messages.length < 5,
+          ({ session }) => session.messages.length < 5,
         );
 
       const session = await testableAgent.execute();

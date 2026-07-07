@@ -25,7 +25,11 @@ import {
   uploadAnthropicTemporarySkills,
   retainAnthropicMessageMetadata,
 } from '../../anthropic_messages';
-import type { RuntimeSkill } from '../../capabilities';
+import type {
+  CapabilitySet,
+  PromptTrailTool,
+  RuntimeSkill,
+} from '../../capabilities';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 
@@ -278,7 +282,7 @@ describe('Anthropic Messages native adapter helpers', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    expect(promptTrailToolToAnthropicTool(tool)).toEqual({
+    expect(promptTrailToolToAnthropicTool(tool as PromptTrailTool)).toEqual({
       name: 'lookup',
       description: 'Lookup docs',
       input_schema: {
@@ -565,7 +569,7 @@ describe('Anthropic Messages native adapter helpers', () => {
     await expect(
       createAnthropicToolResultBlock(
         toolUses[0],
-        [tool],
+        [tool] as PromptTrailTool[],
         Session.create(),
         undefined,
         { channel: 'claw-test' },
@@ -615,7 +619,7 @@ describe('Anthropic Messages native adapter helpers', () => {
           input: { path: '/repo' },
           raw: { type: 'tool_use' },
         },
-        [tool],
+        [tool] as PromptTrailTool[],
         Session.create(),
         async (request) => {
           expect(request).toMatchObject({
@@ -841,7 +845,7 @@ describe('Anthropic Messages native adapter helpers', () => {
         apiKey: 'test-key',
         modelName: 'claude-haiku-4-5',
       },
-      capabilities: [lookup],
+      capabilities: [lookup] as CapabilitySet,
       toolChoice: 'required' as const,
     };
     const schemaOptions = {

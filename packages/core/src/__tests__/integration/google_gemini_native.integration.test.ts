@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type { CapabilitySet } from '../../capabilities';
 import { Session } from '../../session';
 import { Source } from '../../source';
 import { Tool } from '../../tool';
@@ -65,7 +66,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
         .model('gemini-3.1-flash-lite')
         .temperature(0)
         .maxTokens(128)
-        .withCapabilities([lookup])
+        .withCapabilities([lookup] as CapabilitySet)
         .toolChoice('required')
         .getContent(
           Session.create({
@@ -130,7 +131,7 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
         .model('gemini-3.1-flash-lite')
         .temperature(0)
         .maxTokens(256)
-        .withCapabilities([lookup])
+        .withCapabilities([lookup] as CapabilitySet)
         .toolChoice('required')
         .withSchema(
           z.object({
@@ -195,8 +196,10 @@ describe.skipIf(!googleAvailable)('Google Gemini native integration', () => {
         provider: 'google',
         api: 'gemini',
       });
-      expect(output.metadata?.google?.cachedContent).toBeUndefined();
-      expect(output.metadata?.google?.cachedContentBinding).toBeUndefined();
+      expect((output.metadata?.google as any)?.cachedContent).toBeUndefined();
+      expect(
+        (output.metadata?.google as any)?.cachedContentBinding,
+      ).toBeUndefined();
     },
     googleNativeTimeout,
   );

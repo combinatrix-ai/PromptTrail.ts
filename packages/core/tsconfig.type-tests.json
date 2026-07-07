@@ -6,8 +6,15 @@
     "declarationMap": false,
     "emitDeclarationOnly": false,
     "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/index.ts", "src/__tests__/unit/public_api.test.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__/integration/coding_agent.test.ts"
+  ]
 }

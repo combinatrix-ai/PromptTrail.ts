@@ -134,7 +134,9 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Nice to meet you, Alice' },
     ]);
 
-    expect(session.getVar('userName')).toBe('Alice');
+    expect((session.getVarsObject() as Record<string, unknown>).userName).toBe(
+      'Alice',
+    );
   });
 
   it('should execute an empty sequence without errors', async () => {
@@ -157,7 +159,9 @@ describe('Sequence Template', () => {
     const sequence2 = new Sequence().add(new User('Second message')).add(
       new Transform((session) => {
         // Ensure counter is treated as a number
-        const counter = Number(session.getVar('counter') || 0);
+        const counter = Number(
+          (session.getVarsObject() as Record<string, unknown>).counter || 0,
+        );
         // Cast the result to satisfy TTransformFunction type
         return session.withVars({
           counter: counter + 1,
@@ -181,6 +185,8 @@ describe('Sequence Template', () => {
       { type: 'user', content: 'Counter value: 2' }, // Interpolated value
     ]);
 
-    expect(session.getVar('counter')).toBe(2);
+    expect((session.getVarsObject() as Record<string, unknown>).counter).toBe(
+      2,
+    );
   });
 });

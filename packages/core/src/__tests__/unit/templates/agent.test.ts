@@ -131,7 +131,7 @@ describe('Agent', () => {
 
     const mainSequence = Agent.create('agent-template')
       .system('You are a helpful assistant.')
-      .add(nestedSequence)
+      .add(nestedSequence.build())
       .user('Final message');
 
     const session = await mainSequence.execute();

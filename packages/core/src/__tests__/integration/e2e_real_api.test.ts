@@ -107,7 +107,6 @@ describe('End-to-End Workflows with Real APIs', () => {
 
   it('should handle context and metadata correctly', async () => {
     type UserContext = { username: string };
-    type MessageMetadata = { timestamp?: Date };
     const initialContext: UserContext = {
       username: 'Alice',
     };
@@ -123,7 +122,7 @@ describe('End-to-End Workflows with Real APIs', () => {
             ...m,
             attrs: { ...m.attrs, timestamp: date },
           }));
-          const next = Session.create<UserContext, MessageMetadata>({
+          const next = Session.create<UserContext>({
             vars: session.vars,
             messages: msgs,
             print: session.print,
@@ -345,8 +344,8 @@ describe('End-to-End Workflows with Real APIs', () => {
     };
 
     // Instantiate the LoopTemplate correctly and specify generic type
-    const loop = new Loop<any, Vars<{ count: number }>>({
-      bodyTemplate: loopBodySequenceWithTransform,
+    const loop = new Loop<Vars<{ count: number }>>({
+      bodyTemplate: loopBodySequenceWithTransform.build(),
       loopIf: loopExitCondition,
     });
 

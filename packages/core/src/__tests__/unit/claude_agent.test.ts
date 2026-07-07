@@ -16,6 +16,7 @@ import {
   renderClaudeSkillMarkdown,
   sanitizeClaudeSkillName,
 } from '../../claude_agent';
+import type { CapabilitySet, PromptTrailTool } from '../../capabilities';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 
@@ -33,7 +34,7 @@ describe('Claude Agent SDK adapter helpers', () => {
       }),
     });
     const definition = promptTrailToolToClaudeAgentToolDefinition(
-      lookupTool,
+      lookupTool as PromptTrailTool,
       session,
       undefined,
       { channel: 'claw-test' },
@@ -83,7 +84,7 @@ describe('Claude Agent SDK adapter helpers', () => {
       },
     });
     const definition = promptTrailToolToClaudeAgentToolDefinition(
-      tool,
+      tool as PromptTrailTool,
       Session.create(),
       async (request) => {
         expect(request).toMatchObject({
@@ -111,11 +112,14 @@ describe('Claude Agent SDK adapter helpers', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    expect(getClaudeAllowedToolNames([lookupTool])).toEqual([
-      'mcp__prompttrail__lookup',
-    ]);
     expect(
-      createClaudePromptTrailMcpServer([lookupTool], Session.create()),
+      getClaudeAllowedToolNames([lookupTool] as PromptTrailTool[]),
+    ).toEqual(['mcp__prompttrail__lookup']);
+    expect(
+      createClaudePromptTrailMcpServer(
+        [lookupTool] as PromptTrailTool[],
+        Session.create(),
+      ),
     ).toMatchObject({
       name: 'prompttrail',
       tools: [
@@ -135,7 +139,7 @@ describe('Claude Agent SDK adapter helpers', () => {
         capabilities: [
           lookupTool,
           { kind: 'skill', name: 'repo-docs', instructions: 'Use docs.' },
-        ],
+        ] as CapabilitySet,
       }),
     ).toMatchObject({
       prompt: 'Use the tool',
@@ -341,7 +345,9 @@ describe('Claude Agent SDK adapter helpers', () => {
           result: 'Final answer',
         },
       ]),
-      (event) => seen.push(event),
+      (event) => {
+        seen.push(event);
+      },
     );
 
     expect(seen).toHaveLength(2);

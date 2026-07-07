@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createExecutionRuntimeState, Middleware } from '../../../interceptors';
 import { Session } from '../../../session';
-import { Source } from '../../../source';
+import { LlmSource, Source } from '../../../source';
 import { Parallel } from '../../../templates/composite/parallel';
 
 // Mock the source module
@@ -134,7 +134,9 @@ describe('Parallel Template', () => {
         }),
       };
 
-      const parallel = new Parallel().addSource(structuredSource);
+      const parallel = new Parallel().addSource(
+        structuredSource as unknown as LlmSource,
+      );
       const session = Session.create();
       const result = await parallel.execute(session);
       const messages = Array.from(result.messages);
@@ -187,13 +189,15 @@ describe('Parallel Template', () => {
 
     it('should run runtime model phases for configured sources', async () => {
       const calls: string[] = [];
-      mockLlmSource1.getContent.mockImplementation(async (session: Session) => {
-        calls.push(`source:${String(session.getVar('beforeModel'))}`);
-        return {
-          content: 'parallel response',
-          metadata: { sourceId: 'source1' },
-        };
-      });
+      mockLlmSource1.getContent.mockImplementation(
+        async (session: Session<Record<string, unknown>>) => {
+          calls.push(`source:${String(session.getVar('beforeModel'))}`);
+          return {
+            content: 'parallel response',
+            metadata: { sourceId: 'source1' },
+          };
+        },
+      );
       const runtime = createExecutionRuntimeState({
         middleware: [
           Middleware.create({
@@ -219,9 +223,9 @@ describe('Parallel Template', () => {
         ],
       });
 
-      const result = await new Parallel()
+      const result = await new Parallel<{ beforeModel: boolean }>()
         .addSource(mockLlmSource1)
-        .execute(Session.create(), runtime);
+        .execute(Session.create<{ beforeModel: boolean }>(), runtime);
 
       expect(calls).toEqual([
         'beforeModel',
@@ -244,7 +248,7 @@ describe('Parallel Template', () => {
 
       const parallel = new Parallel()
         .addSource(mockLlmSource1)
-        .addSource(failingSource)
+        .addSource(failingSource as unknown as LlmSource)
         .addSource(mockLlmSource2);
 
       const session = Session.create();
@@ -288,8 +292,8 @@ describe('Parallel Template', () => {
       };
 
       const parallel = new Parallel()
-        .addSource(shortResponseSource)
-        .addSource(longResponseSource)
+        .addSource(shortResponseSource as unknown as LlmSource)
+        .addSource(longResponseSource as unknown as LlmSource)
         .setAggregationFunction(
           (session) =>
             session.messages[session.messages.length - 1].content.length,
@@ -319,8 +323,8 @@ describe('Parallel Template', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const parallel = new Parallel()
-        .addSource(failingSource)
-        .addSource(successfulSource)
+        .addSource(failingSource as unknown as LlmSource)
+        .addSource(successfulSource as unknown as LlmSource)
         .setAggregationFunction(
           (session) =>
             session.messages[session.messages.length - 1].content.length,
@@ -432,7 +436,9 @@ describe('Parallel Template', () => {
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const parallel = new Parallel().addSource(alwaysFailingSource);
+      const parallel = new Parallel().addSource(
+        alwaysFailingSource as unknown as LlmSource,
+      );
       const session = Session.create();
       const result = await parallel.execute(session);
 

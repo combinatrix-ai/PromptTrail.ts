@@ -7,7 +7,7 @@ import {
   runMiddlewareWrapper,
 } from '../../interceptors';
 import { Message } from '../../message';
-import { createSession } from '../../session';
+import { createSession, type Vars } from '../../session';
 
 describe('execution interceptors', () => {
   it('runs middleware before hooks and folds session transitions', async () => {
@@ -173,7 +173,7 @@ describe('execution interceptors', () => {
           },
         }),
       ],
-      call: () => 'reply',
+      call: async () => 'reply',
     });
 
     expect(seen).toEqual([{ channelPrompt: 'fake-chat channel policy' }]);
@@ -221,7 +221,7 @@ describe('execution interceptors', () => {
     const session = createSession({
       context: { stale: true },
     });
-    const middleware = Middleware.create({
+    const middleware = Middleware.create<Vars<{ stale: boolean }>>({
       name: 'cleanup',
       afterTool: () => ({
         session: {
@@ -319,7 +319,7 @@ describe('execution interceptors', () => {
         session: createSession(),
         signal: controller.signal,
         middleware: [
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'blocked',
             beforeAgent: () => ({
               session: {
@@ -341,7 +341,7 @@ describe('execution interceptors', () => {
         session: createSession(),
         signal: controller.signal,
         middleware: [
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'aborting',
             beforeAgent: () => {
               controller.abort();

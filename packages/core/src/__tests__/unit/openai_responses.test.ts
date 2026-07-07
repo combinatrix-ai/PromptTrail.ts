@@ -24,6 +24,8 @@ import {
   retainOpenAIResponseMetadata,
   withOpenAIResponsesPromptCacheKey,
 } from '../../openai_responses';
+import type { CapabilitySet, PromptTrailTool } from '../../capabilities';
+import type { LLMOptions, OpenAIProviderConfig } from '../../llm_types';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
 
@@ -217,7 +219,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       withOpenAIResponsesPromptCacheKey(session, {
         provider,
         capabilities: [cachedCapability],
-      }).cacheKey,
+      } as LLMOptions & { provider: OpenAIProviderConfig }).cacheKey,
     ).toBe(derived);
     expect(
       withOpenAIResponsesPromptCacheKey(session, {
@@ -261,10 +263,12 @@ describe('OpenAI Responses native adapter helpers', () => {
             modelName: 'gpt-5.4-nano',
             api: 'responses',
           },
-          capabilities: [lookup],
+          capabilities: [lookup] as CapabilitySet,
           toolChoice: 'required',
         },
-        getOpenAIResponsesToolDefinitions({ capabilities: [lookup] }),
+        getOpenAIResponsesToolDefinitions({
+          capabilities: [lookup] as CapabilitySet,
+        }),
         undefined,
         textFormat,
       ),
@@ -560,8 +564,12 @@ describe('OpenAI Responses native adapter helpers', () => {
       execute: ({ query }) => ({ query }),
     });
 
-    expect(getOpenAIPromptTrailTools({ capabilities: [tool] })).toEqual([tool]);
-    expect(promptTrailToolToOpenAIResponsesTool(tool)).toEqual({
+    expect(
+      getOpenAIPromptTrailTools({ capabilities: [tool] as CapabilitySet }),
+    ).toEqual([tool]);
+    expect(
+      promptTrailToolToOpenAIResponsesTool(tool as PromptTrailTool),
+    ).toEqual({
       type: 'function',
       name: 'lookup',
       description: 'Lookup docs',
@@ -752,7 +760,7 @@ describe('OpenAI Responses native adapter helpers', () => {
     await expect(
       createOpenAIToolOutputItem(
         calls[0],
-        [tool],
+        [tool] as PromptTrailTool[],
         Session.create(),
         undefined,
         {
@@ -802,7 +810,7 @@ describe('OpenAI Responses native adapter helpers', () => {
         arguments: { path: '/repo' },
         raw: { type: 'function_call' },
       },
-      [tool],
+      [tool] as PromptTrailTool[],
       Session.create(),
       async (request) => {
         expect(request).toMatchObject({

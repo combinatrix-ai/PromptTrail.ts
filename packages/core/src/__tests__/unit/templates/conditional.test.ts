@@ -127,7 +127,7 @@ describe('If Template', () => {
 
     // Create an if template
     // TODO: Fix any
-    const ifTemplate = new Conditional<any, any>({
+    const ifTemplate = new Conditional<any>({
       condition,
       thenTemplate,
       elseTemplate,
@@ -211,11 +211,13 @@ describe('If Template', () => {
     // Create complex nested templates for both branches
     const thenTemplate = Agent.create('conditional-template')
       .system('System message in then branch')
-      .user('User message in then branch');
+      .user('User message in then branch')
+      .build();
 
     const elseTemplate = Agent.create('conditional-template')
       .system('System message in else branch')
-      .user('User message in else branch');
+      .user('User message in else branch')
+      .build();
 
     // Create an if template
     const ifTemplate = new Conditional({
@@ -263,16 +265,21 @@ describe('If Template', () => {
 
     // Create a nested if template structure
     const innerIfTemplate = new Conditional({
-      condition: (session) => session.getVar('isAuthenticated') === true,
+      condition: (session) =>
+        (session.getVarsObject() as Record<string, unknown>).isAuthenticated ===
+        true,
       thenTemplate: new User('User is authenticated'),
       elseTemplate: new User('User is not authenticated'),
     });
 
     const outerIfTemplate = new Conditional({
-      condition: (session) => session.getVar('userRole') === 'admin',
+      condition: (session) =>
+        (session.getVarsObject() as Record<string, unknown>).userRole ===
+        'admin',
       thenTemplate: Agent.create('conditional-template')
         .user('Admin role detected')
-        .add(innerIfTemplate),
+        .add(innerIfTemplate)
+        .build(),
       elseTemplate: new User('Not an admin'),
     });
 
@@ -314,14 +321,16 @@ describe('If Template', () => {
       .user('Setting context in then branch')
       .transform((session) => {
         return session.withVars({ branchTaken: 'then' });
-      });
+      })
+      .build();
 
     // Create else template that updates metadata differently
     const elseTemplate = Agent.create('conditional-template')
       .user('Setting context in else branch')
       .transform((session) => {
         return session.withVars({ branchTaken: 'else' });
-      });
+      })
+      .build();
 
     // Create an if template
     const ifTemplate = new Conditional({
@@ -337,7 +346,9 @@ describe('If Template', () => {
     const messages = Array.from(resultSession.messages);
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('Setting context in then branch');
-    expect(resultSession.getVar('branchTaken')).toBe('then');
+    expect(
+      (resultSession.getVarsObject() as Record<string, unknown>).branchTaken,
+    ).toBe('then');
 
     // Test with the else branch
     const elseCondition = () => false;
@@ -350,7 +361,10 @@ describe('If Template', () => {
 
     const elseResultSession = await elseIfTemplate.execute();
 
-    expect(elseResultSession.getVar('branchTaken')).toBe('else');
+    expect(
+      (elseResultSession.getVarsObject() as Record<string, unknown>)
+        .branchTaken,
+    ).toBe('else');
   });
 
   it('should handle dynamically determined template paths', async () => {
@@ -365,10 +379,14 @@ describe('If Template', () => {
 
     // Create a complex if-else chain using nested IFs to simulate a switch statement
     const messageTypeHandler = new Conditional({
-      condition: (session) => session.getVar('messageType') === 'greeting',
+      condition: (session) =>
+        (session.getVarsObject() as Record<string, unknown>).messageType ===
+        'greeting',
       thenTemplate: greetingTemplate,
       elseTemplate: new Conditional({
-        condition: (session) => session.getVar('messageType') === 'question',
+        condition: (session) =>
+          (session.getVarsObject() as Record<string, unknown>).messageType ===
+          'question',
         thenTemplate: questionTemplate,
         elseTemplate: statementTemplate, // default case
       }),

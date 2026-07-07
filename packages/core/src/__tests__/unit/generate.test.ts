@@ -7,6 +7,7 @@ import {
   promptTrailStreamEventsToMessages,
   streamPromptTrailToolLoop,
 } from '../../generate';
+import type { CapabilitySet } from '../../capabilities';
 import { createExecutionRuntimeState, Middleware } from '../../interceptors';
 import { Session } from '../../session';
 import { Tool } from '../../tool';
@@ -176,7 +177,7 @@ describe('native schema/tool guard', () => {
         api: 'responses' as const,
         adapter: 'native' as const,
       },
-      capabilities: [lookup],
+      capabilities: [lookup] as CapabilitySet,
     };
 
     expect(() =>
@@ -211,7 +212,7 @@ describe('assertNativeStreamingToolLoopSupported', () => {
           api: 'responses',
           adapter: 'native',
         },
-        capabilities: [lookup],
+        capabilities: [lookup] as CapabilitySet,
       }),
     ).not.toThrow();
   });
@@ -233,7 +234,7 @@ describe('assertNativeStreamingToolLoopSupported', () => {
           api: 'responses',
           adapter: 'ai-sdk',
         },
-        capabilities: [lookup],
+        capabilities: [lookup] as CapabilitySet,
       }),
     ).not.toThrow();
   });
@@ -263,7 +264,7 @@ describe('streamPromptTrailToolLoop', () => {
             modelName: 'gpt-5.4-nano',
             api: 'responses',
           },
-          capabilities: [lookup],
+          capabilities: [lookup] as CapabilitySet,
           context: { channel: 'stream-context' },
         },
         {
@@ -397,7 +398,7 @@ describe('streamPromptTrailToolLoop', () => {
             modelName: 'gpt-5.4-nano',
             api: 'responses',
           },
-          capabilities: [lookup],
+          capabilities: [lookup] as CapabilitySet,
         },
         {
           provider: 'openai',
@@ -508,7 +509,7 @@ describe('streamPromptTrailToolLoop', () => {
             modelName: 'gpt-5.4-nano',
             api: 'responses',
           },
-          capabilities: [lookup],
+          capabilities: [lookup] as CapabilitySet,
         },
         {
           provider: 'openai',
@@ -594,7 +595,7 @@ describe('streamPromptTrailToolLoop', () => {
               modelName: 'gpt-5.4-nano',
               api: 'responses',
             },
-            capabilities: [lookup],
+            capabilities: [lookup] as CapabilitySet,
           },
           {
             provider: 'openai',
@@ -655,7 +656,7 @@ describe('streamPromptTrailToolLoop', () => {
             modelName: 'gpt-5.4-nano',
             api: 'responses',
           },
-          capabilities: [lookup],
+          capabilities: [lookup] as CapabilitySet,
         },
         {
           provider: 'openai',

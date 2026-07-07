@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DELETE_VALUE, type ObserverDeliveryBinding } from '../../../execution';
 import { Hook, Middleware } from '../../../interceptors';
 import { Message } from '../../../message';
-import type { Session } from '../../../session';
+import type { Session, Vars } from '../../../session';
 import { Source } from '../../../source';
 import { Agent } from '../../../templates';
 import { memoryStore } from '../../../durable';
@@ -32,7 +32,7 @@ describe('Agent interceptors', () => {
         }),
       )
       .hook(
-        Hook.create({
+        Hook.create<Vars>({
           name: 'hook',
           onBeforeAgent: ({ session }) => ({
             session: session.addMessage(Message.system('hooked')),
@@ -63,7 +63,7 @@ describe('Agent interceptors', () => {
   it('runs onRunStart and onRunEnd hook aliases', async () => {
     const session = await Agent.create('agent-interceptors')
       .hook(
-        Hook.create({
+        Hook.create<Vars>({
           name: 'runLifecycle',
           onRunStart: () => ({
             session: { vars: { started: true } },
@@ -92,7 +92,7 @@ describe('Agent interceptors', () => {
         Hook.create({
           name: 'templateLifecycle',
           onBeforeTemplate: ({ session, request }) => {
-            const vars = session.getVarsObject();
+            const vars = session.getVarsObject() as Record<string, unknown>;
             const template = request as { templateName?: string };
             return {
               session: {
@@ -106,7 +106,7 @@ describe('Agent interceptors', () => {
             };
           },
           onAfterTemplate: ({ session, request }) => {
-            const vars = session.getVarsObject();
+            const vars = session.getVarsObject() as Record<string, unknown>;
             const template = request as { templateName?: string };
             return {
               session: {
@@ -138,7 +138,7 @@ describe('Agent interceptors', () => {
   it('halts remaining child templates from template lifecycle hooks', async () => {
     const session = await Agent.create('agent-interceptors')
       .hook(
-        Hook.create({
+        Hook.create<Vars>({
           name: 'templateControl',
           onAfterTemplate: () => ({
             session: { vars: { haltedAfterTemplate: true } },
@@ -529,7 +529,7 @@ describe('Agent interceptors', () => {
         });
       })
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'patchEvents',
           beforeAgent: () => ({
             session: {
@@ -632,7 +632,7 @@ describe('Agent interceptors', () => {
         events.push(`${event.seq}:${event.type}`);
       })
       .hook(
-        Hook.create({
+        Hook.create<Vars>({
           name: 'control',
           onBeforeAgent: () => ({
             session: { vars: { halted: true } },
@@ -661,7 +661,7 @@ describe('Agent interceptors', () => {
       })
       .assistant('reply')
       .hook(
-        Hook.create({
+        Hook.create<Vars>({
           name: 'control',
           onAfterAgent: () => ({
             session: { vars: { haltedAfter: true } },
@@ -688,7 +688,7 @@ describe('Agent interceptors', () => {
   it('applies beforeModel and afterModel middleware around assistant output', async () => {
     const session = await Agent.create('agent-interceptors')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'modelPolicy',
           beforeModel: ({ session }) => ({
             session: session.addMessage(Message.system('before model')),
@@ -714,7 +714,7 @@ describe('Agent interceptors', () => {
   it('preserves interceptors in implicit sequence order', async () => {
     const session = await Agent.create('agent-interceptors')
       .use(
-        Middleware.create({
+        Middleware.create<Vars>({
           name: 'nested',
           beforeAgent: () => ({
             session: {
@@ -790,7 +790,7 @@ describe('Agent interceptors', () => {
 
   it('applies prepareModelInput as a transient model request', async () => {
     const source = Source.callback(async ({ context }) => {
-      return `saw:${context?.temporary}`;
+      return `saw:${(context as Record<string, unknown> | undefined)?.temporary}`;
     });
 
     const session = await Agent.create('agent-interceptors')
@@ -816,7 +816,7 @@ describe('Agent interceptors', () => {
 
   it('wraps assistant model calls with middleware', async () => {
     const source = Source.callback(async ({ context }) => {
-      return `model:${context?.prompt}`;
+      return `model:${(context as Record<string, unknown> | undefined)?.prompt}`;
     });
 
     const session = await Agent.create('agent-interceptors')
@@ -1003,7 +1003,7 @@ describe('Agent interceptors', () => {
     await expect(
       Agent.create('agent-interceptors')
         .use(
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'badPrepare',
             prepareModelInput: () => ({
               session: {
@@ -1041,7 +1041,7 @@ describe('Agent interceptors', () => {
     await expect(
       Agent.create('agent-interceptors')
         .use(
-          Middleware.create({
+          Middleware.create<Vars>({
             name: 'badPrepareDelete',
             prepareModelInput: () => ({
               session: {

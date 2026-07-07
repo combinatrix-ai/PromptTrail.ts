@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
-    "test": "vitest --run --watch=false",
+    "test": "vitest --run --watch=false --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "lint": "cd ../.. && ./node_modules/.bin/eslint packages/store-common/src",

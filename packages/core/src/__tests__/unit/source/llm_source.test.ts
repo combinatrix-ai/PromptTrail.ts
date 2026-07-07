@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import type { CapabilitySet } from '../../../capabilities';
 import { generateText, generateTextStream } from '../../../generate';
 import { createExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
@@ -689,7 +690,7 @@ describe('LlmSource', () => {
       });
 
       const source = Source.llm()
-        .withCapabilities([lookupTool])
+        .withCapabilities([lookupTool] as CapabilitySet)
         .temperature(0.1);
 
       await source.getContent(Session.create());
@@ -1127,11 +1128,13 @@ describe('LlmSource', () => {
         await source.getContent(session);
         expect.fail('Should have thrown');
       } catch (error) {
-        expect(error.message).toContain(
+        expect((error as Error).message).toContain(
           'This safety check prevents infinite loops',
         );
-        expect(error.message).toContain('Set PROMPTTRAIL_DEBUG=false');
-        expect(error.message).toContain('PROMPTTRAIL_MAX_LLM_CALLS');
+        expect((error as Error).message).toContain(
+          'Set PROMPTTRAIL_DEBUG=false',
+        );
+        expect((error as Error).message).toContain('PROMPTTRAIL_MAX_LLM_CALLS');
       }
     });
   });

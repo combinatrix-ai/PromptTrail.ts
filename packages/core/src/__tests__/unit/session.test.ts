@@ -385,7 +385,9 @@ describe('Session Namespace', () => {
     }).withVar('updated', true);
     const jsonData = original.toJSON();
 
-    const session = Session.fromJSON(jsonData);
+    const session = Session.fromJSON<{ key: string; updated: boolean }>(
+      jsonData,
+    );
     expect(session.messages).toHaveLength(1);
     expect(session.messages[0].content).toBe('Test');
     expect(session.getVar('key')).toBe('value');
