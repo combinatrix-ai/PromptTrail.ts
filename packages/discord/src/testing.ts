@@ -198,11 +198,11 @@ class MockRuntimeFixture {
   readonly discord: MockDiscordConnector;
   readonly cron: MockCronConnector;
   readonly runtime: {
-    conversations: () => MockConversationSummary[];
-    inbox: (conversationId: string) => Array<Record<string, unknown>>;
-    session: (conversationId: string) => unknown;
+    conversations: () => Promise<MockConversationSummary[]>;
+    inbox: (conversationId: string) => Promise<Array<Record<string, unknown>>>;
+    session: (conversationId: string) => Promise<unknown>;
     resume: (conversationId: string) => Promise<void>;
-    lastAssistantObservation: () => unknown;
+    lastAssistantObservation: () => Promise<unknown>;
   };
   readonly effects: {
     entries: () => EffectJournalEntry[];
@@ -221,14 +221,16 @@ class MockRuntimeFixture {
     this.discord.attach((message) => this.handleDiscord(message));
     this.cron.attach((name, payload) => this.handleCron(name, payload));
     this.runtime = {
-      conversations: () =>
-        [...this.store.entries()].map(([id, run]) => ({
+      conversations: async () => {
+        const entries = await this.store.entries();
+        return [...entries].map(([id, run]) => ({
           id,
           agent: run.agentName,
           status: run.status === 'done' ? 'done' : 'suspended',
-        })),
-      inbox: (conversationId) => {
-        const run = this.store.get(conversationId);
+        }));
+      },
+      inbox: async (conversationId) => {
+        const run = await this.store.get(conversationId);
         return (run?.inbox ?? []).map((message) => {
           const attrs = (message.attrs ?? {}) as Record<string, unknown>;
           return {
@@ -241,7 +243,8 @@ class MockRuntimeFixture {
           };
         });
       },
-      session: (conversationId) => this.store.get(conversationId)?.result,
+      session: async (conversationId) =>
+        (await this.store.get(conversationId))?.result,
       resume: async (conversationId) => {
         const result = await this.app.resume(conversationId);
         this.deliverUndelivered(conversationId, result.session.messages);
@@ -367,7 +370,7 @@ class MockRuntimeFixture {
     messages: readonly Message[],
   ): Promise<void> {
     const runContext =
-      (this.store.get(conversationId)?.context as
+      ((await this.store.get(conversationId))?.context as
         | Record<string, unknown>
         | undefined) ?? {};
     const pending = messages
@@ -433,8 +436,9 @@ class MockRuntimeFixture {
     }
   }
 
-  private lastAssistantObservation(): unknown {
-    for (const [, run] of [...this.store.entries()].reverse()) {
+  private async lastAssistantObservation(): Promise<unknown> {
+    const entries = await this.store.entries();
+    for (const [, run] of [...entries].reverse()) {
       const messages = run.result?.messages ?? [];
       for (const message of [...messages].reverse()) {
         if (message.type === 'assistant') {
