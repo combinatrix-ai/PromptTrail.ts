@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateText } from '../../../generate';
-import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Transform } from '../../../templates';
 import { Sequence } from '../../../templates/composite/sequence';
@@ -104,7 +103,7 @@ describe('Sequence Template', () => {
         // GenerateOptions object
         provider: expect.objectContaining({
           type: 'openai',
-          modelName: 'gpt-4o-mini',
+          modelName: 'gpt-5.4-nano',
         }),
       }),
     );

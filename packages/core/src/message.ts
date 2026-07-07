@@ -1,4 +1,5 @@
-import type { Attrs } from './session';
+import type { ContentPart } from './content_parts';
+import type { CacheHint } from './cache';
 
 /**
  * Represents the role of a message in a conversation
@@ -8,9 +9,11 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool_result';
 /**
  * Base interface for all message types
  */
-export interface BaseMessage<TAttrs extends Attrs = Attrs> {
+export interface BaseMessage {
   content: string;
-  attrs?: TAttrs;
+  contentParts?: ContentPart[];
+  cache?: CacheHint;
+  attrs?: Readonly<Record<string, unknown>>;
   structuredContent?: Record<string, unknown>;
   toolCalls?: Array<{
     name: string;
@@ -29,50 +32,47 @@ export interface BaseMessage<TAttrs extends Attrs = Attrs> {
 /**
  * System message interface
  */
-export interface SystemMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface SystemMessage extends BaseMessage {
   type: 'system';
 }
 
 /**
  * User message interface
  */
-export interface UserMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface UserMessage extends BaseMessage {
   type: 'user';
 }
 
 /**
  * Assistant message interface
  */
-export interface AssistantMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface AssistantMessage extends BaseMessage {
   type: 'assistant';
 }
 
 /**
  * Tool result message interface
  */
-export interface ToolResultMessage<TAttrs extends Attrs = Attrs>
-  extends BaseMessage<TAttrs> {
+export interface ToolResultMessage extends BaseMessage {
   type: 'tool_result';
+  toolCallId?: string;
 }
 
 /**
  * Message interface that can be any of the above types
  */
-export type Message<TAttrs extends Attrs = Attrs> =
-  | SystemMessage<TAttrs>
-  | UserMessage<TAttrs>
-  | AssistantMessage<TAttrs>
-  | ToolResultMessage<TAttrs>;
+export type Message =
+  | SystemMessage
+  | UserMessage
+  | AssistantMessage
+  | ToolResultMessage;
 
 export const Message = {
-  create: <M extends Attrs = Attrs>(
+  create: (
     type: MessageRole,
     content: string,
-    attrs?: M,
-  ): Message<M> => {
+    attrs?: Readonly<Record<string, unknown>>,
+  ): Message => {
     switch (type) {
       case 'system':
         return { type: 'system', content, attrs };
@@ -87,68 +87,62 @@ export const Message = {
     }
   },
 
-  setAttrs: <M extends Attrs = Attrs>(
-    message: Message<M>,
-    attrs: M,
-  ): Message<M> => {
+  setAttrs: (
+    message: Message,
+    attrs: Readonly<Record<string, unknown>>,
+  ): Message => {
     return {
       ...message,
-      attrs: { ...message.attrs, ...attrs } as M,
+      attrs: { ...message.attrs, ...attrs },
     };
   },
 
-  expandAttrs: <
-    M extends Record<string, unknown>,
-    U extends Record<string, unknown>,
-  >(
-    message: Message<Attrs<M>>,
-    attrs: U,
-  ): Message<Attrs<Omit<M, keyof U> & U>> => {
-    const base = message.attrs ?? ({} as M);
+  expandAttrs: (
+    message: Message,
+    attrs: Readonly<Record<string, unknown>>,
+  ): Message => {
+    const base = message.attrs ?? {};
     return {
       ...message,
-      attrs: { ...base, ...attrs } as Attrs<Omit<M, keyof U> & U>,
+      attrs: { ...base, ...attrs },
     };
   },
 
-  setStructuredContent: <
-    M extends Attrs = Attrs,
-    S extends Record<string, unknown> = Record<string, unknown>,
-  >(
-    message: Message<M>,
+  setStructuredContent: <S extends Record<string, unknown>>(
+    message: Message,
     structuredContent: S,
-  ): Message<M> => {
+  ): Message => {
     return {
       ...message,
       structuredContent,
     };
   },
 
-  setContent: <M extends Attrs = Attrs>(
-    message: Message<M>,
-    content: string,
-  ): Message<M> => {
+  setContent: (message: Message, content: string): Message => {
     return {
       ...message,
       content,
     };
   },
 
-  system: <M extends Attrs = Attrs>(
+  system: (
     content: string,
-    attrs?: M,
-  ): Message<M> => ({ type: 'system', content, attrs }),
+    attrs?: Readonly<Record<string, unknown>>,
+  ): Message => ({ type: 'system', content, attrs }),
 
-  user: <M extends Attrs = Attrs>(content: string, attrs?: M): Message<M> => ({
+  user: (
+    content: string,
+    attrs?: Readonly<Record<string, unknown>>,
+  ): Message => ({
     type: 'user',
     content,
     attrs,
   }),
 
-  assistant: <M extends Attrs = Attrs>(
+  assistant: (
     content: string,
-    attrs?: M,
-  ): Message<M> => {
+    attrs?: Readonly<Record<string, unknown>>,
+  ): Message => {
     return {
       type: 'assistant',
       content,

@@ -77,7 +77,7 @@ describe('Nested Templates', () => {
     });
 
     // SubroutineTemplate instantiation block removed as test is skipped
-    const subroutineTemplate = undefined; // Keep placeholder for now, usage will be removed
+    const _subroutineTemplate = undefined; // Keep placeholder for now, usage will be removed
 
     // Combine templates using array-based construction
     // Use Sequence constructor
@@ -131,7 +131,7 @@ describe('Nested Templates', () => {
 
     // Create a template with nested templates that use the metadata
     // SubroutineTemplate instantiation block removed as test is skipped
-    const subroutineTemplate = undefined; // Keep placeholder for now, usage will be removed
+    const _subroutineTemplate = undefined; // Keep placeholder for now, usage will be removed
 
     // Use Sequence constructor
     const template = new Sequence([

@@ -1,15 +1,13 @@
 // assistant.ts
 import type { AssistantMessage } from '../../message';
-import type { Session } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
+import type { Session, Vars } from '../../session';
 import { ModelOutput, Source, ValidationOptions } from '../../source';
-import { Attrs, Vars } from '../../session';
 import type { IValidator } from '../../validators/base';
 import { TemplateBase } from '../base';
+import { executeRuntimeModelCall } from './model_runtime';
 
-export class Assistant<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
+export class Assistant<TVars extends Vars = Vars> extends TemplateBase<TVars> {
   private maxAttempts: number;
   private raiseError: boolean;
   private validator?: IValidator;
@@ -53,9 +51,23 @@ export class Assistant<
   }
 
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
-    const validSession = this.ensureSession(session);
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
+    return this.executeSource(session, runtime);
+  }
+
+  /**
+   * Execute the configured assistant source without routing through the
+   * generic template adapter entrypoint.
+   *
+   * @internal
+   */
+  async executeSource(
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
+    let validSession = this.ensureSession(session);
 
     // Content source should always be available now (either provided or default)
     if (!this.contentSource) {
@@ -75,10 +87,22 @@ export class Assistant<
 
       try {
         // 1. Get Content
-        const rawOutput = await this.contentSource.getContent(validSession);
+        let rawOutput: string | ModelOutput;
+        if (runtime) {
+          const modelCall = await executeRuntimeModelCall(
+            runtime,
+            validSession,
+            (modelSession) => this.getModelContent(modelSession, runtime),
+            'Assistant.execute',
+          );
+          validSession = modelCall.session;
+          rawOutput = modelCall.result;
+        } else {
+          rawOutput = await this.getModelContent(validSession);
+        }
         let outputContent: string;
         let outputToolCalls: ModelOutput['toolCalls'] | undefined;
-        let outpuTAttrs: ModelOutput['metadata'] | undefined;
+        let outputAttrs: ModelOutput['metadata'] | undefined;
         let outputStructured: ModelOutput['structuredOutput'] | undefined;
 
         if (typeof rawOutput === 'string') {
@@ -92,7 +116,7 @@ export class Assistant<
           const modelOutput = rawOutput as ModelOutput;
           outputContent = modelOutput.content;
           outputToolCalls = modelOutput.toolCalls;
-          outpuTAttrs = modelOutput.metadata;
+          outputAttrs = modelOutput.metadata;
           outputStructured = modelOutput.structuredOutput;
         } else {
           throw new Error(
@@ -104,7 +128,7 @@ export class Assistant<
         currentOutput = {
           content: outputContent,
           toolCalls: outputToolCalls,
-          metadata: outpuTAttrs,
+          metadata: outputAttrs,
           structuredOutput: outputStructured,
         };
 
@@ -136,11 +160,11 @@ export class Assistant<
         }
 
         // 3. Success: Validation passed (or no validator) - Return immediately
-        const message: AssistantMessage<TAttrs> = {
+        const message: AssistantMessage = {
           type: 'assistant',
           content: currentOutput.content,
           toolCalls: currentOutput.toolCalls,
-          attrs: (currentOutput.metadata as TAttrs) ?? ({} as TAttrs),
+          attrs: currentOutput.metadata ?? {},
           structuredContent: currentOutput.structuredOutput,
         };
         let updatedSession = validSession.addMessage(message);
@@ -151,9 +175,7 @@ export class Assistant<
             updatedSession = updatedSession.addMessage({
               type: 'tool_result',
               content: JSON.stringify(toolResult.result),
-              attrs: {
-                toolCallId: toolResult.toolCallId,
-              } as unknown as TAttrs,
+              toolCallId: toolResult.toolCallId,
             });
           }
         }
@@ -191,14 +213,14 @@ export class Assistant<
     // This happens if the last attempt failed and raiseError was false.
     if (!this.raiseError && lastError && lastOutput) {
       // Construct session from the last recorded output (which failed validation)
-      const lastMessage: AssistantMessage<TAttrs> = {
+      const lastMessage: AssistantMessage = {
         type: 'assistant',
         content: lastOutput.content,
         toolCalls: lastOutput.toolCalls,
-        attrs: (lastOutput.metadata as TAttrs) ?? ({} as TAttrs),
+        attrs: lastOutput.metadata ?? {},
         structuredContent: lastOutput.structuredOutput,
       };
-      let lastAttemptSession = validSession.addMessage(lastMessage);
+      const lastAttemptSession = validSession.addMessage(lastMessage);
 
       // Note: Not adding tool results to avoid ai-sdk message ordering issues
 
@@ -209,5 +231,26 @@ export class Assistant<
     throw new Error(
       'Assistant template execution finished in an unexpected state. No result or definitive error.',
     );
+  }
+
+  private async getModelContent(
+    session: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<string | ModelOutput> {
+    return (await this.contentSource!.getContent(session, runtime)) as
+      | string
+      | ModelOutput;
+  }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Assistant',
+      contentSource: this.contentSource,
+      maxAttempts: this.maxAttempts,
+      raiseError: this.raiseError,
+      validator: this.validator,
+      isStaticContent: this.isStaticContent,
+    };
   }
 }

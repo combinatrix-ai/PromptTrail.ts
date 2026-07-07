@@ -1,13 +1,15 @@
-import type { Session } from '../../session';
-import { Attrs, Vars } from '../../session';
+import type { Session, Vars } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import type { Template } from '../base';
 
 /**
  * Fluent interface is an interface marker that allow fluent method chaining
  * in the Agent.
  */
-export interface Fluent<TAttrs extends Attrs = Attrs, TVars extends Vars = Vars>
-  extends Template<TAttrs, TVars> {
-  add(t: Template<TAttrs, TVars>): any;
-  execute(s?: Session<TVars, TAttrs>): Promise<Session<TVars, TAttrs>>;
+export interface Fluent<TVars extends Vars = Vars> extends Template<TVars> {
+  add(t: Template<TVars>): any;
+  execute(
+    s?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>>;
 }

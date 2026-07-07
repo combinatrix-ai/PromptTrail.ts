@@ -1,0 +1,22 @@
+{
+  "name": "@prompttrail/store-conformance",
+  "version": "0.0.1",
+  "description": "Shared DurableRunStore conformance test suite for PromptTrail backends",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.19",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}

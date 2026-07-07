@@ -1,0 +1,2129 @@
+import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import type {
+  ClaudeAgentClient,
+  ClaudeAgentQueryParams,
+} from '../../../claude_agent';
+import type {
+  CodexAppServerClient,
+  CodexSkillListResult,
+  CodexThreadStartParams,
+  CodexThreadStartResult,
+  CodexTurnStartParams,
+} from '../../../codex_app_server';
+import { PromptTrail, memoryStore } from '../../../durable';
+import {
+  AgentGraphVersionError,
+  createAgentGraphManifest,
+} from '../../../graph';
+import {
+  executeAgentGraph,
+  GraphExecutionSuspended,
+} from '../../../graph_executor';
+import {
+  Hook,
+  Middleware,
+  type ExecutionRuntimeState,
+} from '../../../interceptors';
+import { Message } from '../../../message';
+import { Session } from '../../../session';
+import { type ModelOutput, Source } from '../../../source';
+import { Agent, Parallel, Structured } from '../../../templates';
+import { Tool } from '../../../tool';
+
+class GraphFakeCodexClient implements CodexAppServerClient {
+  threadStarts: CodexThreadStartParams[] = [];
+  turnStarts: CodexTurnStartParams[] = [];
+
+  async listSkills(): Promise<CodexSkillListResult | unknown[]> {
+    return { skills: [] };
+  }
+
+  async startThread(
+    params: CodexThreadStartParams,
+  ): Promise<CodexThreadStartResult> {
+    this.threadStarts.push(params);
+    return { threadId: 'thread-graph' };
+  }
+
+  async startTurn(params: CodexTurnStartParams) {
+    this.turnStarts.push(params);
+    return {
+      threadId: params.threadId,
+      turnId: 'turn-graph',
+      status: 'completed',
+      finalAnswer: 'Codex graph result',
+    };
+  }
+}
+
+class GraphFakeClaudeAgentClient implements ClaudeAgentClient {
+  queries: ClaudeAgentQueryParams[] = [];
+
+  async *query(params: ClaudeAgentQueryParams): AsyncIterable<unknown> {
+    this.queries.push(params);
+    yield {
+      type: 'result',
+      id: 'result-graph',
+      status: 'completed',
+      session_id: 'session-graph',
+      result: 'Claude graph result',
+    };
+  }
+}
+
+class GraphStaticModelSource extends Source<ModelOutput> {
+  constructor(private readonly output: ModelOutput) {
+    super();
+  }
+
+  async getContent(): Promise<ModelOutput> {
+    return this.output;
+  }
+}
+
+function graphStructuredTemplate(
+  schema: z.ZodType,
+  output: ModelOutput,
+): Structured {
+  return Structured.withSource(new GraphStaticModelSource(output), schema);
+}
+
+describe('Agent graph authoring', () => {
+  it('builds a named agent graph with explicit node ids', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      effect: { repeatable: true },
+      execute: ({ id }) => ({ id }),
+    });
+
+    const agent = Agent.create('assistant')
+      .system('system', 'You are concise.')
+      .tool('lookup', lookup)
+      .inbox('inbound')
+      .loop(
+        'toolLoop',
+        (loop) => loop.assistant('reply', Source.literal('ok')).tools('tools'),
+        ({ session }) => session.messages.length > 0,
+      )
+      .awaitInput('next');
+
+    const graph = agent.toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(graph.name).toBe('assistant');
+    expect(Object.keys(graph.tools)).toEqual(['lookup']);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/system', 'system'],
+      ['assistant/inbound', 'inbox'],
+      ['assistant/toolLoop', 'loop'],
+      ['assistant/toolLoop/reply', 'assistant'],
+      ['assistant/toolLoop/tools', 'tools'],
+      ['assistant/next', 'awaitInput'],
+    ]);
+  });
+
+  it('requires a named agent before graph compilation', () => {
+    expect(() =>
+      (Agent.create as unknown as () => Agent)().system('hello').toGraph(),
+    ).toThrow(/Agent\.create\(name\)/);
+  });
+
+  it('rejects Agent.create without a stable name', () => {
+    expect(() => (Agent.create as unknown as () => Agent)()).toThrow(
+      /Agent\.create\(name\)/,
+    );
+  });
+
+  it('supports named content-first agents with optional node ids', async () => {
+    const session = await Agent.create('agent-graph')
+      .system('You are concise.')
+      .user('Hello')
+      .assistant('Hi')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'Hello',
+      'Hi',
+    ]);
+  });
+
+  it('keeps Agent.create(name) required for graph identity', async () => {
+    await expect(
+      Agent.create('agent-graph').execute({ checkpoint: true }),
+    ).rejects.toThrow(/requires checkpoint: store/);
+  });
+
+  it('requires a store for direct durable graph execution', async () => {
+    const store = memoryStore();
+    const graph = Agent.create('assistant').assistant('reply', () => 'ok');
+
+    await expect(
+      graph.execute({ checkpoint: true, input: 'hello' }),
+    ).rejects.toThrow(/requires checkpoint: store/);
+    await expect(
+      graph.execute({ runId: 'graph-run', input: 'hello' }),
+    ).rejects.toThrow(/requires checkpoint execution/);
+    await expect(
+      (graph.execute as (options: unknown) => Promise<unknown>)({
+        store,
+        input: 'hello',
+      }),
+    ).rejects.toThrow(
+      /Agent\.execute option store has been removed. Use checkpoint: store/,
+    );
+  });
+
+  it('treats a single assistant string as content, not an id', () => {
+    const graph = Agent.create('assistant').assistant('reply').toGraph();
+
+    expect(graph.nodes).toEqual([
+      {
+        id: 'assistant-1',
+        type: 'assistant',
+        data: { input: 'reply' },
+      },
+    ]);
+  });
+
+  it('derives stable optional ids and shifts when same-type nodes are inserted', () => {
+    const first = Agent.create('assistant')
+      .system('System')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+    const second = Agent.create('assistant')
+      .system('System')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+    const inserted = Agent.create('assistant')
+      .system('System')
+      .assistant('Inserted')
+      .assistant('First')
+      .assistant('Second')
+      .toGraph('v1');
+
+    expect(createAgentGraphManifest(first).hash).toBe(
+      createAgentGraphManifest(second).hash,
+    );
+    expect(first.nodes.map((node) => node.id)).toEqual([
+      'system-1',
+      'assistant-1',
+      'assistant-2',
+    ]);
+    expect(inserted.nodes.map((node) => node.id)).toEqual([
+      'system-1',
+      'assistant-1',
+      'assistant-2',
+      'assistant-3',
+    ]);
+  });
+
+  it('skips authored-id collisions when deriving optional ids', () => {
+    const graph = Agent.create('assistant')
+      .assistant('anonymous first')
+      .assistant('assistant-1', 'authored collision')
+      .assistant('anonymous second')
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      'assistant-2',
+      'assistant-1',
+      'assistant-3',
+    ]);
+  });
+
+  it('composes anonymous assistant ids with the auto tool-loop expansion', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => ({ id }),
+    });
+    const graph = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant(() => ({
+        content: 'checking',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'lookup',
+            arguments: { id: 'A' },
+          },
+        ],
+      }))
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['assistant-1', 'assistant'],
+      ['assistant-1-loop', 'loop'],
+    ]);
+    expect(
+      graph.nodes[1]?.children?.map((node) => [node.id, node.type]),
+    ).toEqual([
+      ['assistant-1-tools', 'tools'],
+      ['assistant-1', 'assistant'],
+    ]);
+  });
+
+  it('does not expand top-level assistant nodes without registered tools', () => {
+    const graph = Agent.create('assistant')
+      .assistant('reply', Source.literal('ok'))
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['reply', 'assistant'],
+    ]);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/reply', 'assistant'],
+    ]);
+  });
+
+  it('auto-loops top-level assistants over registered tools', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      effect: { repeatable: true },
+      execute: ({ id }) => `value:${id}`,
+    });
+    let modelCalls = 0;
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant('reply', (session) => {
+        modelCalls++;
+        const toolResult = session.getMessagesByType('tool_result').at(-1);
+        return toolResult
+          ? `final:${toolResult.content}`
+          : {
+              content: 'need lookup',
+              toolCalls: [
+                { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+              ],
+            };
+      });
+
+    const session = await agent.execute();
+    const manifest = createAgentGraphManifest(agent.toGraph('v1'));
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'need lookup',
+      'value:1',
+      'final:value:1',
+    ]);
+    expect(modelCalls).toBe(2);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/reply', 'assistant'],
+      ['assistant/reply-loop', 'loop'],
+      ['assistant/reply-loop/reply-tools', 'tools'],
+      ['assistant/reply-loop/reply', 'assistant'],
+    ]);
+  });
+
+  it('executes graph-authored agents through GraphExecutor', async () => {
+    const session = await Agent.create('assistant')
+      .system('system', 'You are concise.')
+      .inbox('inbound')
+      .assistant('reply', Source.literal('ok'))
+      .execute({ input: 'hello' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'hello',
+      'ok',
+    ]);
+  });
+
+  it('materializes direct graph input when no node consumes the inbox', async () => {
+    const session = await Agent.create('assistant')
+      .system('system', 'You are concise.')
+      .assistant(
+        'reply',
+        (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
+      )
+      .execute({ input: 'hello' });
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'hello',
+      'reply:hello',
+    ]);
+  });
+
+  it('materializes direct durable graph input without requiring inbox nodes', async () => {
+    const store = memoryStore();
+    const result = await Agent.create('assistant')
+      .system('system', 'You are concise.')
+      .assistant(
+        'reply',
+        (current) => `reply:${current.getLastMessage()?.content ?? 'none'}`,
+      )
+      .execute({
+        checkpoint: store,
+        runId: 'direct-no-inbox',
+        input: 'hello',
+      });
+
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'You are concise.',
+      'hello',
+      'reply:hello',
+    ]);
+    expect((await store.get('direct-no-inbox'))?.inbox).toEqual([
+      { offset: 0, kind: 'user', content: 'hello' },
+    ]);
+    expect((await store.get('direct-no-inbox'))?.graphCursor).toBe(1);
+  });
+
+  it('rejects follow-up input for completed direct durable graph runs', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .transform('countRun', (session) =>
+        session.withVar(
+          'runCount',
+          ((session.getVar('runCount') as number) ?? 0) + 1,
+        ),
+      )
+      .assistant('reply', 'done');
+
+    await agent.execute({
+      checkpoint: store,
+      runId: 'direct-completed',
+      input: 'hello',
+    });
+
+    await expect(
+      agent.execute({
+        checkpoint: store,
+        runId: 'direct-completed',
+        input: 'again',
+      }),
+    ).rejects.toThrow(/Cannot send input to completed graph run/);
+    expect((await store.get('direct-completed'))?.inbox).toEqual([
+      { offset: 0, kind: 'user', content: 'hello' },
+    ]);
+    expect(
+      (await store.get('direct-completed'))?.result?.getVar('runCount'),
+    ).toBe(1);
+  });
+
+  it('continues completed graph runs without replaying pre-inbox leaf nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .assistant('prelude', 'ready')
+      .inbox('input')
+      .transform('countInput', (session) =>
+        session.withVar(
+          'inputCount',
+          ((session.getVar('inputCount') as number) ?? 0) + 1,
+        ),
+      )
+      .assistant('reply', (session) => {
+        return `reply:${session.getLastMessage()?.content ?? 'none'}`;
+      });
+
+    const first = await agent.execute({
+      checkpoint: store,
+      runId: 'direct-completed-continuation',
+      input: 'hello',
+    });
+    const second = await agent.execute({
+      checkpoint: store,
+      runId: 'direct-completed-continuation',
+      input: 'again',
+    });
+
+    expect(first.session.messages.map((message) => message.content)).toEqual([
+      'ready',
+      'hello',
+      'reply:hello',
+    ]);
+    expect(second.session.messages.map((message) => message.content)).toEqual([
+      'ready',
+      'hello',
+      'reply:hello',
+      'again',
+      'reply:again',
+    ]);
+    expect(second.session.getVar('inputCount')).toBe(2);
+  });
+
+  it('emits graph execution observer events', async () => {
+    const builderEvents: string[] = [];
+    const callEvents: string[] = [];
+    const session = await Agent.create('assistant')
+      .observe((event) => {
+        builderEvents.push(
+          `${event.seq}:${event.type}:${event.source}:${event.sessionVersion}`,
+        );
+      })
+      .assistant('reply', 'ok')
+      .execute({
+        observers: [
+          (event) => {
+            callEvents.push(`${event.seq}:${event.type}`);
+          },
+        ],
+      });
+
+    expect(session.getLastMessage()?.content).toBe('ok');
+    expect(builderEvents).toEqual([
+      '0:run.started:graph:0',
+      '1:model.started:model:undefined',
+      '2:model.completed:model:undefined',
+      '3:run.completed:graph:1',
+    ]);
+    expect(callEvents).toEqual([
+      '0:run.started',
+      '1:model.started',
+      '2:model.completed',
+      '3:run.completed',
+    ]);
+  });
+
+  it('emits graph suspension observer events', async () => {
+    const events: string[] = [];
+    const agent = Agent.create('assistant')
+      .observe((event) => {
+        events.push(`${event.seq}:${event.type}:${event.stepId ?? '-'}`);
+      })
+      .awaitInput('next');
+
+    await expect(agent.execute()).rejects.toThrow(GraphExecutionSuspended);
+
+    expect(events).toEqual([
+      '0:run.started:-',
+      '1:run.suspended:assistant/next',
+    ]);
+  });
+
+  it('emits graph failure observer events', async () => {
+    const events: string[] = [];
+    const agent = Agent.create('assistant')
+      .observe((event) => {
+        const error = event.error as Error | undefined;
+        events.push(
+          `${event.seq}:${event.type}:${event.sessionVersion}:${error?.message ?? '-'}`,
+        );
+      })
+      .assistant('reply', () => {
+        throw new Error('model failed');
+      });
+
+    await expect(agent.execute()).rejects.toThrow('model failed');
+
+    expect(events).toEqual([
+      '0:run.started:0:-',
+      '1:model.started:undefined:-',
+      '2:model.failed:undefined:model failed',
+      '3:run.failed:0:model failed',
+    ]);
+  });
+
+  it('runs graph middleware and hooks around agent, model, and tool phases', async () => {
+    const calls: string[] = [];
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => `value:${id}`,
+    });
+
+    const session = await Agent.create('assistant')
+      .tool('lookup', lookup)
+      .use(
+        Middleware.create({
+          name: 'graphMiddleware',
+          beforeAgent: () => {
+            calls.push('beforeAgent');
+            return { session: { vars: { beforeAgent: true } } };
+          },
+          beforeModel: ({ session }) => {
+            calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
+            return { session: { vars: { beforeModel: true } } };
+          },
+          prepareModelInput: ({ request }) => {
+            calls.push('prepareModelInput');
+            const modelRequest = request as { session: Session };
+            return {
+              request: {
+                session: modelRequest.session.addMessage(
+                  Message.system('prepared'),
+                ),
+              },
+            };
+          },
+          wrapModelCall: async (_context, next) => {
+            calls.push('wrapModelCall');
+            return next();
+          },
+          afterModel: ({ result }) => {
+            calls.push(`afterModel:${String(result)}`);
+            return {
+              result: {
+                content: 'needs lookup',
+                toolCalls: [
+                  { id: 'call-1', name: 'lookup', arguments: { id: 'one' } },
+                ],
+              },
+            };
+          },
+          beforeTool: ({ request }) => {
+            const call = request as {
+              id: string;
+              name: string;
+              arguments: Record<string, unknown>;
+            };
+            calls.push(`beforeTool:${call.name}:${String(call.arguments.id)}`);
+            return {
+              request: {
+                ...call,
+                arguments: { id: 'two' },
+              },
+            };
+          },
+          wrapToolCall: async (_context, next) => {
+            calls.push('wrapToolCall');
+            return next();
+          },
+          afterTool: ({ result }) => {
+            const message = result as { content: string };
+            calls.push(`afterTool:${message.content}`);
+            return { result };
+          },
+          afterAgent: ({ session }) => {
+            calls.push('afterAgent');
+            return {
+              session: {
+                vars: { afterAgentMessages: session.messages.length },
+              },
+            };
+          },
+        }),
+      )
+      .hook(
+        Hook.create({
+          name: 'graphHook',
+          onRunStart: () => {
+            calls.push('hookStart');
+          },
+          onRunEnd: () => {
+            calls.push('hookEnd');
+          },
+        }),
+      )
+      .assistant('reply', (modelSession) => {
+        calls.push(`handler:${modelSession.getLastMessage()?.content ?? '-'}`);
+        return 'raw model';
+      })
+      .tools('tools')
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'needs lookup',
+      'value:two',
+    ]);
+    expect(session.getVarsObject()).toMatchObject({
+      beforeAgent: true,
+      beforeModel: true,
+      afterAgentMessages: 2,
+    });
+    expect(calls).toEqual([
+      'beforeAgent',
+      'hookStart',
+      'beforeModel:true',
+      'prepareModelInput',
+      'wrapModelCall',
+      'handler:prepared',
+      'afterModel:raw model',
+      'beforeTool:lookup:one',
+      'wrapToolCall',
+      'afterTool:value:two',
+      'afterAgent',
+      'hookEnd',
+    ]);
+  });
+
+  it('builds top-level graph transform nodes', async () => {
+    const agent = Agent.create('assistant')
+      .transform('derived', (session) =>
+        session.addMessage({ type: 'user', content: 'derived input' }),
+      )
+      .transform('mark', (session) => session.withVar('marked', true));
+
+    const graph = agent.toGraph('v1');
+    const session = await agent.execute();
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['derived', 'transform'],
+      ['mark', 'transform'],
+    ]);
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'derived input',
+    ]);
+    expect(session.getVar('marked')).toBe(true);
+  });
+
+  it('executes graph structured and parallel template nodes', async () => {
+    const calls: string[] = [];
+    const events: string[] = [];
+    const structuredSource = new (class extends Source<ModelOutput> {
+      async getContent(session: Session): Promise<ModelOutput> {
+        calls.push(`source:${String(session.getVar('beforeModel'))}`);
+        return {
+          content: 'structured reply',
+          structuredOutput: { ok: true },
+        };
+      }
+    })();
+    const structured = Structured.withSource(
+      structuredSource,
+      z.object({ ok: z.boolean() }),
+    );
+    structured.execute = async () => {
+      throw new Error('structured template adapter should not execute');
+    };
+    const parallelSource = {
+      getContent: async (session: Session): Promise<ModelOutput> => {
+        calls.push(
+          `parallelSource:${session.messages.length}:${String(
+            session.getVar('beforeModel'),
+          )}`,
+        );
+        return {
+          content: 'parallel reply',
+          metadata: { branch: 'parallel' },
+          structuredOutput: { parallel: true },
+          toolCalls: [{ id: 'p1', name: 'noop', arguments: {} }],
+        };
+      },
+    };
+    const parallel = new Parallel().addSource(
+      parallelSource as Parameters<Parallel['addSource']>[0],
+    );
+    parallel.execute = async () => {
+      throw new Error('parallel template adapter should not execute');
+    };
+
+    const agent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'structuredRuntime',
+          effect: { repeatable: true },
+          beforeModel: ({ session }) => {
+            calls.push(`beforeModel:${String(session.getVar('beforeAgent'))}`);
+            return { session: { vars: { beforeModel: true } } };
+          },
+          wrapModelCall: async (_context, next) => {
+            calls.push('wrapModelCall');
+            return next();
+          },
+          afterModel: ({ result }) => {
+            calls.push('afterModel');
+            const output = result as ModelOutput;
+            return {
+              result: {
+                ...output,
+                content: `${output.content} afterModel`,
+              },
+            };
+          },
+        }),
+      )
+      .observe((event) => {
+        events.push(event.type);
+      })
+      .structured('structuredReply', structured)
+      .parallel('parallelReply', parallel);
+
+    const graph = agent.toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+    const session = await agent.execute();
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/structuredReply', 'structured'],
+      ['assistant/parallelReply', 'parallel'],
+    ]);
+    expect(session.messages.at(-2)).toMatchObject({
+      type: 'assistant',
+      content: 'structured reply afterModel',
+      structuredContent: { ok: true },
+    });
+    expect(session.getLastMessage()).toMatchObject({
+      type: 'assistant',
+      content: 'parallel reply afterModel',
+      attrs: { branch: 'parallel' },
+      structuredContent: { parallel: true },
+      toolCalls: [{ id: 'p1', name: 'noop', arguments: {} }],
+    });
+    expect(calls).toEqual([
+      'beforeModel:undefined',
+      'wrapModelCall',
+      'source:true',
+      'afterModel',
+      'beforeModel:undefined',
+      'wrapModelCall',
+      'parallelSource:1:true',
+      'afterModel',
+    ]);
+    expect(events).toContain('model.started');
+    expect(events).toContain('model.completed');
+  });
+
+  it('runs schema structured folds and keeps structured messages', async () => {
+    const schema = z.object({
+      category: z.string(),
+      urgent: z.boolean(),
+    });
+    const source = Source.llm()
+      .mock()
+      .mockResponse({
+        content: 'triage ready',
+        structuredOutput: { category: 'billing', urgent: true },
+      });
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(source);
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured('triage', schema, (obj, current) =>
+          current.withVar('triage', obj),
+        )
+        .execute();
+
+      expect(source.getCallCount()).toBe(1);
+      expect(session.getVar('triage')).toEqual({
+        category: 'billing',
+        urgent: true,
+      });
+      expect(session.getLastMessage()).toMatchObject({
+        type: 'assistant',
+        content: 'triage ready',
+        structuredContent: { category: 'billing', urgent: true },
+      });
+    } finally {
+      schemaSpy.mockRestore();
+    }
+  });
+
+  it('passes structured fold output by node data-flow, not session scan', async () => {
+    const schema = z.object({ value: z.string() });
+    const source = Source.llm()
+      .mock()
+      .mockResponses(
+        {
+          content: 'earlier',
+          structuredOutput: { value: 'earlier' },
+        },
+        {
+          content: 'current',
+          structuredOutput: { value: 'current' },
+        },
+      );
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(source);
+    const getStructuredSpy = vi
+      .spyOn(Session.prototype, 'getStructured')
+      .mockImplementation(() => {
+        throw new Error('session scan should not be used');
+      });
+    const folded: unknown[] = [];
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured('earlier', schema)
+        .structured('current', schema, (obj, current) => {
+          folded.push(obj);
+          return current.withVar('current', obj.value);
+        })
+        .execute();
+
+      expect(folded).toEqual([{ value: 'current' }]);
+      expect(session.getVar('current')).toBe('current');
+      expect(
+        session.messages.map((message) => message.structuredContent),
+      ).toEqual([{ value: 'earlier' }, { value: 'current' }]);
+    } finally {
+      getStructuredSpy.mockRestore();
+      schemaSpy.mockRestore();
+    }
+  });
+
+  it('keeps existing structured overloads executable', async () => {
+    const schema = z.object({ ok: z.boolean() });
+    const schemaSource = Source.llm()
+      .mock()
+      .mockResponses(
+        { content: 'schema explicit', structuredOutput: { ok: true } },
+        { content: 'schema optional', structuredOutput: { ok: false } },
+      );
+    const schemaSpy = vi.spyOn(Source, 'schema').mockReturnValue(schemaSource);
+
+    try {
+      const session = await Agent.create('assistant')
+        .structured(
+          'template',
+          graphStructuredTemplate(schema, {
+            content: 'template explicit',
+            structuredOutput: { ok: true },
+          }),
+        )
+        .structured('schema', schema)
+        .structured(
+          graphStructuredTemplate(schema, {
+            content: 'template optional',
+            structuredOutput: { ok: true },
+          }),
+        )
+        .structured(schema)
+        .execute();
+
+      expect(
+        session.messages.map((message) => message.structuredContent),
+      ).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: false }]);
+    } finally {
+      schemaSpy.mockRestore();
+    }
+  });
+
+  it('executes empty graph parallel nodes as no-ops without template adapter', async () => {
+    const parallel = new Parallel();
+    parallel.execute = async () => {
+      throw new Error('parallel template adapter should not execute');
+    };
+    const agent = Agent.create('assistant')
+      .assistant('before', 'before')
+      .parallel('emptyParallel', parallel)
+      .assistant('after', 'after');
+
+    const session = await agent.execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'before',
+      'after',
+    ]);
+  });
+
+  it('executes graph transform template nodes', async () => {
+    const session = await Agent.create('assistant')
+      .user('input', 'hello')
+      .transform('mark', (current) => current.withVar('marked', true))
+      .assistant(
+        'reply',
+        (current) => `marked:${String(current.getVar('marked'))}`,
+      )
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'marked:true',
+    ]);
+    expect(session.getVar('marked')).toBe(true);
+  });
+
+  it('compiles graph Codex and Claude turn template nodes', () => {
+    const graph = Agent.create('assistant')
+      .codex('codex', {} as never)
+      .claude('claude', {} as never)
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/codex', 'codexTurn'],
+      ['assistant/claude', 'claudeTurn'],
+    ]);
+  });
+
+  it('changes the manifest when CodexTurn options change', () => {
+    const build = (model = 'gpt-test') =>
+      Agent.create('assistant')
+        .codex('codex', {
+          client: new GraphFakeCodexClient(),
+          model,
+          cwd: '/workspace',
+          sandboxPolicy: { mode: 'workspace-write' },
+          threadStart: { effort: 'medium' },
+          turnStart: { approval: 'never' },
+          onUnresumable: 'restart',
+          restartNotice: 'Restart from checkpoint.',
+          maxRestarts: 2,
+        })
+        .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(build());
+
+    expect(manifest.hash).toBe(createAgentGraphManifest(build()).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(build('gpt-other')).hash,
+    );
+  });
+
+  it('changes the manifest when ClaudeTurn options change', () => {
+    const build = (model = 'claude-test') =>
+      Agent.create('assistant')
+        .claude('claude', {
+          client: new GraphFakeClaudeAgentClient(),
+          model,
+          cwd: '/workspace',
+          allowedTools: ['Read'],
+          disallowedTools: ['Write'],
+          permissionMode: 'acceptEdits',
+          settingSources: ['project'],
+          skills: ['planner'],
+          retainMessages: false,
+          attrsKey: 'claude',
+          onUnresumable: 'restart',
+          restartNotice: 'Restart from checkpoint.',
+          maxRestarts: 2,
+          sdkOptions: { maxTurns: 3 },
+        })
+        .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(build());
+
+    expect(manifest.hash).toBe(createAgentGraphManifest(build()).hash);
+    expect(manifest.hash).not.toBe(
+      createAgentGraphManifest(build('claude-other')).hash,
+    );
+  });
+
+  it('digests secret-bearing config bags instead of persisting plaintext', () => {
+    const codexHash = (env: Record<string, string>) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .codex('codex', {
+            client: new GraphFakeCodexClient(),
+            transport: {
+              kind: 'stdio',
+              command: 'codex',
+              env,
+            },
+          })
+          .toGraph('v1'),
+      );
+    const claudeHash = (sdkOptions: Record<string, unknown>) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .claude('claude', {
+            client: new GraphFakeClaudeAgentClient(),
+            sdkOptions,
+          })
+          .toGraph('v1'),
+      );
+
+    const codexManifest = codexHash({ OPENAI_API_KEY: 'sk-super-secret' });
+    const claudeManifest = claudeHash({ apiKey: 'sk-ant-super-secret' });
+
+    expect(JSON.stringify(codexManifest)).not.toContain('sk-super-secret');
+    expect(JSON.stringify(claudeManifest)).not.toContain('sk-ant-super-secret');
+    expect(codexManifest.hash).not.toBe(
+      codexHash({ OPENAI_API_KEY: 'sk-rotated' }).hash,
+    );
+    expect(claudeManifest.hash).not.toBe(
+      claudeHash({ apiKey: 'sk-ant-rotated' }).hash,
+    );
+  });
+
+  it('accepts a zod schema directly on .structured as sugar', () => {
+    const schema = z.object({ ok: z.boolean() });
+    const direct = createAgentGraphManifest(
+      Agent.create('assistant').structured('reply', schema).toGraph('v1'),
+    );
+    const wrapped = createAgentGraphManifest(
+      Agent.create('assistant')
+        .structured('reply', Structured.withSchema(schema))
+        .toGraph('v1'),
+    );
+
+    expect(direct.hash).toBe(wrapped.hash);
+    expect(
+      createAgentGraphManifest(
+        Agent.create('assistant').structured(schema).toGraph('v1'),
+      ).nodes.map((node) => [node.path, node.type]),
+    ).toEqual([['assistant/structured-1', 'structured']]);
+  });
+
+  it('keeps schema structured folds in manifests with derived ids', () => {
+    const schema = z.object({ ok: z.boolean() });
+    const changedSchema = z.object({
+      ok: z.boolean(),
+      reason: z.string(),
+    });
+    const fold = (obj: z.infer<typeof schema>, session: Session) =>
+      session.withVar('reply', obj);
+    const optionalGraph = Agent.create('assistant')
+      .structured(schema, fold)
+      .toGraph('v1');
+    const explicitGraph = Agent.create('assistant')
+      .structured('structured-1', schema, fold)
+      .toGraph('v1');
+    const optionalManifest = createAgentGraphManifest(optionalGraph);
+    const explicitManifest = createAgentGraphManifest(explicitGraph);
+    const changedManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .structured('structured-1', changedSchema, (obj, session) =>
+          session.withVar('reply', obj),
+        )
+        .toGraph('v1'),
+    );
+    const manifestData = JSON.stringify(optionalManifest.nodes[0]?.data);
+
+    expect(optionalGraph.nodes[0]?.id).toBe('structured-1');
+    expect(optionalManifest.hash).toBe(explicitManifest.hash);
+    expect(optionalManifest.hash).not.toBe(changedManifest.hash);
+    expect(manifestData).toContain('jsonSchema');
+    expect(manifestData).toContain('ok');
+  });
+
+  it('changes the manifest when graph content or structured schemas change', () => {
+    const systemHash = (content: string) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .system('system', content)
+          .assistant('reply', 'ok')
+          .toGraph('v1'),
+      ).hash;
+    const structuredHash = (schema: z.ZodType) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .structured('reply', Structured.withSchema(schema))
+          .toGraph('v1'),
+      ).hash;
+
+    expect(systemHash('Be concise.')).not.toBe(systemHash('Be detailed.'));
+    expect(structuredHash(z.object({ ok: z.boolean() }))).not.toBe(
+      structuredHash(z.object({ ok: z.boolean(), reason: z.string() })),
+    );
+  });
+
+  it('does not detect closure body edits when function names are unchanged', () => {
+    const namedHandler = (content: string) =>
+      Object.defineProperty(() => content, 'name', {
+        value: 'sameHandler',
+      }) as () => string;
+    const hash = (content: string) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .assistant('reply', namedHandler(content))
+          .toGraph('v1'),
+      ).hash;
+
+    expect(hash('old body result')).toBe(hash('new body result'));
+  });
+
+  it('does not change the manifest when only provider client instances change', () => {
+    const codexHash = (client: GraphFakeCodexClient) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .codex('codex', { client, model: 'gpt-test' })
+          .toGraph('v1'),
+      ).hash;
+    const claudeHash = (client: GraphFakeClaudeAgentClient) =>
+      createAgentGraphManifest(
+        Agent.create('assistant')
+          .claude('claude', { client, model: 'claude-test' })
+          .toGraph('v1'),
+      ).hash;
+
+    expect(codexHash(new GraphFakeCodexClient())).toBe(
+      codexHash(new GraphFakeCodexClient()),
+    );
+    expect(claudeHash(new GraphFakeClaudeAgentClient())).toBe(
+      claudeHash(new GraphFakeClaudeAgentClient()),
+    );
+  });
+
+  it('fails app checkpoint resume when a provider option edit changes the manifest', async () => {
+    const store = memoryStore();
+    const app = PromptTrail.app({ store });
+    const runId = 'app-provider-version';
+
+    await app.executeCheckpointRun({
+      agent: Agent.create('assistant')
+        .codex('codex', {
+          client: new GraphFakeCodexClient(),
+          model: 'gpt-test',
+        })
+        .assistant('reply', 'done'),
+      runId,
+    });
+
+    await expect(
+      app.executeCheckpointRun({
+        agent: Agent.create('assistant')
+          .codex('codex', {
+            client: new GraphFakeCodexClient(),
+            model: 'gpt-other',
+          })
+          .assistant('reply', 'done'),
+        runId,
+      }),
+    ).rejects.toThrow(AgentGraphVersionError);
+  });
+
+  it('executes graph Codex and Claude turn nodes without template adapter entrypoints', async () => {
+    const codexClient = new GraphFakeCodexClient();
+    const claudeClient = new GraphFakeClaudeAgentClient();
+    const graph = Agent.create('assistant')
+      .user('prompt', 'Review this')
+      .codex('codex', { client: codexClient })
+      .claude('claude', { client: claudeClient })
+      .toGraph('v1');
+
+    for (const node of graph.nodes) {
+      if (node.type === 'codexTurn' || node.type === 'claudeTurn') {
+        const template = (node.data as { template?: { execute?: unknown } })
+          .template;
+        if (template) {
+          template.execute = async () => {
+            throw new Error('turn template adapter should not execute');
+          };
+        }
+      }
+    }
+
+    const session = await executeAgentGraph(graph);
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Review this',
+      'Codex graph result',
+      'Claude graph result',
+    ]);
+    expect(codexClient.turnStarts[0]).toMatchObject({
+      threadId: 'thread-graph',
+      input: [{ type: 'text', text: 'Review this' }],
+    });
+    expect(claudeClient.queries[0]).toMatchObject({
+      prompt: 'Codex graph result',
+    });
+  });
+
+  it('derives ids for named graph transform nodes', () => {
+    const graph = Agent.create('assistant')
+      .transform((session) => session)
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['transform-1', 'transform'],
+    ]);
+  });
+
+  it('executes direct durable graph agents through the app runtime', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .inbox('inbound')
+      .assistant('reply', Source.literal('ok'))
+      .checkpoint({ store });
+
+    const result = await agent.execute({
+      checkpoint: store,
+      input: 'hello',
+      runId: 'direct-graph',
+    });
+    const run = await store.get('direct-graph');
+
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+    expect(run?.agentName).toBe('assistant');
+    expect(run?.graphManifest?.name).toBe('assistant');
+    expect(run?.graphManifest?.hash).toBe(
+      createAgentGraphManifest(agent.toGraph()).hash,
+    );
+  });
+
+  it('rejects undeclared static tools at checkpoint app registration only', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: ({ id }) => id,
+    });
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant('reply', () => ({
+        content: 'need lookup',
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: 'one' } }],
+      }))
+      .tools('tools');
+
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: agent },
+      }),
+    ).toThrow(
+      'Checkpoint agent "assistant" tool "lookup" is missing an ExecutionEffectDeclaration.',
+    );
+    expect(() =>
+      PromptTrail.app({ agents: { assistant: agent } }),
+    ).not.toThrow();
+  });
+
+  it('requires explicit vendor tool-loop consent for checkpoint native adapter tools', () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Lookup.',
+      inputSchema: z.object({ id: z.string() }),
+      effect: { repeatable: true },
+      execute: ({ id }) => id,
+    });
+    const nativeSource = Source.llm()
+      .openai({ api: 'responses', adapter: 'native' })
+      .addTool('lookup', lookup);
+    const nativeSources = [
+      nativeSource,
+      Source.llm().anthropic({ adapter: 'native' }).addTool('lookup', lookup),
+      Source.llm().google({ adapter: 'native' }).addTool('lookup', lookup),
+    ];
+
+    for (const [index, source] of nativeSources.entries()) {
+      const agentName = `assistant-${index}`;
+      const checkpointAgent = Agent.create(agentName).assistant(
+        'reply',
+        source,
+      );
+
+      expect(() =>
+        PromptTrail.app({
+          defaults: { checkpoint: true },
+          agents: { assistant: checkpointAgent },
+        }),
+      ).toThrow(
+        new RegExp(
+          `Checkpoint agent "${agentName}" node "${agentName}/reply".*adapter: 'ai-sdk'.*toolLoop: 'vendor'.*not durable.*whole turn re-runs`,
+        ),
+      );
+
+      expect(() =>
+        PromptTrail.app({ agents: { assistant: checkpointAgent } }),
+      ).not.toThrow();
+
+      expect(() =>
+        PromptTrail.app({
+          defaults: { checkpoint: true },
+          agents: {
+            assistant: Agent.create(`acknowledged-${index}`).assistant(
+              'reply',
+              source.toolLoop('vendor'),
+            ),
+          },
+        }),
+      ).not.toThrow();
+    }
+
+    const acknowledgedAgent = Agent.create('assistant').assistant(
+      'reply',
+      nativeSource.toolLoop('vendor'),
+    );
+    const manifest = createAgentGraphManifest(acknowledgedAgent.toGraph());
+    const serialized = JSON.stringify(manifest.nodes[0].data);
+    expect(serialized).toContain('"toolLoop":"vendor"');
+
+    const noToolManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .assistant('reply', Source.llm().openai({ api: 'responses' }))
+        .toGraph(),
+    );
+    const noToolAcknowledgedManifest = createAgentGraphManifest(
+      Agent.create('assistant')
+        .assistant(
+          'reply',
+          Source.llm().openai({ api: 'responses' }).toolLoop('vendor'),
+        )
+        .toGraph(),
+    );
+    expect(noToolAcknowledgedManifest.hash).not.toBe(noToolManifest.hash);
+
+    const aiSdkAgent = Agent.create('assistant').assistant(
+      'reply',
+      Source.llm().openai({ adapter: 'ai-sdk' }).addTool('lookup', lookup),
+    );
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: aiSdkAgent },
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires wrapper middleware declarations under checkpoint only', () => {
+    const wrapperAgent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'modelWrapper',
+          wrapModelCall: async (_ctx, next) => next(),
+        }),
+      )
+      .assistant('reply', Source.literal('ok'));
+    const transformOnlyAgent = Agent.create('assistant')
+      .use(
+        Middleware.create({
+          name: 'modelPatch',
+          beforeModel: () => ({ session: { vars: { patched: true } } }),
+        }),
+      )
+      .assistant('reply', Source.literal('ok'));
+
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: wrapperAgent },
+      }),
+    ).toThrow(
+      'Checkpoint agent "assistant" middleware "modelWrapper" wrapModelCall is missing an ExecutionEffectDeclaration.',
+    );
+    expect(() =>
+      PromptTrail.app({
+        defaults: { checkpoint: true },
+        agents: { assistant: transformOnlyAgent },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      PromptTrail.app({ agents: { assistant: wrapperAgent } }),
+    ).not.toThrow();
+  });
+
+  it('warns for checkpoint resume-sensitive auto-derived ids', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      createAgentGraphManifest(
+        Agent.create('assistant').awaitInput().toGraph(),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        'Checkpoint agent "assistant" has auto-derived ids on resume-sensitive nodes. Add explicit ids to keep resume stable across graph edits: assistant/awaitInput-1',
+      );
+      warn.mockClear();
+
+      createAgentGraphManifest(
+        Agent.create('assistant').awaitInput('next').toGraph(),
+      );
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('memoizes graph checkpoint keyed tool effect and nested once effects', async () => {
+    const store = memoryStore();
+    let memoCalls = 0;
+    let toolCalls = 0;
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      effect: {
+        idempotencyKey: (input) => `lookup:${(input as { id: string }).id}`,
+        kind: 'external-read',
+      },
+      execute: async ({ id }, context) => {
+        toolCalls++;
+        const memo = await context.durable?.once(
+          'stable-value',
+          id,
+          () => {
+            memoCalls++;
+            return `memo:${id}:${memoCalls}`;
+          },
+          { scope: 'run' },
+        );
+        return `${memo}:${context.effect?.kind ?? 'none'}`;
+      },
+    });
+    const agent = Agent.create('assistant')
+      .tool('lookup', lookup)
+      .assistant('reply', () => ({
+        content: 'need lookup',
+        toolCalls: [{ id: 'call-1', name: 'lookup', arguments: { id: 'one' } }],
+      }))
+      .tools('tools')
+      .checkpoint({ store });
+
+    const result = await agent.execute({
+      checkpoint: store,
+      runId: 'direct-graph-tool-effects',
+    });
+    const run = await store.get('direct-graph-tool-effects');
+
+    expect(result.session.messages.map((message) => message.content)).toEqual([
+      'need lookup',
+      'memo:one:1:external-read',
+    ]);
+    expect(toolCalls).toBe(1);
+    expect(memoCalls).toBe(1);
+    expect(run?.once.run.size).toBe(2);
+  });
+
+  it('resumes direct durable graph agents from suspended input nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .inbox('first')
+      .awaitInput('next')
+      .assistant('reply', (session) => {
+        const last = session.getLastMessage()?.content ?? '';
+        return `reply:${last}`;
+      })
+      .checkpoint({ store });
+
+    const suspended = await agent.execute({
+      checkpoint: store,
+      input: 'hello',
+      runId: 'direct-resume',
+    });
+    const resumed = await agent.execute({
+      checkpoint: store,
+      input: 'again',
+      runId: 'direct-resume',
+    });
+
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'reply:again',
+    ]);
+  });
+
+  it('resumes direct durable graph loops from suspended input nodes', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .inbox('first')
+      .loop(
+        'waitLoop',
+        (loop) =>
+          loop
+            .transform('count', (session) =>
+              session.withVar(
+                'count',
+                ((session.getVar('count') as number) ?? 0) + 1,
+              ),
+            )
+            .awaitInput('next')
+            .assistant(
+              'reply',
+              (session) => `reply:${session.getLastMessage()?.content ?? ''}`,
+            ),
+        ({ session }) => ((session.getVar('count') as number) ?? 0) < 1,
+      )
+      .assistant('done', (session) => `done:${String(session.getVar('count'))}`)
+      .checkpoint({ store });
+
+    const suspended = await agent.execute({
+      checkpoint: store,
+      input: 'hello',
+      runId: 'direct-loop-resume',
+    });
+    const resumed = await agent.execute({
+      checkpoint: store,
+      input: 'again',
+      runId: 'direct-loop-resume',
+    });
+
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(suspended.session.getVar('count')).toBe(1);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'reply:again',
+      'done:1',
+    ]);
+    expect(resumed.session.getVar('count')).toBe(1);
+  });
+
+  it('clears graph resume targets after consuming resumed input in nested loops', async () => {
+    const store = memoryStore();
+    const agent = Agent.create('assistant')
+      .inbox('first')
+      .loop(
+        'outer',
+        (outer) =>
+          outer
+            .transform('count', (session) =>
+              session.withVar(
+                'count',
+                ((session.getVar('count') as number) ?? 0) + 1,
+              ),
+            )
+            .loop(
+              'inner',
+              (inner) =>
+                inner
+                  .awaitInput('next')
+                  .transform('inputDone', (session) =>
+                    session.withVar('needInput', false),
+                  ),
+              ({ session }) => session.getVar('needInput') !== false,
+            )
+            .assistant(
+              'reply',
+              (session) => `outer:${String(session.getVar('count'))}`,
+            ),
+        ({ session }) => ((session.getVar('count') as number) ?? 0) < 2,
+      )
+      .checkpoint({ store });
+
+    const suspended = await agent.execute({
+      checkpoint: store,
+      input: 'hello',
+      runId: 'direct-nested-loop-resume',
+    });
+    const resumed = await agent.execute({
+      checkpoint: store,
+      input: 'again',
+      runId: 'direct-nested-loop-resume',
+    });
+
+    expect(
+      suspended.session.messages.map((message) => message.content),
+    ).toEqual(['hello']);
+    expect(suspended.session.getVar('count')).toBe(1);
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'again',
+      'outer:1',
+      'outer:2',
+    ]);
+    expect(resumed.session.getVar('count')).toBe(2);
+    expect(resumed.session.getVar('needInput')).toBe(false);
+  });
+
+  it('fails direct durable graph resume when the graph manifest changes', async () => {
+    const store = memoryStore();
+
+    await Agent.create('assistant')
+      .assistant('reply', Source.literal('ok'))
+      .execute({ checkpoint: store, runId: 'graph-version' });
+
+    const changed = Agent.create('assistant')
+      .system('system', 'Changed.')
+      .assistant('reply', Source.literal('ok'));
+
+    await expect(
+      changed.execute({ checkpoint: store, runId: 'graph-version' }),
+    ).rejects.toThrow(AgentGraphVersionError);
+  });
+
+  it('passes context and signal to graph handlers', async () => {
+    const controller = new AbortController();
+    const session = await Agent.create('assistant')
+      .assistant('reply', (_session, runtime) => {
+        expect(runtime?.context?.channel).toBe('docs');
+        expect(runtime?.signal).toBe(controller.signal);
+        return 'ok';
+      })
+      .execute({
+        context: { channel: 'docs' },
+        signal: controller.signal,
+      });
+
+    expect(session.getLastMessage()?.content).toBe('ok');
+  });
+
+  it('passes context and signal to graph Source inputs', async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const source = new (class extends Source<string> {
+      async getContent(
+        _session: Session,
+        runtime?: ExecutionRuntimeState,
+      ): Promise<string> {
+        seenSignal = runtime?.signal;
+        return String(runtime?.context?.channel);
+      }
+    })();
+
+    const session = await Agent.create('assistant')
+      .assistant('reply', source)
+      .execute({
+        context: { channel: 'docs' },
+        signal: controller.signal,
+      });
+
+    expect(seenSignal).toBe(controller.signal);
+    expect(session.getLastMessage()?.content).toBe('docs');
+  });
+
+  it('aborts graph execution before running nodes', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('stop'));
+
+    await expect(
+      Agent.create('assistant')
+        .assistant('reply', () => 'unreachable')
+        .execute({ signal: controller.signal }),
+    ).rejects.toThrow(/stop/);
+  });
+
+  it('compiles goal nodes into a stable subgraph', () => {
+    const graph = Agent.create('research')
+      .goal('researchTopic', 'Research the topic thoroughly', {
+        interaction: 'required',
+        maxAttempts: 3,
+        isSatisfied: ({ session }) => session.messages.length > 2,
+      })
+      .toGraph('v1');
+
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['research/researchTopic', 'goal'],
+      ['research/researchTopic/prompt', 'user'],
+      ['research/researchTopic/attempts', 'loop'],
+      ['research/researchTopic/attempts/model', 'assistant'],
+      ['research/researchTopic/attempts/tools', 'tools'],
+      ['research/researchTopic/attempts/check', 'transform'],
+      ['research/researchTopic/attempts/interaction', 'awaitInput'],
+    ]);
+    const checkData = manifest.nodes.find((node) =>
+      node.path.endsWith('/check'),
+    )?.data;
+    expect(checkData).toMatchObject({ kind: 'goalSatisfaction' });
+    expect(checkData).not.toHaveProperty('durability');
+  });
+
+  it('auto-loops goal model nodes over registered tools', async () => {
+    const lookup = Tool.create({
+      name: 'lookup',
+      description: 'Look up a value.',
+      inputSchema: z.object({ id: z.string() }),
+      effect: { repeatable: true },
+      execute: ({ id }) => `value:${id}`,
+    });
+    const agent = Agent.create('research')
+      .tool('lookup', lookup)
+      .goal('researchTopic', 'Research the topic', {
+        model: (session) => {
+          const toolResult = session.getMessagesByType('tool_result').at(-1);
+          return toolResult
+            ? `final:${toolResult.content}`
+            : {
+                content: 'need lookup',
+                toolCalls: [
+                  { id: 'call-1', name: 'lookup', arguments: { id: '1' } },
+                ],
+              };
+        },
+        isSatisfied: ({ session }) =>
+          session.getLastMessage()?.content === 'final:value:1',
+      });
+
+    const session = await agent.execute();
+    const manifest = createAgentGraphManifest(agent.toGraph('v1'));
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'Research the topic',
+      'need lookup',
+      'value:1',
+      'final:value:1',
+    ]);
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['research/researchTopic', 'goal'],
+      ['research/researchTopic/prompt', 'user'],
+      ['research/researchTopic/attempts', 'loop'],
+      ['research/researchTopic/attempts/model', 'assistant'],
+      ['research/researchTopic/attempts/model-loop', 'loop'],
+      ['research/researchTopic/attempts/model-loop/model-tools', 'tools'],
+      ['research/researchTopic/attempts/model-loop/model', 'assistant'],
+      ['research/researchTopic/attempts/check', 'transform'],
+    ]);
+  });
+
+  it('compiles named graph subroutines into a stable subgraph', () => {
+    const graph = Agent.create('assistant')
+      .subroutine('draft', (sub) =>
+        sub.user('prompt', 'Draft a reply').assistant('reply', 'ok'),
+      )
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/draft', 'scope'],
+      ['assistant/draft/prompt', 'user'],
+      ['assistant/draft/reply', 'assistant'],
+    ]);
+  });
+
+  it('uses graph-mode authoring inside named graph subroutines', () => {
+    const graph = Agent.create('assistant')
+      .subroutine('draft', (sub) => sub.assistant('reply'))
+      .toGraph('v1');
+
+    expect(graph.nodes[0]?.children).toEqual([
+      {
+        id: 'assistant-1',
+        type: 'assistant',
+        data: { input: 'reply' },
+        children: undefined,
+      },
+    ]);
+  });
+
+  it('compiles named graph conditionals and loops into stable subgraphs', () => {
+    const graph = Agent.create('assistant')
+      .conditional(
+        'branch',
+        ({ session }) => session.getVar('ready') === true,
+        (then) => then.assistant('thenReply', 'ready'),
+        (otherwise) => otherwise.assistant('elseReply', 'not ready'),
+      )
+      .loop(
+        'retry',
+        (body) => body.assistant('tick', 'tick'),
+        ({ session }) => session.messages.length < 2,
+        { maxIterations: 3 },
+      )
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/branch', 'conditional'],
+      ['assistant/branch/thenReply', 'assistant'],
+      ['assistant/branch/elseReply', 'assistant'],
+      ['assistant/retry', 'loop'],
+      ['assistant/retry/tick', 'assistant'],
+    ]);
+  });
+
+  it('compiles implicit graph sequences into stable sequential nodes', () => {
+    const graph = Agent.create('assistant')
+      .user('prompt', 'Draft')
+      .assistant('reply', 'ok')
+      .toGraph('v1');
+    const manifest = createAgentGraphManifest(graph);
+
+    expect(manifest.nodes.map((node) => [node.path, node.type])).toEqual([
+      ['assistant/prompt', 'user'],
+      ['assistant/reply', 'assistant'],
+    ]);
+    expect(graph.nodes[0]?.id).toBe('prompt');
+  });
+
+  it('compiles optional-id forms for the full graph node vocabulary', () => {
+    const codexClient = new GraphFakeCodexClient();
+    const claudeClient = new GraphFakeClaudeAgentClient();
+    const graph = Agent.create('optional-sweep')
+      .system('System')
+      .user('User')
+      .assistant('Assistant')
+      .transform((session) => session.withVar('pure', true))
+      .transform({ effect: { repeatable: true } }, async (session) =>
+        session.withVar('effect', true),
+      )
+      .inbox()
+      .awaitInput({ required: false })
+      .tools()
+      .loop((body) => body.assistant('Loop'), false)
+      .conditional(
+        () => true,
+        (then) => then.assistant('Then'),
+        (otherwise) => otherwise.assistant('Else'),
+      )
+      .subroutine((sub) => sub.assistant('Sub'))
+      .parallel(new Parallel())
+      .structured(
+        Structured.withSource(
+          Source.literal({ content: '{"ok":true}' }),
+          z.object({ ok: z.boolean() }),
+        ),
+      )
+      .codex({ client: codexClient })
+      .claude({ client: claudeClient })
+      .goal('Complete a tiny goal', { maxAttempts: 1 })
+      .toGraph('v1');
+
+    expect(graph.nodes.map((node) => [node.id, node.type])).toEqual([
+      ['system-1', 'system'],
+      ['user-1', 'user'],
+      ['assistant-1', 'assistant'],
+      ['transform-1', 'transform'],
+      ['transform-2', 'transform'],
+      ['inbox-1', 'inbox'],
+      ['awaitInput-1', 'awaitInput'],
+      ['tools-1', 'tools'],
+      ['loop-1', 'loop'],
+      ['conditional-1', 'conditional'],
+      ['subroutine-1', 'scope'],
+      ['parallel-1', 'parallel'],
+      ['structured-1', 'structured'],
+      ['codex-1', 'codexTurn'],
+      ['claude-1', 'claudeTurn'],
+      ['goal-1', 'goal'],
+    ]);
+  });
+
+  it('executes representative optional-id graph node forms', async () => {
+    const session = await Agent.create('optional-execute')
+      .system('System')
+      .user('User')
+      .assistant('Assistant')
+      .transform((current) => current.withVar('count', 0))
+      .loop(
+        (body) =>
+          body
+            .assistant('Loop')
+            .transform((current) =>
+              current.withVar('count', Number(current.getVar('count')) + 1),
+            ),
+        ({ session: current }) => Number(current.getVar('count')) < 1,
+      )
+      .conditional(
+        ({ session: current }) => current.getVar('count') === 1,
+        (then) => then.assistant('Then'),
+        (otherwise) => otherwise.assistant('Else'),
+      )
+      .subroutine((sub) => sub.assistant('Sub'))
+      .awaitInput({ required: false })
+      .execute();
+
+    expect(session.messages.map((message) => message.content)).toEqual([
+      'System',
+      'User',
+      'Assistant',
+      'Loop',
+      'Then',
+      'Sub',
+    ]);
+  });
+});
+
+describe('Content-first graph execution through GraphExecutor', () => {
+  it('executes a system/user/assistant sequence via graph', async () => {
+    const session = await Agent.create('agent-graph')
+      .system('You are concise.')
+      .user('Hello')
+      .assistant('Hi there')
+      .execute();
+
+    expect(session.messages.map((m) => [m.type, m.content])).toEqual([
+      ['system', 'You are concise.'],
+      ['user', 'Hello'],
+      ['assistant', 'Hi there'],
+    ]);
+  });
+
+  it('executes an assistant with a Source-based content source', async () => {
+    const session = await Agent.create('agent-graph')
+      .user('ping')
+      .assistant(Source.literal('pong'))
+      .execute();
+
+    expect(session.getLastMessage()?.content).toBe('pong');
+  });
+
+  it('fails fast when a graph loop exceeds max iterations', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(
+        Agent.create('agent-graph')
+          .loop(
+            (body) => body.user('tick'),
+            () => true,
+            { maxIterations: 3 },
+          )
+          .execute(),
+      ).rejects.toThrow(/exceeded max iterations/);
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('maximum iterations'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('fails fast when a graph loop has no condition', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(
+        Agent.create('agent-graph')
+          .loop((body) => body.user('once'))
+          .execute(),
+      ).rejects.toThrow(/requires a condition/);
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('loop condition'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('executes a finite graph loop', async () => {
+    let count = 0;
+    const session = await Agent.create('agent-graph')
+      .loop(
+        (body) => body.user('tick'),
+        () => count++ < 3,
+      )
+      .execute();
+
+    expect(session.messages.map((m) => m.content)).toEqual([
+      'tick',
+      'tick',
+      'tick',
+    ]);
+  });
+
+  it('fires beforeTemplate and afterTemplate hooks around each legacy child', async () => {
+    const calls: string[] = [];
+
+    const session = await Agent.create('agent-graph')
+      .hook(
+        Hook.create({
+          name: 'lifecycleHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`before:${req.templateIndex}:${req.templateName}`);
+          },
+          onAfterTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`after:${req.templateIndex}:${req.templateName}`);
+          },
+        }),
+      )
+      .user('first')
+      .assistant('second')
+      .execute();
+
+    expect(session.messages.map((m) => m.content)).toEqual(['first', 'second']);
+    // Two children at index 0 and 1; template names match class names
+    expect(calls).toEqual([
+      'before:0:User',
+      'after:0:User',
+      'before:1:Assistant',
+      'after:1:Assistant',
+    ]);
+  });
+
+  it('halts sibling execution when beforeTemplate hook returns halt', async () => {
+    const session = await Agent.create('agent-graph')
+      .hook(
+        Hook.create({
+          name: 'haltHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as { templateIndex: number };
+            if (req.templateIndex === 1) {
+              return { command: { type: 'halt' as const } };
+            }
+          },
+        }),
+      )
+      .user('first')
+      .user('second') // should be skipped
+      .user('third') // should be skipped
+      .execute();
+
+    // Only the first user message should be added
+    expect(session.messages.map((m) => m.content)).toEqual(['first']);
+  });
+
+  it('fires beforeTemplate and afterTemplate inside a legacy loop body', async () => {
+    const calls: string[] = [];
+    let iterations = 0;
+
+    await Agent.create('agent-graph')
+      .hook(
+        Hook.create({
+          name: 'loopLifecycleHook',
+          onBeforeTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`before:${req.templateIndex}:${req.templateName}`);
+          },
+          onAfterTemplate: ({ request }) => {
+            const req = request as {
+              templateIndex: number;
+              templateName: string;
+            };
+            calls.push(`after:${req.templateIndex}:${req.templateName}`);
+          },
+        }),
+      )
+      .loop(
+        (body) => body.user('tick'),
+        () => iterations++ < 2,
+      )
+      .execute();
+
+    // Graph-native loop bodies do not add the old Sequence wrapper; lifecycle
+    // hooks fire for the loop node and direct body nodes.
+    expect(calls).toEqual([
+      'before:0:Loop',
+      'before:0:User',
+      'after:0:User',
+      'before:0:User',
+      'after:0:User',
+      'after:0:Loop',
+    ]);
+  });
+
+  it('executes a conditional through the graph compiler', async () => {
+    const runAgent = async (condition: boolean) => {
+      const session = await Agent.create('agent-graph')
+        .user('setup')
+        .conditional(
+          () => condition,
+          (then) => then.assistant('yes'),
+          (otherwise) => otherwise.assistant('no'),
+        )
+        .execute();
+      return session.messages.map((m) => m.content);
+    };
+
+    expect(await runAgent(true)).toEqual(['setup', 'yes']);
+    expect(await runAgent(false)).toEqual(['setup', 'no']);
+  });
+
+  it('passes middleware runtime through nested legacy agents', async () => {
+    const modelCalls: string[] = [];
+
+    const session = await Agent.create('agent-graph')
+      .use(
+        Middleware.create({
+          name: 'trackMiddleware',
+          beforeModel: () => {
+            modelCalls.push('beforeModel');
+            return { session: { vars: { fromMiddleware: true } } };
+          },
+        }),
+      )
+      .assistant(Source.literal('ok'))
+      .execute();
+
+    // The middleware's beforeModel fires and injects the var; the assistant
+    // executes correctly through the legacy compilation graph path.
+    expect(session.getLastMessage()?.content).toBe('ok');
+    expect(modelCalls).toEqual(['beforeModel']);
+    expect(session.getVar('fromMiddleware')).toBe(true);
+  });
+
+  it('executes a subroutine with isolated context through the graph compiler', async () => {
+    const session = await Agent.create('agent-graph')
+      .user('outer')
+      .subroutine((sub) =>
+        sub
+          .transform((s) => s.withVar('inSub', true))
+          .assistant(Source.literal('sub-result')),
+      )
+      .execute();
+
+    // Subroutine messages are appended to the parent session by default
+    expect(session.messages.map((m) => m.content)).toContain('sub-result');
+  });
+});

@@ -1,92 +1,102 @@
 /**
  * Interactive Coding Agent Example
  *
- * This example demonstrates how to create an interactive coding agent using PromptTrail.
- * The agent can execute shell commands, read and write files, and maintain a conversation.
+ * This example demonstrates an interactive coding agent using PromptTrail.
+ * The agent can execute shell commands, read and write files, and maintain a
+ * conversation.
  */
 
-// Import PromptTrail core components
-import {
-  Agent,
-  CLISource,
-  Session,
-  Source,
-  System,
-} from '../packages/core/src/index';
-
-// Import Tool namespace from PromptTrail
+import { Agent, CLISource, Session, Source, Tool } from '@prompttrail/core';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { Tool } from '../packages/core/src/index';
-
-// Node.js modules for file and command operations
 import { exec } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
+import { resolve } from 'path';
 import { promisify } from 'util';
-// Convert exec to promise-based for async/await usage
+
 const execAsync = promisify(exec);
 
-// Define shell command tool
-const shellCommandTool = Tool.create({
-  description: 'Execute a shell command',
-  parameters: z.object({
-    command: z.string().describe('Shell command to execute'),
-  }),
-  execute: async (input) => {
-    try {
-      console.log(`[Debug] Executing command: ${input.command}`);
-      const { stdout, stderr } = await execAsync(input.command);
-      return { stdout, stderr };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Command failed';
-      return { stdout: '', stderr: message };
-    }
-  },
-});
+// The tools run shell commands and write files; binding them to an explicit
+// working directory keeps the agent's edits inside it (tests sandbox runs in
+// a temp dir this way).
+function createCodingTools(cwd: string) {
+  const shellCommandTool = Tool.create({
+    description: 'Execute a shell command',
+    inputSchema: z.object({
+      command: z.string().describe('Shell command to execute'),
+    }),
+    effect: { repeatable: true },
+    execute: async (input) => {
+      try {
+        console.log(`[Debug] Executing command: ${input.command}`);
+        const { stdout, stderr } = await execAsync(input.command, { cwd });
+        return { stdout, stderr };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Command failed';
+        return { stdout: '', stderr: message };
+      }
+    },
+  });
 
-// Define file reading tool
-const readFileTool = Tool.create({
-  description: 'Read content from a file',
-  parameters: z.object({
-    path: z.string().describe('Path to the file to read'),
-  }),
-  execute: async (input) => {
-    try {
-      const content = await readFile(input.path, 'utf-8');
-      console.log(
-        `[Debug] Read content from ${input.path}:`,
-        content.substring(0, 10),
-        '...',
-      );
-      return { content };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { error: `Failed to read file: ${message}` };
-    }
-  },
-});
+  const readFileTool = Tool.create({
+    description: 'Read content from a file',
+    inputSchema: z.object({
+      path: z.string().describe('Path to the file to read'),
+    }),
+    effect: { repeatable: true },
+    execute: async (input) => {
+      try {
+        const content = await readFile(resolve(cwd, input.path), 'utf-8');
+        console.log(
+          `[Debug] Read content from ${input.path}:`,
+          content.substring(0, 10),
+          '...',
+        );
+        return { content };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        return { error: `Failed to read file: ${message}` };
+      }
+    },
+  });
 
-// Define file writing tool
-const writeFileTool = Tool.create({
-  description: 'Write content to a file',
-  parameters: z.object({
-    path: z.string().describe('Path to write the file'),
-    content: z.string().describe('Content to write to the file'),
-  }),
-  execute: async (input) => {
-    try {
-      console.log(
-        `[Debug] Writing content to ${input.path}:`,
-        input.content.substring(0, 10),
-        '...',
-      );
-      await writeFile(input.path, input.content, 'utf-8');
-      return { success: true };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, error: `Failed to write file: ${message}` };
-    }
-  },
-});
+  const writeFileTool = Tool.create({
+    description: 'Write content to a file',
+    inputSchema: z.object({
+      path: z.string().describe('Path to write the file'),
+      content: z.string().describe('Content to write to the file'),
+    }),
+    effect: {
+      idempotencyKey: (input) => {
+        const { path, content } = input as { path: string; content: string };
+        return `write-file:${path}:${content.length}`;
+      },
+    },
+    execute: async (input) => {
+      try {
+        console.log(
+          `[Debug] Writing content to ${input.path}:`,
+          input.content.substring(0, 10),
+          '...',
+        );
+        await writeFile(resolve(cwd, input.path), input.content, 'utf-8');
+        return { success: true };
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        return { success: false, error: `Failed to write file: ${message}` };
+      }
+    },
+  });
+
+  return {
+    shell_command: shellCommandTool,
+    read_file: readFileTool,
+    write_file: writeFileTool,
+  };
+}
 
 // Type definition for tools collection
 type ToolsMap = Record<string, Tool>;
@@ -97,37 +107,31 @@ type ToolsMap = Record<string, Tool>;
  */
 export class CodingAgent {
   private tools: ToolsMap;
-  private llm: Source;
+  private llm: ReturnType<typeof Source.llm>;
 
   constructor(config: {
     provider: 'openai' | 'anthropic';
     apiKey: string;
     modelName?: string;
+    cwd?: string;
   }) {
-    // Register all available tools
-    this.tools = {
-      shell_command: shellCommandTool,
-      read_file: readFileTool,
-      write_file: writeFileTool,
-    };
+    // Register all available tools, bound to the working directory
+    this.tools = createCodingTools(config.cwd ?? process.cwd());
 
-    // Configure the LLM with tools using the fluent API
     let llmSource = Source.llm();
 
-    // Configure provider
     if (config.provider === 'openai') {
       llmSource = llmSource.openai({
         apiKey: config.apiKey,
-        modelName: config.modelName || 'gpt-4o-mini',
+        modelName: config.modelName || 'gpt-5.4-nano',
       });
     } else {
       llmSource = llmSource.anthropic({
         apiKey: config.apiKey,
-        modelName: config.modelName || 'claude-3-5-haiku-latest',
+        modelName: config.modelName || 'claude-haiku-4-5',
       });
     }
 
-    // Add temperature and tools
     this.llm = llmSource.temperature(0.7).withTools(this.tools);
   }
 
@@ -140,27 +144,22 @@ export class CodingAgent {
       '\nStarting interactive coding agent (type "exit" to end)...\n',
     );
 
-    // Create interactive input source
     const userCliSource = new CLISource('Your request (type "exit" to end): ');
 
-    // Create session with console output
     const session = Session.debug();
 
     const systemPrompt =
       'You are a coding agent that can execute shell commands and manipulate files. Use the available tools to help users accomplish their tasks.';
 
-    const agent = Agent.create()
-      .add(new System(systemPrompt))
+    const agent = Agent.create('coding-agent')
+      .system(systemPrompt)
       .conditional(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        (_) => initialPrompt !== undefined && initialPrompt.trim() !== '',
-        // When initialPrompt is provided, this is noninteractive mode, so one turn conversation
+        () => initialPrompt !== undefined && initialPrompt.trim() !== '',
         (agent) => agent.user(initialPrompt as string).assistant(this.llm),
-        // Otherwise, this is interactive mode
         (agent) =>
           agent.loop(
             (innerAgent) => innerAgent.user(userCliSource).assistant(this.llm),
-            (session) => {
+            ({ session }) => {
               const lastUserMessage = session
                 .getMessagesByType('user')
                 .slice(-1)[0];
@@ -169,8 +168,7 @@ export class CodingAgent {
           ),
       );
 
-    // Execute the interactive template
-    await agent.execute(session);
+    await agent.execute({ session });
     console.log('\nCoding agent session ended. Goodbye!\n');
   }
 
@@ -180,19 +178,19 @@ export class CodingAgent {
   async runExample(): Promise<void> {
     // Example 1: Basic file listing
     console.log('\n=== Example 1: List files ===\n');
-    this.run(
+    await this.run(
       'List the files in the current directory and tell me what you see.',
     );
 
     // Example 2: File creation and reading
     console.log('\n=== Example 2: Create and read a file ===\n');
-    this.run(
+    await this.run(
       'Create a file named example.txt with some interesting content, then read it back and explain what you wrote.',
     );
 
     // Example 3: Create and run a script
     console.log('\n=== Example 3: Advanced task ===\n');
-    this.run(
+    await this.run(
       'Create a simple Node.js script that prints "Hello, World!" and run it.',
     );
     console.log('\n=== Examples completed ===\n');
@@ -204,7 +202,6 @@ export class CodingAgent {
  */
 const runAgent = async (): Promise<void> => {
   try {
-    // Get configuration from environment variables
     const provider = (process.env.AI_PROVIDER || 'openai') as
       | 'openai'
       | 'anthropic';
@@ -220,15 +217,12 @@ const runAgent = async (): Promise<void> => {
       process.exit(1);
     }
 
-    // Initialize the agent
     const agent = new CodingAgent({ provider, apiKey });
 
-    // Run examples or interactive mode
     if (process.argv.includes('--test')) {
       console.log('Running example tests...');
       await agent.runExample();
     } else {
-      // Start interactive session
       await agent.run();
     }
   } catch (error) {
@@ -236,8 +230,10 @@ const runAgent = async (): Promise<void> => {
   }
 };
 
-// Auto-run when executed directly
-if (require.main === module) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   runAgent()
     .then(() => {
       console.log('Agent completed successfully.');

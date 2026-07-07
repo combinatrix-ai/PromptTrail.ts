@@ -39,7 +39,7 @@ describe('SystemTemplate', () => {
   it('should not be instantiated without ContentSource, but throw an error', async () => {
     // Create an instance of the test template
     try {
-      // @ts-expect-error
+      // @ts-expect-error - constructor requires content or a source
       new System();
     } catch (error) {
       // Expect the error to be thrown

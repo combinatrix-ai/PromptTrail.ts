@@ -1,21 +1,22 @@
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import { LlmSource } from '../../source';
-import { Attrs, Vars } from '../../session';
+import type { ExecutionRuntimeState } from '../../interceptors';
 import { TemplateBase } from '../base';
+import { executeRuntimeModelCall } from '../primitives/model_runtime';
 
 /**
  * Type for scoring function that evaluates a session
  */
-export type ScoringFunction<TVars extends Vars, TAttrs extends Attrs> = (
-  session: Session<TVars, TAttrs>,
+export type ScoringFunction<TVars extends Vars> = (
+  session: Session<TVars>,
 ) => number;
 
 /**
  * Type for aggregation strategy function
  */
-export type AggregationStrategy<TVars extends Vars, TAttrs extends Attrs> = (
-  sessions: Session<TVars, TAttrs>[],
-) => Session<TVars, TAttrs>;
+export type AggregationStrategy<TVars extends Vars> = (
+  sessions: Session<TVars>[],
+) => Session<TVars>;
 
 /**
  * Built-in aggregation strategies
@@ -25,9 +26,9 @@ export type BuiltInStrategy = 'keep_all' | 'best';
 /**
  * Union type for all possible strategies
  */
-export type Strategy<TVars extends Vars, TAttrs extends Attrs> =
+export type Strategy<TVars extends Vars> =
   | BuiltInStrategy
-  | AggregationStrategy<TVars, TAttrs>;
+  | AggregationStrategy<TVars>;
 
 /**
  * Configuration for a parallel source execution
@@ -40,7 +41,6 @@ interface ParallelSourceConfig {
 /**
  * A template that executes multiple LLM sources in parallel and aggregates results.
  *
- * @template TAttrs - Type of the session metadata.
  * @template TVars - Type of the session context.
  *
  * @example
@@ -59,13 +59,10 @@ interface ParallelSourceConfig {
  *
  * @public
  */
-export class Parallel<
-  TAttrs extends Attrs = Attrs,
-  TVars extends Vars = Vars,
-> extends TemplateBase<TAttrs, TVars> {
+export class Parallel<TVars extends Vars = Vars> extends TemplateBase<TVars> {
   private sources: ParallelSourceConfig[] = [];
-  private scoringFunction?: ScoringFunction<TVars, TAttrs>;
-  private strategy: Strategy<TVars, TAttrs> = 'keep_all';
+  private scoringFunction?: ScoringFunction<TVars>;
+  private strategy: Strategy<TVars> = 'keep_all';
 
   /**
    * Creates a new Parallel template.
@@ -74,8 +71,8 @@ export class Parallel<
    */
   constructor(options?: {
     sources?: Array<{ source: LlmSource; repetitions?: number }>;
-    scoringFunction?: ScoringFunction<TVars, TAttrs>;
-    strategy?: Strategy<TVars, TAttrs>;
+    scoringFunction?: ScoringFunction<TVars>;
+    strategy?: Strategy<TVars>;
   }) {
     super();
 
@@ -129,9 +126,7 @@ export class Parallel<
    * @param scoringFunction - Function that takes a session and returns a numeric score
    * @returns This instance for method chaining
    */
-  setAggregationFunction(
-    scoringFunction: ScoringFunction<TVars, TAttrs>,
-  ): this {
+  setAggregationFunction(scoringFunction: ScoringFunction<TVars>): this {
     this.scoringFunction = scoringFunction;
     return this;
   }
@@ -142,7 +137,7 @@ export class Parallel<
    * @param strategy - Either a built-in strategy name or custom aggregation function
    * @returns This instance for method chaining
    */
-  setStrategy(strategy: Strategy<TVars, TAttrs>): this {
+  setStrategy(strategy: Strategy<TVars>): this {
     this.strategy = strategy;
     return this;
   }
@@ -161,7 +156,7 @@ export class Parallel<
    *
    * @returns The scoring function or undefined if not set
    */
-  getScoringFunction(): ScoringFunction<TVars, TAttrs> | undefined {
+  getScoringFunction(): ScoringFunction<TVars> | undefined {
     return this.scoringFunction;
   }
 
@@ -170,8 +165,18 @@ export class Parallel<
    *
    * @returns The current strategy
    */
-  getStrategy(): Strategy<TVars, TAttrs> {
+  getStrategy(): Strategy<TVars> {
     return this.strategy;
+  }
+
+  getManifestDescriptor() {
+    return {
+      kind: 'template',
+      templateType: 'Parallel',
+      sources: this.sources,
+      scoringFunction: this.scoringFunction,
+      strategy: this.strategy,
+    };
   }
 
   /**
@@ -181,17 +186,31 @@ export class Parallel<
    * @returns Promise resolving to the aggregated session
    */
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     const currentSession = this.ensureSession(session);
 
     if (this.sources.length === 0) {
       return currentSession;
     }
 
-    // Create execution tasks for all sources with their repetitions
-    const executionTasks: Promise<Session<TVars, TAttrs>>[] = [];
+    if (runtime) {
+      const results: Session<TVars>[] = [];
+      // Runtime middleware state is ordered and mutable; keep runtime-backed
+      // source calls sequential so phase/version updates cannot race.
+      for (const config of this.sources) {
+        for (let i = 0; i < config.repetitions; i++) {
+          results.push(
+            await this.executeSource(config.source, currentSession, runtime),
+          );
+        }
+      }
+      return this.aggregateResults(results, currentSession);
+    }
 
+    // Create execution tasks for all sources with their repetitions
+    const executionTasks: Promise<Session<TVars>>[] = [];
     for (const config of this.sources) {
       for (let i = 0; i < config.repetitions; i++) {
         const task = this.executeSource(config.source, currentSession);
@@ -207,24 +226,37 @@ export class Parallel<
   }
 
   /**
-   * Execute a single source with the given session.
+   * Execute one configured source and append its assistant message.
    *
-   * @private
+   * This is shared by the template adapter and graph-native executor; keep the
+   * per-source message semantics aligned between both paths. The graph executor
+   * may still serialize source calls to preserve runtime middleware ordering.
+   *
+   * @internal
    */
-  private async executeSource(
+  async executeSource(
     source: LlmSource,
-    session: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     try {
-      const content = await source.getContent(session);
+      const output = runtime
+        ? await executeRuntimeModelCall(runtime, session, (modelSession) =>
+            source.getContent(modelSession, runtime),
+          )
+        : { session, result: await source.getContent(session) };
 
       // Add the LLM response as an assistant message
-      return session.addMessage({
+      return output.session.addMessage({
         type: 'assistant',
-        content: content.content,
-        toolCalls: content.toolCalls,
-        structuredContent: content.structuredOutput,
-        attrs: content.metadata as TAttrs,
+        content: output.result.content,
+        ...(output.result.toolCalls
+          ? { toolCalls: output.result.toolCalls }
+          : {}),
+        ...(output.result.structuredOutput !== undefined
+          ? { structuredContent: output.result.structuredOutput }
+          : {}),
+        attrs: output.result.metadata ?? {},
       });
     } catch (error) {
       console.warn(`Parallel source execution failed:`, error);
@@ -234,14 +266,16 @@ export class Parallel<
   }
 
   /**
-   * Aggregate multiple session results according to the configured strategy.
+   * Aggregate branch sessions using the configured strategy.
    *
-   * @private
+   * This is shared by the template adapter and graph-native executor.
+   *
+   * @internal
    */
-  private aggregateResults(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+  aggregateResults(
+    results: Session<TVars>[],
+    originalSession: Session<TVars>,
+  ): Session<TVars> {
     if (results.length === 0) {
       return originalSession;
     }
@@ -269,9 +303,9 @@ export class Parallel<
    * @private
    */
   private aggregateKeepAll(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+    results: Session<TVars>[],
+    originalSession: Session<TVars>,
+  ): Session<TVars> {
     let aggregatedSession = originalSession;
 
     for (const result of results) {
@@ -279,6 +313,12 @@ export class Parallel<
       const newMessages = result.messages.slice(
         originalSession.messages.length,
       );
+      if (newMessages.length === 0 && result === originalSession) {
+        continue;
+      }
+      aggregatedSession = aggregatedSession.withVars(
+        result.getVarsObject(),
+      ) as Session<TVars>;
 
       for (const message of newMessages) {
         aggregatedSession = aggregatedSession.addMessage(message);
@@ -294,9 +334,9 @@ export class Parallel<
    * @private
    */
   private aggregateBest(
-    results: Session<TVars, TAttrs>[],
-    originalSession: Session<TVars, TAttrs>,
-  ): Session<TVars, TAttrs> {
+    results: Session<TVars>[],
+    originalSession: Session<TVars>,
+  ): Session<TVars> {
     if (!this.scoringFunction) {
       throw new Error(
         'Scoring function is required when using "best" aggregation strategy. ' +
@@ -304,14 +344,21 @@ export class Parallel<
       );
     }
 
-    let bestSession = results[0];
+    const successfulResults = results.filter(
+      (result) => result !== originalSession,
+    );
+    if (successfulResults.length === 0) {
+      return originalSession;
+    }
+
+    let bestSession = successfulResults[0];
     let bestScore = this.scoringFunction(bestSession);
 
-    for (let i = 1; i < results.length; i++) {
-      const currentScore = this.scoringFunction(results[i]);
+    for (let i = 1; i < successfulResults.length; i++) {
+      const currentScore = this.scoringFunction(successfulResults[i]);
       if (currentScore > bestScore) {
         bestScore = currentScore;
-        bestSession = results[i];
+        bestSession = successfulResults[i];
       }
     }
 

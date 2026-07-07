@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/index.ts", "src/__tests__/unit/public_api.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

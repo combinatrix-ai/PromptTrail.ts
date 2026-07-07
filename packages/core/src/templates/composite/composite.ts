@@ -1,6 +1,10 @@
-import type { Session } from '../../session';
+import type { Session, Vars } from '../../session';
 import type { Source } from '../../source';
-import { Attrs, Vars } from '../../session';
+import {
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from '../../interceptors';
+import type { ResolvedExecutionCommand } from '../../execution';
 import { TemplateBase, type Template } from '../base';
 import { Assistant } from '../primitives/assistant';
 import { User } from '../primitives/user';
@@ -10,22 +14,17 @@ import { Fluent } from './chainable';
  * Base class for composite templates (Sequence, Loop, Subroutine)
  * Provides common functionality and a unified execution model
  */
-export abstract class Composite<
-    TAttrs extends Attrs = Attrs,
-    TVars extends Vars = Vars,
-  >
-  extends TemplateBase<TAttrs, TVars>
-  implements Fluent<TAttrs, TVars>
+export abstract class Composite<TVars extends Vars = Vars>
+  extends TemplateBase<TVars>
+  implements Fluent<TVars>
 {
-  protected templates: Template<any, any>[] = [];
-  protected initFunction?: (
-    session: Session<TVars, TAttrs>,
-  ) => Session<TVars, TAttrs>;
+  protected templates: Template<TVars>[] = [];
+  protected initFunction?: (session: Session<TVars>) => Session<TVars>;
   protected squashFunction?: (
-    parentSession: Session<TVars, TAttrs>,
-    childSession: Session<TVars, TAttrs>,
-  ) => Session<TVars, TAttrs>;
-  protected loopCondition?: (session: Session<TVars, TAttrs>) => boolean;
+    parentSession: Session<TVars>,
+    childSession: Session<TVars>,
+  ) => Session<TVars>;
+  protected loopCondition?: (session: Session<TVars>) => boolean;
   protected maxIterations: number = 100;
   protected defaultUserContentSource?: Source<any>;
   protected defaultAssistantContentSource?: Source<any>;
@@ -35,17 +34,58 @@ export abstract class Composite<
     return this;
   }
 
-  add(template: Template<TAttrs, TVars>): this {
+  add(template: Template<TVars>): this {
     this.templates.push(template);
     return this;
+  }
+
+  /**
+   * Expose child templates to the legacy-to-graph compiler without routing
+   * execution through the generic template adapter.
+   *
+   * @internal
+   */
+  getTemplates(): Template<TVars>[] {
+    return [...this.templates];
+  }
+
+  /**
+   * @internal
+   */
+  getLoopCondition(): ((session: Session<TVars>) => boolean) | undefined {
+    return this.loopCondition;
+  }
+
+  /**
+   * @internal
+   */
+  getMaxIterations(): number {
+    return this.maxIterations;
+  }
+
+  /**
+   * @internal
+   */
+  getInitFunction(): ((session: Session<TVars>) => Session<TVars>) | undefined {
+    return this.initFunction;
+  }
+
+  /**
+   * @internal
+   */
+  getSquashFunction():
+    | ((
+        parentSession: Session<TVars>,
+        childSession: Session<TVars>,
+      ) => Session<TVars>)
+    | undefined {
+    return this.squashFunction;
   }
 
   // Set default content sources for the template
   // Priority: this.contentSource > content source passed by the parent
   // If child template is a CompositeTemplate, pass the default too
-  ensureTemplateHasContentSource(
-    template: Template<TAttrs, TVars>,
-  ): Template<TAttrs, TVars> {
+  ensureTemplateHasContentSource(template: Template<TVars>): Template<TVars> {
     if (template instanceof Composite) {
       // Pass default content sources to child CompositeTemplates
       if (template.defaultAssistantContentSource) {
@@ -74,8 +114,9 @@ export abstract class Composite<
 
   // Unified execute implementation
   async execute(
-    session?: Session<TVars, TAttrs>,
-  ): Promise<Session<TVars, TAttrs>> {
+    session?: Session<TVars>,
+    runtime?: ExecutionRuntimeState<TVars>,
+  ): Promise<Session<TVars>> {
     const originalSession = this.ensureSession(session);
 
     // Validate that we have templates to execute
@@ -92,6 +133,7 @@ export abstract class Composite<
     let currentSession = this.initFunction
       ? this.initFunction(originalSession)
       : originalSession;
+    let halted = false;
 
     // 2. Execute templates (with optional looping)
     if (this.loopCondition !== undefined) {
@@ -100,12 +142,38 @@ export abstract class Composite<
 
       // Execute the loop until the exit condition is met or max iterations reached
       while (
+        !halted &&
         iterations < this.maxIterations &&
         this.loopCondition(currentSession)
       ) {
-        for (let template of this.templates) {
+        for (let index = 0; index < this.templates.length; index++) {
+          let template = this.templates[index];
           template = this.ensureTemplateHasContentSource(template);
-          currentSession = await template.execute(currentSession);
+          const before = await runTemplateLifecyclePhase(
+            runtime,
+            'beforeTemplate',
+            currentSession,
+            template,
+            index,
+          );
+          currentSession = before.session;
+          if (before.halted) {
+            halted = true;
+            break;
+          }
+          currentSession = await template.execute(currentSession, runtime);
+          const after = await runTemplateLifecyclePhase(
+            runtime,
+            'afterTemplate',
+            currentSession,
+            template,
+            index,
+          );
+          currentSession = after.session;
+          if (after.halted) {
+            halted = true;
+            break;
+          }
         }
         iterations++;
       }
@@ -121,9 +189,34 @@ export abstract class Composite<
         console.warn('LoopTemplate executed without an loopIf condition.');
       }
       // Simple sequence execution
-      for (let template of this.templates) {
+      for (let index = 0; index < this.templates.length; index++) {
+        let template = this.templates[index];
         template = this.ensureTemplateHasContentSource(template);
-        currentSession = await template.execute(currentSession);
+        const before = await runTemplateLifecyclePhase(
+          runtime,
+          'beforeTemplate',
+          currentSession,
+          template,
+          index,
+        );
+        currentSession = before.session;
+        if (before.halted) {
+          halted = true;
+          break;
+        }
+        currentSession = await template.execute(currentSession, runtime);
+        const after = await runTemplateLifecyclePhase(
+          runtime,
+          'afterTemplate',
+          currentSession,
+          template,
+          index,
+        );
+        currentSession = after.session;
+        if (after.halted) {
+          halted = true;
+          break;
+        }
       }
     }
 
@@ -132,4 +225,40 @@ export abstract class Composite<
       ? this.squashFunction(originalSession, currentSession)
       : currentSession;
   }
+}
+
+async function runTemplateLifecyclePhase<TVars extends Vars>(
+  runtime: ExecutionRuntimeState<TVars> | undefined,
+  phase: 'beforeTemplate' | 'afterTemplate',
+  session: Session<TVars>,
+  template: Template<TVars>,
+  templateIndex: number,
+): Promise<{ session: Session<TVars>; halted: boolean }> {
+  if (!runtime) {
+    return { session, halted: false };
+  }
+  const result = await runRuntimeExecutionPhase(runtime, {
+    phase,
+    session,
+    request: {
+      templateIndex,
+      templateName: template.constructor.name,
+    },
+  });
+  return {
+    session: result.session,
+    halted: handleTemplateLifecycleCommand(result.command),
+  };
+}
+
+function handleTemplateLifecycleCommand(command: ResolvedExecutionCommand) {
+  if (command.type === 'none') {
+    return false;
+  }
+  if (command.type === 'halt') {
+    return true;
+  }
+  throw new Error(
+    `Template lifecycle does not support execution command ${command.type} yet.`,
+  );
 }

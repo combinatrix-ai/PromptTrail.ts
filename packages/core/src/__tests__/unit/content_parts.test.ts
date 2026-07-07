@@ -1,0 +1,318 @@
+import { describe, expect, it } from 'vitest';
+import {
+  assertProviderFileReferenceUsableForProvider,
+  contentPartsToAiSdkContent,
+  contentPartsToAnthropicContent,
+  contentPartsToGeminiParts,
+  contentPartsToOpenAIInput,
+  contentPartsToText,
+  createProviderFileContentPart,
+  assertProviderFileReferenceUsable,
+  isProviderFileReferenceExpired,
+  makeContentPartsPersistenceSafe,
+  type ContentPart,
+} from '../../content_parts';
+
+describe('ContentPart provider serializers', () => {
+  const sharedParts: ContentPart[] = [
+    { kind: 'text', text: 'Look at this: ' },
+    {
+      kind: 'image',
+      mimeType: 'image/png',
+      source: { type: 'bytes', data: new Uint8Array([1, 2, 3]) },
+      detail: 'low',
+      filename: 'chart.png',
+    },
+    {
+      kind: 'file',
+      mimeType: 'application/pdf',
+      source: { type: 'uri', uri: 'https://example.com/report.pdf' },
+      filename: 'report.pdf',
+    },
+  ];
+  const openAiProviderFilePart: ContentPart = {
+    kind: 'file',
+    mimeType: 'text/plain',
+    source: {
+      type: 'providerFile',
+      provider: 'openai',
+      fileId: 'file-openai-123',
+      cleanup: 'caller',
+    },
+    filename: 'note.txt',
+  };
+  const anthropicProviderFilePart: ContentPart = {
+    kind: 'file',
+    mimeType: 'text/plain',
+    source: {
+      type: 'providerFile',
+      provider: 'anthropic',
+      fileId: 'file_anthropic_123',
+      cleanup: 'caller',
+    },
+    filename: 'note.txt',
+  };
+  const googleProviderFilePart: ContentPart = {
+    kind: 'file',
+    mimeType: 'text/plain',
+    source: {
+      type: 'providerFile',
+      provider: 'google',
+      fileId: 'files/google-123',
+      cleanup: 'caller',
+    },
+    filename: 'note.txt',
+  };
+  const parts: ContentPart[] = [...sharedParts, openAiProviderFilePart];
+
+  it('extracts text and strips bytes for persistence-safe copies', () => {
+    expect(contentPartsToText(parts)).toBe('Look at this: ');
+    expect(makeContentPartsPersistenceSafe(parts)).toEqual([
+      parts[0],
+      {
+        ...parts[1],
+        source: {
+          type: 'uri',
+          uri: 'prompttrail://omitted-bytes/chart.png',
+        },
+      },
+      parts[2],
+      openAiProviderFilePart,
+    ]);
+  });
+
+  it('serializes parts for AI SDK messages', () => {
+    expect(contentPartsToAiSdkContent(parts)).toEqual([
+      { type: 'text', text: 'Look at this: ' },
+      {
+        type: 'image',
+        image: new Uint8Array([1, 2, 3]),
+        mimeType: 'image/png',
+        providerOptions: undefined,
+      },
+      {
+        type: 'file',
+        data: new URL('https://example.com/report.pdf'),
+        mimeType: 'application/pdf',
+        filename: 'report.pdf',
+        providerOptions: undefined,
+      },
+      {
+        type: 'file',
+        data: 'file-openai-123',
+        mimeType: 'text/plain',
+        filename: 'note.txt',
+        providerOptions: { openai: { fileId: 'file-openai-123' } },
+      },
+    ]);
+  });
+
+  it('serializes parts for OpenAI Responses input messages', () => {
+    expect(contentPartsToOpenAIInput(parts)).toEqual([
+      { type: 'input_text', text: 'Look at this: ' },
+      {
+        type: 'input_image',
+        detail: 'low',
+        file_data: 'AQID',
+      },
+      {
+        type: 'input_file',
+        filename: 'report.pdf',
+        file_url: 'https://example.com/report.pdf',
+      },
+      {
+        type: 'input_file',
+        filename: 'note.txt',
+        file_id: 'file-openai-123',
+      },
+    ]);
+  });
+
+  it('serializes parts for Anthropic Messages content blocks', () => {
+    expect(
+      contentPartsToAnthropicContent([
+        ...sharedParts,
+        anthropicProviderFilePart,
+      ]),
+    ).toEqual([
+      { type: 'text', text: 'Look at this: ' },
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: 'image/png',
+          data: 'AQID',
+        },
+      },
+      {
+        type: 'document',
+        source: {
+          type: 'url',
+          url: 'https://example.com/report.pdf',
+        },
+        title: 'report.pdf',
+      },
+      {
+        type: 'document',
+        source: {
+          type: 'file',
+          file_id: 'file_anthropic_123',
+        },
+        title: 'note.txt',
+      },
+    ]);
+  });
+
+  it('serializes parts for Gemini content parts', () => {
+    expect(
+      contentPartsToGeminiParts([...sharedParts, googleProviderFilePart]),
+    ).toEqual([
+      { text: 'Look at this: ' },
+      {
+        inlineData: {
+          mimeType: 'image/png',
+          data: 'AQID',
+        },
+      },
+      {
+        fileData: {
+          mimeType: 'application/pdf',
+          fileUri: 'https://example.com/report.pdf',
+        },
+      },
+      {
+        fileData: {
+          mimeType: 'text/plain',
+          fileUri: 'files/google-123',
+        },
+      },
+    ]);
+  });
+
+  it('rejects provider file refs created for another provider', () => {
+    const error =
+      'Provider file reference files/google-123 belongs to google, not openai; re-upload before sending.';
+
+    expect(() =>
+      assertProviderFileReferenceUsableForProvider(
+        googleProviderFilePart,
+        'openai',
+      ),
+    ).toThrow(error);
+    expect(() => contentPartsToOpenAIInput([googleProviderFilePart])).toThrow(
+      error,
+    );
+    expect(() =>
+      contentPartsToAnthropicContent([googleProviderFilePart]),
+    ).toThrow(
+      'Provider file reference files/google-123 belongs to google, not anthropic; re-upload before sending.',
+    );
+    expect(() => contentPartsToGeminiParts([openAiProviderFilePart])).toThrow(
+      'Provider file reference file-openai-123 belongs to openai, not google; re-upload before sending.',
+    );
+  });
+
+  it('tracks provider file expiry metadata for Gemini uploads', () => {
+    const part = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      provider: 'google',
+      fileId: 'files/gemini-123',
+      filename: 'report.pdf',
+      uploadedAt: '2030-06-06T00:00:00.000Z',
+    });
+
+    expect(part).toEqual({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      filename: 'report.pdf',
+      detail: undefined,
+      source: {
+        type: 'providerFile',
+        provider: 'google',
+        fileId: 'files/gemini-123',
+        uploadedAt: '2030-06-06T00:00:00.000Z',
+        expiresAt: '2030-06-08T00:00:00.000Z',
+        cleanup: 'caller',
+      },
+    });
+    expect(
+      isProviderFileReferenceExpired(
+        part,
+        new Date('2030-06-07T23:59:59.999Z'),
+      ),
+    ).toBe(false);
+    expect(
+      isProviderFileReferenceExpired(part, new Date('2030-06-08T00:00:00Z')),
+    ).toBe(true);
+    expect(contentPartsToGeminiParts([part])).toEqual([
+      {
+        fileData: {
+          mimeType: 'application/pdf',
+          fileUri: 'files/gemini-123',
+        },
+      },
+    ]);
+  });
+
+  it('treats non-expiring provider file refs as valid until expiry is known', () => {
+    const part = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'text/plain',
+      provider: 'openai',
+      fileId: 'file-openai-123',
+    });
+
+    expect(part.source).toEqual({
+      type: 'providerFile',
+      provider: 'openai',
+      fileId: 'file-openai-123',
+      uploadedAt: undefined,
+      expiresAt: undefined,
+      cleanup: 'caller',
+    });
+    expect(isProviderFileReferenceExpired(part)).toBe(false);
+  });
+
+  it('records explicit provider file cleanup ownership', () => {
+    expect(
+      createProviderFileContentPart({
+        kind: 'file',
+        mimeType: 'application/pdf',
+        provider: 'openai',
+        fileId: 'file-managed',
+        cleanup: 'prompttrail',
+      }).source,
+    ).toMatchObject({
+      type: 'providerFile',
+      provider: 'openai',
+      fileId: 'file-managed',
+      cleanup: 'prompttrail',
+    });
+  });
+
+  it('rejects expired provider file refs before serialization', () => {
+    const expired = createProviderFileContentPart({
+      kind: 'file',
+      mimeType: 'application/pdf',
+      provider: 'google',
+      fileId: 'files/expired',
+      uploadedAt: '2026-06-01T00:00:00.000Z',
+      expiresAt: '2026-06-02T00:00:00.000Z',
+      filename: 'expired.pdf',
+    });
+    const error =
+      'Provider file reference files/expired for google expired at 2026-06-02T00:00:00.000Z; re-upload before sending.';
+
+    expect(() =>
+      assertProviderFileReferenceUsable(
+        expired,
+        new Date('2026-06-03T00:00:00.000Z'),
+      ),
+    ).toThrow(error);
+    expect(() => contentPartsToAiSdkContent([expired])).toThrow(error);
+    expect(() => contentPartsToOpenAIInput([expired])).toThrow(error);
+    expect(() => contentPartsToAnthropicContent([expired])).toThrow(error);
+    expect(() => contentPartsToGeminiParts([expired])).toThrow(error);
+  });
+});

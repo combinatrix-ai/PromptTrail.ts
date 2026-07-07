@@ -7,36 +7,61 @@ import {
   streamText as aiSdkStreamText,
   LanguageModelV1,
   Output,
-  ToolSet,
 } from 'ai';
-import { z } from 'zod';
+import {
+  generateAnthropicMessagesText,
+  generateAnthropicMessagesWithSchema,
+  streamAnthropicMessagesEvents,
+} from './anthropic_messages';
+import {
+  generateGoogleGeminiText,
+  generateGoogleGeminiWithSchema,
+  streamGoogleGeminiEvents,
+} from './google_gemini';
+import { normalizeSchemaGenerationMode } from './llm_types';
+import type { LLMOptions, SchemaGenerationOptions } from './llm_types';
 import type { Message } from './message';
-import type { Session, Attrs, Vars } from './session';
-import type { LLMOptions } from './source';
-
-/**
- * Schema generation options
- */
-export interface SchemaGenerationOptions {
-  schema: z.ZodType;
-  mode?: 'tool' | 'structured_output';
-  functionName?: string;
-}
+import {
+  generateOpenAIResponsesText,
+  generateOpenAIResponsesWithSchema,
+  streamOpenAIResponsesEvents,
+} from './openai_responses';
+import {
+  createPromptTrailStreamState,
+  reducePromptTrailStreamEvent,
+  retainPromptTrailStreamMetadata,
+  streamStateToAssistantMessage,
+  type PromptTrailStreamEvent,
+} from './stream';
+import { contentPartsToAiSdkContent } from './content_parts';
+import type { Session, Vars } from './session';
+import { appendSkillInstructions, warnSkillInstructionLoss } from './skills';
+import { toAiSdkToolSet } from './ai_sdk_tools';
+import { Tool, executePromptTrailTool, isPromptTrailTool } from './tool';
+import type { PromptTrailTool } from './capabilities';
+import {
+  runRuntimeMiddlewareWrapper,
+  runRuntimeExecutionPhase,
+  type ExecutionRuntimeState,
+} from './interceptors';
+import type { ExecutionEvent, ResolvedExecutionCommand } from './execution';
+export type { SchemaGenerationOptions } from './llm_types';
 
 /**
  * Convert Session to AI SDK compatible format
  */
 export function convertSessionToAiSdkMessages(
-  session: Session<any, any>,
+  session: Session<any>,
+  options?: Pick<LLMOptions, 'capabilities' | 'skillInjection'>,
 ): Array<{
   role: string;
-  content: string;
+  content: unknown;
   tool_call_id?: string;
   tool_calls?: Array<unknown>;
 }> {
   const messages: Array<{
     role: string;
-    content: string;
+    content: unknown;
     tool_call_id?: string;
     tool_calls?: Array<unknown>;
   }> = [];
@@ -45,11 +70,20 @@ export function convertSessionToAiSdkMessages(
   const toolResultsMap = new Map<string, string>();
   for (const msg of session.messages) {
     if (msg.type === 'tool_result') {
-      const toolCallId = msg.attrs?.toolCallId as string;
-      if (toolCallId) {
-        toolResultsMap.set(toolCallId, msg.content);
+      if (msg.toolCallId) {
+        toolResultsMap.set(msg.toolCallId, msg.content);
       }
     }
+  }
+
+  const skillInjection = appendSkillInstructions(
+    undefined,
+    options?.capabilities,
+    options?.skillInjection ?? 'warn',
+  );
+  warnSkillInstructionLoss(skillInjection.warnings);
+  if (skillInjection.instructions) {
+    messages.push({ role: 'system', content: skillInjection.instructions });
   }
 
   // Process messages in order, but handle tool results immediately after their assistant message
@@ -57,49 +91,72 @@ export function convertSessionToAiSdkMessages(
     if (msg.type === 'system') {
       messages.push({ role: 'system', content: msg.content });
     } else if (msg.type === 'user') {
-      messages.push({ role: 'user', content: msg.content });
+      messages.push({
+        role: 'user',
+        content: msg.contentParts
+          ? contentPartsToAiSdkContent(msg.contentParts)
+          : msg.content,
+      });
     } else if (msg.type === 'assistant') {
-      const assistantMsg: {
-        role: string;
-        content: string;
-        tool_calls?: Array<unknown>;
-      } = {
-        role: 'assistant',
-        content: msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
-      };
-
-      // Add tool calls if present
       if (msg.toolCalls && msg.toolCalls.length > 0) {
-        assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: JSON.stringify(tc.arguments),
-          },
-        }));
-      }
+        // ai-sdk CoreMessages carry tool calls/results as typed content
+        // parts, not OpenAI-style tool_calls/tool_call_id fields — the
+        // string form fails ai-sdk's prompt validation on the next turn.
+        const parts: unknown[] = [];
+        const text = msg.contentParts
+          ? contentPartsToAiSdkContent(msg.contentParts)
+          : msg.content;
+        if (Array.isArray(text)) {
+          parts.push(...text);
+        } else if (typeof text === 'string' && text.trim()) {
+          parts.push({ type: 'text', text });
+        }
+        for (const toolCall of msg.toolCalls) {
+          parts.push({
+            type: 'tool-call',
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments,
+          });
+        }
+        messages.push({ role: 'assistant', content: parts });
 
-      messages.push(assistantMsg);
-
-      // Immediately add tool results for this assistant message
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        const resultParts: unknown[] = [];
         for (const toolCall of msg.toolCalls) {
           const toolResult = toolResultsMap.get(toolCall.id);
-          if (toolResult) {
-            messages.push({
-              role: 'tool',
-              content: toolResult,
-              tool_call_id: toolCall.id,
+          if (toolResult !== undefined) {
+            resultParts.push({
+              type: 'tool-result',
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              result: parseToolResultContent(toolResult),
             });
           }
         }
+        if (resultParts.length > 0) {
+          messages.push({ role: 'tool', content: resultParts });
+        }
+      } else {
+        messages.push({
+          role: 'assistant',
+          content: msg.contentParts
+            ? contentPartsToAiSdkContent(msg.contentParts)
+            : msg.content || ' ', // Ensure content is never empty for Anthropic compatibility
+        });
       }
     }
     // Skip tool_result messages as they're handled above
   }
 
   return messages;
+}
+
+function parseToolResultContent(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return content;
+  }
 }
 
 /**
@@ -123,7 +180,9 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
     }
 
     const openai = createOpenAI(sdkProviderOptions);
-    return openai(providerConfig.modelName);
+    return providerConfig.api === 'responses'
+      ? openai.responses(providerConfig.modelName)
+      : openai(providerConfig.modelName);
   } else if (providerConfig.type === 'anthropic') {
     if (providerConfig.baseURL) {
       sdkProviderOptions.baseURL = providerConfig.baseURL;
@@ -169,12 +228,43 @@ export function createProvider(options: LLMOptions): LanguageModelV1 {
  * Generate text using AI SDK
  * This is our main adapter function that maps our stable interface to the current AI SDK
  */
-export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
-  session: Session<TVars, TAttrs>,
+export async function generateText<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
-): Promise<Message<TAttrs>> {
+): Promise<Message> {
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    return generateOpenAIResponsesText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    return generateAnthropicMessagesText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    return generateGoogleGeminiText(session, {
+      ...options,
+      provider: options.provider,
+    });
+  }
+
   // Convert session to AI SDK message format
-  const messages = convertSessionToAiSdkMessages(session);
+  const messages = convertSessionToAiSdkMessages(session, options);
 
   // Create the provider
   const provider = createProvider(options);
@@ -187,9 +277,14 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as ToolSet,
+    tools: toAiSdkToolSet(options.tools, {
+      session,
+      context: options.context,
+      approvalHandler: options.approvalHandler,
+    }),
     toolChoice: options.toolChoice,
-    ...options.sdkOptions,
+    providerOptions: options.aiSdk?.providerOptions as any,
+    ...options.aiSdk?.sdkOptions,
   });
 
   // If there are tool calls, add them directly to the message
@@ -229,18 +324,62 @@ export async function generateText<TVars extends Vars, TAttrs extends Attrs>(
 /**
  * Generate structured content using schema
  */
-export async function generateWithSchema<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function generateWithSchema<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
   schemaOptions: SchemaGenerationOptions,
-): Promise<Message<TAttrs> & { structuredOutput?: unknown }> {
-  const messages = convertSessionToAiSdkMessages(session);
+): Promise<Message & { structuredOutput?: unknown }> {
+  const schemaMode = normalizeSchemaGenerationMode(schemaOptions.mode);
+  assertExplicitNativeSchemaModeWhenToolsArePresent(options, schemaOptions);
+
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter !== 'ai-sdk' &&
+    schemaMode === 'native'
+  ) {
+    return generateOpenAIResponsesWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    return generateAnthropicMessagesWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    return generateGoogleGeminiWithSchema(
+      session,
+      {
+        ...options,
+        provider: options.provider,
+      },
+      schemaOptions,
+    );
+  }
+
+  const messages = convertSessionToAiSdkMessages(session, options);
   const provider = createProvider(options);
 
-  if (schemaOptions.mode === 'structured_output') {
+  if (schemaMode === 'native') {
     // Use AI SDK's experimental_output for structured generation
     const result = await aiSdkGenerateText({
       model: provider as LanguageModelV1,
@@ -252,7 +391,8 @@ export async function generateWithSchema<
       experimental_output: Output.object({
         schema: schemaOptions.schema,
       }),
-      ...options.sdkOptions,
+      providerOptions: options.aiSdk?.providerOptions as any,
+      ...options.aiSdk?.sdkOptions,
     });
 
     // Validate the structured output
@@ -278,11 +418,13 @@ export async function generateWithSchema<
       ...options,
       tools: {
         ...options.tools,
-        [functionName]: {
+        [functionName]: Tool.create({
           name: functionName,
           description: 'Generate structured output according to schema',
-          parameters: schemaOptions.schema,
-        },
+          inputSchema: schemaOptions.schema,
+          effect: { repeatable: true },
+          execute: (input) => input,
+        }),
       },
       toolChoice: 'required',
     };
@@ -313,18 +455,87 @@ export async function generateWithSchema<
   }
 }
 
+export function assertExplicitNativeSchemaModeWhenToolsArePresent(
+  options: LLMOptions,
+  schemaOptions: SchemaGenerationOptions,
+): void {
+  void options;
+  void schemaOptions;
+}
+
+export function assertNativeStreamingToolLoopSupported(
+  options: LLMOptions,
+): void {
+  void options;
+}
+
 /**
  * Generate text stream using AI SDK
  */
-export async function* generateTextStream<
-  TVars extends Vars,
-  TAttrs extends Attrs,
->(
-  session: Session<TVars, TAttrs>,
+export async function* generateTextStream<TVars extends Vars>(
+  session: Session<TVars>,
   options: LLMOptions,
-): AsyncGenerator<Message<TAttrs>, void, unknown> {
+  runtime?: ExecutionRuntimeState<TVars>,
+): AsyncGenerator<Message, void, unknown> {
+  assertNativeStreamingToolLoopSupported(options);
+
+  if (
+    options.provider.type === 'openai' &&
+    options.provider.api === 'responses' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'openai',
+      attrsKey: 'openai',
+      runtime,
+      events: (turnSession) =>
+        streamOpenAIResponsesEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
+    return;
+  }
+
+  if (
+    options.provider.type === 'anthropic' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'anthropic',
+      attrsKey: 'anthropic',
+      runtime,
+      events: (turnSession) =>
+        streamAnthropicMessagesEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
+    return;
+  }
+
+  if (
+    options.provider.type === 'google' &&
+    options.provider.adapter !== 'ai-sdk'
+  ) {
+    const provider = options.provider;
+    yield* streamPromptTrailToolLoop(session, options, {
+      provider: 'google',
+      attrsKey: 'google',
+      runtime,
+      events: (turnSession) =>
+        streamGoogleGeminiEvents(turnSession, {
+          ...options,
+          provider,
+        }),
+    });
+    return;
+  }
+
   // Convert session to AI SDK message format
-  const messages = convertSessionToAiSdkMessages(session);
+  const messages = convertSessionToAiSdkMessages(session, options);
 
   // Create the provider
   const provider = createProvider(options);
@@ -337,9 +548,14 @@ export async function* generateTextStream<
     maxTokens: options.maxTokens,
     topP: options.topP,
     topK: options.topK,
-    tools: options.tools as ToolSet,
+    tools: toAiSdkToolSet(options.tools, {
+      session,
+      context: options.context,
+      approvalHandler: options.approvalHandler,
+    }),
     toolChoice: options.toolChoice,
-    ...options.sdkOptions,
+    providerOptions: options.aiSdk?.providerOptions as any,
+    ...options.aiSdk?.sdkOptions,
   });
 
   // Yield message chunks as they arrive
@@ -364,4 +580,331 @@ export async function* generateTextStream<
       };
     }
   }
+}
+
+export async function* streamPromptTrailToolLoop(
+  session: Session<any>,
+  options: LLMOptions,
+  config: {
+    provider: 'openai' | 'anthropic' | 'google';
+    attrsKey: string;
+    events: (session: Session<any>) => AsyncIterable<PromptTrailStreamEvent>;
+    runtime?: ExecutionRuntimeState<any>;
+  },
+): AsyncGenerator<Message, void, unknown> {
+  const maxToolRounds = options.maxCallLimit ?? 10;
+  let currentSession = session;
+
+  for (let round = 0; ; round++) {
+    let state = createPromptTrailStreamState();
+    for await (const event of config.events(currentSession)) {
+      state = reducePromptTrailStreamEvent(state, event);
+      if (event.type === 'text.delta') {
+        yield {
+          type: 'assistant',
+          content: event.delta || ' ',
+        } as Message;
+      }
+    }
+
+    const assistant = streamStateToAssistantMessage(
+      state,
+      createStreamMessageAttrs(state, {
+        attrsKey: config.attrsKey,
+        retain: options.retain,
+      }),
+    );
+    yield assistant;
+
+    const toolCalls = assistant.toolCalls ?? [];
+    if (toolCalls.length === 0 || round >= maxToolRounds) {
+      return;
+    }
+
+    let nextSession = currentSession.addMessage(assistant);
+    if (config.runtime) {
+      for (const call of toolCalls) {
+        const executed = await executeStreamingToolCallWithRuntime(call, {
+          provider: config.provider,
+          tools: getPromptTrailToolList(options),
+          session: nextSession,
+          approvalHandler: options.approvalHandler,
+          context: config.runtime.context,
+          runtime: config.runtime,
+        });
+        yield executed.message as Message;
+        nextSession = executed.session.addMessage(executed.message as Message);
+      }
+    } else {
+      const toolResults = await Promise.all(
+        toolCalls.map((call) =>
+          executeStreamingToolCall(call, {
+            provider: config.provider,
+            tools: getPromptTrailToolList(options),
+            session: currentSession,
+            approvalHandler: options.approvalHandler,
+            context: options.context,
+          }),
+        ),
+      );
+      for (const result of toolResults) {
+        yield result as Message;
+        nextSession = nextSession.addMessage(result as Message);
+      }
+    }
+    currentSession = nextSession;
+  }
+}
+
+async function executeStreamingToolCallWithRuntime(
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+  options: {
+    provider: 'openai' | 'anthropic' | 'google';
+    tools: readonly PromptTrailTool[];
+    session: Session<any>;
+    approvalHandler?: LLMOptions['approvalHandler'];
+    context?: Record<string, unknown>;
+    runtime: ExecutionRuntimeState<any>;
+  },
+): Promise<{ message: Message; session: Session<any> }> {
+  const before = await runRuntimeExecutionPhase(options.runtime, {
+    phase: 'beforeTool',
+    session: options.session,
+    request: call,
+  });
+  assertStreamingToolCommandSupported(before.command);
+  const nextCall =
+    (before.request as
+      | { id: string; name: string; arguments: Record<string, unknown> }
+      | undefined) ?? call;
+  const openToolEvents: Array<{
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  }> = [];
+  const closeToolEvents = async (
+    type: 'tool.completed' | 'tool.failed',
+    request: { id: string; name: string; arguments: Record<string, unknown> },
+    error?: unknown,
+    result?: Message,
+  ) => {
+    if (openToolEvents.length === 0) {
+      await emitStreamingToolEvent(
+        options.runtime,
+        type,
+        request,
+        error,
+        result,
+      );
+      return;
+    }
+    while (openToolEvents.length > 0) {
+      const startedRequest = openToolEvents.shift()!;
+      await emitStreamingToolEvent(
+        options.runtime,
+        type,
+        startedRequest,
+        error,
+        result,
+      );
+    }
+  };
+
+  let wrappedRequest = nextCall;
+  try {
+    const wrappedTool = await runRuntimeMiddlewareWrapper(options.runtime, {
+      phase: 'wrapToolCall',
+      session: before.session,
+      request: nextCall,
+      call: async ({ session, request }) => {
+        if (
+          await emitStreamingToolEvent(options.runtime, 'tool.started', request)
+        ) {
+          openToolEvents.push(request);
+        }
+        return executeStreamingToolCall(request, {
+          provider: options.provider,
+          tools: options.tools,
+          session,
+          approvalHandler: options.approvalHandler,
+          context: options.context,
+        }) as Promise<Message>;
+      },
+    });
+    assertStreamingToolCommandSupported(wrappedTool.command);
+    wrappedRequest = wrappedTool.request;
+    const message = wrappedTool.result;
+    const after = await runRuntimeExecutionPhase(options.runtime, {
+      phase: 'afterTool',
+      session: wrappedTool.session,
+      request: wrappedRequest,
+      result: message,
+    });
+    assertStreamingToolCommandSupported(after.command);
+    const resultMessage = (after.result as Message | undefined) ?? message;
+    await closeToolEvents(
+      isToolResultErrorMessage(resultMessage)
+        ? 'tool.failed'
+        : 'tool.completed',
+      wrappedRequest,
+      undefined,
+      resultMessage,
+    );
+    return {
+      message: resultMessage,
+      session: after.session,
+    };
+  } catch (error) {
+    await closeToolEvents('tool.failed', wrappedRequest, error);
+    throw error;
+  }
+}
+
+async function executeStreamingToolCall(
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+  options: {
+    provider: 'openai' | 'anthropic' | 'google';
+    tools: readonly PromptTrailTool[];
+    session: Session<any>;
+    approvalHandler?: LLMOptions['approvalHandler'];
+    context?: Record<string, unknown>;
+  },
+): Promise<Message> {
+  const tool = options.tools.find((candidate) => candidate.name === call.name);
+  const result = tool
+    ? await executePromptTrailTool(tool, call.arguments, {
+        session: options.session,
+        context: options.context,
+        provider: options.provider,
+        capability: call.name,
+        approvalHandler: options.approvalHandler,
+        raw: call,
+      })
+    : {
+        content: [
+          { type: 'text' as const, text: `Unknown tool: ${call.name}` },
+        ],
+        isError: true,
+      };
+  return {
+    type: 'tool_result',
+    content: JSON.stringify(result),
+    toolCallId: call.id,
+    attrs: {
+      toolCallName: call.name,
+    },
+  };
+}
+
+function assertStreamingToolCommandSupported(
+  command: ResolvedExecutionCommand,
+): void {
+  if (command.type === 'none') {
+    return;
+  }
+  throw new Error(
+    `streamPromptTrailToolLoop does not support execution command ${command.type} yet.`,
+  );
+}
+
+async function emitStreamingToolEvent(
+  runtime: ExecutionRuntimeState<any>,
+  type: 'tool.started' | 'tool.completed' | 'tool.failed',
+  call: { id: string; name: string; arguments: Record<string, unknown> },
+  error?: unknown,
+  result?: Message,
+): Promise<boolean> {
+  if (!runtime.emitEvent || !runtime.nextEventSeq) {
+    return false;
+  }
+  const seq = runtime.nextEventSeq();
+  const event: ExecutionEvent = {
+    id: `tool:${seq}`,
+    type,
+    at: new Date().toISOString(),
+    seq,
+    source: 'tool',
+    stepId: call.id,
+    idempotencyKey: `${call.id}:${type}`,
+    raw: { call, result },
+    toolCallId: call.id,
+    name: call.name,
+  };
+  if (error !== undefined) {
+    event.error = error;
+  }
+  await runtime.emitEvent(event);
+  return true;
+}
+
+function isToolResultErrorMessage(message: Message): boolean {
+  if (message.type !== 'tool_result' || typeof message.content !== 'string') {
+    return false;
+  }
+  try {
+    const result = JSON.parse(message.content) as unknown;
+    return (
+      typeof result === 'object' &&
+      result !== null &&
+      (result as Record<string, unknown>).isError === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getPromptTrailToolList(options: LLMOptions): PromptTrailTool[] {
+  const tools = new Map<string, PromptTrailTool>();
+  for (const capability of options.capabilities ?? []) {
+    if (isPromptTrailTool(capability)) {
+      tools.set(capability.name, capability);
+    }
+  }
+  for (const [name, tool] of Object.entries(options.tools ?? {})) {
+    if (isPromptTrailTool(tool)) {
+      tools.set(tool.name || name, tool);
+    }
+  }
+  return [...tools.values()];
+}
+
+export async function* promptTrailStreamEventsToMessages(
+  events: AsyncIterable<PromptTrailStreamEvent>,
+  options: { attrsKey?: string; retain?: LLMOptions['retain'] } = {},
+): AsyncGenerator<Message, void, unknown> {
+  let state = createPromptTrailStreamState();
+  for await (const event of events) {
+    state = reducePromptTrailStreamEvent(state, event);
+    if (event.type === 'text.delta') {
+      yield {
+        type: 'assistant',
+        content: event.delta || ' ',
+      } as Message;
+    } else if (event.type === 'tool.args.done') {
+      yield streamStateToAssistantMessage(
+        state,
+        createStreamMessageAttrs(state, options),
+      );
+    } else if (event.type === 'message.done') {
+      yield streamStateToAssistantMessage(
+        state,
+        createStreamMessageAttrs(state, options),
+      );
+    }
+  }
+}
+
+function createStreamMessageAttrs(
+  state: ReturnType<typeof createPromptTrailStreamState>,
+  options: { attrsKey?: string; retain?: LLMOptions['retain'] },
+): Readonly<Record<string, unknown>> | undefined {
+  if (!options.attrsKey) {
+    return undefined;
+  }
+  return {
+    [options.attrsKey]: retainPromptTrailStreamMetadata(
+      state,
+      options.retain ?? 'summary',
+    ),
+  };
 }

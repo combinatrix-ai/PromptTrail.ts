@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createExecutionRuntimeState } from '../../../interceptors';
 import { Session } from '../../../session';
 import { Source } from '../../../source';
 import { Assistant } from '../../../templates/primitives/assistant';
@@ -17,6 +18,24 @@ describe('AssistantTemplate', () => {
     const session = await template.execute();
     expect(session.getLastMessage()!.type).toBe('assistant');
     expect(session.getLastMessage()!.content).toBe('This is a test response');
+  });
+
+  it('passes execution runtime to content sources', async () => {
+    const runtime = createExecutionRuntimeState({
+      context: { channel: 'assistant-runtime' },
+      middleware: [],
+    });
+    class RuntimeAwareSource extends Source<string> {
+      getContent = vi.fn().mockResolvedValue('Runtime aware response');
+    }
+    const source = new RuntimeAwareSource();
+    const template = new Assistant(source);
+    const initialSession = Session.create();
+
+    const session = await template.execute(initialSession, runtime);
+
+    expect(session.getLastMessage()?.content).toBe('Runtime aware response');
+    expect(source.getContent).toHaveBeenCalledWith(initialSession, runtime);
   });
 
   it('should handle text on constructor', async () => {
