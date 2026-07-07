@@ -290,13 +290,13 @@ describe('runtime bindings with mock Discord and cron', () => {
       autoThread: false,
     });
 
-    expect(fixture.runtime.conversations()).toContainEqual({
+    expect(await fixture.runtime.conversations()).toContainEqual({
       id: 'discord:guild:workroom:channel:C_cloud:user:U_alice',
       agent: 'main',
       status: 'done',
     });
     expect(
-      fixture.runtime.inbox(
+      await fixture.runtime.inbox(
         'discord:guild:workroom:channel:C_cloud:user:U_alice',
       ),
     ).toContainEqual(
@@ -328,7 +328,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       content: 'hello from elsewhere',
     });
 
-    expect(fixture.runtime.conversations()).toEqual([]);
+    expect(await fixture.runtime.conversations()).toEqual([]);
     expect(fixture.discord.deliveries()).toEqual([]);
   });
 
@@ -342,7 +342,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       mentionsBot: false,
     });
 
-    expect(fixture.runtime.conversations()).toEqual([]);
+    expect(await fixture.runtime.conversations()).toEqual([]);
 
     await fixture.discord.receive({
       channel: 'cloud-lab',
@@ -351,7 +351,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       mentionsBot: true,
     });
 
-    expect(fixture.runtime.conversations()).toContainEqual(
+    expect(await fixture.runtime.conversations()).toContainEqual(
       expect.objectContaining({
         id: 'discord:guild:workroom:channel:C_cloud:user:U_alice',
       }),
@@ -374,7 +374,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       autoThread: false,
     });
 
-    expect(fixture.runtime.conversations()).toEqual(
+    expect(await fixture.runtime.conversations()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'discord:guild:workroom:channel:C_cloud:user:U_alice',
@@ -399,7 +399,7 @@ describe('runtime bindings with mock Discord and cron', () => {
     });
 
     expect(
-      fixture.runtime.inbox('discord:guild:workroom:thread:T_incident'),
+      await fixture.runtime.inbox('discord:guild:workroom:thread:T_incident'),
     ).toEqual([
       expect.objectContaining({ author: 'alice' }),
       expect.objectContaining({ author: 'bob' }),
@@ -422,7 +422,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       content: 'I see the same failure',
     });
 
-    expect(fixture.runtime.conversations()).toEqual(
+    expect(await fixture.runtime.conversations()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'discord:guild:workroom:thread:T_incident:user:U_alice',
@@ -448,7 +448,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       channel: 'cloud-lab',
       thread: 'T_cloud-lab_1',
     });
-    expect(fixture.runtime.conversations()).toContainEqual(
+    expect(await fixture.runtime.conversations()).toContainEqual(
       expect.objectContaining({
         id: 'discord:guild:workroom:thread:T_cloud-lab_1',
       }),
@@ -471,7 +471,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       content: 'inspect logs',
     });
 
-    expect(fixture.runtime.lastAssistantObservation()).toMatchObject({
+    expect(await fixture.runtime.lastAssistantObservation()).toMatchObject({
       conversationId: 'discord:guild:workroom:thread:T_debug',
       delivery: {
         platform: 'discord',
@@ -502,7 +502,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       author: 'alice',
       content: 'regular thread',
     });
-    expect(fixture.runtime.lastAssistantObservation()).toMatchObject({
+    expect(await fixture.runtime.lastAssistantObservation()).toMatchObject({
       channelPrompt: 'Infrastructure debug mode.',
       skills: ['cloud-ops-debugging'],
     });
@@ -513,7 +513,7 @@ describe('runtime bindings with mock Discord and cron', () => {
       author: 'alice',
       content: 'special thread',
     });
-    expect(fixture.runtime.lastAssistantObservation()).toMatchObject({
+    expect(await fixture.runtime.lastAssistantObservation()).toMatchObject({
       channelPrompt: 'Incident commander mode.',
       skills: ['incident-review'],
     });
@@ -526,13 +526,13 @@ describe('runtime bindings with mock Discord and cron', () => {
       scriptOutput: '1. Example story\n2. Another story',
     });
 
-    expect(fixture.runtime.conversations()).toContainEqual(
+    expect(await fixture.runtime.conversations()).toContainEqual(
       expect.objectContaining({
         id: 'cron:hn-top100-digest',
         agent: 'main',
       }),
     );
-    expect(fixture.runtime.lastAssistantObservation()).toMatchObject({
+    expect(await fixture.runtime.lastAssistantObservation()).toMatchObject({
       toolsets: ['web', 'terminal', 'delegation'],
       delivery: {
         platform: 'discord',
@@ -553,7 +553,7 @@ describe('runtime bindings with mock Discord and cron', () => {
     });
     await fixture.cron.tick('Supplier earnings calendar daily update');
 
-    expect(fixture.runtime.lastAssistantObservation()).toMatchObject({
+    expect(await fixture.runtime.lastAssistantObservation()).toMatchObject({
       skills: ['supplier-research', 'api-change-watchers'],
       toolsets: ['terminal', 'file', 'web'],
       workdir: '/home/user/notes/Work/suppliers',
