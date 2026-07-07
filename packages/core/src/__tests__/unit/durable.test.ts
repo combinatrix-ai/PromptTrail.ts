@@ -1017,6 +1017,97 @@ describe('checkpoint app runtime', () => {
       'seen:1',
     ]);
   });
+
+  it('serializes concurrent sends to the same runId without racing the cursor', async () => {
+    const delay = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+    // A slow assistant keeps each resume in flight long enough that two
+    // concurrent sends overlap; without per-run serialization they race on the
+    // shared graph cursor / inbox / session and lose or double-consume input.
+    const assistant = Agent.create('slow-echo')
+      .awaitInput('input')
+      .assistant('reply', async (session) => {
+        await delay(20);
+        return `reply:${session.getLastMessage()?.content}`;
+      });
+    const store = memoryStore();
+    const app = PromptTrail.app({
+      agents: { slow: assistant },
+      store,
+    });
+
+    const first = await app.run({
+      agent: 'slow',
+      runId: 'run-race',
+      checkpoint: true,
+    });
+    expect(first.status).toBe('suspended');
+
+    await Promise.all([
+      app.send({ runId: 'run-race', input: 'A' }),
+      app.send({ runId: 'run-race', input: 'B' }),
+    ]);
+
+    const finalRun = await store.get('run-race');
+    const contents = (finalRun?.result?.messages ?? []).map(
+      (message) => message.content,
+    );
+    const userContents = (finalRun?.result?.messages ?? [])
+      .filter((message) => message.type === 'user')
+      .map((message) => message.content);
+
+    // Both inputs must be consumed exactly once and both replies retained.
+    expect(userContents.sort()).toEqual(['A', 'B']);
+    expect(contents.filter((content) => content === 'reply:A')).toHaveLength(1);
+    expect(contents.filter((content) => content === 'reply:B')).toHaveLength(1);
+    expect(contents).toHaveLength(4);
+  });
+
+  it('runs sends for different runIds concurrently', async () => {
+    let entered = 0;
+    let releaseAll: () => void = () => undefined;
+    const bothEntered = new Promise<void>((resolve) => {
+      releaseAll = resolve;
+    });
+    // Each send blocks until two runs are simultaneously in flight. Distinct
+    // runIds must not serialize, so both must enter before either is released;
+    // if the lock over-serialized, only one would enter and this would hang.
+    const assistant = Agent.create('gated')
+      .awaitInput('input')
+      .assistant('reply', async () => {
+        entered += 1;
+        if (entered === 2) {
+          releaseAll();
+        }
+        await bothEntered;
+        return 'ok';
+      });
+    const store = memoryStore();
+    const app = PromptTrail.app({
+      agents: { gated: assistant },
+      store,
+    });
+
+    await app.run({ agent: 'gated', runId: 'run-a', checkpoint: true });
+    await app.run({ agent: 'gated', runId: 'run-b', checkpoint: true });
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('different runIds did not run concurrently')),
+        1000,
+      ),
+    );
+    const results = await Promise.race([
+      Promise.all([
+        app.send({ runId: 'run-a', input: 'a' }),
+        app.send({ runId: 'run-b', input: 'b' }),
+      ]),
+      timeout,
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(['done', 'done']);
+    expect(entered).toBe(2);
+  });
 });
 
 async function resolveUntilPendingWrite(

@@ -21,6 +21,7 @@ import {
   type RuntimeDispatchResult,
 } from './runtime_dispatch';
 import type { RuntimeBundle } from './runtime_bindings';
+import { KeyedMutex } from './utils';
 
 export interface RuntimePresence {
   kind: string;
@@ -135,7 +136,7 @@ export class RuntimeServer {
   private readonly observerBus: ObserverBus;
   private readonly runtimeObservers: ObserverLike[];
   private readonly runtimeObserverDisposers: Array<() => void> = [];
-  private readonly conversationLocks = new Map<string, Promise<void>>();
+  private readonly conversationLocks = new KeyedMutex();
   private readonly gateways: RuntimeGatewayDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
   private readonly presences = new Map<string, RuntimePresenceDriver>();
@@ -201,7 +202,7 @@ export class RuntimeServer {
 
     const delivery = resolveRuntimeDelivery(defaults.delivery, binding, event);
     const conversationId = binding.conversation(event);
-    await this.withConversationLock(conversationId, async () => {
+    await this.conversationLocks.run(conversationId, async () => {
       const presenceHandle = await this.startPresence(event, delivery);
 
       try {
@@ -232,31 +233,6 @@ export class RuntimeServer {
         await presenceHandle?.stop();
       }
     });
-  }
-
-  private async withConversationLock<T>(
-    conversationId: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const previous = this.conversationLocks.get(conversationId);
-    let releaseCurrent: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => {
-      releaseCurrent = resolve;
-    });
-    const chain = (previous ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => current);
-    this.conversationLocks.set(conversationId, chain);
-
-    await previous?.catch(() => undefined);
-    try {
-      return await fn();
-    } finally {
-      releaseCurrent();
-      if (this.conversationLocks.get(conversationId) === chain) {
-        this.conversationLocks.delete(conversationId);
-      }
-    }
   }
 
   private registerRuntimeObservers(): void {

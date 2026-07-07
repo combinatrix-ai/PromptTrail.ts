@@ -42,6 +42,7 @@ import {
   type AgentGraphManifest,
 } from './graph';
 import type { ProviderSessionBinding } from './provider_session';
+import { KeyedMutex } from './utils';
 import type { Agent } from './templates/agent';
 import {
   beginCheckpointGraphExecution,
@@ -398,6 +399,12 @@ export class PromptTrailApp {
     | undefined;
   private runtimeServer?: RuntimeServer;
   private runCounter = 0;
+  // Serializes send/resume/run for the same runId so concurrent callers (direct
+  // API and the gateway path) do not race on the graph cursor, inbox, or session
+  // deltas. Distinct runIds still run concurrently. This is process-local; it
+  // composes with (nests inside) RuntimeServer's conversation lock but is a
+  // separate map, so there is no cross-lock ordering to deadlock on.
+  private readonly runLocks = new KeyedMutex();
   // Event idempotency keys embed this sequence, so it must stay monotonic
   // across resumes of the same run within this process — the lifetime of the
   // in-memory delivery-binding stores that dedupe on those keys. It is not
@@ -673,7 +680,12 @@ export class PromptTrailApp {
   async run<TVars extends Vars = Vars>(
     options: PromptTrailRunOptions<TVars>,
   ): Promise<DurableRunResult<TVars>> {
-    return this.startRun(options);
+    // A run without an explicit runId gets a freshly generated id, so no other
+    // caller can contend for it; only lock when the caller pins the runId.
+    if (options.runId === undefined) {
+      return this.startRun(options);
+    }
+    return this.runLocks.run(options.runId, () => this.startRun(options));
   }
 
   async executeCheckpointRun<TVars extends Vars = Vars>(options: {
@@ -715,6 +727,14 @@ export class PromptTrailApp {
   async send<TVars extends Vars = Vars>(
     options: PromptTrailSendOptions,
   ): Promise<DurableRunResult<TVars>> {
+    return this.runLocks.run(options.runId, () =>
+      this.sendImpl<TVars>(options),
+    );
+  }
+
+  private async sendImpl<TVars extends Vars = Vars>(
+    options: PromptTrailSendOptions,
+  ): Promise<DurableRunResult<TVars>> {
     const checkpoint =
       options.checkpoint ??
       (options.resumable ? true : undefined) ??
@@ -749,10 +769,16 @@ export class PromptTrailApp {
       );
     }
     await this.append(options.runId, normalizeInbound(options.input));
-    return this.resume<TVars>(options.runId);
+    return this.resumeImpl<TVars>(options.runId);
   }
 
   async resume<TVars extends Vars = Vars>(
+    runId: string,
+  ): Promise<DurableRunResult<TVars>> {
+    return this.runLocks.run(runId, () => this.resumeImpl<TVars>(runId));
+  }
+
+  private async resumeImpl<TVars extends Vars = Vars>(
     runId: string,
   ): Promise<DurableRunResult<TVars>> {
     const run = await this.getRun<TVars>(runId);
@@ -982,7 +1008,7 @@ export class PromptTrailApp {
       if (options.input !== undefined) {
         await this.append(runId, normalizeInbound(options.input));
       }
-      return this.resume<TVars>(runId);
+      return this.resumeImpl<TVars>(runId);
     }
     return this.executeAgentRun(agent, options);
   }
