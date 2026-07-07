@@ -53,7 +53,8 @@ import {
   graphHasInboundConsumer,
   recordCheckpointGraphCompletion,
   recordCheckpointGraphSuspension,
-  restoreCheckpointGraphCursor,
+  restoreCheckpointGraphEntryPoint,
+  CheckpointRollbackError,
   type CheckpointOnceBoundary,
   type CheckpointOnceMemoEntry,
   type CheckpointOnceMemoStore,
@@ -1175,9 +1176,13 @@ export class PromptTrailApp {
           session,
         };
       }
-      await restoreCheckpointGraphCursor(run, checkpoint.cursor, () =>
-        this.persistRun(runId, run),
-      );
+      try {
+        await restoreCheckpointGraphEntryPoint(run, checkpoint, () =>
+          this.persistRun(runId, run),
+        );
+      } catch (rollbackError) {
+        throw new CheckpointRollbackError(error, rollbackError);
+      }
       throw error;
     }
   }

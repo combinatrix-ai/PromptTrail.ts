@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CheckpointRollbackError,
   createCheckpointOnceBoundary,
   createCheckpointOnceMemoStore,
 } from '../../checkpoint_continuation';
-import { PromptTrail, manualGateway, memoryStore } from '../../durable';
+import {
+  MemoryRunStore,
+  PromptTrail,
+  manualGateway,
+  memoryStore,
+} from '../../durable';
 import type {
   AssistantDeliveryOutboxEntry,
   DurableRunStore,
@@ -814,6 +820,182 @@ describe('checkpoint app runtime', () => {
         (message: { content: string }) => message.content,
       ),
     ).toEqual(['redacted', 'continue', 'done']);
+  });
+
+  it('rolls the checkpoint back to a consistent point when a node throws after appending a message', async () => {
+    const store = memoryStore();
+    let fail = true;
+    const assistant = Agent.create('rollback')
+      .inbox('in')
+      .assistant('reply', Source.literal('ok'))
+      .transform('boom', (session) => {
+        if (fail) {
+          throw new Error('boom');
+        }
+        return session;
+      });
+    const app = PromptTrail.app({ agents: { rollback: assistant }, store });
+
+    await expect(
+      app.run({
+        agent: 'rollback',
+        runId: 'run-rollback',
+        input: 'hello',
+        checkpoint: true,
+      }),
+    ).rejects.toThrow('boom');
+
+    // At rest after the error the persisted cursor and session must agree on how
+    // much of the inbox has been consumed: nothing was durably consumed.
+    const afterError = await store.get('run-rollback');
+    expect(afterError?.graphCursor).toBe(0);
+    expect(
+      afterError?.result?.messages.map((message) => message.content) ?? [],
+    ).toEqual([]);
+
+    // A retry replays the (still unconsumed) inbox against the entry-point
+    // session, so the message is not duplicated.
+    fail = false;
+    const retry = await app.resume('run-rollback');
+    expect(retry.status).toBe('done');
+    expect(retry.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+  });
+
+  it('rolls back to a consistent point after an error on a continuation and does not duplicate input', async () => {
+    const store = memoryStore();
+    let fail = false;
+    const assistant = Agent.create('rollback-cont')
+      .inbox('in')
+      .assistant('reply', Source.literal('ok'))
+      .transform('boom', (session) => {
+        if (fail) {
+          throw new Error('boom');
+        }
+        return session;
+      });
+    const app = PromptTrail.app({ agents: { rollback: assistant }, store });
+
+    const first = await app.run({
+      agent: 'rollback',
+      runId: 'run-rollback-cont',
+      input: 'hello',
+      checkpoint: true,
+    });
+    expect(first.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+
+    fail = true;
+    await expect(
+      app.send({ runId: 'run-rollback-cont', input: 'world' }),
+    ).rejects.toThrow('boom');
+
+    // The prior completion is preserved (consumed 'hello'), the cursor points at
+    // 'world' as the next unconsumed input, and 'world' is not yet in the
+    // session — cursor and session stay mutually consistent.
+    const afterError = await store.get('run-rollback-cont');
+    expect(afterError?.graphCursor).toBe(1);
+    expect(
+      afterError?.result?.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ok']);
+
+    fail = false;
+    const retry = await app.resume('run-rollback-cont');
+    expect(retry.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+      'world',
+      'ok',
+    ]);
+  });
+
+  it('a fresh app instance sharing the store retries a failed run consistently', async () => {
+    const store = memoryStore();
+    let fail = true;
+    const build = () =>
+      Agent.create('cold')
+        .inbox('in')
+        .assistant('reply', Source.literal('ok'))
+        .transform('boom', (session) => {
+          if (fail) {
+            throw new Error('boom');
+          }
+          return session;
+        });
+
+    const app = PromptTrail.app({ agents: { cold: build() }, store });
+    await expect(
+      app.run({
+        agent: 'cold',
+        runId: 'run-cold',
+        input: 'hello',
+        checkpoint: true,
+      }),
+    ).rejects.toThrow('boom');
+
+    // A fresh app instance (cold restart) rebinds the agent and shares the store
+    // but has an empty in-memory session baseline.
+    fail = false;
+    const restarted = PromptTrail.app({ agents: { cold: build() }, store });
+    const retry = await restarted.resume('run-cold');
+    expect(retry.status).toBe('done');
+    expect(retry.session.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+  });
+
+  it('surfaces both the run error and the rollback error when rollback persistence fails', async () => {
+    class RollbackFailStore extends MemoryRunStore {
+      private advanced = false;
+      async patch(
+        runId: string,
+        patch: Parameters<MemoryRunStore['patch']>[1],
+      ): Promise<void> {
+        if (patch.graphCursor === 1) {
+          this.advanced = true;
+        }
+        // Fail only the rewind write (cursor regressing to 0 after advancing).
+        if (this.advanced && patch.graphCursor === 0) {
+          throw new Error('store patch failed');
+        }
+        return super.patch(runId, patch);
+      }
+    }
+
+    const store = new RollbackFailStore();
+    const assistant = Agent.create('rollback-fail')
+      .inbox('in')
+      .assistant('reply', Source.literal('ok'))
+      .transform('boom', () => {
+        throw new Error('boom');
+      });
+    const app = PromptTrail.app({ agents: { rollback: assistant }, store });
+
+    let caught: unknown;
+    try {
+      await app.run({
+        agent: 'rollback',
+        runId: 'run-rollback-fail',
+        input: 'hello',
+        checkpoint: true,
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(CheckpointRollbackError);
+    const rollback = caught as CheckpointRollbackError;
+    expect((rollback.runError as Error).message).toBe('boom');
+    expect((rollback.rollbackError as Error).message).toBe(
+      'store patch failed',
+    );
+    // The original run error is preserved as the cause chain.
+    expect((rollback.cause as Error).message).toBe('boom');
   });
 
   it('uses resolved keyed declarations as the checkpoint tool once dep', async () => {
