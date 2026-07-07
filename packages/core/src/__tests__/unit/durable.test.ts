@@ -949,6 +949,128 @@ describe('checkpoint app runtime', () => {
     ]);
   });
 
+  it('delete removes the run from the store and prunes the process-local maps', async () => {
+    const store = memoryStore();
+    const assistant = Agent.create('deletable')
+      .assistant('reply', () => 'hello')
+      .awaitInput('input');
+    const app = PromptTrail.app({ agents: { deletable: assistant }, store });
+
+    const first = await app.run({
+      agent: 'deletable',
+      runId: 'run-delete',
+      checkpoint: true,
+    });
+    expect(first.status).toBe('suspended');
+
+    // The maps keyed by runId hold entries for a live run: the event sequence
+    // (populated as the graph emits events) and the persisted-session baseline.
+    const internals = app as unknown as {
+      runEventSeqs: Map<string, unknown>;
+      persistedSessions: Map<string, unknown>;
+    };
+    expect(internals.runEventSeqs.has('run-delete')).toBe(true);
+    expect(internals.persistedSessions.has('run-delete')).toBe(true);
+    expect(await store.get('run-delete')).toBeDefined();
+
+    await app.delete('run-delete');
+
+    expect(await store.get('run-delete')).toBeUndefined();
+    expect(internals.runEventSeqs.has('run-delete')).toBe(false);
+    expect(internals.persistedSessions.has('run-delete')).toBe(false);
+  });
+
+  it('resumes an awaitInput suspension in a fresh app instance without duplicating prompts', async () => {
+    const store = memoryStore();
+    const build = () =>
+      Agent.create('cold-suspend')
+        .system('sys', 'System')
+        .assistant('greet', Source.literal('hello'))
+        .awaitInput('input')
+        .assistant(
+          'reply',
+          (session) => `reply:${session.getLastMessage()?.content}`,
+        );
+
+    const app = PromptTrail.app({ agents: { cold: build() }, store });
+    const first = await app.run({
+      agent: 'cold',
+      runId: 'run-cold-suspend',
+      checkpoint: true,
+    });
+    expect(first.status).toBe('suspended');
+
+    // A fresh app instance (cold restart) shares the store but starts with empty
+    // in-memory session/event baselines. Sending the awaited input must resume
+    // to completion with the correct message order and no duplicated prompt.
+    const restarted = PromptTrail.app({ agents: { cold: build() }, store });
+    const resumed = await restarted.send({
+      runId: 'run-cold-suspend',
+      input: 'world',
+    });
+
+    expect(resumed.status).toBe('done');
+    expect(resumed.session.messages.map((message) => message.content)).toEqual([
+      'System',
+      'hello',
+      'world',
+      'reply:world',
+    ]);
+    expect(
+      resumed.session.messages.filter((message) => message.content === 'hello'),
+    ).toHaveLength(1);
+  });
+
+  it('does not re-execute a keyed effect after cold restart resume', async () => {
+    const store = memoryStore();
+    let executions = 0;
+    const build = () =>
+      Agent.create('cold-once')
+        .tool('write', {
+          kind: 'tool',
+          name: 'write',
+          description: 'Write.',
+          inputSchema: {
+            parse: (input: unknown) => input,
+          } as any,
+          effect: { idempotencyKey: 'write:cold' },
+          execute: () => {
+            executions++;
+            return 'written';
+          },
+        })
+        .assistant('call', () => ({
+          content: 'need write',
+          toolCalls: [{ id: 'call-1', name: 'write', arguments: {} }],
+        }))
+        .tools('run')
+        .awaitInput('input')
+        .assistant('after', () => 'done');
+
+    const app = PromptTrail.app({ agents: { cold: build() }, store });
+    const first = await app.run({
+      agent: 'cold',
+      runId: 'run-cold-once',
+      checkpoint: true,
+    });
+    expect(first.status).toBe('suspended');
+    // The keyed effect ran once in instance A before the suspension, and its
+    // once memo is recorded in the shared store.
+    expect(executions).toBe(1);
+
+    // Resuming in a fresh instance (empty in-memory once boundary) must consult
+    // the store's once memo and must not re-run the effect body.
+    const restarted = PromptTrail.app({ agents: { cold: build() }, store });
+    const resumed = await restarted.send({
+      runId: 'run-cold-once',
+      input: 'go',
+    });
+
+    expect(resumed.status).toBe('done');
+    expect(executions).toBe(1);
+    expect(resumed.session.getLastMessage()?.content).toBe('done');
+  });
+
   it('surfaces both the run error and the rollback error when rollback persistence fails', async () => {
     class RollbackFailStore extends MemoryRunStore {
       private advanced = false;

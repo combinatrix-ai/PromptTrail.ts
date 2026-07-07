@@ -140,6 +140,16 @@ export class RuntimeServer {
   private readonly gateways: RuntimeGatewayDriver[] = [];
   private readonly deliveries = new Map<string, RuntimeDeliveryDriver>();
   private readonly presences = new Map<string, RuntimePresenceDriver>();
+  // Monotonic delivery-event sequence per conversation, process-local for the
+  // lifetime of this server instance. Intentionally NOT pruned or LRU-capped:
+  // RuntimeServer has no end-of-conversation signal (conversations can always
+  // resume), and evicting an entry would rewind its seq to 0. Because these seq
+  // values feed the ordering of delivery events consumed by the in-memory
+  // delivery-binding/observer dedupe stores, a rewind could collide with or
+  // reorder events already emitted for a still-live conversation. Growth is
+  // bounded by the number of distinct conversations a single process handles,
+  // matching the lifetime of those dedupe stores, so leaving it unbounded is
+  // the correct trade-off over a cap that risks correctness.
   private readonly eventSeqByConversation = new Map<string, number>();
 
   constructor(private readonly options: RuntimeServerOptions) {

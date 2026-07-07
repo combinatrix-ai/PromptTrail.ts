@@ -2079,6 +2079,87 @@ describe('RuntimeServer', () => {
     ).toEqual([{ status: 'delivered', attempts: 2, lastError: undefined }]);
   });
 
+  it('does not re-deliver a completed delivery after cold restart', async () => {
+    const deliveries: string[] = [];
+    const main = Agent.create('main').assistant('reply', () => 'stored reply');
+    const bundle = PromptTrail.runtimeBundle({
+      name: 'server-outbox-delivered-cold-restart-test',
+      agents: { main },
+      defaults: { checkpoint: true },
+      bindings: [],
+    });
+    const store = memoryStore();
+    const app = PromptTrail.app({
+      store,
+      agents: bundle.agents,
+    });
+    const runId = 'fake-chat:guild:workroom:channel:C_general';
+    const target = fakeChat.channel('general');
+    const deliveryKey = assistantDeliveryKey(runId, 0, target);
+    await app.run({
+      agent: 'main',
+      runId,
+      checkpoint: true,
+    });
+    await app.prepareAssistantDeliveries(runId, [
+      {
+        assistantIndex: 0,
+        idempotencyKey: deliveryKey,
+        message: {
+          type: 'assistant',
+          content: 'already delivered',
+        },
+        target,
+      },
+    ]);
+    // Instance A completes the delivery.
+    await app.markAssistantDelivery(runId, deliveryKey, 'delivering');
+    await app.markAssistantDelivery(
+      runId,
+      deliveryKey,
+      'delivered',
+      undefined,
+      {
+        messageId: 'first',
+      },
+    );
+
+    // A fresh app + server instance (cold restart) shares the same store. On
+    // start it scans the outbox for pending retries; a delivered entry must not
+    // be re-delivered.
+    const restarted = PromptTrail.app({
+      store,
+      agents: bundle.agents,
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: restarted,
+      adapters: [
+        {
+          name: 'test-fake-chat',
+          deliveries: [
+            {
+              platform: 'fake-chat',
+              deliver(ctx, _target, message) {
+                deliveries.push(`${ctx.idempotencyKey}:${message.content}`);
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(deliveries).toEqual([]);
+    expect(
+      (await restarted.assistantDeliveryOutbox(runId)).map((entry) => ({
+        status: entry.status,
+        attempts: entry.attempts,
+      })),
+    ).toEqual([{ status: 'delivered', attempts: 1 }]);
+  });
+
   it('stops startup delivery retries for a conversation after the first failure', async () => {
     const order: string[] = [];
     const main = Agent.create('main').assistant('reply', () => 'stored reply');
