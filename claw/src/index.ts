@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { Agent, PromptTrail, Source } from '@prompttrail/core';
 import { cron, cronGateway } from '@prompttrail/cron';
 import { discord, discordGateway } from '@prompttrail/discord';
+import { telegram, telegramGateway } from '@prompttrail/telegram';
 import { SqliteRunStore } from '@prompttrail/store-sqlite';
+import { resolveClawTokens } from './runtime-tokens.js';
 import {
   createAuthorSkill,
   createClawSkillAgent,
@@ -27,11 +29,14 @@ import {
 } from './skills/index.js';
 
 interface ClawConfig {
-  token: string;
+  discordToken?: string;
+  telegramToken?: string;
   allowedChannels: string[];
   freeResponseChannels: string[];
   requireMention: boolean;
   threadRequireMention: boolean;
+  telegramAllowedChats: string[];
+  telegramRequireMention: boolean;
   replyMode: 'echo' | 'openai' | 'codex';
   openaiModel?: string;
   codexAppServerUrl: string;
@@ -177,28 +182,47 @@ if (supervisorCron) {
     );
 }
 
-runtime.on(discord.messages(), (binding) =>
-  binding
-    .where(discord.notBot())
-    .toAgent('main')
-    .conversation(
-      discord.sessionKey({
-        groupSessionsPerUser: true,
-        threadSessionsPerUser: false,
+// Discord channel (opt-in via DISCORD_TOKEN).
+if (config.discordToken) {
+  runtime.on(discord.messages(), (binding) =>
+    binding
+      .where(discord.notBot())
+      .toAgent('main')
+      .conversation(
+        discord.sessionKey({
+          groupSessionsPerUser: true,
+          threadSessionsPerUser: false,
+        }),
+      )
+      .reply(discord.replyToOriginThread())
+      .defaults({
+        behavior: {
+          allowedChannels: config.allowedChannels,
+          freeResponseChannels: config.freeResponseChannels,
+          requireMention: config.requireMention,
+          threadRequireMention: config.threadRequireMention,
+          autoThread: false,
+        },
+        toolsets: ['discord'],
       }),
-    )
-    .reply(discord.replyToOriginThread())
-    .defaults({
-      behavior: {
-        allowedChannels: config.allowedChannels,
-        freeResponseChannels: config.freeResponseChannels,
-        requireMention: config.requireMention,
-        threadRequireMention: config.threadRequireMention,
-        autoThread: false,
-      },
-      toolsets: ['discord'],
-    }),
-);
+  );
+}
+
+// Telegram channel (opt-in via TELEGRAM_TOKEN). Parallel to the Discord
+// binding: same dispatch/skills agent, conversation key via telegram.sessionKey.
+// Chat allowlist + mention gating live on the gateway (see telegramGateway).
+if (config.telegramToken) {
+  runtime.on(telegram.messages(), (binding) =>
+    binding
+      .where(telegram.notBot())
+      .toAgent('main')
+      .conversation(telegram.sessionKey({ groupSessionsPerUser: true }))
+      .reply(telegram.replyToChat())
+      .defaults({
+        toolsets: ['telegram'],
+      }),
+  );
+}
 const bundle = runtime.bundle('claw-discord');
 
 const server = PromptTrail.server({
@@ -208,21 +232,55 @@ const server = PromptTrail.server({
   errorMessage: 'Claw failed to handle that message.',
   adapters: [
     ...(supervisorCron ? [cronGateway()] : []),
-    discordGateway({
-      token: config.token,
-      stripBotMention: true,
-      onReady(readyClient) {
-        console.log(`Claw Discord bot logged in as ${readyClient.user.tag}`);
-        console.log(`Allowed channels: ${config.allowedChannels.join(', ')}`);
-        console.log(`Reply mode: ${config.replyMode}`);
-        console.log(
-          `Skills: ${registry
-            .listEnabled()
-            .map((row) => row.id)
-            .join(', ')}`,
-        );
-      },
-    }),
+    ...(config.discordToken
+      ? [
+          discordGateway({
+            token: config.discordToken,
+            stripBotMention: true,
+            onReady(readyClient) {
+              console.log(
+                `Claw Discord bot logged in as ${readyClient.user.tag}`,
+              );
+              console.log(
+                `Allowed channels: ${config.allowedChannels.join(', ')}`,
+              );
+              console.log(`Reply mode: ${config.replyMode}`);
+              console.log(
+                `Skills: ${registry
+                  .listEnabled()
+                  .map((row) => row.id)
+                  .join(', ')}`,
+              );
+            },
+          }),
+        ]
+      : []),
+    ...(config.telegramToken
+      ? [
+          telegramGateway({
+            token: config.telegramToken,
+            requireMention: config.telegramRequireMention,
+            allowedChats:
+              config.telegramAllowedChats.length > 0
+                ? config.telegramAllowedChats
+                : undefined,
+            onReady(me) {
+              console.log(
+                `Claw Telegram bot logged in as @${me.username ?? me.id}`,
+              );
+              console.log(
+                config.telegramAllowedChats.length > 0
+                  ? `Allowed chats: ${config.telegramAllowedChats.join(', ')}`
+                  : 'Allowed chats: (any)',
+              );
+              console.log(`Reply mode: ${config.replyMode}`);
+            },
+            onError(error) {
+              console.error('Telegram poll error', error);
+            },
+          }),
+        ]
+      : []),
   ],
 });
 
@@ -303,13 +361,11 @@ function readPackageVersion(): string {
 }
 
 function readConfig(): ClawConfig {
-  const token = process.env.DISCORD_TOKEN;
-  if (!token) {
-    throw new Error('DISCORD_TOKEN is required');
-  }
+  const { discordToken, telegramToken } = resolveClawTokens(process.env);
   const requireMention = readBoolean('DISCORD_REQUIRE_MENTION', false);
   return {
-    token,
+    discordToken,
+    telegramToken,
     allowedChannels: readList('DISCORD_ALLOWED_CHANNELS', ['general']),
     freeResponseChannels: readList(
       'DISCORD_FREE_RESPONSE_CHANNELS',
@@ -317,6 +373,8 @@ function readConfig(): ClawConfig {
     ),
     requireMention,
     threadRequireMention: readBoolean('DISCORD_THREAD_REQUIRE_MENTION', false),
+    telegramAllowedChats: readList('TELEGRAM_ALLOWED_CHATS', []),
+    telegramRequireMention: readBoolean('TELEGRAM_REQUIRE_MENTION', false),
     replyMode: readReplyMode(),
     openaiModel: readOptionalString('CLAW_OPENAI_MODEL'),
     codexAppServerUrl:

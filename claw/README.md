@@ -1,8 +1,16 @@
-# Claw Discord Bot
+# Claw Bot
 
-Claw is a dogfooding Discord bot for the PromptTrail runtime bindings work. It
-uses the real `PromptTrail.app(...).on(discord.messages(), ...)` API and a real
-`discord.js` gateway client.
+Claw is a dogfooding bot for the PromptTrail runtime bindings work. It uses the
+real `PromptTrail.app(...).on(discord.messages(), ...)` API and a real
+`discord.js` gateway client, and — as the second channel that validates
+`runtime_bindings` is not Discord-shaped — an optional `telegram.messages()`
+binding backed by `@prompttrail/telegram`'s dependency-free long-polling client.
+
+Claw boots with **Discord, Telegram, or both**. Set `DISCORD_TOKEN`,
+`TELEGRAM_TOKEN`, or both; startup fails fast only when neither is present. Both
+channels share the same dispatch/skills agent — a message from either platform
+routes to the same `main` agent, with the conversation id derived from the
+platform's own `sessionKey`.
 
 ## Setup
 
@@ -69,6 +77,29 @@ The bot uses these binding defaults:
 
 This is intentionally close to the Hermes-style scenario in
 `design-docs/runtime-bindings-discord-cron.md`.
+
+## Telegram channel
+
+Set `TELEGRAM_TOKEN` (a bot token from [@BotFather](https://t.me/BotFather)) to
+add a Telegram gateway. `@prompttrail/telegram` implements the same generic
+`RuntimeAdapter` contract as `@prompttrail/discord` with no heavy SDK — it talks
+to the Bot API over plain HTTPS long-polling (`getUpdates`) using the global
+`fetch` on Node 22+.
+
+- Conversations key on the chat id via `telegram.sessionKey({ groupSessionsPerUser: true })`:
+  DMs are naturally per-user; group chats get one conversation per user.
+- `TELEGRAM_ALLOWED_CHATS` (comma-separated numeric ids or `@usernames`, empty =
+  any) restricts which chats the bot processes.
+- `TELEGRAM_REQUIRE_MENTION=true` requires an `@botusername` mention in group
+  chats and strips it from the input; DMs never require a mention.
+- Replies go back to the originating chat (`telegram.replyToChat()`), threaded to
+  the source message in groups, and are chunked to Telegram's 4096-char limit.
+
+```bash
+TELEGRAM_TOKEN=...
+TELEGRAM_ALLOWED_CHATS=
+TELEGRAM_REQUIRE_MENTION=false
+```
 
 ## Skills (Phase 0)
 
