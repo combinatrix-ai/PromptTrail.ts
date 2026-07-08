@@ -2,15 +2,18 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Agent, PromptTrail, Source } from '@prompttrail/core';
+import { cron, cronGateway } from '@prompttrail/cron';
 import { discord, discordGateway } from '@prompttrail/discord';
 import { SqliteRunStore } from '@prompttrail/store-sqlite';
 import {
   createAuthorSkill,
   createClawSkillAgent,
   createStatusSkill,
+  createSupervisorSkill,
   findClawRoot,
   llmSynthesizer,
   loadStagedSkills,
+  quarantineScan,
   registerBuiltinSkills,
   skillToRow,
   SkillRegistry,
@@ -20,6 +23,7 @@ import {
   type SkillLoaderContext,
   type SkillReplySource,
   type SkillSynthesizer,
+  type SupervisionConfig,
 } from './skills/index.js';
 
 interface ClawConfig {
@@ -80,9 +84,19 @@ const loaderContext: SkillLoaderContext = {
 // source through the same gate-import path (full re-gate only if source changed).
 await loadStagedSkills(loaderContext);
 
+// Phase 2 supervision thresholds (design-docs/claw-self-authoring.md §9-§10).
+// The health wrapper auto-promotes a clean canary and auto-quarantines a skill
+// past the failure threshold; both are registry writes off the hot path.
+const supervisionConfig: SupervisionConfig = {
+  promoteAfter: readInteger('CLAW_PROMOTE_AFTER', 20),
+  quarantineAfter: readInteger('CLAW_QUARANTINE_AFTER', 3),
+  supervisorChannel: readOptionalString('CLAW_SUPERVISOR_CHANNEL'),
+};
+
 // Register the trusted authoring entry point ONLY when a privileged channel is
 // configured (§6 authorization boundary). Without CLAW_AUTHORING_CHANNELS, `!skill`
-// does nothing — a normal message can invoke skills but never author them.
+// does nothing — a normal message can invoke skills but never author them. The
+// supervisor commands share the same privileged channel/author gating.
 const authoringChannels = readList('CLAW_AUTHORING_CHANNELS', []);
 const authors = readList('CLAW_AUTHORS', []);
 if (authoringChannels.length > 0) {
@@ -92,14 +106,21 @@ if (authoringChannels.length > 0) {
     authoringChannels,
     authors,
   });
-  skills.set(authorSkill.id, authorSkill);
-  const authorRow = skillToRow(authorSkill);
-  const existing = registry.get(authorSkill.id);
-  if (existing) {
-    // Keep channel narrowing current with the env; respect a manual disable.
-    authorRow.enabled = existing.enabled;
+  const supervisorSkill = createSupervisorSkill({
+    loaderContext,
+    supervisorChannels: authoringChannels,
+    authors,
+  });
+  for (const builtin of [supervisorSkill, authorSkill]) {
+    skills.set(builtin.id, builtin);
+    const row = skillToRow(builtin);
+    const existing = registry.get(builtin.id);
+    if (existing) {
+      // Keep channel narrowing current with the env; respect a manual disable.
+      row.enabled = existing.enabled;
+    }
+    registry.upsert(row);
   }
-  registry.upsert(authorRow);
 }
 
 validateSkillRegistry(registry, skills);
@@ -109,10 +130,29 @@ const mainAgent = createClawSkillAgent({
   registry,
   skills,
   defaultReply: buildDefaultReply(config),
+  supervision: supervisionConfig,
 });
 
+// Optional scheduled supervisor: a cron scan that quarantines skills already
+// over the failure threshold (catches skills that failed while idle). Wired only
+// when CLAW_SUPERVISOR_CRON is set (design-docs §9 scheduled mode).
+const supervisorCron = readOptionalString('CLAW_SUPERVISOR_CRON');
+const scanAgent = Agent.create('supervisor-scan')
+  .inbox('inbound')
+  .transform('scan', { effect: { repeatable: true } }, (session) => {
+    const quarantined = quarantineScan(registry, supervisionConfig);
+    const summary =
+      quarantined.length > 0
+        ? `supervisor scan: quarantined ${quarantined.join(', ')}`
+        : 'supervisor scan: no skills over threshold';
+    console.log(summary);
+    return session.addMessage({ type: 'assistant', content: summary });
+  });
+
 const store = new SqliteRunStore({
-  agents: { main: mainAgent },
+  agents: supervisorCron
+    ? { main: mainAgent, 'supervisor-scan': scanAgent }
+    : { main: mainAgent },
   path: clawDbPath,
 });
 
@@ -122,30 +162,43 @@ const runtime = PromptTrail.app({
   defaults: {
     checkpoint: true,
   },
-})
-  .agent('main', mainAgent)
-  .on(discord.messages(), (binding) =>
-    binding
-      .where(discord.notBot())
-      .toAgent('main')
-      .conversation(
-        discord.sessionKey({
-          groupSessionsPerUser: true,
-          threadSessionsPerUser: false,
-        }),
-      )
-      .reply(discord.replyToOriginThread())
-      .defaults({
-        behavior: {
-          allowedChannels: config.allowedChannels,
-          freeResponseChannels: config.freeResponseChannels,
-          requireMention: config.requireMention,
-          threadRequireMention: config.threadRequireMention,
-          autoThread: false,
-        },
-        toolsets: ['discord'],
+}).agent('main', mainAgent);
+
+// Scheduled supervisor cron binding (opt-in).
+if (supervisorCron) {
+  runtime
+    .agent('supervisor-scan', scanAgent)
+    .on(cron.schedule(supervisorCron), (binding) =>
+      binding
+        .name('supervisor-scan')
+        .toAgent('supervisor-scan')
+        .conversation(({ job }) => `cron:${job.id}`)
+        .input('quarantine scan'),
+    );
+}
+
+runtime.on(discord.messages(), (binding) =>
+  binding
+    .where(discord.notBot())
+    .toAgent('main')
+    .conversation(
+      discord.sessionKey({
+        groupSessionsPerUser: true,
+        threadSessionsPerUser: false,
       }),
-  );
+    )
+    .reply(discord.replyToOriginThread())
+    .defaults({
+      behavior: {
+        allowedChannels: config.allowedChannels,
+        freeResponseChannels: config.freeResponseChannels,
+        requireMention: config.requireMention,
+        threadRequireMention: config.threadRequireMention,
+        autoThread: false,
+      },
+      toolsets: ['discord'],
+    }),
+);
 const bundle = runtime.bundle('claw-discord');
 
 const server = PromptTrail.server({
@@ -154,6 +207,7 @@ const server = PromptTrail.server({
   presence: { kind: 'typing' },
   errorMessage: 'Claw failed to handle that message.',
   adapters: [
+    ...(supervisorCron ? [cronGateway()] : []),
     discordGateway({
       token: config.token,
       stripBotMention: true,

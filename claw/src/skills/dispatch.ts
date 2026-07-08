@@ -1,5 +1,6 @@
 import { Agent, type Session } from '@prompttrail/core';
 import { SkillRegistry } from './registry.js';
+import { evaluateSupervision, type SupervisionConfig } from './supervisor.js';
 import { MATCHED_SKILL_VAR, type Skill, type SkillContext } from './types.js';
 
 /**
@@ -62,6 +63,11 @@ export class SkillDispatcher {
 
   match(ctx: SkillContext): Skill | undefined {
     for (const row of this.registry.listEnabled()) {
+      if (row.tier === 'quarantined') {
+        // Quarantined skills are skipped exactly like disabled ones (§9); the
+        // supervisor must !restore them before they dispatch again.
+        continue;
+      }
       const skill = this.skills.get(row.behaviorRef);
       if (!skill) {
         // Unknown ref: warned at boot (validateSkillRegistry); skip at runtime.
@@ -80,17 +86,29 @@ export class SkillDispatcher {
 
 /**
  * Runs a skill's behavior subroutine and records the outcome to the registry
- * health record (design-docs §9 Phase 0 slice). This explicit wrapper sits in
- * the dispatch path so every skill invocation is instrumented: invocations,
- * successes, consecutiveFailures, lastError, lastLatencyMs.
+ * health record (design-docs §9). This explicit wrapper sits in the dispatch
+ * path so every skill invocation is instrumented: invocations, successes,
+ * consecutiveFailures, lastError, lastLatencyMs.
+ *
+ * When a {@link SupervisionConfig} is supplied it also runs the cheap,
+ * data-plane REACTIVE supervision step after recording health: auto-promote a
+ * clean canary, or auto-quarantine a skill past its failure threshold (both are
+ * registry writes; the supervisor is never on the blocking path). Builtin skills
+ * (status, author, supervisor itself) are left untouched by supervision.
  */
 export async function runSkillInstrumented(
   registry: SkillRegistry,
   skill: Skill,
   session: Session,
   now: () => number = Date.now,
+  supervision?: SupervisionConfig,
 ): Promise<Session> {
   const start = now();
+  const supervise = (): void => {
+    if (supervision) {
+      evaluateSupervision(registry, skill.id, supervision, now);
+    }
+  };
   try {
     const behaviorAgent = skill.behavior(
       Agent.create(`skill-${skill.id.replace(/[^A-Za-z0-9_-]/g, '-')}`),
@@ -100,6 +118,7 @@ export async function runSkillInstrumented(
       success: true,
       latencyMs: Math.max(0, now() - start),
     });
+    supervise();
     return result;
   } catch (error) {
     registry.recordHealth(skill.id, {
@@ -107,6 +126,7 @@ export async function runSkillInstrumented(
       latencyMs: Math.max(0, now() - start),
       error: error instanceof Error ? error.message : String(error),
     });
+    supervise();
     throw error;
   }
 }
@@ -134,6 +154,8 @@ export interface ClawSkillAgentOptions {
   defaultReply: (agent: Agent) => Agent;
   /** Injectable clock for deterministic health latencies in tests. */
   now?: () => number;
+  /** Reactive supervision thresholds (auto-promote / auto-quarantine). */
+  supervision?: SupervisionConfig;
 }
 
 /**
@@ -163,7 +185,13 @@ export function createClawSkillAgent(options: ClawSkillAgentOptions): Agent {
             if (!skill) {
               return session;
             }
-            return runSkillInstrumented(options.registry, skill, session, now);
+            return runSkillInstrumented(
+              options.registry,
+              skill,
+              session,
+              now,
+              options.supervision,
+            );
           },
         ),
       (elseAgent) => options.defaultReply(elseAgent),

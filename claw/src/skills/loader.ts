@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runGate, type GateOptions, type GateResult } from './gate.js';
-import { SkillRegistry } from './registry.js';
+import { SkillRegistry, type SkillTier } from './registry.js';
 import {
   assertSkillModule,
   skillFromModule,
@@ -52,8 +52,22 @@ function durableJsPath(dir: string, id: string): string {
   return join(dir, `${id}.js`);
 }
 
+/**
+ * Per-version, content-addressed artifact paths (design-docs §9). Rollback
+ * imports a *past* version's built `.js`, so every gated build keeps an
+ * immutable copy keyed by manifest hash under `<skillsDir>/versions/`, distinct
+ * from the mutable "live" `<id>.js` that promotion overwrites.
+ */
+export function versionedTsPath(dir: string, id: string, hash: string): string {
+  return join(dir, 'versions', `${id}.${hash}.ts`);
+}
+
+export function versionedJsPath(dir: string, id: string, hash: string): string {
+  return join(dir, 'versions', `${id}.${hash}.js`);
+}
+
 /** Import a built `.js` artifact fresh (cache-busted) and structurally validate it. */
-async function importModule(jsPath: string): Promise<SkillModule> {
+export async function importModule(jsPath: string): Promise<SkillModule> {
   const imported = await import(
     `${pathToFileURL(jsPath).href}?t=${Date.now()}`
   );
@@ -74,6 +88,8 @@ function registerModule(
     gateResult: GateResult | null;
     provenance: SkillProvenance;
     createdAt: string;
+    /** Tier to persist. Fresh promotion passes 'canary'; reload preserves. */
+    tier: SkillTier;
   },
 ): Skill {
   const skill = skillFromModule(module, {
@@ -91,7 +107,7 @@ function registerModule(
     provenance: meta.provenance,
     enabled: true,
     createdAt: meta.createdAt,
-    tier: 'staged',
+    tier: meta.tier,
     sourcePath: durableTs,
     sourceHash: meta.sourceHash,
     manifestHash: meta.manifestHash,
@@ -103,7 +119,11 @@ function registerModule(
       skillId: module.meta.id,
       manifestHash: meta.manifestHash,
       sourceHash: meta.sourceHash,
-      sourcePath: durableTs,
+      sourcePath: versionedTsPath(
+        ctx.skillsDir,
+        module.meta.id,
+        meta.manifestHash,
+      ),
       gateResult: meta.gateResult,
       createdAt: meta.createdAt,
     });
@@ -128,16 +148,57 @@ export function promoteAndRegister(
   },
 ): Skill {
   mkdirSync(ctx.skillsDir, { recursive: true });
+  mkdirSync(join(ctx.skillsDir, 'versions'), { recursive: true });
   const id = args.module.meta.id;
+  const manifestHash = args.gateResult.manifestHash ?? null;
+
+  // Live artifacts (overwritten each promotion) …
   copyFileSync(args.stagingSourcePath, durableTsPath(ctx.skillsDir, id));
   copyFileSync(args.stagingBuiltPath, durableJsPath(ctx.skillsDir, id));
-  return registerModule(ctx, args.module, {
+  // … plus an immutable per-version copy so rollback can re-import a past build.
+  if (manifestHash) {
+    copyFileSync(
+      args.stagingSourcePath,
+      versionedTsPath(ctx.skillsDir, id, manifestHash),
+    );
+    copyFileSync(
+      args.stagingBuiltPath,
+      versionedJsPath(ctx.skillsDir, id, manifestHash),
+    );
+  }
+
+  // Trust tiers (design-docs §9): a gate-passed build lands 'staged', then the
+  // authoring flow immediately ACTIVATES it to 'canary' (live but closely
+  // watched, read-only ceiling). Both transitions are audited; the persisted
+  // tier is the terminal 'canary'.
+  const prev = ctx.registry.get(id);
+  const skill = registerModule(ctx, args.module, {
     sourceHash: hashSource(args.source),
-    manifestHash: args.gateResult.manifestHash ?? null,
+    manifestHash,
     gateResult: args.gateResult,
     provenance: args.provenance,
     createdAt: args.provenance.createdAt,
+    tier: 'canary',
   });
+  const at = args.provenance.createdAt;
+  const actor = args.provenance.authoredBy;
+  ctx.registry.recordAudit({
+    skillId: id,
+    from: prev?.tier ?? '(new)',
+    to: 'staged',
+    reason: `gate passed (${args.gateResult.manifestHash ?? 'no-hash'})`,
+    actor,
+    at,
+  });
+  ctx.registry.recordAudit({
+    skillId: id,
+    from: 'staged',
+    to: 'canary',
+    reason: 'activated (live, read-only ceiling, close watch)',
+    actor,
+    at,
+  });
+  return skill;
 }
 
 /**
@@ -166,7 +227,9 @@ export async function loadStagedSkills(
       const jsPath = durableJsPath(ctx.skillsDir, row.id);
 
       if (row.sourceHash === currentHash && existsSync(jsPath)) {
-        // Fast path: prior gate is still valid for this exact source.
+        // Fast path: prior gate is still valid for this exact source. Preserve
+        // the persisted tier (canary/trusted/quarantined) — a restart must not
+        // silently re-stage a promoted skill or un-quarantine a broken one.
         const module = await importModule(jsPath);
         loaded.push(
           registerModule(ctx, module, {
@@ -175,6 +238,7 @@ export async function loadStagedSkills(
             gateResult: (row.gateResult as GateResult | null) ?? null,
             provenance: row.provenance,
             createdAt: row.createdAt,
+            tier: row.tier,
           }),
         );
         continue;

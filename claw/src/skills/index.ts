@@ -10,6 +10,7 @@ export * from './authoring.js';
 export * from './gate.js';
 export * from './loader.js';
 export * from './author-skill.js';
+export * from './supervisor.js';
 
 /**
  * Derive the serializable registry row from an in-process skill. Used for

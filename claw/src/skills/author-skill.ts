@@ -161,8 +161,9 @@ export function createAuthorSkill(options: AuthorSkillOptions): Skill {
     trigger: {
       channel: authoringChannels.length > 0 ? authoringChannels : undefined,
       predicateKey: `startsWith:${AUTHOR_PREFIX}`,
-      when: (content) =>
-        content.trimStart().toLowerCase().startsWith(AUTHOR_PREFIX),
+      // Match `!skill` as a whole word so it never swallows the supervisor's
+      // `!skills` command (both share the `!skill` prefix).
+      when: (content) => /^!skill(\s|$)/i.test(content.trimStart()),
     },
     behavior: (agent) =>
       agent.transform(
