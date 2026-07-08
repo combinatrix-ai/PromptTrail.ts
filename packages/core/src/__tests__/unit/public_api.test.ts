@@ -40,6 +40,7 @@ describe('public API surface', () => {
       'Hook',
       'JsonValidator',
       'KeywordValidator',
+      'LeaseUnavailableError',
       'LengthValidator',
       'ListSource',
       'LiteralSource',

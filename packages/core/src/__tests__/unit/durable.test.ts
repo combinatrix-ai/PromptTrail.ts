@@ -1,16 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CheckpointRollbackError,
   createCheckpointOnceBoundary,
   createCheckpointOnceMemoStore,
 } from '../../checkpoint_continuation';
 import {
+  FencingTokenError,
+  LeaseUnavailableError,
   MemoryRunStore,
   MemoryRunStoreLease,
   PromptTrail,
   manualGateway,
   memoryStore,
 } from '../../durable';
+import type { RunStoreLeaseState } from '../../durable';
 import type {
   AssistantDeliveryOutboxEntry,
   DurableRunStore,
@@ -1555,6 +1558,170 @@ describe('checkpoint app runtime', () => {
     expect(entered).toBe(2);
   });
 });
+
+describe('checkpoint app lease mode', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const buildAssistant = () =>
+    Agent.create('leased').assistant('reply', Source.literal('ok'));
+
+  it('rejects durable ops before start() when lease mode is on', async () => {
+    const store = new MemoryRunStore();
+    const app = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'solo', ttlMs: 10_000 },
+    });
+    expect(app.lease).toBeUndefined();
+    await expect(
+      app.run({ agent: 'leased', checkpoint: true }),
+    ).rejects.toThrow(/lease mode enabled but holds no lease/);
+    // No lease was ever taken on the store.
+    expect(await store.lease.current()).toBeUndefined();
+  });
+
+  it('a second instance cannot start while the first holds the lease', async () => {
+    const store = new MemoryRunStore();
+    const appA = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'A', ttlMs: 10_000 },
+    });
+    const appB = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'B', ttlMs: 10_000 },
+    });
+    await appA.start();
+    expect(app_holder(appA.lease)).toBe('A');
+    let error: unknown;
+    try {
+      await appB.start();
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(LeaseUnavailableError);
+    expect((error as LeaseUnavailableError).currentHolder).toBe('A');
+    await appA.stop();
+    await appB.stop();
+  });
+
+  it('a released lease lets the next instance start and serve', async () => {
+    const store = new MemoryRunStore();
+    const appA = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'A', ttlMs: 10_000 },
+    });
+    await appA.start();
+    await appA.run({ agent: 'leased', runId: 'r1', checkpoint: true });
+    await appA.stop();
+    expect(await store.lease.current()).toBeUndefined();
+
+    const appB = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'B', ttlMs: 10_000 },
+    });
+    await appB.start();
+    const result = await appB.run({
+      agent: 'leased',
+      runId: 'r2',
+      checkpoint: true,
+    });
+    expect(result.status).toBe('done');
+    expect(app_holder(appB.lease)).toBe('B');
+    await appB.stop();
+  });
+
+  it('heartbeat renews the lease across more than a full ttl of wall time', async () => {
+    vi.useFakeTimers();
+    let clock = 1_000_000;
+    const store = new MemoryRunStore({ now: () => clock });
+    const app = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      // heartbeatMs = ttlMs / 3 -> renew fires well before expiry.
+      lease: { holder: 'A', ttlMs: 900, heartbeatMs: 300 },
+    });
+    await app.start();
+    const firstToken = app.lease?.token;
+
+    // Advance ~3x ttl of wall time, letting the heartbeat fire and the store
+    // clock move in lockstep so each renew lands before expiry.
+    for (let step = 0; step < 10; step++) {
+      clock += 300;
+      await vi.advanceTimersByTimeAsync(300);
+    }
+
+    // Still the same holder and token (renew never bumps the token).
+    expect(await store.lease.current()).toBeDefined();
+    expect(app_holder(app.lease)).toBe('A');
+    expect(app.lease?.token).toBe(firstToken);
+    await app.stop();
+    expect(await store.lease.current()).toBeUndefined();
+  });
+
+  it('expiry takeover: a paused old holder is fenced out and onLeaseLost fires', async () => {
+    vi.useFakeTimers();
+    let clock = 1_000_000;
+    const store = new MemoryRunStore({ now: () => clock });
+    const lost: Array<RunStoreLeaseState | undefined> = [];
+
+    const appA = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'A', ttlMs: 1_000, heartbeatMs: 300 },
+      onLeaseLost: (state) => {
+        lost.push(state);
+      },
+    });
+    await appA.start();
+    const tokenA = appA.lease?.token;
+    // A does real work under its lease.
+    await appA.run({ agent: 'leased', runId: 'run-1', checkpoint: true });
+
+    // A is "paused": its heartbeat never fires (we do NOT advance fake timers),
+    // while the store clock moves past A's lease expiry.
+    clock += 5_000;
+
+    // B (a fresh process/instance) takes over the now-expired lease.
+    const appB = PromptTrail.app({
+      agents: { leased: buildAssistant() },
+      store,
+      lease: { holder: 'B', ttlMs: 1_000 },
+    });
+    await appB.start();
+    expect(app_holder(appB.lease)).toBe('B');
+    expect(appB.lease?.token).toBe((tokenA ?? 0) + 1);
+
+    // A wakes and tries to persist (start a fresh durable run): its stale fence
+    // is rejected by the store, and the app surfaces the loss via onLeaseLost.
+    await expect(
+      appA.run({ agent: 'leased', runId: 'run-late', checkpoint: true }),
+    ).rejects.toBeInstanceOf(FencingTokenError);
+    expect(lost).toHaveLength(1);
+    expect(lost[0]?.holder).toBe('A');
+    expect(lost[0]?.token).toBe(tokenA);
+
+    // B can still write normally.
+    const result = await appB.run({
+      agent: 'leased',
+      runId: 'run-2',
+      checkpoint: true,
+    });
+    expect(result.status).toBe('done');
+
+    await appA.stop();
+    await appB.stop();
+  });
+});
+
+function app_holder(state: RunStoreLeaseState | undefined): string | undefined {
+  return state?.holder;
+}
 
 async function resolveUntilPendingWrite(
   store: ControlledDelayRunStore,

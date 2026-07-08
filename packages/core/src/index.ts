@@ -31,9 +31,11 @@ export {
   memoryStore,
   assertFenceAllowed,
   FencingTokenError,
+  LeaseUnavailableError,
 } from './durable';
 export type {
   AppGateway,
+  LeaseOptions,
   AssistantDeliveryOutboxEntry,
   AssistantDeliveryOutboxInput,
   CheckpointOption,
