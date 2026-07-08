@@ -226,6 +226,19 @@ export type {
   RecorderNodeInput,
   RecorderToolInput,
 } from './recording';
+export {
+  ReplayMissError,
+  buildCassette,
+  replayRun,
+  replaySelfCheck,
+} from './replay';
+export type {
+  Cassette,
+  ReplayOptions,
+  ReplayResult,
+  ReplaySelfCheck,
+  ReplayTrace,
+} from './replay';
 export { Tool } from './tool';
 export type {
   CallToolResult,

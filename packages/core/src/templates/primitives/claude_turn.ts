@@ -118,6 +118,18 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
     }: {
       request: TurnModelRequest<TVars>;
     }) => {
+      // B1 replay: short-circuit the Claude provider turn with the recorded
+      // aggregate output (node-output granularity). Faithful raw replay needs
+      // retain: 'full' so the recorded response equals the raw turn result.
+      if (runtime?.replay) {
+        return runtime.replay.model({
+          nodePath:
+            options.nodePath ??
+            runtime.recorder?.currentNodePath ??
+            'claudeTurn',
+          provider: 'claude',
+        }) as Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>;
+      }
       const client =
         this.options.client ?? (await createDefaultClaudeAgentClient());
       const prompt = prependClaudeRestartNotice(
