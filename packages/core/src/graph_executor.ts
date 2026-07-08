@@ -74,6 +74,13 @@ export interface GraphExecutionOptions<TVars extends Vars = Vars> {
   ) => Promise<void>;
   runEventSource?: ExecutionEvent['source'];
   unsupportedCommandLabel?: string;
+  /**
+   * Invoked whenever an inbox message is consumed, with the running count of
+   * consumed messages (the executor's inbox cursor). Callers use the final
+   * value to persist a durable inbox cursor that never runs ahead of the
+   * session the graph actually produced. See the checkpoint continuation model.
+   */
+  onInboxConsumed?: (consumedCount: number) => void;
 }
 
 export interface GraphToolDurableBoundaryContext<TVars extends Vars = Vars> {
@@ -131,6 +138,7 @@ interface GraphExecutionState<TVars extends Vars> {
   runEventSource: ExecutionEvent['source'];
   unsupportedCommandLabel?: string;
   activeGoal?: ActiveGoalExecution;
+  onInboxConsumed?: (consumedCount: number) => void;
 }
 
 type GraphNodeData = Record<string, unknown>;
@@ -220,6 +228,7 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
     durableToolExecution: options.durableToolExecution,
     runEventSource: options.runEventSource ?? 'graph',
     unsupportedCommandLabel: options.unsupportedCommandLabel,
+    onInboxConsumed: options.onInboxConsumed,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -1305,6 +1314,7 @@ function consumeInbox<TVars extends Vars>(
     return false;
   }
   state.cursor += 1;
+  state.onInboxConsumed?.(state.cursor);
   const kind = inbound.kind ?? 'user';
   if (inbound.kind === 'system') {
     state.session = state.session.addMessage(

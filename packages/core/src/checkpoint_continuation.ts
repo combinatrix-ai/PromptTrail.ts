@@ -54,11 +54,25 @@ export interface CheckpointGraphExecutionStart<TVars extends Vars, TInbound> {
  *
  * The run store keeps the latest session checkpoint and inbox cursor at graph
  * boundaries. A resume never replays an old journal; it starts from the stored
- * session, advances the inbox cursor optimistically to the current end, and runs
- * the graph forward. For continuations, deterministic bootstrap nodes before the
- * next inbound/suspended coordinate are skipped once so static system/user
+ * session and the stored inbox cursor and runs the graph forward over the
+ * unconsumed inbox tail. For continuations, deterministic bootstrap nodes before
+ * the next inbound/suspended coordinate are skipped once so static system/user
  * prefixes are not duplicated, while `resumeFromNode` lets loops re-enter the
  * suspended node's children even when their condition is currently false.
+ *
+ * Persistence contract (crash-durability): the inbox cursor is NEVER advanced
+ * before the graph runs. It advances only at a terminal boundary — suspension
+ * ({@link recordCheckpointGraphSuspension}) or completion
+ * ({@link recordCheckpointGraphCompletion}) — in the SAME persist that writes the
+ * session the graph produced, and to a value derived from how much inbox the
+ * executor actually consumed. Because that single persist writes the session
+ * delta before the cursor, at every rest point (including a hard process crash
+ * mid-execution, which the error handler cannot intercept) the persisted
+ * `(graphCursor, session)` pair is mutually consistent and the cursor is never
+ * ahead of the consumption the persisted session reflects. A cold restart after
+ * a mid-execution crash therefore re-delivers the still-unconsumed inbox tail
+ * (at-least-once); keyed effects dedupe via the once memo / declared idempotency
+ * keys so re-running the interrupted attempt is safe.
  *
  * Keyed external effects are still at-least-once. The local once memo records
  * keyed durable effect results after the effect and before the next checkpoint
@@ -66,35 +80,27 @@ export interface CheckpointGraphExecutionStart<TVars extends Vars, TInbound> {
  * still requires the remote system to deduplicate by the declared idempotency
  * key. Repeatable effects deliberately bypass this memo.
  *
- * Error rollback invariant: the persisted `(graphCursor, session)` pair MUST
- * stay mutually consistent at rest — both must agree on how much of the inbox
- * has been consumed. The cursor is advanced optimistically before the graph
- * runs, so a non-suspend error must discard the whole attempt via
- * {@link restoreCheckpointGraphEntryPoint}, resetting the cursor, the session,
- * and the suspension coordinate to the entry point captured here. Otherwise a
- * retry would replay already-consumed inbox messages against an advanced
- * session and duplicate them. A suspension is NOT a failure and never rolls
- * back. If the rollback persist itself fails, both the original run error and
- * the rollback error are surfaced together via {@link CheckpointRollbackError}.
+ * Error rollback: a non-suspend error discards the attempt via
+ * {@link restoreCheckpointGraphEntryPoint}, re-asserting the entry-point cursor,
+ * session, and suspension coordinate captured here. Because none of those fields
+ * are advanced before a boundary, the reset is a no-op in the common case, but
+ * the explicit re-assert keeps the persisted `(graphCursor, session)` pair
+ * consistent even if a future change mutates them mid-attempt. A suspension is
+ * NOT a failure and never rolls back. If the rollback persist itself fails, both
+ * the original run error and the rollback error are surfaced together via
+ * {@link CheckpointRollbackError}.
  */
-export async function beginCheckpointGraphExecution<
-  TVars extends Vars,
-  TInbound,
->(
+export function beginCheckpointGraphExecution<TVars extends Vars, TInbound>(
   run: CheckpointGraphRunState<TVars, TInbound>,
-  persist: () => Promise<void>,
-): Promise<CheckpointGraphExecutionStart<TVars, TInbound>> {
+): CheckpointGraphExecutionStart<TVars, TInbound> {
   const cursor = run.graphCursor ?? 0;
-  const start: CheckpointGraphExecutionStart<TVars, TInbound> = {
+  return {
     cursor,
     session: run.result ?? run.initial,
     inbox: run.inbox.slice(cursor),
     resumeFromNode: deriveCheckpointResumeCoordinate(run),
     isContinuation: run.result !== undefined,
   };
-  run.graphCursor = run.inbox.length;
-  await persist();
-  return start;
 }
 
 /**
@@ -175,10 +181,12 @@ export async function recordCheckpointGraphCompletion<
 >(
   run: CompletableCheckpointGraphRunState<TVars, TInbound>,
   session: Session<TVars>,
+  graphCursor: number,
   persist: () => Promise<void>,
 ): Promise<void> {
   run.status = 'done';
   run.result = session;
+  run.graphCursor = graphCursor;
   run.graphSuspendedAt = undefined;
   await persist();
 }
@@ -190,9 +198,11 @@ export async function recordCheckpointGraphSuspension<
   run: CheckpointGraphRunState<TVars, TInbound>,
   nodePath: string,
   session: Session<TVars>,
+  graphCursor: number,
   persist: () => Promise<void>,
 ): Promise<void> {
   run.result = session;
+  run.graphCursor = graphCursor;
   run.graphSuspendedAt = nodePath;
   await persist();
 }

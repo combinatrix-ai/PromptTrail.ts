@@ -1419,9 +1419,13 @@ export class PromptTrailApp {
     run: StoredRun<TVars> & { agent: Agent<TVars> },
   ): Promise<DurableRunResult<TVars>> {
     const graph = run.agent.toGraph();
-    const checkpoint = await beginCheckpointGraphExecution(run, () =>
-      this.persistRun(runId, run),
-    );
+    const checkpoint = beginCheckpointGraphExecution(run);
+    // The persisted inbox cursor must never run ahead of the session the graph
+    // has actually produced, so it is advanced only at a terminal boundary
+    // (completion/suspension) to a value derived from how much of the inbox the
+    // executor consumed. `consumedInSlice` tracks that count for the tail slice
+    // handed to this attempt; the absolute cursor is `checkpoint.cursor + it`.
+    let consumedInSlice = 0;
     const skipNodePaths = checkpoint.isContinuation
       ? computeCheckpointContinuationSkipNodes(
           graph.nodes,
@@ -1466,6 +1470,9 @@ export class PromptTrailApp {
           strictObservers: this.strictObservers,
           resumeFromNode: checkpoint.resumeFromNode,
           skipNode: createCheckpointContinuationSkipPredicate(skipNodePaths),
+          onInboxConsumed: (consumed) => {
+            consumedInSlice = consumed;
+          },
           observers: [
             async (event) => {
               await this.emitObservers(run, event);
@@ -1474,10 +1481,15 @@ export class PromptTrailApp {
           ],
         },
       );
-      await recordCheckpointGraphCompletion(run, session, async () => {
-        await this.materializeAssistantDeliveriesForRun(runId, run);
-        await this.persistRun(runId, run);
-      });
+      await recordCheckpointGraphCompletion(
+        run,
+        session,
+        checkpoint.cursor + consumedInSlice,
+        async () => {
+          await this.materializeAssistantDeliveriesForRun(runId, run);
+          await this.persistRun(runId, run);
+        },
+      );
       return { status: 'done', runId, session };
     } catch (error) {
       if (error instanceof GraphExecutionSuspended) {
@@ -1489,6 +1501,7 @@ export class PromptTrailApp {
           run,
           error.nodePath,
           session,
+          checkpoint.cursor + consumedInSlice,
           () => this.persistRun(runId, run),
         );
         return {
