@@ -279,7 +279,7 @@ export async function generateText<TVars extends Vars>(
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, {
       session,
-      context: options.context,
+      services: options.services,
       approvalHandler: options.approvalHandler,
     }),
     toolChoice: options.toolChoice,
@@ -550,7 +550,7 @@ export async function* generateTextStream<TVars extends Vars>(
     topK: options.topK,
     tools: toAiSdkToolSet(options.tools, {
       session,
-      context: options.context,
+      services: options.services,
       approvalHandler: options.approvalHandler,
     }),
     toolChoice: options.toolChoice,
@@ -629,7 +629,7 @@ export async function* streamPromptTrailToolLoop(
           tools: getPromptTrailToolList(options),
           session: nextSession,
           approvalHandler: options.approvalHandler,
-          context: config.runtime.context,
+          services: config.runtime.services,
           runtime: config.runtime,
         });
         yield executed.message as Message;
@@ -643,7 +643,7 @@ export async function* streamPromptTrailToolLoop(
             tools: getPromptTrailToolList(options),
             session: currentSession,
             approvalHandler: options.approvalHandler,
-            context: options.context,
+            services: options.services,
           }),
         ),
       );
@@ -663,7 +663,7 @@ async function executeStreamingToolCallWithRuntime(
     tools: readonly PromptTrailTool[];
     session: Session<any>;
     approvalHandler?: LLMOptions['approvalHandler'];
-    context?: Record<string, unknown>;
+    services?: Record<string, unknown>;
     runtime: ExecutionRuntimeState<any>;
   },
 ): Promise<{ message: Message; session: Session<any> }> {
@@ -727,7 +727,7 @@ async function executeStreamingToolCallWithRuntime(
           tools: options.tools,
           session,
           approvalHandler: options.approvalHandler,
-          context: options.context,
+          services: options.services,
         }) as Promise<Message>;
       },
     });
@@ -767,14 +767,14 @@ async function executeStreamingToolCall(
     tools: readonly PromptTrailTool[];
     session: Session<any>;
     approvalHandler?: LLMOptions['approvalHandler'];
-    context?: Record<string, unknown>;
+    services?: Record<string, unknown>;
   },
 ): Promise<Message> {
   const tool = options.tools.find((candidate) => candidate.name === call.name);
   const result = tool
     ? await executePromptTrailTool(tool, call.arguments, {
         session: options.session,
-        context: options.context,
+        services: options.services,
         provider: options.provider,
         capability: call.name,
         approvalHandler: options.approvalHandler,

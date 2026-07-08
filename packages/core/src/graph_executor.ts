@@ -45,7 +45,7 @@ import type { IValidator } from './validators';
 export interface GraphExecutionOptions<TVars extends Vars = Vars> {
   session?: Session<TVars>;
   input?: string | GraphInboundInput | readonly GraphInboundInput[];
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
   maxLoopIterations?: number;
   observers?: readonly ObserverLike[];
@@ -142,7 +142,7 @@ interface GraphExecutionState<TVars extends Vars> {
   inbox: GraphInboundInput[];
   cursor: number;
   maxLoopIterations: number;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
   runtime: ExecutionRuntimeState<TVars>;
   skipNode?: GraphExecutionOptions<TVars>['skipNode'];
@@ -190,12 +190,12 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
   let eventSeq = 0;
   const nextEventSeq =
     options.nextEventSeq ?? options.runtime?.nextEventSeq ?? (() => eventSeq++);
-  const context = options.context ?? options.runtime?.context;
+  const services = options.services ?? options.runtime?.services;
   const signal = options.signal ?? options.runtime?.signal;
   const emitEvent = (event: ExecutionEvent) =>
     Promise.resolve(options.runtime?.emitEvent?.(event)).then(() =>
       observerBus.emit(event, {
-        ...context,
+        ...services,
         signal,
       }),
     );
@@ -207,7 +207,7 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
     : createExecutionRuntimeState<TVars>({
         middleware: graph.middleware,
         hooks: graph.hooks,
-        context,
+        services,
         signal,
         emitEvent,
         eventScopeId,
@@ -217,7 +217,7 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
         recordProviderSession: options.recordProviderSession,
       });
   if (options.runtime) {
-    runtime.context = context;
+    runtime.services = services;
     runtime.signal = signal;
     runtime.emitEvent = emitEvent;
     runtime.eventScopeId = eventScopeId;
@@ -235,7 +235,7 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
     inbox: normalizeGraphInbox(options.input),
     cursor: 0,
     maxLoopIterations: options.maxLoopIterations ?? 10,
-    context,
+    services,
     signal,
     runtime,
     skipNode: options.skipNode,
@@ -974,7 +974,7 @@ async function executeEffectTransformNode<TVars extends Vars>(
     const boundary = durable ?? directExecutionBoundary;
     const callHandler = async () => {
       return handler(state.session, {
-        context: state.context,
+        services: state.services,
         signal: state.signal,
         once: boundary.once.bind(boundary),
         idempotencyKey,
@@ -1135,7 +1135,7 @@ async function resolveGraphAssistantInput<TVars extends Vars>(
 ): Promise<string | ModelOutput> {
   if (typeof input === 'function') {
     const result = await input(session, {
-      context: state.context,
+      services: state.services,
       signal: state.signal,
     });
     if (typeof result === 'string' || isModelOutput(result)) {
@@ -1173,7 +1173,7 @@ function executeGoalSatisfactionNode<TVars extends Vars>(
       session: state.session,
       goal: goal.goal,
       attempt: goal.attempt,
-      context: state.context,
+      services: state.services,
       signal: state.signal,
     });
     if (isThenable(result)) {
@@ -1301,7 +1301,7 @@ async function executeToolsNode<TVars extends Vars>(
         const executeTool = (durable?: ExecutionDurableBoundary) =>
           executePromptTrailTool(tool, request.arguments, {
             session,
-            context: state.context,
+            services: state.services,
             raw: request,
             capability: request.name,
             effect: isExecutionEffectDeclaration(toolEffect)
@@ -1475,12 +1475,12 @@ function graphConditionContext<TVars extends Vars>(
   state: GraphExecutionState<TVars>,
 ): {
   session: Session<TVars>;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
 } {
   return Object.assign(Object.create(state.session), {
     session: state.session,
-    context: state.context,
+    services: state.services,
     signal: state.signal,
   });
 }

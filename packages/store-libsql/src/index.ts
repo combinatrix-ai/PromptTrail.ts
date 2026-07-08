@@ -285,7 +285,7 @@ export class LibsqlRunStore implements DurableRunStore {
         status,
         graph_cursor,
         graph_suspended_at,
-        context_json,
+        services_json,
         initial_session_json,
         graph_manifest_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -295,7 +295,7 @@ export class LibsqlRunStore implements DurableRunStore {
         run.status,
         run.graphCursor ?? null,
         run.graphSuspendedAt ?? null,
-        jsonOrNull(run.context),
+        jsonOrNull(run.services),
         JSON.stringify(run.initial.toJSON()),
         jsonOrNull(run.graphManifest),
       ],
@@ -311,7 +311,7 @@ export class LibsqlRunStore implements DurableRunStore {
     // Read current values so we can fill in unpatched fields.
     const res = await this.client.execute({
       sql: `SELECT agent_name, status, graph_cursor, graph_suspended_at,
-                   context_json, graph_manifest_json
+                   services_json, graph_manifest_json
             FROM runs WHERE run_id = ?`,
       args: [runId],
     });
@@ -324,7 +324,7 @@ export class LibsqlRunStore implements DurableRunStore {
       status: row[1] as string,
       graph_cursor: row[2] as number | null,
       graph_suspended_at: row[3] as string | null,
-      context_json: row[4] as string | null,
+      services_json: row[4] as string | null,
       graph_manifest_json: row[5] as string | null,
     };
 
@@ -334,7 +334,7 @@ export class LibsqlRunStore implements DurableRunStore {
               status = ?,
               graph_cursor = ?,
               graph_suspended_at = ?,
-              context_json = ?,
+              services_json = ?,
               graph_manifest_json = ?
             WHERE run_id = ?`,
       args: [
@@ -348,7 +348,9 @@ export class LibsqlRunStore implements DurableRunStore {
         'graphSuspendedAt' in patch
           ? (patch.graphSuspendedAt ?? null)
           : current.graph_suspended_at,
-        'context' in patch ? jsonOrNull(patch.context) : current.context_json,
+        'services' in patch
+          ? jsonOrNull(patch.services)
+          : current.services_json,
         'graphManifest' in patch
           ? jsonOrNull(patch.graphManifest)
           : current.graph_manifest_json,
@@ -523,7 +525,7 @@ export class LibsqlRunStore implements DurableRunStore {
         status TEXT NOT NULL,
         graph_cursor INTEGER,
         graph_suspended_at TEXT,
-        context_json TEXT,
+        services_json TEXT,
         initial_session_json TEXT NOT NULL,
         graph_manifest_json TEXT
       );
@@ -608,7 +610,7 @@ export class LibsqlRunStore implements DurableRunStore {
     // 1. Load the run row.
     const runRes = await this.client.execute({
       sql: `SELECT run_id, agent_name, status, graph_cursor, graph_suspended_at,
-                   context_json, initial_session_json, graph_manifest_json
+                   services_json, initial_session_json, graph_manifest_json
             FROM runs WHERE run_id = ?`,
       args: [runId],
     });
@@ -622,7 +624,7 @@ export class LibsqlRunStore implements DurableRunStore {
       status: r[2] as StoredRun<any>['status'],
       graph_cursor: r[3] as number | null,
       graph_suspended_at: r[4] as string | null,
-      context_json: r[5] as string | null,
+      services_json: r[5] as string | null,
       initial_session_json: r[6] as string,
       graph_manifest_json: r[7] as string | null,
     };
@@ -724,7 +726,7 @@ export class LibsqlRunStore implements DurableRunStore {
         status: row.status,
         graphCursor: row.graph_cursor ?? undefined,
         graphSuspendedAt: row.graph_suspended_at ?? undefined,
-        context: parseJson(row.context_json),
+        services: parseJson(row.services_json),
         initialSession: parseJsonRequired(row.initial_session_json),
         graphManifest: parseJson(row.graph_manifest_json),
         deltas,

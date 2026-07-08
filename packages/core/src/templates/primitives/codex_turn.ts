@@ -106,7 +106,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
             session: currentSession,
             fallback: this.options.onRequest,
             approvalHandler: this.options.approvalHandler,
-            context: runtime?.context,
+            services: runtime?.services,
           })
         : this.options.onRequest;
     let modelSession = currentSession;
@@ -115,7 +115,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
         phase: 'prepareModelInput',
         session: currentSession,
         request: { session: modelSession },
-        context: runtime.context,
+        services: runtime.services,
         middlewareState: runtime.middlewareState,
         middleware: runtime.middleware,
         hooks: runtime.hooks,
@@ -183,10 +183,10 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
           : this.resolveCheckpointBinding(runtime, options.nodePath);
         const resolvedThreadId = checkpointBinding
           ? checkpointBinding.id
-          : await this.resolveThreadId(request.session, runtime?.context);
+          : await this.resolveThreadId(request.session, runtime?.services);
         const input = await this.resolveInput(
           request.session,
-          runtime?.context,
+          runtime?.services,
         );
         const inputWithRestartNotice =
           request.restartNotice === undefined
@@ -315,7 +315,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
 
   private async resolveThreadId(
     session: Session<TVars>,
-    context: Record<string, unknown> | undefined,
+    services: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
       this.options.threadId === undefined ||
@@ -328,7 +328,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
     }
 
     if (typeof this.options.threadId === 'function') {
-      return this.options.threadId(session, context);
+      return this.options.threadId(session, services);
     }
 
     return this.options.threadId;
@@ -427,14 +427,14 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
 
   private async resolveInput(
     session: Session<TVars>,
-    context: Record<string, unknown> | undefined,
+    services: Record<string, unknown> | undefined,
   ): Promise<string | unknown[] | undefined> {
     if (this.options.input === undefined) {
       return session.getLastMessage()?.content;
     }
 
     if (typeof this.options.input === 'function') {
-      return this.options.input(session, context);
+      return this.options.input(session, services);
     }
 
     return this.options.input;

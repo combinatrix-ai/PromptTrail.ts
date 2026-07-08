@@ -37,7 +37,7 @@ interface RunDocument {
   status: StoredRun<any>['status'];
   graphCursor?: number;
   graphSuspendedAt?: string;
-  context?: unknown;
+  services?: unknown;
   /** Session.toJSON() snapshot captured at run creation. */
   initialSession: unknown;
   graphManifest?: unknown;
@@ -355,7 +355,7 @@ export class RedisRunStore implements DurableRunStore {
       status: run.status,
       graphCursor: run.graphCursor,
       graphSuspendedAt: run.graphSuspendedAt,
-      context: run.context,
+      services: run.services,
       initialSession: run.initial.toJSON(),
       graphManifest: run.graphManifest,
       deltas: [],
@@ -393,8 +393,8 @@ export class RedisRunStore implements DurableRunStore {
     if ('graphSuspendedAt' in patch) {
       doc.graphSuspendedAt = patch.graphSuspendedAt ?? undefined;
     }
-    if ('context' in patch) {
-      doc.context = patch.context;
+    if ('services' in patch) {
+      doc.services = patch.services;
     }
     if ('graphManifest' in patch) {
       doc.graphManifest = patch.graphManifest;
@@ -571,7 +571,7 @@ export class RedisRunStore implements DurableRunStore {
         status: doc.status,
         graphCursor: doc.graphCursor,
         graphSuspendedAt: doc.graphSuspendedAt,
-        context: doc.context,
+        services: doc.services,
         initialSession: doc.initialSession,
         graphManifest: doc.graphManifest,
         deltas,

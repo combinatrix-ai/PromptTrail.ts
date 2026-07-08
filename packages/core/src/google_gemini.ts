@@ -209,7 +209,7 @@ async function generateGoogleGeminiMessage<TVars extends Vars>(
           tools,
           session,
           options.approvalHandler,
-          options.context,
+          options.services,
         ),
       ),
     );
@@ -1006,7 +1006,7 @@ export async function createGeminiFunctionResponsePart(
   tools: readonly PromptTrailTool[],
   session: Session<any>,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ) {
   const tool = tools.find((candidate) => candidate.name === call.name);
   // Native Gemini tools run outside any durable boundary by design
@@ -1014,7 +1014,7 @@ export async function createGeminiFunctionResponsePart(
   const result: CallToolResult = tool
     ? await executePromptTrailTool(tool, call.args, {
         session,
-        context,
+        services,
         provider: 'google',
         approvalHandler,
         raw: call.raw,

@@ -248,7 +248,7 @@ describe('streamPromptTrailToolLoop', () => {
       description: 'Lookup docs',
       inputSchema: z.object({ query: z.string() }),
       execute: ({ query }, context) => {
-        toolContexts.push(context.context);
+        toolContexts.push(context.services);
         return { value: `result:${query}` };
       },
     });
@@ -265,7 +265,7 @@ describe('streamPromptTrailToolLoop', () => {
             api: 'responses',
           },
           capabilities: [lookup] as CapabilitySet,
-          context: { channel: 'stream-context' },
+          services: { channel: 'stream-context' },
         },
         {
           provider: 'openai',
@@ -338,7 +338,7 @@ describe('streamPromptTrailToolLoop', () => {
       description: 'Lookup docs',
       inputSchema: z.object({ query: z.string() }),
       execute: ({ query }, context) => {
-        toolContexts.push(context.context);
+        toolContexts.push(context.services);
         return { value: `result:${query}` };
       },
     });
@@ -346,7 +346,7 @@ describe('streamPromptTrailToolLoop', () => {
     const events: string[] = [];
     let seq = 0;
     const runtime = createExecutionRuntimeState({
-      context: { channel: 'runtime-context' },
+      services: { channel: 'runtime-context' },
       middleware: [
         Middleware.create({
           name: 'toolPolicy',

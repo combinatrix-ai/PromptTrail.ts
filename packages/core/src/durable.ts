@@ -169,7 +169,7 @@ export interface StoredRun<TVars extends Vars> {
   timers?: DurableTimer[];
   graphCursor?: number;
   graphSuspendedAt?: string;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
 }
 
 export interface SessionCheckpointDelta<_TVars extends Vars = Vars> {
@@ -195,7 +195,7 @@ export type StoredRunPatch = Partial<
     | 'status'
     | 'graphCursor'
     | 'graphSuspendedAt'
-    | 'context'
+    | 'services'
     | 'agentName'
     | 'graphManifest'
   >
@@ -211,7 +211,7 @@ export interface PromptTrailRunOptions<TVars extends Vars = Vars> {
   session?: Session<TVars>;
   checkpoint?: CheckpointOption;
   resumable?: boolean;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
 }
 
 export interface PromptTrailSendOptions {
@@ -220,7 +220,7 @@ export interface PromptTrailSendOptions {
   input: string | Omit<Inbound, 'offset'>;
   checkpoint?: CheckpointOption;
   resumable?: boolean;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
 }
 
 export interface InboundRuntimeEvent {
@@ -1755,7 +1755,7 @@ export class PromptTrailApp {
     runId: string;
     input?: string | Omit<Inbound, 'offset'>;
     session?: Session<TVars>;
-    context?: Record<string, unknown>;
+    services?: Record<string, unknown>;
   }): Promise<DurableRunResult<TVars>> {
     const existing = await this.store.get(options.runId);
     if (existing) {
@@ -1772,7 +1772,7 @@ export class PromptTrailApp {
         session: options.session,
         input: options.input,
         checkpoint: true,
-        context: options.context,
+        services: options.services,
       });
     }
     if (options.input === undefined) {
@@ -1782,7 +1782,7 @@ export class PromptTrailApp {
       runId: options.runId,
       input: options.input,
       checkpoint: true,
-      context: options.context,
+      services: options.services,
     });
   }
 
@@ -1812,14 +1812,14 @@ export class PromptTrailApp {
         runId: options.runId,
         input: options.input,
         checkpoint,
-        context: options.context,
+        services: options.services,
       });
     }
 
-    if (options.context) {
-      existing.context = cloneDurableRuntimeValue(options.context);
+    if (options.services) {
+      existing.services = cloneDurableRuntimeValue(options.services);
       await this.store.patch(options.runId, {
-        context: existing.context,
+        services: existing.services,
       });
     }
     if (
@@ -2021,7 +2021,7 @@ export class PromptTrailApp {
     runId: string,
     run: StoredRun<TVars>,
   ): Promise<void> {
-    const target = deliveryTargetFromContext(run.context);
+    const target = deliveryTargetFromServices(run.services);
     if (!target || !run.result) {
       return;
     }
@@ -2084,7 +2084,7 @@ export class PromptTrailApp {
         inbox: [],
         providerSessions: {},
         graphCursor: 0,
-        context: cloneDurableRuntimeValue(options.context),
+        services: cloneDurableRuntimeValue(options.services),
       };
       await this.store.create(runId, run);
       this.setPersistedSessionBaseline(runId, run.initial);
@@ -2132,7 +2132,7 @@ export class PromptTrailApp {
           idempotencyKey:
             event.idempotencyKey ?? runEventIdempotencyKey(runId, seq, type),
         },
-        observerContextFromRunContext(options.context),
+        observerContextFromRunServices(options.services),
       );
     };
     await emitGraphRunEvent('run.started', { sessionVersion: 0 });
@@ -2143,7 +2143,7 @@ export class PromptTrailApp {
           options.input === undefined
             ? undefined
             : graphInboundFromAppInput(options.input),
-        context: options.context,
+        services: options.services,
       });
       await emitGraphRunEvent('run.completed', {
         sessionVersion: session.messages.length,
@@ -2216,7 +2216,7 @@ export class PromptTrailApp {
         {
           session: checkpoint.session,
           input: inbox,
-          context: cloneDurableRuntimeValue(run.context),
+          services: cloneDurableRuntimeValue(run.services),
           eventScopeId: runId,
           nextEventSeq: () => this.nextRunEventSeq(runId),
           durableBoundary: () => durableBoundary,
@@ -2316,7 +2316,7 @@ export class PromptTrailApp {
     run: StoredRun<TVars>,
     event: ExecutionEvent,
   ): Promise<void> {
-    const context = observerContextFromRunContext(run.context);
+    const context = observerContextFromRunServices(run.services);
     await this.observerBus.emit(event, context);
     for (const bus of this.observerBuses) {
       await bus.emit(event, context);
@@ -2360,7 +2360,7 @@ export class PromptTrailApp {
       status: run.status,
       graphCursor: run.graphCursor,
       graphSuspendedAt: run.graphSuspendedAt,
-      context: run.context,
+      services: run.services,
       agentName: run.agentName,
       graphManifest: run.graphManifest,
     });
@@ -2481,10 +2481,10 @@ function firedTimerIds(run: StoredRun<any>): ReadonlySet<string> {
   return ids;
 }
 
-function deliveryTargetFromContext(
-  context: Record<string, unknown> | undefined,
+function deliveryTargetFromServices(
+  services: Record<string, unknown> | undefined,
 ): DeliveryTarget | undefined {
-  const delivery = context?.delivery;
+  const delivery = services?.delivery;
   if (
     delivery &&
     typeof delivery === 'object' &&
@@ -2496,12 +2496,12 @@ function deliveryTargetFromContext(
   return undefined;
 }
 
-function observerContextFromRunContext(
-  context: Record<string, unknown> | undefined,
+function observerContextFromRunServices(
+  services: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
   return {
-    runContext: cloneDurableRuntimeValue(context),
-    delivery: cloneDurableRuntimeValue(deliveryTargetFromContext(context)),
+    runServices: cloneDurableRuntimeValue(services),
+    delivery: cloneDurableRuntimeValue(deliveryTargetFromServices(services)),
   };
 }
 

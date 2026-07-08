@@ -15,8 +15,16 @@
 - `durable: true` / `.durable(...)` -> `checkpoint: true | store` /
   `.checkpoint(...)`.
 - Top-level `store` execute option -> `checkpoint: store`.
-- `RuntimeDispatchContext.channelPrompt` is no longer typed; pass custom
-  context keys through the open context record.
+- `RuntimeDispatchServices.channelPrompt` is no longer typed; pass custom
+  keys through the open services record.
+- `context` -> `services`: the run-scoped DI channel (`PromptTrailRunOptions`/
+  `PromptTrailSendOptions.context`, `StoredRun.context`, `BindingDefaults`/
+  `RuntimeBinding.context`, the `.context(...)` binding builder method,
+  `GraphExecutionOptions.context`, `ExecutionRuntimeState.context`,
+  `ToolExecutionContext.context`, and the `context_json` store column) is now
+  named `services` throughout. `ToolExecutionContext`, `ExecutionPhaseContext`,
+  and similar boundary-context types keep their names — only the DI-channel
+  field inside them was renamed.
 - `Agent.execute({ checkpoint })` returns the durable run envelope
   `{ status, runId, session, awaiting? }`; non-checkpoint execute returns
   `Session`.

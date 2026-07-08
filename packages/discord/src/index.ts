@@ -86,7 +86,7 @@ export const discord = {
         }
         return delivery;
       },
-      resolveContext: ({ defaults, event }) => ({
+      resolveServices: ({ defaults, event }) => ({
         channelPrompt: resolveChannelPrompt(defaults, event),
         skills: resolveChannelSkills(defaults, event),
       }),
@@ -604,7 +604,7 @@ function resolveChannelPrompt(
   defaults: BindingDefaults,
   event: DiscordMessageEvent,
 ): string | undefined {
-  const prompts = defaults.context?.channelPrompts as
+  const prompts = defaults.services?.channelPrompts as
     | Record<string, string>
     | undefined;
   if (!prompts) {
@@ -621,7 +621,7 @@ function resolveChannelSkills(
   defaults: BindingDefaults,
   event: DiscordMessageEvent,
 ): readonly string[] | undefined {
-  const bindings = defaults.context?.channelSkillBindings as
+  const bindings = defaults.services?.channelSkillBindings as
     | Array<{ channel: string; skills: readonly string[] }>
     | undefined;
   if (!bindings) {

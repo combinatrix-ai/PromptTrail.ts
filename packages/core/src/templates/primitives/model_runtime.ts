@@ -33,7 +33,7 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
     phase: 'prepareModelInput',
     session: validSession,
     request,
-    context: runtime.context,
+    services: runtime.services,
     middlewareState: runtime.middlewareState,
     middleware: runtime.middleware,
     hooks: runtime.hooks,

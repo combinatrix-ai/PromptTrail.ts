@@ -209,7 +209,7 @@ async function generateOpenAIResponsesMessage<TVars extends Vars>(
           tools,
           session,
           requestOptions.approvalHandler,
-          requestOptions.context,
+          requestOptions.services,
         ),
       ),
     );
@@ -722,7 +722,7 @@ export async function createOpenAIToolOutputItem(
   tools: readonly PromptTrailTool[],
   session: Session<any>,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (!tool) {
@@ -740,7 +740,7 @@ export async function createOpenAIToolOutputItem(
   // (vendor loop); ctx.idempotencyKey still reaches the tool for remote dedup.
   const result = await executePromptTrailTool(tool, call.arguments, {
     session,
-    context,
+    services,
     provider: 'openai',
     approvalHandler,
     raw: call.raw,

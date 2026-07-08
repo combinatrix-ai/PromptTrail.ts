@@ -295,16 +295,16 @@ describe('CodexTurn template', () => {
     await Agent.create('codex-turn')
       .codex({
         client,
-        threadId: (_session, context) => `thread-${context?.channel}`,
-        input: (session, context) =>
-          `${context?.channel}:${session.getLastMessage()?.content}`,
+        threadId: (_session, services) => `thread-${services?.channel}`,
+        input: (session, services) =>
+          `${services?.channel}:${session.getLastMessage()?.content}`,
       })
       .execute({
         session: Session.create().addMessage({
           type: 'user',
           content: 'hello',
         }),
-        context: { channel: 'claw-test' },
+        services: { channel: 'claw-test' },
       });
 
     expect(client.threadStarts).toHaveLength(0);

@@ -117,7 +117,7 @@ describe('execution interceptors', () => {
     await runExecutionPhase({
       phase: 'beforeModel',
       session: createSession(),
-      context: {
+      services: {
         channelPrompt: 'fake-chat channel policy',
         delivery: { platform: 'fake-chat', channelId: 'C1' },
         deliveryBindings: { checkWrite: async () => undefined },
@@ -128,16 +128,16 @@ describe('execution interceptors', () => {
       middleware: [
         Middleware.create({
           name: 'channelPolicy',
-          beforeModel: ({ context }) => {
-            seen.push(context);
+          beforeModel: ({ services }) => {
+            seen.push(services);
           },
         }),
       ],
       hooks: [
         Hook.create({
           name: 'audit',
-          onBeforeModel: ({ context }) => {
-            seen.push(context);
+          onBeforeModel: ({ services }) => {
+            seen.push(services);
           },
         }),
       ],
@@ -156,7 +156,7 @@ describe('execution interceptors', () => {
       phase: 'wrapModelCall',
       session: createSession(),
       request: { prompt: 'original' },
-      context: {
+      services: {
         channelPrompt: 'fake-chat channel policy',
         delivery: { platform: 'fake-chat', channelId: 'C1' },
         deliveryBindings: { checkWrite: async () => undefined },
@@ -167,8 +167,8 @@ describe('execution interceptors', () => {
       middleware: [
         Middleware.create({
           name: 'modelWrapper',
-          wrapModelCall: ({ context }, next) => {
-            seen.push(context);
+          wrapModelCall: ({ services }, next) => {
+            seen.push(services);
             return next();
           },
         }),

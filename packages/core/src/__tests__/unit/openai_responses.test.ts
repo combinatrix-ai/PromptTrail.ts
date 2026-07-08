@@ -731,7 +731,7 @@ describe('OpenAI Responses native adapter helpers', () => {
       execute: ({ query }, context) => ({
         query,
         provider: context.provider,
-        channel: context.context?.channel,
+        channel: context.services?.channel,
       }),
     });
     const calls = collectOpenAIResponseFunctionCalls([

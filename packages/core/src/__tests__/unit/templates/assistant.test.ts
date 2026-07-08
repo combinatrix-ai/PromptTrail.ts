@@ -22,7 +22,7 @@ describe('AssistantTemplate', () => {
 
   it('passes execution runtime to content sources', async () => {
     const runtime = createExecutionRuntimeState({
-      context: { channel: 'assistant-runtime' },
+      services: { channel: 'assistant-runtime' },
       middleware: [],
     });
     class RuntimeAwareSource extends Source<string> {

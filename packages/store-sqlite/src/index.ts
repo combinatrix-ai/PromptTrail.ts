@@ -207,7 +207,7 @@ interface RunRow {
   status: StoredRun<any>['status'];
   graph_cursor: number | null;
   graph_suspended_at: string | null;
-  context_json: string | null;
+  services_json: string | null;
   initial_session_json: string;
   graph_manifest_json: string | null;
 }
@@ -304,7 +304,7 @@ export class SqliteRunStore implements DurableRunStore {
         status,
         graph_cursor,
         graph_suspended_at,
-        context_json,
+        services_json,
         initial_session_json,
         graph_manifest_json
       )
@@ -317,7 +317,7 @@ export class SqliteRunStore implements DurableRunStore {
         status = ?,
         graph_cursor = ?,
         graph_suspended_at = ?,
-        context_json = ?,
+        services_json = ?,
         graph_manifest_json = ?
       WHERE run_id = ?
     `);
@@ -409,7 +409,7 @@ export class SqliteRunStore implements DurableRunStore {
       run.status,
       run.graphCursor ?? null,
       run.graphSuspendedAt ?? null,
-      jsonOrNull(run.context),
+      jsonOrNull(run.services),
       JSON.stringify(run.initial.toJSON()),
       jsonOrNull(run.graphManifest),
     );
@@ -437,7 +437,7 @@ export class SqliteRunStore implements DurableRunStore {
       run.status,
       run.graphCursor ?? null,
       run.graphSuspendedAt ?? null,
-      jsonOrNull(run.context),
+      jsonOrNull(run.services),
       jsonOrNull(run.graphManifest),
       runId,
     );
@@ -648,7 +648,7 @@ export class SqliteRunStore implements DurableRunStore {
         status TEXT NOT NULL,
         graph_cursor INTEGER,
         graph_suspended_at TEXT,
-        context_json TEXT,
+        services_json TEXT,
         initial_session_json TEXT NOT NULL,
         graph_manifest_json TEXT
       );
@@ -810,7 +810,7 @@ export class SqliteRunStore implements DurableRunStore {
           status: row.status,
           graphCursor: row.graph_cursor ?? undefined,
           graphSuspendedAt: row.graph_suspended_at ?? undefined,
-          context: parseJson(row.context_json),
+          services: parseJson(row.services_json),
           initialSession: parseJsonRequired(row.initial_session_json),
           graphManifest: parseJson(row.graph_manifest_json),
           deltas,
@@ -922,8 +922,8 @@ function patchSummary(patch: StoredRunPatch): string {
   if ('agentName' in patch) {
     assignments.push(`agent_name=${patch.agentName ?? 'null'}`);
   }
-  if ('context' in patch) {
-    assignments.push('context_json');
+  if ('services' in patch) {
+    assignments.push('services_json');
   }
   if ('graphManifest' in patch) {
     assignments.push('graph_manifest_json');

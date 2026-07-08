@@ -140,17 +140,17 @@ describe('GraphExecutor', () => {
     const graph = Agent.create('assistant')
       .conditional(
         'branch',
-        ({ context }) => context?.ready === true,
+        ({ services }) => services?.ready === true,
         (then) => then.assistant('readyReply', 'ready'),
         (otherwise) => otherwise.assistant('notReadyReply', 'not ready'),
       )
       .toGraph();
 
     const thenSession = await executeAgentGraph(graph, {
-      context: { ready: true },
+      services: { ready: true },
     });
     const elseSession = await executeAgentGraph(graph, {
-      context: { ready: false },
+      services: { ready: false },
     });
 
     expect(thenSession.getLastMessage()?.content).toBe('ready');
@@ -383,7 +383,7 @@ describe('GraphExecutor', () => {
       execute: ({ id }, context) => {
         seen.push({
           id,
-          context: context.context,
+          services: context.services,
           effect: context.effect,
           capability: context.capability,
         });
@@ -412,13 +412,13 @@ describe('GraphExecutor', () => {
     });
 
     await executeAgentGraph(graph, {
-      context: { runId: 'graph-run' },
+      services: { runId: 'graph-run' },
     });
 
     expect(seen).toEqual([
       {
         id: '1',
-        context: { runId: 'graph-run' },
+        services: { runId: 'graph-run' },
         effect: { repeatable: true, kind: 'external-read' },
         capability: 'lookup',
       },
