@@ -544,5 +544,69 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
         (effective.vars as Record<string, unknown>)['leaked'],
       ).toBeUndefined();
     });
+
+    // Case 14: CONCURRENCY — N concurrent appendSessionDelta chains to N
+    // DIFFERENT runs on the same store all succeed with correct, independent
+    // per-run seq chains. This is the concurrency contract a backend must
+    // honor (see DurableRunStore's docstring in packages/core/src/durable.ts):
+    // seq/offset allocation must be atomic and correct across concurrent
+    // activity on DIFFERENT runs sharing one store/connection pool. It does
+    // NOT test concurrent appends to the SAME run — that is out of contract
+    // (single-writer-per-run is assumed; the app-level per-run mutex provides
+    // it in-process).
+    it('case 14: concurrent appendSessionDelta chains to different runs stay independent', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+
+      const runCount = 8;
+      const deltasPerRun = 3;
+      const runIds = Array.from(
+        { length: runCount },
+        (_, i) => `run-concurrent-14-${i}`,
+      );
+
+      await Promise.all(
+        runIds.map((runId) =>
+          store.create(runId, makeInitialRun(agent, agentName)),
+        ),
+      );
+
+      // For each run, append `deltasPerRun` deltas IN ORDER (same-run appends
+      // stay sequential, honoring the single-writer-per-run contract), but run
+      // all N runs' append chains CONCURRENTLY with each other so a backend
+      // that allocates seq via a shared/global counter — or that races on the
+      // connection pool across different run_ids — would be exposed.
+      await Promise.all(
+        runIds.map(async (runId) => {
+          for (let i = 0; i < deltasPerRun; i++) {
+            const delta: SessionCheckpointDelta = {
+              fromVersion: i,
+              toVersion: i + 1,
+              appendedMessages: [
+                { type: 'user', content: `${runId}-message-${i}` },
+              ],
+              varsSet: { [`k${i}`]: i },
+            };
+            await store.appendSessionDelta(runId, delta);
+          }
+        }),
+      );
+
+      for (const runId of runIds) {
+        const retrieved = await store.get(runId);
+        expect(retrieved).toBeDefined();
+        const result = retrieved!.result;
+        expect(result).toBeDefined();
+        // Correct per-run seq chain: all deltasPerRun deltas landed, in order,
+        // with no gaps and no cross-run leakage — otherwise version/message
+        // count would be wrong or messages would belong to another run.
+        expect(result!.version).toBe(deltasPerRun);
+        expect(result!.messages).toHaveLength(deltasPerRun);
+        for (let i = 0; i < deltasPerRun; i++) {
+          expect(result!.messages[i].content).toBe(`${runId}-message-${i}`);
+        }
+      }
+    });
   });
 }
