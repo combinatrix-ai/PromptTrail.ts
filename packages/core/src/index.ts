@@ -227,6 +227,7 @@ export type {
   RecorderToolInput,
 } from './recording';
 export {
+  DEFAULT_KEYING,
   ReplayMissError,
   buildCassette,
   replayRun,
@@ -234,11 +235,20 @@ export {
 } from './replay';
 export type {
   Cassette,
+  KeyingLevel,
   ReplayOptions,
   ReplayResult,
   ReplaySelfCheck,
   ReplayTrace,
 } from './replay';
+export { ChangeScopeSchema, buildGoldenOutcome, diffReplay } from './diff';
+export type {
+  ChangeScope,
+  Difference,
+  DiffReport,
+  Dimension,
+  GoldenOutcome,
+} from './diff';
 export { Tool } from './tool';
 export type {
   CallToolResult,

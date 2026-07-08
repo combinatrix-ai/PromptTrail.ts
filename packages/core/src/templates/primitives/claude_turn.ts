@@ -77,6 +77,15 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
       assertTurnCommandSupported(beforeModel.command, 'ClaudeTurn');
       currentSession = beforeModel.session;
     }
+    // Per-provider request metadata folded into the recorded requestDigest and
+    // recomputed identically at replay time for `request-hash` keying (B2).
+    const claudeRequestMeta = {
+      model: this.options.model,
+      cwd: this.options.cwd,
+      permissionMode: this.options.permissionMode,
+      allowedTools: this.options.allowedTools,
+      disallowedTools: this.options.disallowedTools,
+    };
     let modelSession = currentSession;
     if (runtime) {
       const prepared = await runExecutionPhase({
@@ -128,6 +137,8 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
             runtime.recorder?.currentNodePath ??
             'claudeTurn',
           provider: 'claude',
+          requestSession: modelSession,
+          requestMeta: claudeRequestMeta,
         }) as Awaited<ReturnType<typeof collectClaudeAgentTurnResult>>;
       }
       const client =
@@ -238,13 +249,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
           options.nodePath ?? claudeRecorder.currentNodePath ?? 'claudeTurn',
         provider: 'claude',
         requestSession: modelSession,
-        requestMeta: {
-          model: this.options.model,
-          cwd: this.options.cwd,
-          permissionMode: this.options.permissionMode,
-          allowedTools: this.options.allowedTools,
-          disallowedTools: this.options.disallowedTools,
-        },
+        requestMeta: claudeRequestMeta,
         response: sessionResult,
       });
     }

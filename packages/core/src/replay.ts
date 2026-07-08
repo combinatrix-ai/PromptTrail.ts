@@ -10,7 +10,12 @@ import type {
 import { executeAgentGraph } from './graph_executor';
 import type { GraphInboundInput } from './graph_executor';
 import type { Message } from './message';
-import { createRunRecorder, digest, stableStringify } from './recording';
+import {
+  computeModelRequestDigest,
+  createRunRecorder,
+  digest,
+  stableStringify,
+} from './recording';
 import type { DeliveryTarget } from './runtime_bindings';
 import { assistantDeliveryKey } from './runtime_delivery_keys';
 import type { Session, Vars } from './session';
@@ -21,22 +26,41 @@ import {
 import type { Agent } from './templates';
 
 /**
- * B1 — positional replay executor (design-docs replay-and-self-deploy.md §2,
- * §8). This module re-runs a recorded {@link StoredRun} through the REAL
- * execution engine ({@link executeAgentGraph}), serving every external leaf
- * (model/provider calls, tool calls) from a cassette built out of the run's B0
- * recording instead of hitting a provider or executing a tool. Side effects are
- * sealed: no real store, no delivery drivers, deliveries are captured into
- * `trace.wouldDeliver` rather than sent.
+ * B1/B2 — replay executor (design-docs replay-and-self-deploy.md §2, §8). This
+ * module re-runs a recorded {@link StoredRun} through the REAL execution engine
+ * ({@link executeAgentGraph}), serving every external leaf (model/provider
+ * calls, tool calls) from a cassette built out of the run's B0 recording instead
+ * of hitting a provider or executing a tool. Side effects are sealed: no real
+ * store, no delivery drivers, deliveries are captured into `trace.wouldDeliver`
+ * rather than sent.
  *
- * SCOPE (B1 only): positional keying — the Nth model call is served the Nth
- * recorded model response, the Nth tool call the Nth recorded tool result (each
- * kind a separate FIFO queue). `agent` defaults to `run.agent`. The only miss
- * policy is `error`: an exhausted cassette or a provider/kind mismatch throws a
- * {@link ReplayMissError} with position and node-path context. There is no
- * differ, no request-hash / node-path keying, and no green-vs-blue comparison —
- * those are B2+. A CHANGED agent (e.g. different prompt text) still replays
- * under positional keying by design; divergence detection is deferred to B2.
+ * KEYING (B2, design §2). Each incoming model/tool call tries the configured
+ * {@link KeyingLevel}s in order, per call:
+ * - `request-hash` — digest the candidate's LIVE request the same way the
+ *   recorder did ({@link computeModelRequestDigest} — the SINGLE shared,
+ *   per-provider code path) and consume the earliest UNCONSUMED record whose
+ *   `requestDigest` matches (tools: earliest unconsumed record with the same
+ *   `toolName` + `argsDigest`). A hit means behavior was preserved at that step.
+ * - `node-path` — consume the earliest unconsumed record at the same `nodePath`,
+ *   in seq order (lets a CHANGED prompt on the same logical node still draw a
+ *   recorded response and continue).
+ * - `positional` — consume the earliest unconsumed record of that kind (head).
+ *
+ * Consumption is seq-ordered and destructive, so duplicate digests (loop
+ * iterations that re-run the same nodePath with identical prompts) are handled:
+ * the first call consumes the earliest matching record, the next the following
+ * one. The keying level that hit is recorded PER CALL on the trace (`hit`).
+ *
+ * MISS POLICY (design §2). On a total miss (no keying level matched / cassette
+ * exhausted): `error` throws {@link ReplayMissError} (strict reproduction, the
+ * B1 default); `flag` records `{ at, kind, position }` into `trace.misses` and
+ * continues with a deterministic sentinel (an `[replay-miss]` assistant output
+ * for model calls, an error {@link CallToolResult} for tools) so the run can
+ * proceed — a miss is the highest-signal divergence point. `live` (fall through
+ * to the real provider) is explicitly rejected until B3+.
+ *
+ * The differ (`diff.ts`) is separate: the executor only emits a comparable
+ * {@link ReplayTrace}; classification against a `ChangeScope` lives there.
  *
  * The clock and rng are pinned so non-LLM nondeterminism cannot manufacture a
  * false divergence: the recorder timestamps use a fixed `now`, the graph
@@ -67,36 +91,73 @@ export interface Cassette {
 }
 
 /**
- * The comparable trace a replay emits (design-docs §2). It is the B1 subset of
- * the doc's sketch — the keying fields are omitted since B1 is positional-only.
+ * The keying strategy that resolved a leaf from the cassette (design §2). Tried
+ * in the configured order per call; the level that hit is recorded on the trace.
+ */
+export type KeyingLevel = 'request-hash' | 'node-path' | 'positional';
+
+/** Default keying order: strongest signal first, positional as the fallback. */
+export const DEFAULT_KEYING: readonly KeyingLevel[] = [
+  'request-hash',
+  'node-path',
+  'positional',
+];
+
+/**
+ * The comparable trace a replay emits (design-docs §2). Golden and candidate are
+ * the same shape (`GoldenOutcome` is the recording-side projection), so the
+ * differ compares them dimension by dimension.
  */
 export interface ReplayTrace {
-  /** Node-path breadcrumbs emitted during the replay, in order. */
+  /** Node-path breadcrumbs emitted during the replay, in order (control-flow). */
   nodes: string[];
-  /** Each served model leaf: where it fired and the recorded output. */
-  modelCalls: { nodePath: string; hit: true; output: unknown }[];
-  /** Each served tool leaf: the tool, its arg digest, and hit=true. */
-  toolCalls: { name: string; argsDigest: string; hit: true }[];
+  /**
+   * Branch decisions taken during the replay (routing) — one per conditional
+   * node, in order, carrying the chosen branch. Derived from the node
+   * breadcrumbs that carry a `branch`.
+   */
+  routing: { at: string; branch: string }[];
+  /** Each served model leaf: where it fired, which keying level hit, output. */
+  modelCalls: { nodePath: string; hit: KeyingLevel; output: unknown }[];
+  /** Each served tool leaf: the tool, its node path, arg digest, keying level. */
+  toolCalls: {
+    nodePath: string;
+    name: string;
+    argsDigest: string;
+    hit: KeyingLevel;
+  }[];
   /** Structured outputs the replay produced (from message structuredContent). */
   structured: unknown[];
   /** The final delivered assistant message(s) of the replay. */
   finalReply: Message[];
   /** Deliveries captured but never sent (no drivers on the throwaway path). */
   wouldDeliver: AssistantDeliveryOutboxInput[];
-  /** Always empty under B1's `miss: 'error'` policy (a miss throws instead). */
-  misses: { at: string; kind: 'model' | 'tool' }[];
+  /**
+   * Divergence points recorded under `miss: 'flag'` — a leaf no keying level
+   * could serve. Always empty under `miss: 'error'` (a miss throws instead).
+   */
+  misses: { at: string; kind: 'model' | 'tool'; position: number }[];
 }
 
 export interface ReplayOptions {
   /** The cassette to replay against; defaults to `buildCassette(run)`. */
   cassette?: Cassette;
   /**
-   * The agent to replay; defaults to `run.agent`. B1 supports a changed agent
-   * under positional keying (divergence detection is B2).
+   * The agent to replay; defaults to `run.agent`. A changed agent (different
+   * prompt/structure) is the deploy-diff case (green vs blue).
    */
   agent?: Agent<Vars>;
-  /** Miss policy. B1 supports only `error` (strict reproduction). */
-  miss?: 'error';
+  /**
+   * Keying strategies tried in order per call (design §2). Defaults to
+   * {@link DEFAULT_KEYING} (`request-hash` → `node-path` → `positional`).
+   */
+  keying?: readonly KeyingLevel[];
+  /**
+   * Miss policy (design §2). `error` (default) throws {@link ReplayMissError};
+   * `flag` records the divergence and continues with a sentinel. `live` (real
+   * provider fall-through) is rejected until B3+.
+   */
+  miss?: 'flag' | 'error' | 'live';
   /** Pinned clock for record timestamps; defaults to a fixed epoch. */
   now?: () => number;
   /** Pinned event scope / conversation id; defaults to a stable constant. */
@@ -200,42 +261,80 @@ function assertNoOmittedByteContent(run: StoredRun<any>): void {
 }
 
 /**
- * The positional leaf server: hands out cassette entries in FIFO order per kind
- * and records each served leaf into the trace. A miss throws {@link
- * ReplayMissError} (the only B1 policy).
+ * Deterministic sentinel model output served on a `flag` miss so the run can
+ * proceed (design §2). An `[replay-miss]` assistant output is valid for the
+ * assistant provider (a {@link ModelOutput}-shaped `{ content }`); provider
+ * turns that miss get the same marker.
  */
-class PositionalReplaySource implements ReplayLeafSource {
-  private modelIndex = 0;
-  private toolIndex = 0;
+const MODEL_MISS_SENTINEL = { content: '[replay-miss]' };
+
+/**
+ * Deterministic sentinel tool result served on a `flag` miss — flagged as an
+ * error so a downstream consumer can tell it apart from a real result.
+ */
+const TOOL_MISS_SENTINEL: CallToolResult = {
+  content: [{ type: 'text', text: '[replay-miss]' }],
+  isError: true,
+};
+
+/**
+ * The keyed leaf server (B2). For each incoming leaf it tries the configured
+ * {@link KeyingLevel}s in order and consumes the earliest UNCONSUMED matching
+ * record (seq order — so duplicate digests across loop iterations resolve to
+ * distinct records). Records the keying level that hit onto the trace. A total
+ * miss either throws (`error`) or records into `misses` and returns a sentinel
+ * (`flag`).
+ */
+class KeyedReplaySource implements ReplayLeafSource {
+  private readonly modelConsumed: boolean[];
+  private readonly toolConsumed: boolean[];
+  private modelCallCount = 0;
+  private toolCallCount = 0;
   readonly modelCalls: ReplayTrace['modelCalls'] = [];
   readonly toolCalls: ReplayTrace['toolCalls'] = [];
+  readonly misses: ReplayTrace['misses'] = [];
 
-  constructor(private readonly cassette: Cassette) {}
+  constructor(
+    private readonly cassette: Cassette,
+    private readonly keying: readonly KeyingLevel[],
+    private readonly miss: 'flag' | 'error',
+  ) {
+    this.modelConsumed = new Array(cassette.model.length).fill(false);
+    this.toolConsumed = new Array(cassette.tools.length).fill(false);
+  }
 
-  model(input: { nodePath: string; provider: string }): unknown {
-    const record = this.cassette.model[this.modelIndex];
-    if (!record) {
+  model(input: {
+    nodePath: string;
+    provider: string;
+    requestSession: Session<any>;
+    requestMeta?: unknown;
+  }): unknown {
+    const position = this.modelCallCount++;
+    const liveDigest = computeModelRequestDigest({
+      provider: input.provider,
+      requestSession: input.requestSession,
+      requestMeta: input.requestMeta,
+    });
+    for (const level of this.keying) {
+      const index = this.pickModel(level, input.nodePath, liveDigest);
+      if (index !== -1) {
+        this.modelConsumed[index] = true;
+        const output = cloneValue(this.cassette.model[index].response);
+        this.modelCalls.push({ nodePath: input.nodePath, hit: level, output });
+        return output;
+      }
+    }
+    if (this.miss === 'error') {
       throw new ReplayMissError({
         kind: 'model',
-        position: this.modelIndex,
+        position,
         nodePath: input.nodePath,
-        expected: 'a recorded model call',
-        actual: 'cassette exhausted',
+        expected: `a model record keyed by ${this.keying.join('/')}`,
+        actual: 'no keying level matched (cassette exhausted or divergent)',
       });
     }
-    if (record.provider !== input.provider) {
-      throw new ReplayMissError({
-        kind: 'model',
-        position: this.modelIndex,
-        nodePath: input.nodePath,
-        expected: `provider ${record.provider}`,
-        actual: `provider ${input.provider}`,
-      });
-    }
-    this.modelIndex += 1;
-    const output = cloneValue(record.response);
-    this.modelCalls.push({ nodePath: input.nodePath, hit: true, output });
-    return output;
+    this.misses.push({ at: input.nodePath, kind: 'model', position });
+    return cloneValue(MODEL_MISS_SENTINEL);
   }
 
   tool(input: {
@@ -243,23 +342,75 @@ class PositionalReplaySource implements ReplayLeafSource {
     toolName: string;
     argsDigest: string;
   }): CallToolResult {
-    const record = this.cassette.tools[this.toolIndex];
-    if (!record) {
+    const position = this.toolCallCount++;
+    for (const level of this.keying) {
+      const index = this.pickTool(level, input);
+      if (index !== -1) {
+        this.toolConsumed[index] = true;
+        this.toolCalls.push({
+          nodePath: input.nodePath,
+          name: input.toolName,
+          argsDigest: input.argsDigest,
+          hit: level,
+        });
+        return cloneValue(this.cassette.tools[index].result) as CallToolResult;
+      }
+    }
+    if (this.miss === 'error') {
       throw new ReplayMissError({
         kind: 'tool',
-        position: this.toolIndex,
+        position,
         nodePath: input.nodePath,
-        expected: 'a recorded tool call',
-        actual: 'cassette exhausted',
+        expected: `a tool record keyed by ${this.keying.join('/')}`,
+        actual: 'no keying level matched (cassette exhausted or divergent)',
       });
     }
-    this.toolIndex += 1;
-    this.toolCalls.push({
-      name: input.toolName,
-      argsDigest: input.argsDigest,
-      hit: true,
-    });
-    return cloneValue(record.result) as CallToolResult;
+    this.misses.push({ at: input.nodePath, kind: 'tool', position });
+    return cloneValue(TOOL_MISS_SENTINEL);
+  }
+
+  /** Index of the earliest unconsumed model record matching `level`, or -1. */
+  private pickModel(
+    level: KeyingLevel,
+    nodePath: string,
+    liveDigest: string,
+  ): number {
+    if (level === 'request-hash') {
+      return this.cassette.model.findIndex(
+        (record, index) =>
+          !this.modelConsumed[index] && record.requestDigest === liveDigest,
+      );
+    }
+    if (level === 'node-path') {
+      return this.cassette.model.findIndex(
+        (record, index) =>
+          !this.modelConsumed[index] && record.nodePath === nodePath,
+      );
+    }
+    return this.modelConsumed.findIndex((consumed) => !consumed);
+  }
+
+  /** Index of the earliest unconsumed tool record matching `level`, or -1. */
+  private pickTool(
+    level: KeyingLevel,
+    input: { nodePath: string; toolName: string; argsDigest: string },
+  ): number {
+    if (level === 'request-hash') {
+      // Tools' request-hash equivalent: same tool name + arg digest.
+      return this.cassette.tools.findIndex(
+        (record, index) =>
+          !this.toolConsumed[index] &&
+          record.toolName === input.toolName &&
+          record.argsDigest === input.argsDigest,
+      );
+    }
+    if (level === 'node-path') {
+      return this.cassette.tools.findIndex(
+        (record, index) =>
+          !this.toolConsumed[index] && record.nodePath === input.nodePath,
+      );
+    }
+    return this.toolConsumed.findIndex((consumed) => !consumed);
   }
 }
 
@@ -274,17 +425,21 @@ export async function replayRun<TVars extends Vars = Vars>(
   run: StoredRun<TVars>,
   opts: ReplayOptions = {},
 ): Promise<ReplayResult<TVars>> {
-  if (opts.miss !== undefined && opts.miss !== 'error') {
+  if (opts.miss === 'live') {
     throw new Error(
-      `Replay miss policy '${opts.miss}' is not supported in B1 (only 'error').`,
+      "Replay miss policy 'live' (real provider fall-through) is not supported " +
+        "yet — see design-docs replay-and-self-deploy.md §2/B3+. Use 'flag' or " +
+        "'error'.",
     );
   }
+  const miss = opts.miss ?? 'error';
+  const keying = opts.keying ?? DEFAULT_KEYING;
   const cassette = opts.cassette ?? buildCassette(run as StoredRun<any>);
   const agent = (opts.agent ?? run.agent) as Agent<TVars>;
   const now = opts.now ?? (() => REPLAY_FIXED_NOW);
   const eventScopeId = opts.eventScopeId ?? REPLAY_EVENT_SCOPE;
 
-  const source = new PositionalReplaySource(cassette);
+  const source = new KeyedReplaySource(cassette, keying, miss);
   const recording: RunRecordEntry[] = [];
   // A fresh recorder captures the replay's own record stream (node breadcrumbs
   // + the substituted model/tool records) into memory — never the real store.
@@ -316,19 +471,24 @@ export async function replayRun<TVars extends Vars = Vars>(
     await recorder.drain();
   }
 
+  const nodeEntries = recording.filter(
+    (entry): entry is Extract<RunRecordEntry, { kind: 'node' }> =>
+      entry.kind === 'node',
+  );
   const trace: ReplayTrace = {
-    nodes: recording
-      .filter(
-        (entry): entry is Extract<RunRecordEntry, { kind: 'node' }> =>
-          entry.kind === 'node',
-      )
-      .map((entry) => entry.record.nodePath),
+    nodes: nodeEntries.map((entry) => entry.record.nodePath),
+    routing: nodeEntries
+      .filter((entry) => entry.record.branch !== undefined)
+      .map((entry) => ({
+        at: entry.record.nodePath,
+        branch: entry.record.branch as string,
+      })),
     modelCalls: source.modelCalls,
     toolCalls: source.toolCalls,
     structured: collectStructured(session),
     finalReply: assistantMessages(session),
     wouldDeliver: computeWouldDeliver(run, session, eventScopeId),
-    misses: [],
+    misses: source.misses,
   };
 
   return { trace, session, recording };

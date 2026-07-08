@@ -109,6 +109,14 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
             services: runtime?.services,
           })
         : this.options.onRequest;
+    // Per-provider request metadata folded into the recorded requestDigest and
+    // recomputed identically at replay time for `request-hash` keying (B2).
+    const codexRequestMeta = {
+      model: this.options.model,
+      cwd: this.options.cwd,
+      sandboxPolicy: this.options.sandboxPolicy,
+      approvalPolicy: this.options.approvalPolicy,
+    };
     let modelSession = currentSession;
     if (runtime) {
       const prepared = await runExecutionPhase({
@@ -147,6 +155,8 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
             runtime.recorder?.currentNodePath ??
             'codexTurn',
           provider: 'codex',
+          requestSession: modelSession,
+          requestMeta: codexRequestMeta,
         }) as Awaited<ReturnType<typeof collectCodexTurnResult>>;
       }
       const ownsClient = this.options.client === undefined;
@@ -304,12 +314,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
           options.nodePath ?? codexRecorder.currentNodePath ?? 'codexTurn',
         provider: 'codex',
         requestSession: modelSession,
-        requestMeta: {
-          model: this.options.model,
-          cwd: this.options.cwd,
-          sandboxPolicy: this.options.sandboxPolicy,
-          approvalPolicy: this.options.approvalPolicy,
-        },
+        requestMeta: codexRequestMeta,
         response: sessionResult,
       });
     }

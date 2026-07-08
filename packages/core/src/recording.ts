@@ -114,6 +114,27 @@ export function normalizeMessagesForDigest(
   });
 }
 
+/**
+ * Compute the per-provider request digest for a model call — the SINGLE source
+ * of truth shared by the B0 recorder (record time) and B1/B2 replay (candidate
+ * live request). `provider` is folded into the hash, so the digest is per
+ * provider by construction (assistant vs Codex vs Claude); volatile per-message
+ * attrs are dropped by {@link normalizeMessagesForDigest}. `request-hash` keying
+ * matches a candidate's live digest against a recorded `requestDigest`; reusing
+ * this exact code path is what makes such a match well-defined (round-3).
+ */
+export function computeModelRequestDigest(input: {
+  provider: string;
+  requestSession: Session<any>;
+  requestMeta?: unknown;
+}): string {
+  const normalizedRequest = {
+    messages: normalizeMessagesForDigest(input.requestSession.messages),
+    meta: input.requestMeta ?? null,
+  };
+  return digest({ provider: input.provider, request: normalizedRequest });
+}
+
 export interface RecorderModelInput {
   /** Graph path of the node that issued the call; scopes `callIndex`. */
   nodePath: string;
@@ -254,9 +275,10 @@ export function createRunRecorder(options: CreateRecorderOptions): Recorder {
         messages: normalizeMessagesForDigest(input.requestSession.messages),
         meta: input.requestMeta ?? null,
       };
-      const requestDigest = digest({
+      const requestDigest = computeModelRequestDigest({
         provider: input.provider,
-        request: normalizedRequest,
+        requestSession: input.requestSession,
+        requestMeta: input.requestMeta,
       });
       const record: ModelCallRecord = {
         seq: ++seq,
