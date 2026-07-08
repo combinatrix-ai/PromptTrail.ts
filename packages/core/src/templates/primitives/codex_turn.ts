@@ -281,6 +281,27 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
     }
     const sessionResult = this.prepareSessionResult(result);
 
+    // B0 model capture (Appendix B0 work item 4). Codex uses its own normalizer:
+    // the TurnModelRequest session + provider config digest, provider = 'codex'.
+    // One record per wrapModelCall invocation (internal vendor rounds aggregate
+    // into `sessionResult`). Faithful raw replay needs retain: 'full'.
+    const codexRecorder = runtime?.recorder;
+    if (codexRecorder) {
+      codexRecorder.model({
+        nodePath:
+          options.nodePath ?? codexRecorder.currentNodePath ?? 'codexTurn',
+        provider: 'codex',
+        requestSession: modelSession,
+        requestMeta: {
+          model: this.options.model,
+          cwd: this.options.cwd,
+          sandboxPolicy: this.options.sandboxPolicy,
+          approvalPolicy: this.options.approvalPolicy,
+        },
+        response: sessionResult,
+      });
+    }
+
     let nextSession: Session<TVars>;
     if (this.options.squashWith) {
       nextSession = await this.options.squashWith(currentSession, result);

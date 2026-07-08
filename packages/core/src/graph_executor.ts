@@ -25,6 +25,7 @@ import {
   type AssistantMessage,
   type Message as PromptTrailMessage,
 } from './message';
+import type { Recorder } from './recording';
 import { Session, type Vars } from './session';
 import { parseDuration } from './duration';
 import { type ModelOutput, Source } from './source';
@@ -95,6 +96,12 @@ export interface GraphExecutionOptions<TVars extends Vars = Vars> {
    */
   firedTimers?: ReadonlySet<string>;
   armTimer?: (timerId: string, durationMs: number) => Promise<void>;
+  /**
+   * B0 recording handle (Appendix B0). Supplied by the durable runtime when the
+   * run's `recordLevel !== 'off'`; installed on the runtime so the model/tool
+   * funnels and node breadcrumbs capture through it.
+   */
+  recorder?: Recorder;
 }
 
 export interface GraphToolDurableBoundaryContext<TVars extends Vars = Vars> {
@@ -215,8 +222,10 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
         durableBoundary: options.durableBoundary,
         providerSessions: options.providerSessions,
         recordProviderSession: options.recordProviderSession,
+        recorder: options.recorder,
       });
   if (options.runtime) {
+    runtime.recorder = options.recorder ?? options.runtime.recorder;
     runtime.services = services;
     runtime.signal = signal;
     runtime.emitEvent = emitEvent;
@@ -423,6 +432,21 @@ async function executeGraphNode<TVars extends Vars>(
   if (state.skipNode?.(node, nodePath, state.session)) {
     return;
   }
+  // B0 node-enter breadcrumb (Appendix B0 work item 3). One per node entry;
+  // loop/goalAttempts iterations re-run under the SAME nodePath, so they appear
+  // as repeated breadcrumbs disambiguated by seq (the stream is seq-ordered, not
+  // a nodePath→record map). `currentNodePath` is also the fallback path for
+  // model/tool calls that do not thread one explicitly (structured/parallel via
+  // executeSource). The conditional node emits a SECOND breadcrumb carrying the
+  // chosen `branch` after its decision (see executeConditionalNode). Parallel
+  // emits no per-branch breadcrumbs: executeParallelNode runs its branches
+  // sequentially via executeSource under one nodePath, so branch order is
+  // reconstructed from model/tool record order (round-3).
+  const recorder = state.runtime.recorder;
+  if (recorder) {
+    recorder.currentNodePath = nodePath;
+    recorder.node({ nodePath, nodeType: node.type });
+  }
   switch (node.type) {
     case 'system':
       await executeSystemNode(node, nodePath, state);
@@ -602,6 +626,14 @@ async function executeConditionalNode<TVars extends Vars>(
   const branchId = resolveGraphCondition(data.condition, nodePath, state)
     ? 'then'
     : 'else';
+  // Second breadcrumb AFTER the decision, carrying the chosen branch — this is
+  // what lets a replayer reconstruct which child the conditional entered
+  // (the entry breadcrumb from executeGraphNode has no branch yet).
+  state.runtime.recorder?.node({
+    nodePath,
+    nodeType: 'conditional',
+    branch: branchId,
+  });
   const branchNodeIds = getConditionalBranchNodeIds(data.branches, branchId);
   if (branchNodeIds.length === 0) {
     return;
@@ -870,6 +902,11 @@ async function executeAssistantNode<TVars extends Vars>(
         (modelSession) =>
           resolveGraphAssistantInput(input, nodePath, modelSession, state),
         `Graph node ${nodePath} model execution`,
+        {
+          nodePath,
+          provider: 'assistant',
+          requestMeta: sourceRequestMeta(input),
+        },
       );
       validSession = modelCall.session;
       const output = normalizeAssistantOutput(modelCall.result, nodePath);
@@ -1127,6 +1164,26 @@ async function executeTemplateNode<TVars extends Vars>(
   state.session = await template.execute(state.session, state.runtime);
 }
 
+/**
+ * Resolved-request metadata for the B0 model record (Appendix B0 work item 4):
+ * a ModelSource exposes a stable, serializable manifest descriptor (provider +
+ * generation params + a digest of tool defs, NOT the full defs) that is folded
+ * into the request digest. Non-source inputs (function handlers, literals) have
+ * no manifest — their digest is over the input messages alone.
+ */
+function sourceRequestMeta(input: unknown): unknown {
+  if (
+    input &&
+    typeof (input as { getManifestDescriptor?: unknown })
+      .getManifestDescriptor === 'function'
+  ) {
+    return (
+      input as { getManifestDescriptor: () => unknown }
+    ).getManifestDescriptor();
+  }
+  return undefined;
+}
+
 async function resolveGraphAssistantInput<TVars extends Vars>(
   input: unknown,
   nodePath: string,
@@ -1308,6 +1365,8 @@ async function executeToolsNode<TVars extends Vars>(
               ? toolEffect
               : undefined,
             durable: durable ?? state.durableToolBoundary?.(context),
+            recorder: state.runtime.recorder,
+            recordNodePath: nodePath,
           });
         const result = state.durableToolExecution
           ? await state.durableToolExecution(context, executeTool)

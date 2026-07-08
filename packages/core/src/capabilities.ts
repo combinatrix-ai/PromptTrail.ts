@@ -4,6 +4,7 @@ import type {
   ExecutionDurableBoundary,
   ExecutionEffectDeclaration,
 } from './interceptors';
+import type { Recorder } from './recording';
 import type { Session } from './session';
 
 export type ExecutionMode = 'prompttrail' | 'provider' | 'runtime';
@@ -39,6 +40,15 @@ export interface ToolExecutionContext {
   effect?: ExecutionEffectDeclaration;
   idempotencyKey?: string;
   durable?: ExecutionDurableBoundary;
+  /**
+   * B0 recording handle (Appendix B0 work item 1). Threaded in by the graph
+   * tools node — the funnel where a `nodePath` is in scope. Provider vendor-loop
+   * tool callbacks (builtin/MCP) run without a nodePath and leave this unset;
+   * those calls ride the model/provider response instead (round-3).
+   */
+  recorder?: Recorder;
+  /** Graph path of the tools node issuing the call; scopes `callIndex`. */
+  recordNodePath?: string;
 }
 
 export type CallToolContent =

@@ -22,7 +22,6 @@ import {
   runSupervisorCommand,
   SkillRegistry,
   supervisorAuthorized,
-  templateSynthesizer,
   type Skill,
   type SkillLoaderContext,
   type SkillProvenance,

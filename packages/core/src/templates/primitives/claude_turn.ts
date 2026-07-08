@@ -215,6 +215,28 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
     }
     const sessionResult = this.prepareSessionResult(result);
 
+    // B0 model capture (Appendix B0 work item 4). Claude uses its own normalizer:
+    // the TurnModelRequest session + provider config digest, provider = 'claude'.
+    // One record per wrapModelCall invocation (internal vendor rounds aggregate
+    // into `sessionResult`). Faithful raw replay needs retain: 'full'.
+    const claudeRecorder = runtime?.recorder;
+    if (claudeRecorder) {
+      claudeRecorder.model({
+        nodePath:
+          options.nodePath ?? claudeRecorder.currentNodePath ?? 'claudeTurn',
+        provider: 'claude',
+        requestSession: modelSession,
+        requestMeta: {
+          model: this.options.model,
+          cwd: this.options.cwd,
+          permissionMode: this.options.permissionMode,
+          allowedTools: this.options.allowedTools,
+          disallowedTools: this.options.disallowedTools,
+        },
+        response: sessionResult,
+      });
+    }
+
     let nextSession: Session<TVars>;
     if (this.options.squashWith) {
       nextSession = await this.options.squashWith(currentSession, result);

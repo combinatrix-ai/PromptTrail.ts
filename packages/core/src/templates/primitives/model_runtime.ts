@@ -11,6 +11,26 @@ import type { Vars } from '../../session';
 
 export interface ModelRuntimeRequest<TVars extends Vars = Vars> {
   session: Session<TVars>;
+  /**
+   * Resolved LLMOptions manifest (system, params, `toolDefsDigest`) threaded in
+   * by the assistant node so the B0 recording (and any `wrapModelCall`
+   * middleware) can digest the FULL provider request, not just the session
+   * (round-3: `ModelRuntimeRequest` is otherwise `{ session }` only, which would
+   * make request-hash keying unsound). Absent for callers that do not resolve a
+   * source manifest (e.g. structured/parallel model calls).
+   */
+  requestMeta?: unknown;
+}
+
+/**
+ * Per-provider recording metadata for the assistant model funnel (Appendix B0).
+ * Provider is 'assistant' here; Codex/Claude turns record separately with their
+ * own normalizers.
+ */
+export interface ModelCallRecordOptions {
+  nodePath?: string;
+  provider?: string;
+  requestMeta?: unknown;
 }
 
 export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
@@ -18,6 +38,7 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
   session: Session<TVars>,
   call: (session: Session<TVars>) => Promise<TResult>,
   commandScope = 'Model execution',
+  record?: ModelCallRecordOptions,
 ): Promise<{ session: Session<TVars>; result: TResult }> {
   const beforeModel = await runRuntimeExecutionPhase(runtime, {
     phase: 'beforeModel',
@@ -28,6 +49,7 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
 
   const request: ModelRuntimeRequest<TVars> = {
     session: validSession,
+    requestMeta: record?.requestMeta,
   };
   const prepared = await runExecutionPhase({
     phase: 'prepareModelInput',
@@ -68,7 +90,7 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
       >(runtime, {
         phase: 'wrapModelCall',
         session: validSession,
-        request: { session: modelSession },
+        request: { session: modelSession, requestMeta: record?.requestMeta },
         call: async ({ request }) => {
           if (await emitModelEvent(runtime, 'model.started')) {
             openModelEvents++;
@@ -95,6 +117,21 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
   assertModelCommandSupported(afterModel.command, commandScope);
   validSession = afterModel.session;
   result = (afterModel.result ?? result) as TResult;
+
+  // B0 model capture at the wrapModelCall boundary (Appendix B0 work item 4).
+  // One ModelCallRecord per invocation (node-output granularity: internal
+  // vendor rounds inside the `call` are aggregated into this single response).
+  // provider = 'assistant'; Codex/Claude turns record with their own
+  // normalizers. `modelSession` is the input sent to the provider; `requestMeta`
+  // is the resolved-LLMOptions manifest threaded in by the assistant node.
+  runtime.recorder?.model({
+    nodePath:
+      record?.nodePath ?? runtime.recorder.currentNodePath ?? commandScope,
+    provider: record?.provider ?? 'assistant',
+    requestSession: modelSession,
+    requestMeta: record?.requestMeta,
+    response: result,
+  });
 
   return { session: validSession, result };
 }

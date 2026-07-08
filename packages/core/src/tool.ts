@@ -132,7 +132,23 @@ export async function executePromptTrailTool<TInput, TResult>(
             () => tool.execute(parsedInput, toolContext),
           )
         : await tool.execute(parsedInput, toolContext);
-    return toolResultToCallToolResult(result);
+    const callResult = toolResultToCallToolResult(result);
+    // B0 tool capture at the single execution funnel (Appendix B0 work item 1).
+    // Recorded only when a recorder + nodePath were threaded in — i.e. the graph
+    // tools node (and graph ai-sdk-wrapped tools). Builtin/MCP/vendor-loop tool
+    // calls execute provider-side outside this funnel and are reconstructed from
+    // the model response, so they carry no recorder and are not double-recorded.
+    context.recorder?.tool({
+      nodePath:
+        context.recordNodePath ??
+        context.recorder.currentNodePath ??
+        executionName,
+      toolName: executionName,
+      input: parsedInput,
+      result: callResult,
+      effect: executionContext.effect,
+    });
+    return callResult;
   } catch (error) {
     return {
       content: [{ type: 'text', text: formatToolError(error) }],
