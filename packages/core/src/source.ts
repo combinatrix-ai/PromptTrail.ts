@@ -450,6 +450,11 @@ export class RandomSource extends StringSource {
   }
 
   async getContent(_session: Session<any>): Promise<string> {
+    // B1 TODO (determinism inventory, Appendix B0 round-3): direct Math.random
+    // here (and Date.now at the LlmSource instanceId below) is not yet pinned by
+    // a RuntimeRng/RuntimeClock. B0 injects a clock only where RECORDS need
+    // timestamps; banning direct Date.now/Math.random on replay-critical paths
+    // (source.ts, plus the eventScopeId seed in graph_executor) is B1 scope.
     const randomIndex = Math.floor(Math.random() * this.contentList.length);
     return this.contentList[randomIndex];
   }

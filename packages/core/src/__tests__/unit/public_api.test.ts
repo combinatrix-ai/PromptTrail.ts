@@ -71,12 +71,17 @@ describe('public API surface', () => {
       'createAgentGraph',
       'createAgentGraphManifest',
       'createProviderFileContentPart',
+      'createRunRecorder',
       'createSession',
+      'digest',
       'isProviderFileReferenceExpired',
       'manifestConfigDigest',
+      'maxRecordSeq',
       'memoryStore',
+      'normalizeMessagesForDigest',
       'on',
       'parseDuration',
+      'stableStringify',
       'validateAgentGraph',
     ]);
   });

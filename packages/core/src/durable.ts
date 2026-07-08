@@ -36,6 +36,7 @@ import {
   GraphExecutionSuspended,
   type GraphInboundInput,
 } from './graph_executor';
+import { createRunRecorder, maxRecordSeq, type Recorder } from './recording';
 import {
   AgentGraphVersionError,
   createAgentGraphManifest,
@@ -2361,6 +2362,20 @@ export class PromptTrailApp {
       this.recordOnce(runId, entry),
     );
 
+    // B0 recorder (Appendix B0). Created per run when recording is enabled; seq
+    // is seeded from the max seq already in run.recording so it stays monotonic
+    // across suspend/resume. Appends go through the (fenced) store so recording
+    // works under lease mode. `this.now` is the shared injectable clock.
+    const recorder: Recorder | undefined =
+      run.recordLevel && run.recordLevel !== 'off'
+        ? createRunRecorder({
+            level: run.recordLevel,
+            initialSeq: maxRecordSeq(run.recording),
+            append: (entry) => this.store.appendRecord(runId, entry),
+            now: this.now,
+          })
+        : undefined;
+
     try {
       const session = await executeAgentGraph<TVars>(
         {
@@ -2397,6 +2412,7 @@ export class PromptTrailApp {
           firedTimers: firedTimerIds(run),
           armTimer: (timerId, durationMs) =>
             this.armTimer(runId, run, timerId, durationMs),
+          recorder,
           observers: [
             async (event) => {
               await this.emitObservers(run, event);
@@ -2443,6 +2459,10 @@ export class PromptTrailApp {
         throw new CheckpointRollbackError(error, rollbackError);
       }
       throw error;
+    } finally {
+      // Flush the fire-ordered append chain so all records are durably written
+      // before the run returns (completion, suspension, or error).
+      await recorder?.drain();
     }
   }
 

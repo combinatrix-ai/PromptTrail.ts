@@ -7,6 +7,7 @@ import {
   type ResolvedExecutionTransition,
 } from './execution';
 import type { ProviderSessionBinding } from './provider_session';
+import type { Recorder } from './recording';
 import type { Session, Vars } from './session';
 
 export type ExecutionLifecyclePhase =
@@ -294,6 +295,14 @@ export interface ExecutionRuntimeState<TVars extends Vars = Vars> {
     nodePath: string,
     binding: ProviderSessionBinding,
   ) => Promise<void>;
+  /**
+   * B0 recording handle (design-docs replay-and-self-deploy.md, Appendix B0).
+   * Present only when the run's `recordLevel !== 'off'`; the model funnel
+   * (`executeRuntimeModelCall`, Codex/Claude turns), the tool funnel
+   * (`executePromptTrailTool`), and the graph executor's node breadcrumbs all
+   * capture through it when set.
+   */
+  recorder?: Recorder;
 }
 
 export function createExecutionRuntimeState<
@@ -312,6 +321,7 @@ export function createExecutionRuntimeState<
     nodePath: string,
     binding: ProviderSessionBinding,
   ) => Promise<void>;
+  recorder?: Recorder;
 }): ExecutionRuntimeState<TVars> {
   return {
     middleware: options?.middleware ?? [],
@@ -326,6 +336,7 @@ export function createExecutionRuntimeState<
     eventScopeId: options?.eventScopeId,
     providerSessions: options?.providerSessions,
     recordProviderSession: options?.recordProviderSession,
+    recorder: options?.recorder,
   };
 }
 

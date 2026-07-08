@@ -212,6 +212,20 @@ export type {
   Strategy,
 } from './templates';
 export type { SchemaType } from './templates/primitives/structured';
+export {
+  createRunRecorder,
+  digest,
+  maxRecordSeq,
+  normalizeMessagesForDigest,
+  stableStringify,
+} from './recording';
+export type {
+  CreateRecorderOptions,
+  Recorder,
+  RecorderModelInput,
+  RecorderNodeInput,
+  RecorderToolInput,
+} from './recording';
 export { Tool } from './tool';
 export type {
   CallToolResult,
