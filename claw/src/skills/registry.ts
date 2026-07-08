@@ -30,8 +30,27 @@ import type { SkillProvenance } from './types.js';
  *   - `gateResult`    — the recorded gate outcome JSON (provenance).
  */
 
-/** Trust tier of a skill (design-docs §9). Phase 1 lands builtin + staged. */
-export type SkillTier = 'builtin' | 'staged';
+/**
+ * Trust tier of a skill (design-docs §9).
+ *   - 'builtin'     — hand-written, trusted, outside the self-authoring loop.
+ *   - 'staged'      — gate-passed but not yet activated (a transient logical
+ *                     state; the authoring flow immediately activates to canary).
+ *   - 'canary'      — live and dispatching, but flagged for close watching and
+ *                     capped at the read-only ceiling (Phase 1 behavior IS this).
+ *   - 'trusted'     — auto-promoted from canary after N clean invocations; still
+ *                     read-only in Phase 2 (write elevation is deferred).
+ *   - 'quarantined' — auto- or hand-demoted past the failure threshold; the
+ *                     dispatcher skips it exactly like a disabled row.
+ */
+export type SkillTier =
+  | 'builtin'
+  | 'staged'
+  | 'canary'
+  | 'trusted'
+  | 'quarantined';
+
+/** Live tiers whose failure/clean-run streaks the supervisor evaluates. */
+export const LIVE_TIERS: readonly SkillTier[] = ['canary', 'trusted'];
 
 /** A persisted skill row (the serializable subset of a Skill + provenance). */
 export interface SkillRegistryRow {
@@ -88,6 +107,36 @@ export interface SkillHealthUpdate {
   error?: string;
 }
 
+/**
+ * Provenance/audit row: one per tier transition (design-docs §9, §10 Phase 2).
+ * `from`/`to` are tier names for tier moves and short manifest hashes for a
+ * rollback; `actor` is 'auto' (supervisor logic) or an author/supervisor id.
+ */
+export interface SkillAuditRow {
+  skillId: string;
+  from: string;
+  to: string;
+  reason: string;
+  actor: string;
+  at: string;
+}
+
+/**
+ * A buffered reactive-supervisor notice (design-docs §9). Delivering a message
+ * to CLAW_SUPERVISOR_CHANNEL from inside the health wrapper is awkward in claw's
+ * message-triggered binding model (the wrapper runs while replying to the
+ * *triggering* message, with no handle to a different channel), so an
+ * auto-quarantine records a durable pending-notice row instead. The next
+ * supervisor command (`!skills`/`!why`) or the scheduled scan surfaces it.
+ */
+export interface SkillNoticeRow {
+  id: number;
+  skillId: string;
+  message: string;
+  createdAt: string;
+  delivered: boolean;
+}
+
 interface SkillRow {
   id: string;
   name: string;
@@ -122,6 +171,23 @@ interface HealthRow {
   last_error: string | null;
   last_latency_ms: number | null;
   updated_at: string;
+}
+
+interface AuditRow {
+  skill_id: string;
+  from_tier: string;
+  to_tier: string;
+  reason: string;
+  actor: string;
+  at: string;
+}
+
+interface NoticeRow {
+  id: number;
+  skill_id: string;
+  message: string;
+  created_at: string;
+  delivered: number;
 }
 
 export class SkillRegistry {
@@ -167,6 +233,22 @@ export class SkillRegistry {
         last_error TEXT,
         last_latency_ms INTEGER,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS skill_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id TEXT NOT NULL,
+        from_tier TEXT NOT NULL,
+        to_tier TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS skill_notices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        delivered INTEGER NOT NULL DEFAULT 0
       );
     `);
     this.migrateSkillColumns();
@@ -274,6 +356,27 @@ export class SkillRegistry {
       .run(enabled ? 1 : 0, id);
   }
 
+  /** Move a skill's trust tier (design-docs §9); a pure registry write. */
+  setTier(id: string, tier: SkillTier): void {
+    this.db.prepare('UPDATE skills SET tier = ? WHERE id = ?').run(tier, id);
+  }
+
+  /**
+   * Repoint the active-version pointer (design-docs §9 rollback). Moves
+   * `active_version` and mirrors the build's `manifest_hash`/`source_hash` so a
+   * later restart's fast-path reload trusts the rolled-back build.
+   */
+  setActiveVersion(
+    id: string,
+    version: { manifestHash: string; sourceHash: string | null },
+  ): void {
+    this.db
+      .prepare(
+        'UPDATE skills SET active_version = ?, manifest_hash = ?, source_hash = ? WHERE id = ?',
+      )
+      .run(version.manifestHash, version.manifestHash, version.sourceHash, id);
+  }
+
   /** Append an immutable version row (design-docs §9); idempotent per hash. */
   recordVersion(version: SkillVersionRow): void {
     this.db
@@ -367,6 +470,76 @@ export class SkillRegistry {
     };
   }
 
+  /** Clear the consecutive-failure streak and last error (design-docs §9 restore). */
+  resetConsecutiveFailures(skillId: string): void {
+    this.db
+      .prepare(
+        'UPDATE skill_health SET consecutive_failures = 0, last_error = NULL, updated_at = ? WHERE skill_id = ?',
+      )
+      .run(new Date().toISOString(), skillId);
+  }
+
+  /** Append a provenance/audit row for one tier transition (design-docs §9). */
+  recordAudit(entry: SkillAuditRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO skill_audit (skill_id, from_tier, to_tier, reason, actor, at)
+         VALUES (@skill_id, @from_tier, @to_tier, @reason, @actor, @at)`,
+      )
+      .run({
+        skill_id: entry.skillId,
+        from_tier: entry.from,
+        to_tier: entry.to,
+        reason: entry.reason,
+        actor: entry.actor,
+        at: entry.at,
+      });
+  }
+
+  /** Recent audit rows for a skill, newest first (default 10). */
+  listAudit(skillId: string, limit = 10): SkillAuditRow[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM skill_audit WHERE skill_id = ? ORDER BY id DESC LIMIT ?',
+      )
+      .all(skillId, limit) as AuditRow[];
+    return rows.map(fromAuditRow);
+  }
+
+  /** Buffer a reactive-supervisor notice for later delivery (design-docs §9). */
+  recordNotice(notice: { skillId: string; message: string; at: string }): void {
+    this.db
+      .prepare(
+        `INSERT INTO skill_notices (skill_id, message, created_at, delivered)
+         VALUES (?, ?, ?, 0)`,
+      )
+      .run(notice.skillId, notice.message, notice.at);
+  }
+
+  /** Undelivered notices, oldest first. */
+  listPendingNotices(): SkillNoticeRow[] {
+    const rows = this.db
+      .prepare('SELECT * FROM skill_notices WHERE delivered = 0 ORDER BY id')
+      .all() as NoticeRow[];
+    return rows.map(fromNoticeRow);
+  }
+
+  /** Mark notices delivered so a later command/scan does not re-report them. */
+  markNoticesDelivered(ids: readonly number[]): void {
+    if (ids.length === 0) {
+      return;
+    }
+    const stmt = this.db.prepare(
+      'UPDATE skill_notices SET delivered = 1 WHERE id = ?',
+    );
+    const tx = this.db.transaction((batch: readonly number[]) => {
+      for (const id of batch) {
+        stmt.run(id);
+      }
+    });
+    tx(ids);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -435,5 +608,26 @@ function fromVersionRow(row: VersionRow): SkillVersionRow {
     sourcePath: row.source_path,
     gateResult: parseJsonOrNull(row.gate_result),
     createdAt: row.created_at,
+  };
+}
+
+function fromAuditRow(row: AuditRow): SkillAuditRow {
+  return {
+    skillId: row.skill_id,
+    from: row.from_tier,
+    to: row.to_tier,
+    reason: row.reason,
+    actor: row.actor,
+    at: row.at,
+  };
+}
+
+function fromNoticeRow(row: NoticeRow): SkillNoticeRow {
+  return {
+    id: row.id,
+    skillId: row.skill_id,
+    message: row.message,
+    createdAt: row.created_at,
+    delivered: row.delivered === 1,
   };
 }

@@ -231,3 +231,123 @@ restart reload (fresh registry + skills dir → skill still dispatches); the
 parent manifest hash staying unchanged after authoring; and authoring firing
 only in the privileged channel/author allowlist. The subprocess-backed tests
 locate `tsc`/`vitest` from the workspace `node_modules`.
+
+## Skills (Phase 2): supervision & lifecycle
+
+**Phase 2** adds the **control plane** beside the data plane (the dispatcher):
+trust tiers, automatic promotion/quarantine, an on-demand supervisor command
+surface, rollback via an active-version pointer, and a full provenance/audit
+trail. The governing rule from `design-docs/claw-self-authoring.md` §9 holds:
+**instrument every skill run, but never proxy them through a blocking
+supervisor.** The supervisor is human-authored, trusted, in-repo code _outside_
+the self-authoring loop; nothing here recompiles the parent graph.
+
+### Trust tiers
+
+```
+builtin        hand-written, trusted (status, author-skill, supervisor)
+staged         gate-passed, not yet activated (transient — authoring moves on immediately)
+  │  activate
+  ▼
+canary         LIVE and dispatching, but closely watched + read-only ceiling
+  │  auto: N clean invocations (CLAW_PROMOTE_AFTER)
+  ▼
+trusted        auto-promoted; still read-only in Phase 2 (write elevation deferred)
+  ↘  auto: K consecutive failures (CLAW_QUARANTINE_AFTER), or !quarantine
+quarantined    dispatcher SKIPS it (like disabled); !restore → canary
+```
+
+**Canary is live.** Phase 1's "activated" state is exactly canary: a
+gate-passed skill dispatches immediately, but is flagged for close watching and
+capped at the read-only ceiling. The authoring flow now records the
+`staged → canary` transition explicitly (both steps audited); the persisted tier
+is the terminal `canary`.
+
+- **Auto-promotion** (`canary → trusted`) and **auto-quarantine**
+  (`* → quarantined`) are evaluated in the **health wrapper** after each
+  invocation — cheap, data-plane, off the blocking path. Both are registry
+  writes. Builtin skills are never touched.
+- **Rollback = an active-version pointer.** Every gated build keeps an immutable
+  per-version artifact under `<skillsDir>/versions/<id>.<hash>.js`. `!rollback`
+  repoints `activeVersion` to the previous version row and rebinds the in-process
+  behavior — instant, and (because the skill subroutine hash is excluded from the
+  parent manifest, §8) it disturbs neither the parent graph nor live
+  conversations.
+
+### Supervisor commands
+
+A built-in, trusted `supervisor` skill (registered only when
+`CLAW_AUTHORING_CHANNELS` is set, sharing the same privileged channel/author
+gating as `!skill`). All are read-only w.r.t. capabilities:
+
+| Command            | Effect                                                                       |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `!skills`          | List every skill: id, name, tier, enabled, invocations, failures, hash short |
+| `!promote <id>`    | One step: `staged → canary`, or `canary → trusted` (trust tier **only**)     |
+| `!quarantine <id>` | Force `→ quarantined`; the dispatcher stops matching it                       |
+| `!restore <id>`    | `quarantined → canary`, resetting the consecutive-failure streak             |
+| `!rollback <id>`   | Move the active-version pointer to the previous version; error if none       |
+| `!why <id>`        | Last error/latency, failure counts, gate summary, recent audit entries       |
+
+`!skills` and `!why` also drain any buffered supervisor notices (below).
+
+### Provenance / audit surface
+
+Every tier transition appends a row to `skill_audit`
+(`skillId, from, to, reason, actor, at`); `actor` is `auto` for supervisor logic
+or the author/supervisor id for a command. `!why` shows the most recent entries;
+`!skills` and `!why` expose the live health + version state. This is the
+auditable trail of every promote/demote/rollback the design calls for.
+
+### Supervisor invocation modes (§9)
+
+- **On-demand** — the commands above.
+- **Scheduled** — set `CLAW_SUPERVISOR_CRON` (a cron expression) to wire a cron
+  binding (via `@prompttrail/cron`'s `cron.schedule` + `cronGateway`) that runs
+  the quarantine scan, catching skills that crossed the failure threshold **while
+  idle** (the reactive path only fires on invocation).
+- **Reactive** — when the health wrapper trips the quarantine threshold it
+  **buffers a pending notice** rather than posting to a channel directly.
+  Delivering a message to `CLAW_SUPERVISOR_CHANNEL` from inside the wrapper is
+  awkward in claw's message-triggered binding model — the wrapper runs while
+  replying to the _triggering_ message and has no handle to a different channel —
+  so the notice is written to a durable `skill_notices` row and surfaced by the
+  next `!skills`/`!why` command or scheduled scan (then marked delivered). This
+  keeps the supervisor strictly off the hot path.
+
+### Env vars
+
+| Var                     | Default | Meaning                                       |
+| ----------------------- | ------- | --------------------------------------------- |
+| `CLAW_PROMOTE_AFTER`    | `20`    | Clean invocations before `canary → trusted`   |
+| `CLAW_QUARANTINE_AFTER` | `3`     | Consecutive failures before `→ quarantined`   |
+| `CLAW_SUPERVISOR_CHANNEL` | (unset) | Channel a reactive notice is intended for     |
+| `CLAW_SUPERVISOR_CRON`  | (unset) | Cron expr for the scheduled quarantine scan   |
+
+### Capability elevation is deferred
+
+Phase 2 does **not** grant write capability. The verification gate still rejects
+any external-write effect (`idempotencyKey`) and any tool registration, so the
+read-only ceiling holds for **every** self-authored skill at **every** tier.
+`!promote` raises the _trust_ tier (how closely a skill is watched), never the
+_capability_ ceiling. Write elevation with an explicit human-confirmation step
+(§6/§9) is left to a later pass.
+
+### Deferred to later passes
+
+- **Capability elevation** (self-authored write effects) — see above.
+- **Curator** — the scoring/merging/pruning pass over the skill library (§10) is
+  explicitly a later pass and is not implemented here.
+- **Git as audit archive** (§9 open question) — one commit per gated version for
+  human-reviewable diffs. Live tier/health/pointer state stays in the durable
+  store; the git export is out of scope for now.
+
+### Tests (Phase 2)
+
+`supervisor.test.ts` covers: the tier lifecycle (`staged → canary` on activate,
+`canary → trusted` after N clean runs, auto-quarantine after K failures, the
+dispatcher skipping a quarantined skill, `!restore` resetting the failure
+streak); rollback moving the pointer so the _previous_ version's behavior
+dispatches again (author v1, author v2 same id, `!rollback` → v1 replies);
+supervisor command channel/author gating; audit rows written on every
+transition; and the scheduled scan quarantining a skill that failed while idle.

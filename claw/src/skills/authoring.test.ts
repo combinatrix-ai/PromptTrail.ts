@@ -130,7 +130,9 @@ describe('authoring end-to-end (subprocess: full gate)', () => {
     expect(lastContent(missed)).toBe('ack: unrelated');
 
     const row = registry.get('weather');
-    expect(row?.tier).toBe('staged');
+    // Phase 2: the authoring flow activates a gate-passed skill into 'canary'
+    // (live but closely watched), recording the staged→canary transition.
+    expect(row?.tier).toBe('canary');
     expect(row?.manifestHash).toBe(gate.result.manifestHash);
     expect(row?.activeVersion).toBe(gate.result.manifestHash);
     expect(registry.listVersions('weather')).toHaveLength(1);
@@ -250,7 +252,7 @@ describe('authorization boundary', () => {
       deps: { loaderContext: ctx, synthesizer: templateSynthesizer },
     });
     expect(reply).toContain('Authored and activated');
-    expect(registry.get('hola')?.tier).toBe('staged');
+    expect(registry.get('hola')?.tier).toBe('canary');
     registry.close();
   }, 120_000);
 

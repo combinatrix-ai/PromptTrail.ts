@@ -105,6 +105,9 @@ importers:
       '@prompttrail/core':
         specifier: link:../packages/core
         version: link:../packages/core
+      '@prompttrail/cron':
+        specifier: workspace:*
+        version: link:../packages/cron
       '@prompttrail/discord':
         specifier: workspace:*
         version: link:../packages/discord
