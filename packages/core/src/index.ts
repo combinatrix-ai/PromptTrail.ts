@@ -24,7 +24,14 @@ export type {
   ConversationBinding,
   ConversationBindingProvider,
 } from './conversation';
-export { MemoryRunStore, PromptTrail, memoryStore } from './durable';
+export {
+  MemoryRunStore,
+  MemoryRunStoreLease,
+  PromptTrail,
+  memoryStore,
+  assertFenceAllowed,
+  FencingTokenError,
+} from './durable';
 export type {
   AppGateway,
   AssistantDeliveryOutboxEntry,
@@ -35,6 +42,7 @@ export type {
   Inbound,
   InboundKind,
   InboundRuntimeEvent,
+  MemoryRunStoreOptions,
   OnceBoundary,
   OnceOptions,
   OnceScope,
@@ -44,6 +52,8 @@ export type {
   PromptTrailRunOptions,
   PromptTrailSendOptions,
   RunStore,
+  RunStoreLease,
+  RunStoreLeaseState,
   SessionCheckpointDelta,
   StoredRun,
   StoredRunPatch,

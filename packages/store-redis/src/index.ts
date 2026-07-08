@@ -7,10 +7,13 @@ import type {
   Inbound,
   OnceScope,
   ProviderSessionBinding,
+  RunStoreLease,
+  RunStoreLeaseState,
   SessionCheckpointDelta,
   StoredRun,
   StoredRunPatch,
 } from '@prompttrail/core';
+import { assertFenceAllowed } from '@prompttrail/core';
 import {
   jsonOrNull,
   normalizeStoredMessages,
@@ -81,6 +84,140 @@ export interface RedisRunStoreOptions {
    * All keys written by this store will be prefixed with `${keyPrefix}:`.
    */
   keyPrefix?: string;
+  /** Injectable clock for the lease (defaults to `Date.now`). Tests only. */
+  now?: () => number;
+}
+
+interface RedisLeaseDoc {
+  holder: string;
+  token: number;
+  expiresAt: number;
+  ttlMs: number;
+}
+
+/**
+ * Store-wide single-writer lease stored as a single JSON doc under
+ * `${keyPrefix}:lease`.
+ *
+ * Atomicity note: acquire/renew/handoff use a plain GET → mutate → SET
+ * (read-modify-write). This is BEST-EFFORT under ioredis-mock, whose
+ * WATCH/MULTI support is unreliable; the single-writer arbitration this lease
+ * provides is serialized by the launcher/heartbeat, so a lock-free RMW is
+ * acceptable. A production Redis deployment should upgrade this to a WATCH/MULTI
+ * (optimistic) or a Lua script for strict cross-process atomicity. The fencing
+ * token persists in the doc, so it stays monotonic across reopens.
+ */
+class RedisLease implements RunStoreLease {
+  constructor(
+    private readonly client: Redis,
+    private readonly leaseKey: string,
+    private readonly now: () => number,
+  ) {}
+
+  private async readDoc(): Promise<RedisLeaseDoc | undefined> {
+    const raw = await this.client.get(this.leaseKey);
+    return raw === null ? undefined : (JSON.parse(raw) as RedisLeaseDoc);
+  }
+
+  private async write(doc: RedisLeaseDoc): Promise<void> {
+    await this.client.set(this.leaseKey, JSON.stringify(doc));
+  }
+
+  private isActive(doc: RedisLeaseDoc | undefined, at: number): boolean {
+    return doc !== undefined && doc.expiresAt > at;
+  }
+
+  private view(doc: RedisLeaseDoc): RunStoreLeaseState {
+    return { holder: doc.holder, token: doc.token, expiresAt: doc.expiresAt };
+  }
+
+  /** Active-token read used by the store's fence check. */
+  async activeToken(): Promise<number | undefined> {
+    const doc = await this.readDoc();
+    return this.isActive(doc, this.now()) ? doc!.token : undefined;
+  }
+
+  async acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const doc = await this.readDoc();
+    if (this.isActive(doc, at)) {
+      if (doc!.holder !== holder) {
+        return undefined;
+      }
+      const renewed: RedisLeaseDoc = {
+        holder,
+        token: doc!.token,
+        expiresAt: at + ttlMs,
+        ttlMs,
+      };
+      await this.write(renewed);
+      return this.view(renewed);
+    }
+    const next: RedisLeaseDoc = {
+      holder,
+      token: (doc?.token ?? 0) + 1,
+      expiresAt: at + ttlMs,
+      ttlMs,
+    };
+    await this.write(next);
+    return this.view(next);
+  }
+
+  async renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const doc = await this.readDoc();
+    if (!this.isActive(doc, at) || doc!.holder !== holder) {
+      return undefined;
+    }
+    const ttl = ttlMs ?? doc!.ttlMs;
+    const renewed: RedisLeaseDoc = {
+      holder,
+      token: doc!.token,
+      expiresAt: at + ttl,
+      ttlMs: ttl,
+    };
+    await this.write(renewed);
+    return this.view(renewed);
+  }
+
+  async release(holder: string): Promise<void> {
+    const at = this.now();
+    const doc = await this.readDoc();
+    if (this.isActive(doc, at) && doc!.holder === holder) {
+      await this.write({ ...doc!, expiresAt: 0 });
+    }
+  }
+
+  async handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const doc = await this.readDoc();
+    if (!this.isActive(doc, at) || doc!.holder !== opts.from) {
+      return undefined;
+    }
+    const next: RedisLeaseDoc = {
+      holder: opts.to,
+      token: doc!.token + 1,
+      expiresAt: at + opts.ttlMs,
+      ttlMs: opts.ttlMs,
+    };
+    await this.write(next);
+    return this.view(next);
+  }
+
+  async current(): Promise<RunStoreLeaseState | undefined> {
+    const doc = await this.readDoc();
+    return this.isActive(doc, this.now()) ? this.view(doc!) : undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,11 +240,22 @@ export interface RedisRunStoreOptions {
  * Construction is async: use `RedisRunStore.open(options)`.
  */
 export class RedisRunStore implements DurableRunStore {
+  readonly lease: RunStoreLease;
+  private readonly redisLease: RedisLease;
+
   private constructor(
     private readonly client: Redis,
     private readonly agents: Record<string, Agent>,
     private readonly keyPrefix: string,
-  ) {}
+    now: () => number,
+  ) {
+    this.redisLease = new RedisLease(client, `${keyPrefix}:lease`, now);
+    this.lease = this.redisLease;
+  }
+
+  private async assertFence(fence: number | undefined): Promise<void> {
+    assertFenceAllowed(await this.redisLease.activeToken(), fence);
+  }
 
   /**
    * Open a RedisRunStore.
@@ -124,7 +272,12 @@ export class RedisRunStore implements DurableRunStore {
       // ioredis accepts undefined url — falls back to default 127.0.0.1:6379
       client = new IORedis(options.url as string);
     }
-    return new RedisRunStore(client, options.agents, keyPrefix);
+    return new RedisRunStore(
+      client,
+      options.agents,
+      keyPrefix,
+      options.now ?? Date.now,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -188,7 +341,12 @@ export class RedisRunStore implements DurableRunStore {
   // DurableRunStore — writes
   // -------------------------------------------------------------------------
 
-  async create(runId: string, run: StoredRun<any>): Promise<void> {
+  async create(
+    runId: string,
+    run: StoredRun<any>,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const doc: RunDocument = {
       agentName: run.agentName,
       status: run.status,
@@ -207,7 +365,12 @@ export class RedisRunStore implements DurableRunStore {
     await this.client.sadd(this.indexKey(), runId);
   }
 
-  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+  async patch(
+    runId: string,
+    patch: StoredRunPatch,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       // Run has been deleted; no-op (mirrors relational store behaviour)
@@ -236,7 +399,12 @@ export class RedisRunStore implements DurableRunStore {
     await this.saveDoc(runId, doc);
   }
 
-  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+  async appendInbox(
+    runId: string,
+    inbound: Inbound,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       return;
@@ -252,7 +420,9 @@ export class RedisRunStore implements DurableRunStore {
   async appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       return;
@@ -274,7 +444,9 @@ export class RedisRunStore implements DurableRunStore {
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       return;
@@ -296,7 +468,9 @@ export class RedisRunStore implements DurableRunStore {
   async upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       return;
@@ -316,7 +490,9 @@ export class RedisRunStore implements DurableRunStore {
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const doc = await this.loadDoc(runId);
     if (!doc) {
       return;
@@ -325,7 +501,8 @@ export class RedisRunStore implements DurableRunStore {
     await this.saveDoc(runId, doc);
   }
 
-  async delete(runId: string): Promise<void> {
+  async delete(runId: string, fence?: number): Promise<void> {
+    await this.assertFence(fence);
     await this.client.del(this.runKey(runId));
     await this.client.srem(this.indexKey(), runId);
   }

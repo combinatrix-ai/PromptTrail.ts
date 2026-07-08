@@ -22,11 +22,11 @@ function makeAgents(): Record<string, Agent> {
 runDurableRunStoreConformance({
   name: 'RedisRunStore (ioredis-mock)',
   makeAgents,
-  open: async (agents) => {
+  open: async (agents, { now }) => {
     const keyPrefix = `test-suite-${++suiteCounter}-${Date.now()}`;
     const client = new RedisMock();
 
-    const store = await RedisRunStore.open({ client, agents, keyPrefix });
+    const store = await RedisRunStore.open({ client, agents, keyPrefix, now });
 
     return {
       store,
@@ -36,7 +36,12 @@ runDurableRunStoreConformance({
         // store across all instances, the new client sees all keys written by
         // the original client — this makes the durability case (12) meaningful.
         const freshClient = new RedisMock();
-        return RedisRunStore.open({ client: freshClient, agents, keyPrefix });
+        return RedisRunStore.open({
+          client: freshClient,
+          agents,
+          keyPrefix,
+          now,
+        });
       },
       dispose: async () => {
         try {

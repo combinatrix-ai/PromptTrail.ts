@@ -6,6 +6,7 @@ import {
 } from '../../checkpoint_continuation';
 import {
   MemoryRunStore,
+  MemoryRunStoreLease,
   PromptTrail,
   manualGateway,
   memoryStore,
@@ -26,6 +27,7 @@ import { Agent } from '../../templates';
 import { executePromptTrailTool, Tool } from '../../tool';
 
 class TrackingRunStore implements DurableRunStore {
+  readonly lease = new MemoryRunStoreLease();
   readonly runs = new Map<string, StoredRun<any>>();
   readonly snapshots: Array<{
     type: string;
@@ -172,6 +174,7 @@ class TrackingRunStore implements DurableRunStore {
 }
 
 class ControlledDelayRunStore implements DurableRunStore {
+  readonly lease = new MemoryRunStoreLease();
   readonly runs = new Map<string, StoredRun<any>>();
   readonly pending: Array<{
     type: string;
@@ -354,6 +357,7 @@ type RecordedWrite =
   | { type: 'delete'; runId: string };
 
 class RecordingRunStore implements DurableRunStore {
+  readonly lease = new MemoryRunStoreLease();
   readonly runs = new Map<string, StoredRun<any>>();
   readonly writes: RecordedWrite[] = [];
 

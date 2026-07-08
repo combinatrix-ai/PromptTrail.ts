@@ -1,11 +1,14 @@
 import type { Pool, PoolClient } from 'pg';
 import {
+  assertFenceAllowed,
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
   type OnceScope,
   type ProviderSessionBinding,
+  type RunStoreLease,
+  type RunStoreLeaseState,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
@@ -25,6 +28,204 @@ export interface PostgresRunStoreOptions {
   agents: Record<string, Agent>;
   /** Override the pool factory — mainly for injecting a pg-mem pool in tests. */
   clientFactory?: () => Pool;
+  /** Injectable clock for the lease (defaults to `Date.now`). Tests only. */
+  now?: () => number;
+}
+
+interface PgLeaseRow {
+  holder: string;
+  token: number;
+  expiresAt: number;
+  ttlMs: number;
+}
+
+/**
+ * Store-wide single-writer lease backed by a single Postgres row (id = 1).
+ *
+ * acquire/renew/release/handoff run inside a transaction (BEGIN/COMMIT) so the
+ * read-then-write is a single unit; production Postgres deployments may add
+ * `SELECT ... FOR UPDATE` on the row for strict cross-connection serialization,
+ * but the single-writer arbitration this lease provides (only one launcher
+ * heartbeats it) does not require it, and pg-mem's locking support is limited.
+ * The fencing token persists in the row, so it stays monotonic across reopens.
+ */
+class PostgresLease implements RunStoreLease {
+  constructor(
+    private readonly pool: Pool,
+    private readonly now: () => number,
+  ) {}
+
+  private rowFrom(rows: unknown[]): PgLeaseRow | undefined {
+    if (rows.length === 0) {
+      return undefined;
+    }
+    const r = rows[0] as {
+      holder: string;
+      token: number | string;
+      expires_at: number | string;
+      ttl_ms: number | string;
+    };
+    return {
+      holder: r.holder,
+      token: Number(r.token),
+      expiresAt: Number(r.expires_at),
+      ttlMs: Number(r.ttl_ms),
+    };
+  }
+
+  private isActive(row: PgLeaseRow | undefined, at: number): boolean {
+    return row !== undefined && row.expiresAt > at;
+  }
+
+  private view(row: PgLeaseRow): RunStoreLeaseState {
+    return { holder: row.holder, token: row.token, expiresAt: row.expiresAt };
+  }
+
+  private async writeRow(client: PoolClient, row: PgLeaseRow): Promise<void> {
+    await client.query(
+      `INSERT INTO lease (id, holder, token, expires_at, ttl_ms)
+       VALUES (1, $1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET
+         holder = EXCLUDED.holder,
+         token = EXCLUDED.token,
+         expires_at = EXCLUDED.expires_at,
+         ttl_ms = EXCLUDED.ttl_ms`,
+      [row.holder, row.token, row.expiresAt, row.ttlMs],
+    );
+  }
+
+  /** Active-token read used by the store's fence check. */
+  async activeToken(): Promise<number | undefined> {
+    const client = await this.pool.connect();
+    try {
+      const res = await client.query(
+        'SELECT holder, token, expires_at, ttl_ms FROM lease WHERE id = 1',
+      );
+      const row = this.rowFrom(res.rows);
+      return this.isActive(row, this.now()) ? row!.token : undefined;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async inTransaction<T>(
+    fn: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async readRow(client: PoolClient): Promise<PgLeaseRow | undefined> {
+    const res = await client.query(
+      'SELECT holder, token, expires_at, ttl_ms FROM lease WHERE id = 1',
+    );
+    return this.rowFrom(res.rows);
+  }
+
+  async acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    return this.inTransaction(async (client) => {
+      const row = await this.readRow(client);
+      if (this.isActive(row, at)) {
+        if (row!.holder !== holder) {
+          return undefined;
+        }
+        const renewed: PgLeaseRow = {
+          holder,
+          token: row!.token,
+          expiresAt: at + ttlMs,
+          ttlMs,
+        };
+        await this.writeRow(client, renewed);
+        return this.view(renewed);
+      }
+      const next: PgLeaseRow = {
+        holder,
+        token: (row?.token ?? 0) + 1,
+        expiresAt: at + ttlMs,
+        ttlMs,
+      };
+      await this.writeRow(client, next);
+      return this.view(next);
+    });
+  }
+
+  async renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    return this.inTransaction(async (client) => {
+      const row = await this.readRow(client);
+      if (!this.isActive(row, at) || row!.holder !== holder) {
+        return undefined;
+      }
+      const ttl = ttlMs ?? row!.ttlMs;
+      const renewed: PgLeaseRow = {
+        holder,
+        token: row!.token,
+        expiresAt: at + ttl,
+        ttlMs: ttl,
+      };
+      await this.writeRow(client, renewed);
+      return this.view(renewed);
+    });
+  }
+
+  async release(holder: string): Promise<void> {
+    const at = this.now();
+    await this.inTransaction(async (client) => {
+      const row = await this.readRow(client);
+      if (this.isActive(row, at) && row!.holder === holder) {
+        await this.writeRow(client, { ...row!, expiresAt: 0 });
+      }
+    });
+  }
+
+  async handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    return this.inTransaction(async (client) => {
+      const row = await this.readRow(client);
+      if (!this.isActive(row, at) || row!.holder !== opts.from) {
+        return undefined;
+      }
+      const next: PgLeaseRow = {
+        holder: opts.to,
+        token: row!.token + 1,
+        expiresAt: at + opts.ttlMs,
+        ttlMs: opts.ttlMs,
+      };
+      await this.writeRow(client, next);
+      return this.view(next);
+    });
+  }
+
+  async current(): Promise<RunStoreLeaseState | undefined> {
+    const client = await this.pool.connect();
+    try {
+      const row = await this.readRow(client);
+      return this.isActive(row, this.now()) ? this.view(row!) : undefined;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 /**
@@ -39,10 +240,21 @@ export interface PostgresRunStoreOptions {
  * CREATE TABLE IF NOT EXISTS before returning the store instance.
  */
 export class PostgresRunStore implements DurableRunStore {
+  readonly lease: RunStoreLease;
+  private readonly pgLease: PostgresLease;
+
   private constructor(
     private readonly pool: Pool,
     private readonly agents: Record<string, Agent>,
-  ) {}
+    now: () => number,
+  ) {
+    this.pgLease = new PostgresLease(pool, now);
+    this.lease = this.pgLease;
+  }
+
+  private async assertFence(fence: number | undefined): Promise<void> {
+    assertFenceAllowed(await this.pgLease.activeToken(), fence);
+  }
 
   /**
    * Open a PostgresRunStore, creating the schema if it does not exist.
@@ -66,7 +278,11 @@ export class PostgresRunStore implements DurableRunStore {
         'PostgresRunStore.open requires pool, clientFactory, or connectionString.',
       );
     }
-    const store = new PostgresRunStore(pool, options.agents);
+    const store = new PostgresRunStore(
+      pool,
+      options.agents,
+      options.now ?? Date.now,
+    );
     await store.createSchema();
     return store;
   }
@@ -110,7 +326,12 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
-  async create(runId: string, run: StoredRun<any>): Promise<void> {
+  async create(
+    runId: string,
+    run: StoredRun<any>,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       await client.query(
@@ -140,7 +361,12 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
-  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+  async patch(
+    runId: string,
+    patch: StoredRunPatch,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       // Read current run to merge patch (we need current values for missing patch fields)
@@ -193,7 +419,12 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
-  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+  async appendInbox(
+    runId: string,
+    inbound: Inbound,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       // INSERT ... ON CONFLICT DO NOTHING for offset idempotency
@@ -217,7 +448,9 @@ export class PostgresRunStore implements DurableRunStore {
   async appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       // Single-statement seq allocation: INSERT ... SELECT COALESCE(MAX(seq)+1, 0)
@@ -268,7 +501,9 @@ export class PostgresRunStore implements DurableRunStore {
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       await client.query(
@@ -286,7 +521,9 @@ export class PostgresRunStore implements DurableRunStore {
   async upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       await client.query(
@@ -305,7 +542,9 @@ export class PostgresRunStore implements DurableRunStore {
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const client = await this.pool.connect();
     try {
       await client.query(
@@ -320,7 +559,8 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
-  async delete(runId: string): Promise<void> {
+  async delete(runId: string, fence?: number): Promise<void> {
+    await this.assertFence(fence);
     // Delete the run AND all of its child rows in a single transaction.
     // We deliberately do NOT rely on FOREIGN KEY ... ON DELETE CASCADE here:
     // the schema omits FK constraints for pg-mem compatibility, so child rows
@@ -423,6 +663,13 @@ export class PostgresRunStore implements DurableRunStore {
           node_path TEXT NOT NULL,
           binding_json TEXT NOT NULL,
           PRIMARY KEY (run_id, node_path)
+        )`,
+        lease: `CREATE TABLE lease (
+          id INTEGER PRIMARY KEY,
+          holder TEXT NOT NULL,
+          token INTEGER NOT NULL,
+          expires_at BIGINT NOT NULL,
+          ttl_ms BIGINT NOT NULL
         )`,
       };
 

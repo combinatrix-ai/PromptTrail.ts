@@ -14,7 +14,7 @@ function makeAgents(): Record<string, Agent> {
 runDurableRunStoreConformance({
   name: 'LibsqlRunStore (file-backed sqlite)',
   makeAgents,
-  open: async (agents) => {
+  open: async (agents, { now }) => {
     // Use a temp directory with a unique file so that:
     // - The durability/reopen case (case 12) can open a NEW client over the
     //   SAME file and see the previously written data.
@@ -24,7 +24,7 @@ runDurableRunStoreConformance({
     const dbPath = join(dir, 'test.db');
     const url = `file:${dbPath}`;
 
-    const store = await LibsqlRunStore.open({ url, agents });
+    const store = await LibsqlRunStore.open({ url, agents, now });
 
     return {
       store,
@@ -32,7 +32,7 @@ runDurableRunStoreConformance({
         // Close the current client and open a brand-new one over the same file.
         // The previously written rows remain on disk — this validates durability.
         await store.close();
-        return LibsqlRunStore.open({ url, agents });
+        return LibsqlRunStore.open({ url, agents, now });
       },
       dispose: async () => {
         try {

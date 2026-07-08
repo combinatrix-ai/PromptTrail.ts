@@ -213,6 +213,213 @@ export interface AppGateway {
 }
 
 /**
+ * The observable state of a store-wide single-writer lease.
+ *
+ * `token` is a MONOTONIC FENCING TOKEN: it strictly increases on every
+ * successful `acquire` that takes a fresh lease (including orphan takeover of an
+ * expired lease) and on every `handoff`. It does NOT change when the current
+ * holder merely renews (re-acquire by the same holder, or `renew`). A paused
+ * old holder therefore carries a stale, smaller token after a handoff — which
+ * is exactly what the store's fencing check rejects.
+ */
+export interface RunStoreLeaseState {
+  /** Opaque id of the writer that holds the lease. */
+  holder: string;
+  /** Monotonic fencing token — increments on every acquire/handoff. */
+  token: number;
+  /** Absolute expiry, epoch milliseconds. */
+  expiresAt: number;
+}
+
+/**
+ * Store-wide single-writer lease (one writer per store).
+ *
+ * The lease answers "who is allowed to write to this store right now, and with
+ * which fencing token". It is store-arbitrated so it works across processes
+ * (blue/green cutover), unlike the in-process per-conversation lock. Expiry is
+ * evaluated against the store's clock (injectable for tests); an EXPIRED lease
+ * reads as if no lease is held.
+ */
+export interface RunStoreLease {
+  /**
+   * Take the lease for `holder` for `ttlMs`. Returns the new lease state, or
+   * `undefined` if a LIVE lease is currently held by a different holder.
+   * Re-acquiring while you already hold a live lease renews it and KEEPS the
+   * token. Acquiring when the current lease is EXPIRED (or absent) succeeds and
+   * BUMPS the token — this is the orphan-takeover path.
+   */
+  acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined>;
+  /**
+   * Heartbeat: extend the current holder's lease. `ttlMs` defaults to the ttl
+   * from the last acquire/renew. Returns the renewed state, or `undefined` if
+   * `holder` no longer owns a live lease. Never bumps the token.
+   */
+  renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined>;
+  /** Release the lease if `holder` owns it; no-op otherwise. Token is retained. */
+  release(holder: string): Promise<void>;
+  /**
+   * Atomically transfer the live lease from `from` to `to`, bumping the token.
+   * Returns the new state, or `undefined` if `from` is not the current holder.
+   */
+  handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined>;
+  /** Current live lease state; `undefined` if none or expired. */
+  current(): Promise<RunStoreLeaseState | undefined>;
+}
+
+/**
+ * Thrown by a mutating store method when the store has an ACTIVE lease and the
+ * write presents a fencing token older than the current lease token (or none at
+ * all). Carries the expected (current lease) token and the actual token the
+ * write presented (`undefined` when the write omitted its fence).
+ */
+export class FencingTokenError extends Error {
+  readonly expectedToken: number;
+  readonly actualToken: number | undefined;
+  constructor(expectedToken: number, actualToken: number | undefined) {
+    super(
+      `Fencing token rejected: the store lease requires token >= ${expectedToken}, ` +
+        (actualToken === undefined
+          ? 'but the write presented no fencing token'
+          : `but the write presented ${actualToken}`) +
+        '. A newer writer holds the lease.',
+    );
+    this.name = 'FencingTokenError';
+    this.expectedToken = expectedToken;
+    this.actualToken = actualToken;
+  }
+}
+
+/**
+ * The fencing rule, shared by every backend. `activeToken` is the token of the
+ * store's currently ACTIVE lease, or `undefined` when no lease is held (or it
+ * has expired). When there is no active lease, writes proceed regardless of
+ * `fence` (lease-less single-process operation stays zero-config). When a lease
+ * IS active, the write must present a `fence` at least as new as the lease
+ * token; an omitted or stale `fence` is a {@link FencingTokenError}.
+ */
+export function assertFenceAllowed(
+  activeToken: number | undefined,
+  fence: number | undefined,
+): void {
+  if (activeToken === undefined) {
+    return;
+  }
+  if (fence === undefined || fence < activeToken) {
+    throw new FencingTokenError(activeToken, fence);
+  }
+}
+
+interface InternalLeaseState extends RunStoreLeaseState {
+  ttlMs: number;
+}
+
+/**
+ * In-memory reference implementation of {@link RunStoreLease}. Used by
+ * {@link MemoryRunStore} and as the executable spec the SQL/redis backends
+ * mirror. The clock is injectable (defaults to `Date.now`) so tests can drive
+ * ttl expiry without sleeping.
+ *
+ * Token monotonicity is preserved across `release` by retaining the released
+ * lease's token (expiry is simply set into the past), so the next acquire bumps
+ * from it rather than resetting to zero.
+ */
+export class MemoryRunStoreLease implements RunStoreLease {
+  private state: InternalLeaseState | undefined;
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  private isActive(state: InternalLeaseState | undefined, at: number): boolean {
+    return state !== undefined && state.expiresAt > at;
+  }
+
+  private view(state: InternalLeaseState): RunStoreLeaseState {
+    return {
+      holder: state.holder,
+      token: state.token,
+      expiresAt: state.expiresAt,
+    };
+  }
+
+  async acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const current = this.state;
+    if (this.isActive(current, at)) {
+      if (current!.holder !== holder) {
+        return undefined;
+      }
+      current!.expiresAt = at + ttlMs;
+      current!.ttlMs = ttlMs;
+      return this.view(current!);
+    }
+    const token = (current?.token ?? 0) + 1;
+    this.state = { holder, token, expiresAt: at + ttlMs, ttlMs };
+    return this.view(this.state);
+  }
+
+  async renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const current = this.state;
+    if (!this.isActive(current, at) || current!.holder !== holder) {
+      return undefined;
+    }
+    current!.expiresAt = at + (ttlMs ?? current!.ttlMs);
+    if (ttlMs !== undefined) {
+      current!.ttlMs = ttlMs;
+    }
+    return this.view(current!);
+  }
+
+  async release(holder: string): Promise<void> {
+    const at = this.now();
+    const current = this.state;
+    if (this.isActive(current, at) && current!.holder === holder) {
+      // Retain the token for monotonicity; just expire the lease.
+      current!.expiresAt = 0;
+    }
+  }
+
+  async handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const current = this.state;
+    if (!this.isActive(current, at) || current!.holder !== opts.from) {
+      return undefined;
+    }
+    this.state = {
+      holder: opts.to,
+      token: current!.token + 1,
+      expiresAt: at + opts.ttlMs,
+      ttlMs: opts.ttlMs,
+    };
+    return this.view(this.state);
+  }
+
+  async current(): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    return this.isActive(this.state, at) ? this.view(this.state!) : undefined;
+  }
+}
+
+/**
  * Concurrency contract:
  *
  * - This store family currently assumes a SINGLE WRITER PER RUN. Within one
@@ -236,8 +443,34 @@ export interface AppGateway {
  *   explicit transaction. Concurrent appends to the SAME run are out of
  *   contract per the single-writer assumption above and are not required to
  *   be race-free.
+ *
+ * Store-wide single-writer lease + fencing tokens (durability roadmap §2):
+ *
+ * - The store exposes a {@link RunStoreLease} (`lease`) that arbitrates a
+ *   SINGLE WRITER PER STORE across processes (the blue/green cutover model).
+ *   The lease carries a monotonic fencing token that increments on every
+ *   acquire (including orphan takeover of an expired lease) and every handoff.
+ * - Every MUTATING method takes an OPTIONAL trailing `fence?: number`. The
+ *   fencing rule each backend MUST enforce (see {@link assertFenceAllowed}):
+ *   - No ACTIVE lease → the write proceeds regardless of `fence`. A lease-less
+ *     store stays zero-config; a single in-process writer passes no fence and
+ *     is unaffected. An EXPIRED lease counts as no active lease.
+ *   - ACTIVE lease + `fence` >= lease token → the write proceeds.
+ *   - ACTIVE lease + `fence` < lease token, OR `fence` omitted → reject with a
+ *     {@link FencingTokenError}. Once a lease exists, every writer must present
+ *     its token; a paused old holder whose token predates a handoff cannot
+ *     write.
+ *   The check uses the store's clock for expiry, so it composes with the lease
+ *   TTL. Backends should evaluate the current active token as close to the
+ *   write as practical (a transaction where the driver supports it) so the
+ *   check does not reintroduce a read-then-write race across the pool.
  */
 export interface DurableRunStore {
+  /**
+   * Store-wide single-writer lease. Present on every backend; a store with no
+   * acquired lease behaves exactly as before (all writes proceed unfenced).
+   */
+  readonly lease: RunStoreLease;
   /**
    * Reads are now async so networked store backends (Postgres, Redis, libsql)
    * can serve from the backend or a lazy cache rather than hydrating all runs
@@ -252,43 +485,67 @@ export interface DurableRunStore {
   get(runId: string): Promise<StoredRun<any> | undefined>;
   has(runId: string): Promise<boolean>;
   entries(): Promise<Iterable<[string, StoredRun<any>]>>;
-  create(runId: string, run: StoredRun<any>): Promise<void>;
-  patch(runId: string, patch: StoredRunPatch): Promise<void>;
-  appendInbox(runId: string, inbound: Inbound): Promise<void>;
+  create(runId: string, run: StoredRun<any>, fence?: number): Promise<void>;
+  patch(runId: string, patch: StoredRunPatch, fence?: number): Promise<void>;
+  appendInbox(runId: string, inbound: Inbound, fence?: number): Promise<void>;
   appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void>;
   recordOnce(
     runId: string,
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void>;
   upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void>;
   recordProviderSession(
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void>;
-  delete(runId: string): Promise<void>;
+  delete(runId: string, fence?: number): Promise<void>;
 }
 
 export type RunStore = DurableRunStore;
 
 export type CheckpointOption = true | RunStore | { store?: RunStore };
 
+export interface MemoryRunStoreOptions {
+  /** Injectable clock for the lease (defaults to `Date.now`). Tests only. */
+  now?: () => number;
+}
+
 export class MemoryRunStore implements DurableRunStore {
   private runs = new Map<string, StoredRun<any>>();
+  readonly lease: RunStoreLease;
+
+  constructor(options: MemoryRunStoreOptions = {}) {
+    this.lease = new MemoryRunStoreLease(options.now ?? Date.now);
+  }
+
+  private async assertFence(fence: number | undefined): Promise<void> {
+    const active = await this.lease.current();
+    assertFenceAllowed(active?.token, fence);
+  }
 
   async get(runId: string): Promise<StoredRun<any> | undefined> {
     return this.runs.get(runId);
   }
 
-  async create(runId: string, run: StoredRun<any>): Promise<void> {
+  async create(
+    runId: string,
+    run: StoredRun<any>,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     this.runs.set(runId, run);
   }
 
@@ -296,7 +553,12 @@ export class MemoryRunStore implements DurableRunStore {
     return this.runs.has(runId);
   }
 
-  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+  async patch(
+    runId: string,
+    patch: StoredRunPatch,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -304,7 +566,12 @@ export class MemoryRunStore implements DurableRunStore {
     Object.assign(run, patch);
   }
 
-  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+  async appendInbox(
+    runId: string,
+    inbound: Inbound,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -318,7 +585,9 @@ export class MemoryRunStore implements DurableRunStore {
   async appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -331,7 +600,9 @@ export class MemoryRunStore implements DurableRunStore {
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -342,7 +613,9 @@ export class MemoryRunStore implements DurableRunStore {
   async upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -362,7 +635,9 @@ export class MemoryRunStore implements DurableRunStore {
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -373,7 +648,8 @@ export class MemoryRunStore implements DurableRunStore {
     };
   }
 
-  async delete(runId: string): Promise<void> {
+  async delete(runId: string, fence?: number): Promise<void> {
+    await this.assertFence(fence);
     this.runs.delete(runId);
   }
 
