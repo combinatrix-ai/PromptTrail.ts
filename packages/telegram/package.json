@@ -1,0 +1,42 @@
+{
+  "name": "@prompttrail/telegram",
+  "version": "0.0.1",
+  "description": "Telegram runtime package for PromptTrail",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -f tsconfig.tsbuildinfo && tsup && tsc --emitDeclarationOnly -p tsconfig.json",
+    "test": "vitest --run --watch=false",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
+    "lint": "cd ../.. && ./node_modules/.bin/eslint packages/telegram/src",
+    "lint:fix": "cd ../.. && ./node_modules/.bin/eslint packages/telegram/src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist coverage",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "dependencies": {
+    "@prompttrail/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.19",
+    "@vitest/coverage-v8": "^1.6.1",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}
