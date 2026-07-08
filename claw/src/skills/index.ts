@@ -5,8 +5,17 @@ export * from './types.js';
 export * from './registry.js';
 export * from './dispatch.js';
 export * from './status.js';
+export * from './skill-module.js';
+export * from './authoring.js';
+export * from './gate.js';
+export * from './loader.js';
+export * from './author-skill.js';
 
-/** Derive the serializable registry row from an in-process skill. */
+/**
+ * Derive the serializable registry row from an in-process skill. Used for
+ * seeding hand-written skills, which are tier 'builtin' and carry no
+ * self-authored source/gate/version provenance.
+ */
 export function skillToRow(skill: Skill): SkillRegistryRow {
   return {
     id: skill.id,
@@ -17,6 +26,12 @@ export function skillToRow(skill: Skill): SkillRegistryRow {
     provenance: skill.provenance,
     enabled: true,
     createdAt: skill.provenance.createdAt,
+    tier: 'builtin',
+    sourcePath: null,
+    sourceHash: null,
+    manifestHash: null,
+    activeVersion: null,
+    gateResult: null,
   };
 }
 
