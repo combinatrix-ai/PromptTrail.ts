@@ -1719,6 +1719,221 @@ describe('checkpoint app lease mode', () => {
   });
 });
 
+describe('checkpoint app orphan auto-resume (crash recovery)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const buildRecoverable = () =>
+    Agent.create('recover')
+      .inbox('in')
+      .assistant('reply', Source.literal('ok'));
+
+  // The exact durable state a hard crash mid-execution leaves under the
+  // checkpoint persistence contract: the inbox holds the delivered input but the
+  // cursor never advanced (graphCursor 0 < inbox.length 1) and no session was
+  // produced. See "does not lose inbox input when the process crashes".
+  const makeOrphan = (agentName = 'recover'): StoredRun<any> => ({
+    agent: buildRecoverable(),
+    agentName,
+    initial: Session.create(),
+    status: 'open',
+    once: createCheckpointOnceMemoStore(),
+    outbox: [],
+    inbox: [{ offset: 0, kind: 'user', content: 'hello' }],
+    providerSessions: {},
+    graphCursor: 0,
+  });
+
+  it('resumes an orphan on start() with no send, driving it to completion', async () => {
+    const store = new MemoryRunStore();
+    await store.create('run-orphan', makeOrphan());
+
+    const app = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      recovery: true,
+    });
+    await app.start();
+
+    const recovered = await store.get('run-orphan');
+    expect(recovered?.status).toBe('done');
+    expect(
+      recovered?.result?.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ok']);
+    await app.stop();
+  });
+
+  it('does not resume a run suspended at awaitInput (inbox fully consumed)', async () => {
+    const store = memoryStore();
+    const build = () =>
+      Agent.create('awaiter')
+        .inbox('in')
+        .assistant('ack', Source.literal('ack'))
+        .awaitInput('more')
+        .assistant('final', Source.literal('final'));
+    const producer = PromptTrail.app({ agents: { awaiter: build() }, store });
+    const suspended = await producer.run({
+      agent: 'awaiter',
+      runId: 'run-await',
+      input: 'hello',
+      checkpoint: true,
+    });
+    expect(suspended.status).toBe('suspended');
+    const before = await store.get('run-await');
+    // The consumed inbox tail is the discriminator: cursor === inbox.length.
+    expect(before?.graphCursor).toBe(before?.inbox.length);
+
+    const recoverer = PromptTrail.app({
+      agents: { awaiter: build() },
+      store,
+      recovery: true,
+    });
+    await recoverer.start();
+
+    const after = await store.get('run-await');
+    // Still suspended and NOT advanced to the final assistant.
+    expect(after?.status).toBe('open');
+    expect(after?.graphSuspendedAt).toBeDefined();
+    expect(after?.result?.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ack',
+    ]);
+    await recoverer.stop();
+  });
+
+  it('leaves completed runs untouched', async () => {
+    const store = memoryStore();
+    const producer = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+    });
+    const done = await producer.run({
+      agent: 'recover',
+      runId: 'run-done',
+      input: 'hello',
+      checkpoint: true,
+    });
+    expect(done.status).toBe('done');
+    const before = await store.get('run-done');
+
+    const recoverer = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      recovery: true,
+    });
+    await recoverer.start();
+
+    const after = await store.get('run-done');
+    expect(after?.status).toBe('done');
+    expect(after?.result?.messages.map((message) => message.content)).toEqual(
+      before?.result?.messages.map((message) => message.content),
+    );
+    await recoverer.stop();
+  });
+
+  it('reports a failing orphan resume via onError and continues the scan', async () => {
+    const store = new MemoryRunStore();
+    // First orphan names an unregistered agent -> its resume throws.
+    await store.create('run-bad', makeOrphan('missing-agent'));
+    // Second orphan is recoverable and must still complete.
+    await store.create('run-good', makeOrphan('recover'));
+
+    const errors: Array<{ runId: string; error: unknown }> = [];
+    const app = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      recovery: {
+        onStart: true,
+        onError: (runId, error) => errors.push({ runId, error }),
+      },
+    });
+    await app.start();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].runId).toBe('run-bad');
+    const good = await store.get('run-good');
+    expect(good?.status).toBe('done');
+    expect(good?.result?.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'ok',
+    ]);
+    await app.stop();
+  });
+
+  it('picks up an orphan that appears after start via the periodic scan', async () => {
+    vi.useFakeTimers();
+    const store = new MemoryRunStore();
+    const app = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      recovery: { intervalMs: 1_000 },
+    });
+    await app.start();
+
+    // No orphan at boot; the run appears later (e.g. a crash on another node
+    // that shared this store, or a run this instance abandoned).
+    await store.create('run-late', makeOrphan());
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const recovered = await store.get('run-late');
+    expect(recovered?.status).toBe('done');
+    expect(
+      recovered?.result?.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ok']);
+    await app.stop();
+  });
+
+  it('recovers orphans under lease mode only after acquiring the lease', async () => {
+    const store = new MemoryRunStore();
+    await store.create('run-leased-orphan', makeOrphan());
+    const app = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      lease: { holder: 'A', ttlMs: 10_000 },
+      recovery: true,
+    });
+    // A pre-start recovery would hit requireFence() (no lease yet); reaching
+    // completion proves the scan ran AFTER acquire and its writes carry the fence.
+    await app.start();
+    const recovered = await store.get('run-leased-orphan');
+    expect(recovered?.status).toBe('done');
+    expect(app_holder(app.lease)).toBe('A');
+    await app.stop();
+  });
+
+  it('does not scan when the instance cannot acquire the lease', async () => {
+    const store = new MemoryRunStore();
+    await store.create('run-orphan', makeOrphan());
+
+    const holder = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      lease: { holder: 'A', ttlMs: 10_000 },
+    });
+    await holder.start();
+
+    const contender = PromptTrail.app({
+      agents: { recover: buildRecoverable() },
+      store,
+      lease: { holder: 'B', ttlMs: 10_000 },
+      recovery: true,
+    });
+    await expect(contender.start()).rejects.toBeInstanceOf(
+      LeaseUnavailableError,
+    );
+
+    // The instance that lost the lease race never touched the orphan.
+    const untouched = await store.get('run-orphan');
+    expect(untouched?.status).toBe('open');
+    expect(untouched?.graphCursor ?? 0).toBe(0);
+    expect(untouched?.result).toBeUndefined();
+
+    await holder.stop();
+    await contender.stop();
+  });
+});
+
 function app_holder(state: RunStoreLeaseState | undefined): string | undefined {
   return state?.holder;
 }
