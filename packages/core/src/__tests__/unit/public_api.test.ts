@@ -89,6 +89,7 @@ describe('public API surface', () => {
       'parseDuration',
       'replayRun',
       'replaySelfCheck',
+      'runAcceptance',
       'stableStringify',
       'validateAgentGraph',
     ]);

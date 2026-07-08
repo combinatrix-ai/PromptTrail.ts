@@ -2,7 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
@@ -13,5 +13,5 @@
     "sourceMap": true,
     "noEmit": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "acceptance/**/*.ts"]
 }

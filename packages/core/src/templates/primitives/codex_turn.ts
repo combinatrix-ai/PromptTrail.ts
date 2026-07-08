@@ -23,7 +23,10 @@ import {
   ProviderTurnUnresumableError,
   type ProviderSessionBinding,
 } from '../../provider_session';
-import { requireConfiguredCapabilityApprovals } from '../../capabilities';
+import {
+  REPLAY_GO_LIVE,
+  requireConfiguredCapabilityApprovals,
+} from '../../capabilities';
 import { retainRuntimeEvents } from '../../runtime';
 import type { Session, Vars } from '../../session';
 import {
@@ -149,7 +152,7 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
       // aggregate output (node-output granularity). Faithful raw replay needs
       // retain: 'full' so the recorded response equals the raw turn result.
       if (runtime?.replay) {
-        return runtime.replay.model({
+        const served = runtime.replay.model({
           nodePath:
             options.nodePath ??
             runtime.recorder?.currentNodePath ??
@@ -157,7 +160,12 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
           provider: 'codex',
           requestSession: modelSession,
           requestMeta: codexRequestMeta,
-        }) as Awaited<ReturnType<typeof collectCodexTurnResult>>;
+        });
+        // Acceptance `miss: 'live'` (design §4): fall through to the real Codex
+        // turn below when the cassette could not serve this call.
+        if (served !== REPLAY_GO_LIVE) {
+          return served as Awaited<ReturnType<typeof collectCodexTurnResult>>;
+        }
       }
       const ownsClient = this.options.client === undefined;
       const client =

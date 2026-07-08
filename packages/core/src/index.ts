@@ -241,6 +241,14 @@ export type {
   ReplaySelfCheck,
   ReplayTrace,
 } from './replay';
+export { runAcceptance } from './acceptance';
+export type {
+  AcceptanceCase,
+  AcceptanceCaseResult,
+  AcceptanceInboxItem,
+  AcceptanceReport,
+  RunAcceptanceOptions,
+} from './acceptance';
 export { ChangeScopeSchema, buildGoldenOutcome, diffReplay } from './diff';
 export type {
   ChangeScope,
