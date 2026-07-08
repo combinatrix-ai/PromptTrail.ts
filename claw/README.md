@@ -69,3 +69,55 @@ The bot uses these binding defaults:
 
 This is intentionally close to the Hermes-style scenario in
 `design-docs/runtime-bindings-discord-cron.md`.
+
+## Skills (Phase 0)
+
+Claw is being grown into a self-authoring meta-agent per
+`design-docs/claw-self-authoring.md`. **Phase 0** (this code) lands the
+registry-dispatch skeleton — no code-generation yet.
+
+A **skill** is a plain TypeScript value (`claw/src/skills/types.ts`):
+
+- `trigger` — `{ channel?, predicateKey, when(content, ctx) }`, the routing
+  predicate the dispatcher reads.
+- `behavior` — `(agent) => agent`, a subroutine body that produces the reply.
+- `provenance` — `{ authoredBy, motivation, createdAt }` for audit/pruning.
+
+### Registry-dispatch graph
+
+The main agent has one **static** shape, regardless of how many skills exist:
+
+```
+dispatch (transform)  → record the first matching skill id in a session var
+route (conditional)   → then: run that skill's behavior subroutine
+                        else: the default echo/openai/codex reply
+```
+
+Adding, enabling, or disabling a skill is a **registry row** change, never a
+graph recompile — so the parent graph's manifest hash is stable and long-lived
+conversations keep resuming (design §3/§8). A test asserts the parent manifest
+hash does not change when registry rows are added.
+
+### Persistence & health
+
+The `SkillRegistry` (`claw/src/skills/registry.ts`) is a separate SQLite store
+(its own file, default `.data/claw-skills.db`, override via
+`CLAW_SKILL_DB_PATH`). Rows carry the serializable subset (channel +
+`predicateKey` + `behaviorRef`); the executable `when`/`behavior` live in an
+in-process map keyed by skill id, joined at runtime. Unknown `behaviorRef`s warn
+at boot but never crash. Every skill invocation is instrumented into a per-skill
+health record (invocations, successes, consecutiveFailures, lastError,
+lastLatencyMs); no supervisor/tiers yet.
+
+### Seeded skill
+
+On first boot claw seeds one hand-written skill, `status`: a message beginning
+with `!status` (any channel) replies with the bot's version, reply mode, and
+uptime, e.g. `claw v0.0.1 | reply-mode: echo | uptime: 42s`.
+
+### Tests
+
+```bash
+pnpm -C claw test        # dispatch, persistence, health, disabled, manifest stability
+pnpm -C claw typecheck
+```

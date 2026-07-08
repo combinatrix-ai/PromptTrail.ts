@@ -1,8 +1,16 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Agent, PromptTrail, Source } from '@prompttrail/core';
 import { discord, discordGateway } from '@prompttrail/discord';
 import { SqliteRunStore } from '@prompttrail/store-sqlite';
+import {
+  createClawSkillAgent,
+  createStatusSkill,
+  registerBuiltinSkills,
+  SkillRegistry,
+  validateSkillRegistry,
+} from './skills/index.js';
 
 interface ClawConfig {
   token: string;
@@ -19,47 +27,29 @@ interface ClawConfig {
 }
 
 const config = readConfig();
-
-let mainAgent: Agent;
-
-if (config.replyMode === 'echo') {
-  mainAgent = Agent.create('main').assistant(
-    'reply',
-    (session) => `ack: ${session.getLastMessage()?.content ?? ''}`,
-  );
-} else if (config.replyMode === 'openai') {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('CLAW_REPLY_MODE=openai requires OPENAI_API_KEY.');
-  }
-  if (!config.openaiModel) {
-    throw new Error('CLAW_REPLY_MODE=openai requires CLAW_OPENAI_MODEL.');
-  }
-  mainAgent = Agent.create('main')
-    .system(
-      'persona',
-      'You are Claw, a concise Discord-native PromptTrail agent.',
-    )
-    .assistant(
-      'reply',
-      Source.llm().openai({ adapter: 'ai-sdk', modelName: config.openaiModel }),
-    );
-} else {
-  // codex
-  mainAgent = Agent.create('main').codex('reply', {
-    transport: {
-      kind: 'websocket',
-      url: config.codexAppServerUrl,
-      timeoutMs: config.codexTimeoutMs,
-    },
-    cwd: config.codexCwd,
-    model: config.codexModel,
-    sandboxPolicy: { type: 'readOnly' },
-    approvalPolicy: 'never',
-  });
-}
+const startedAt = Date.now();
+const version = readPackageVersion();
 
 const clawDbPath =
   readOptionalString('CLAW_DB_PATH') ?? join(process.cwd(), '.data', 'claw.db');
+const skillDbPath =
+  readOptionalString('CLAW_SKILL_DB_PATH') ??
+  join(process.cwd(), '.data', 'claw-skills.db');
+
+// Persistent skill registry (design-docs/claw-self-authoring.md §7). Seeded
+// with the hand-written skills on first boot; unknown refs warn but never crash.
+const registry = new SkillRegistry(skillDbPath);
+const skills = registerBuiltinSkills(registry, [
+  createStatusSkill({ version, replyMode: config.replyMode, startedAt }),
+]);
+validateSkillRegistry(registry, skills);
+
+// Static registry-dispatch graph: dispatch → conditional(matched skill | default).
+const mainAgent = createClawSkillAgent({
+  registry,
+  skills,
+  defaultReply: buildDefaultReply(config),
+});
 
 const store = new SqliteRunStore({
   agents: { main: mainAgent },
@@ -111,12 +101,75 @@ const server = PromptTrail.server({
         console.log(`Claw Discord bot logged in as ${readyClient.user.tag}`);
         console.log(`Allowed channels: ${config.allowedChannels.join(', ')}`);
         console.log(`Reply mode: ${config.replyMode}`);
+        console.log(
+          `Skills: ${registry
+            .listEnabled()
+            .map((row) => row.id)
+            .join(', ')}`,
+        );
       },
     }),
   ],
 });
 
 await server.start();
+
+/**
+ * Build the default reply node(s) — the existing echo/openai/codex behavior,
+ * run when no skill trigger matches. Validation is fail-fast at boot.
+ */
+function buildDefaultReply(cfg: ClawConfig): (agent: Agent) => Agent {
+  if (cfg.replyMode === 'openai') {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('CLAW_REPLY_MODE=openai requires OPENAI_API_KEY.');
+    }
+    if (!cfg.openaiModel) {
+      throw new Error('CLAW_REPLY_MODE=openai requires CLAW_OPENAI_MODEL.');
+    }
+    const openaiModel = cfg.openaiModel;
+    return (agent) =>
+      agent
+        .system(
+          'persona',
+          'You are Claw, a concise Discord-native PromptTrail agent.',
+        )
+        .assistant(
+          'reply',
+          Source.llm().openai({ adapter: 'ai-sdk', modelName: openaiModel }),
+        );
+  }
+  if (cfg.replyMode === 'codex') {
+    return (agent) =>
+      agent.codex('reply', {
+        transport: {
+          kind: 'websocket',
+          url: cfg.codexAppServerUrl,
+          timeoutMs: cfg.codexTimeoutMs,
+        },
+        cwd: cfg.codexCwd,
+        model: cfg.codexModel,
+        sandboxPolicy: { type: 'readOnly' },
+        approvalPolicy: 'never',
+      });
+  }
+  // echo
+  return (agent) =>
+    agent.assistant(
+      'reply',
+      (session) => `ack: ${session.getLastMessage()?.content ?? ''}`,
+    );
+}
+
+function readPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 function readConfig(): ClawConfig {
   const token = process.env.DISCORD_TOKEN;

@@ -7,17 +7,22 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest --run --watch=false",
+    "test:watch": "vitest watch"
   },
   "dependencies": {
     "@prompttrail/core": "workspace:*",
     "@prompttrail/discord": "workspace:*",
     "@prompttrail/store-sqlite": "workspace:*",
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.17.32",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.1"
   }
 }
