@@ -260,15 +260,125 @@ describe('B1 miss policy', () => {
     ).rejects.toBeInstanceOf(ReplayMissError);
   });
 
-  it('rejects an unsupported miss policy', async () => {
+  it("rejects the 'live' miss policy (not supported until B3+)", async () => {
     const { run } = await recordRun(recordingAgent(), {
       runId: 'miss-2',
       agentName: 'rec',
       input: 'hello',
     });
+    await expect(replayRun(run, { miss: 'live' })).rejects.toThrow(
+      /'live'.*not supported/,
+    );
+  });
+
+  it("miss 'flag' records the divergence and continues with a sentinel", async () => {
+    const { run } = await recordRun(recordingAgent(), {
+      runId: 'miss-flag-1',
+      agentName: 'rec',
+      input: 'hello',
+    });
+    const cassette = buildCassette(run);
+    // Truncate the model queue so the assistant node's model call misses under
+    // every keying level.
+    const truncated = { ...cassette, model: [] };
+    const { trace, session } = await replayRun(run, {
+      cassette: truncated,
+      miss: 'flag',
+    });
+    expect(trace.misses).toEqual([
+      { at: expect.any(String), kind: 'model', position: 0 },
+    ]);
+    // The run still completes; the sentinel assistant output flows through.
+    expect(
+      session.messages.some((m) => m.content.includes('[replay-miss]')),
+    ).toBe(true);
+  });
+
+  it("miss 'error' still throws on the same truncated cassette", async () => {
+    const { run } = await recordRun(recordingAgent(), {
+      runId: 'miss-error-1',
+      agentName: 'rec',
+      input: 'hello',
+    });
+    const cassette = buildCassette(run);
+    const truncated = { ...cassette, model: [] };
     await expect(
-      replayRun(run, { miss: 'flag' as unknown as 'error' }),
-    ).rejects.toThrow(/not supported in B1/);
+      replayRun(run, { cassette: truncated, miss: 'error' }),
+    ).rejects.toBeInstanceOf(ReplayMissError);
+  });
+});
+
+describe('B2 request-hash keying', () => {
+  it('resolves every leaf at request-hash for an identical replay', async () => {
+    const { run } = await recordRun(recordingAgent(), {
+      runId: 'rh-identical',
+      agentName: 'rec',
+      input: 'hello',
+    });
+    const { trace } = await replayRun(run);
+    expect(trace.modelCalls.length).toBeGreaterThan(0);
+    for (const call of trace.modelCalls) {
+      expect(call.hit).toBe('request-hash');
+    }
+    for (const call of trace.toolCalls) {
+      expect(call.hit).toBe('request-hash');
+    }
+    expect(trace.misses).toEqual([]);
+  });
+
+  it('falls a changed-prompt node through to node-path while the rest stay request-hash', async () => {
+    const { run } = await recordRun(recordingAgent('be helpful'), {
+      runId: 'rh-changed',
+      agentName: 'rec',
+      input: 'hello',
+    });
+    // The changed system text alters the assistant node's live request digest, so
+    // its model call misses request-hash and falls through to node-path; the tool
+    // call (arg digest unchanged) still resolves at request-hash.
+    const changed = recordingAgent('be extremely terse');
+    const { trace } = await replayRun(run, { agent: changed });
+    expect(trace.modelCalls).toHaveLength(1);
+    expect(trace.modelCalls[0].hit).toBe('node-path');
+    expect(trace.toolCalls).toHaveLength(1);
+    expect(trace.toolCalls[0].hit).toBe('request-hash');
+    expect(trace.misses).toEqual([]);
+  });
+
+  it('consumes duplicate digests in seq order across loop iterations', async () => {
+    // A loop over an isolated subroutine: each iteration starts from a fresh
+    // session, so both model calls assemble the SAME prompt and hash to the SAME
+    // requestDigest. request-hash keying must consume them in seq order.
+    const agent = Agent.create('dupLoop').loop(
+      'body',
+      (a) =>
+        a.subroutine('iso', (s) =>
+          s.assistant(
+            'step',
+            Source.llm({ temperature: 0 })
+              .mock()
+              .mockResponse({ content: 'tick' }),
+          ),
+        ),
+      ({ session }) =>
+        session.messages.filter((m) => m.type === 'assistant').length < 2,
+    );
+    const { run } = await recordRun(agent, {
+      runId: 'dup-loop',
+      agentName: 'dupLoop',
+    });
+    const cassette = buildCassette(run);
+    expect(cassette.model).toHaveLength(2);
+    // The two model records really do share a requestDigest (identical prompts).
+    expect(cassette.model[0].requestDigest).toBe(
+      cassette.model[1].requestDigest,
+    );
+
+    const { trace } = await replayRun(run);
+    expect(trace.modelCalls).toHaveLength(2);
+    for (const call of trace.modelCalls) {
+      expect(call.hit).toBe('request-hash');
+    }
+    expect(trace.misses).toEqual([]);
   });
 });
 
@@ -323,9 +433,13 @@ describe('B1 sealed side effects', () => {
 
     const { trace, session } = await replayRun(run);
     expect(sideEffectCount).toBe(1); // NOT incremented during replay
-    expect(trace.toolCalls).toEqual([
-      { name: 'bump', argsDigest: digest({ n: 7 }), hit: true },
-    ]);
+    expect(trace.toolCalls).toHaveLength(1);
+    expect(trace.toolCalls[0]).toMatchObject({
+      name: 'bump',
+      argsDigest: digest({ n: 7 }),
+      // Identical replay resolves the tool at the strongest keying level.
+      hit: 'request-hash',
+    });
     const toolResult = session.messages.find((m) => m.type === 'tool_result');
     expect(toolResult?.content).toContain('bumped:7');
   });

@@ -106,6 +106,8 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
                 runtime.recorder?.currentNodePath ??
                 commandScope,
               provider: record?.provider ?? 'assistant',
+              requestSession: modelSession,
+              requestMeta: record?.requestMeta,
             }) as TResult;
           }
           return call(request.session);

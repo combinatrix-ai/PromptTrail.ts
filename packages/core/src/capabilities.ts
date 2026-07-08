@@ -67,8 +67,19 @@ export interface ToolExecutionContext {
  * `miss: 'error'` policy — the implementation lives in `replay.ts`.
  */
 export interface ReplayLeafSource {
-  /** Serve the next recorded model/provider response for a model node. */
-  model(input: { nodePath: string; provider: string }): unknown;
+  /**
+   * Serve a recorded model/provider response for a model node. `requestSession`
+   * + `requestMeta` let the replay source digest the candidate's live request
+   * the SAME way the recorder did (`computeModelRequestDigest`), so
+   * `request-hash` keying is well-defined (B2). B1's positional source ignores
+   * them.
+   */
+  model(input: {
+    nodePath: string;
+    provider: string;
+    requestSession: Session<any>;
+    requestMeta?: unknown;
+  }): unknown;
   /** Serve the next recorded tool result for a tool call. */
   tool(input: {
     nodePath: string;
