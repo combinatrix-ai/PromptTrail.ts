@@ -76,6 +76,7 @@ describe('public API surface', () => {
       'manifestConfigDigest',
       'memoryStore',
       'on',
+      'parseDuration',
       'validateAgentGraph',
     ]);
   });

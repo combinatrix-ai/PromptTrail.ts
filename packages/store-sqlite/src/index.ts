@@ -7,7 +7,9 @@ import {
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
+  type DurableTimer,
   type Inbound,
+  type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
   type RunStoreLease,
@@ -185,6 +187,7 @@ export interface SqliteWriteJournalEntry {
     | 'recordOnce'
     | 'upsertOutbox'
     | 'recordProviderSession'
+    | 'upsertTimer'
     | 'patch'
     | 'delete';
   summary: string;
@@ -247,6 +250,16 @@ interface ProviderSessionRow {
   binding_json: string;
 }
 
+interface TimerRow {
+  run_id: string;
+  id: string;
+  wake_at: number;
+  payload: string | null;
+  kind: InboundKind | null;
+  created_at: number;
+  fired_at: number | null;
+}
+
 /**
  * SQLite restart substrate for PromptTrail durable runs.
  *
@@ -274,6 +287,7 @@ export class SqliteRunStore implements DurableRunStore {
   private readonly insertInboxStmt: Database.Statement;
   private readonly upsertOutboxStmt: Database.Statement;
   private readonly upsertProviderSessionStmt: Database.Statement;
+  private readonly upsertTimerStmt: Database.Statement;
 
   constructor(options: SqliteRunStoreOptions) {
     const dbPath = options.path ?? join(cwd(), '.data', 'prompttrail.db');
@@ -347,6 +361,18 @@ export class SqliteRunStore implements DurableRunStore {
       VALUES (?, ?, ?)
       ON CONFLICT(run_id, node_path)
       DO UPDATE SET binding_json = excluded.binding_json
+    `);
+
+    this.upsertTimerStmt = this.db.prepare(`
+      INSERT INTO timers (run_id, id, wake_at, payload, kind, created_at, fired_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(run_id, id)
+      DO UPDATE SET
+        wake_at = excluded.wake_at,
+        payload = excluded.payload,
+        kind = excluded.kind,
+        created_at = excluded.created_at,
+        fired_at = excluded.fired_at
     `);
 
     this.sqliteLease = new SqliteLease(this.db, options.now ?? Date.now);
@@ -554,6 +580,41 @@ export class SqliteRunStore implements DurableRunStore {
     );
   }
 
+  async upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    this.assertFence(fence);
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    this.upsertTimerStmt.run(
+      runId,
+      timer.id,
+      timer.wakeAt,
+      timer.payload ?? null,
+      timer.kind ?? null,
+      timer.createdAt,
+      timer.firedAt ?? null,
+    );
+    const timers = (run.timers ??= []);
+    const index = timers.findIndex((candidate) => candidate.id === timer.id);
+    if (index >= 0) {
+      timers[index] = timer;
+    } else {
+      timers.push(timer);
+    }
+    this.recordJournal(
+      runId,
+      'upsertTimer',
+      `UPSERT timers (${quoteOneLine(timer.id)}, wake_at=${timer.wakeAt}${
+        timer.firedAt !== undefined ? ', fired' : ''
+      })`,
+    );
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     this.assertFence(fence);
     this.deleteRunStmt.run(runId);
@@ -640,6 +701,18 @@ export class SqliteRunStore implements DurableRunStore {
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS timers (
+        run_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        wake_at INTEGER NOT NULL,
+        payload TEXT,
+        kind TEXT,
+        created_at INTEGER NOT NULL,
+        fired_at INTEGER,
+        PRIMARY KEY (run_id, id),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS lease (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         holder TEXT NOT NULL,
@@ -669,6 +742,9 @@ export class SqliteRunStore implements DurableRunStore {
     const providerRows = this.db
       .prepare('SELECT * FROM provider_sessions ORDER BY run_id, node_path')
       .all() as ProviderSessionRow[];
+    const timerRows = this.db
+      .prepare('SELECT * FROM timers ORDER BY run_id, id')
+      .all() as TimerRow[];
 
     // Group child rows per run_id, preserving the SELECT ordering so each
     // run's components (deltas in seq order, inbox in offset order, etc.) are
@@ -678,6 +754,7 @@ export class SqliteRunStore implements DurableRunStore {
     const inboxByRun = groupBy(inboxRows, (row) => row.run_id);
     const outboxByRun = groupBy(outboxRows, (row) => row.run_id);
     const providerByRun = groupBy(providerRows, (row) => row.run_id);
+    const timersByRun = groupBy(timerRows, (row) => row.run_id);
 
     for (const row of runRows) {
       const deltas: SessionCheckpointDelta<any>[] = (
@@ -723,6 +800,10 @@ export class SqliteRunStore implements DurableRunStore {
         ) as ProviderSessionBinding;
       }
 
+      const timers: DurableTimer[] = (timersByRun.get(row.run_id) ?? []).map(
+        (trow) => timerFromRow(trow),
+      );
+
       const run = reconstructStoredRun(
         {
           agentName: row.agent_name,
@@ -737,6 +818,7 @@ export class SqliteRunStore implements DurableRunStore {
           inbox,
           outbox,
           providerSessions,
+          timers,
         },
         agents,
       );
@@ -771,6 +853,24 @@ export class SqliteRunStore implements DurableRunStore {
     }
     this.writeJournal.set(runId, entries);
   }
+}
+
+function timerFromRow(row: TimerRow): DurableTimer {
+  const timer: DurableTimer = {
+    id: row.id,
+    wakeAt: row.wake_at,
+    createdAt: row.created_at,
+  };
+  if (row.payload !== null) {
+    timer.payload = row.payload;
+  }
+  if (row.kind !== null) {
+    timer.kind = row.kind;
+  }
+  if (row.fired_at !== null) {
+    timer.firedAt = row.fired_at;
+  }
+  return timer;
 }
 
 function groupBy<T>(

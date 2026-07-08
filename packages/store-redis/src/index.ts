@@ -4,6 +4,7 @@ import type {
   Agent,
   AssistantDeliveryOutboxEntry,
   DurableRunStore,
+  DurableTimer,
   Inbound,
   OnceScope,
   ProviderSessionBinding,
@@ -50,6 +51,8 @@ interface RunDocument {
   outbox: AssistantDeliveryOutboxEntry[];
   /** Provider session bindings keyed by nodePath. */
   providerSessions: Record<string, ProviderSessionBinding>;
+  /** Durable timers, upserted by id. Optional so old docs stay readable. */
+  timers?: DurableTimer[];
 }
 
 interface SerializedDelta {
@@ -360,6 +363,7 @@ export class RedisRunStore implements DurableRunStore {
       inbox: [],
       outbox: [],
       providerSessions: {},
+      timers: [],
     };
     await this.saveDoc(runId, doc);
     await this.client.sadd(this.indexKey(), runId);
@@ -501,6 +505,26 @@ export class RedisRunStore implements DurableRunStore {
     await this.saveDoc(runId, doc);
   }
 
+  async upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const doc = await this.loadDoc(runId);
+    if (!doc) {
+      return;
+    }
+    const timers = (doc.timers ??= []);
+    const idx = timers.findIndex((t) => t.id === timer.id);
+    if (idx === -1) {
+      timers.push(timer);
+    } else {
+      timers[idx] = timer;
+    }
+    await this.saveDoc(runId, doc);
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     await this.client.del(this.runKey(runId));
@@ -555,6 +579,7 @@ export class RedisRunStore implements DurableRunStore {
         inbox: doc.inbox,
         outbox: doc.outbox,
         providerSessions: doc.providerSessions,
+        timers: doc.timers ?? [],
       },
       this.agents,
     );

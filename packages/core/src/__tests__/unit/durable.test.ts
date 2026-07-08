@@ -17,6 +17,7 @@ import type { RunStoreLeaseState } from '../../durable';
 import type {
   AssistantDeliveryOutboxEntry,
   DurableRunStore,
+  DurableTimer,
   Inbound,
   OnceScope,
   SessionCheckpointDelta,
@@ -167,6 +168,10 @@ class TrackingRunStore implements DurableRunStore {
     });
   }
 
+  async upsertTimer(runId: string, timer: DurableTimer): Promise<void> {
+    upsertTimer(this.runs.get(runId), timer);
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -288,6 +293,15 @@ class ControlledDelayRunStore implements DurableRunStore {
     return this.delayWrite('recordProviderSession', runId, run, () => {});
   }
 
+  upsertTimer(runId: string, timer: DurableTimer): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    upsertTimer(run, timer);
+    return this.delayWrite('upsertTimer', runId, run, () => {});
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -357,6 +371,7 @@ type RecordedWrite =
       nodePath: string;
       binding: ProviderSessionBinding;
     }
+  | { type: 'upsertTimer'; runId: string }
   | { type: 'delete'; runId: string };
 
 class RecordingRunStore implements DurableRunStore {
@@ -467,6 +482,15 @@ class RecordingRunStore implements DurableRunStore {
       nodePath,
       binding,
     });
+  }
+
+  async upsertTimer(runId: string, timer: DurableTimer): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    upsertTimer(run, timer);
+    this.writes.push({ type: 'upsertTimer', runId });
   }
 
   async delete(runId: string): Promise<void> {
@@ -2021,5 +2045,21 @@ function upsertOutbox(
     run.outbox[index] = entry;
   } else {
     run.outbox.push(entry);
+  }
+}
+
+function upsertTimer(
+  run: StoredRun<any> | undefined,
+  timer: DurableTimer,
+): void {
+  if (!run) {
+    return;
+  }
+  const timers = (run.timers ??= []);
+  const index = timers.findIndex((candidate) => candidate.id === timer.id);
+  if (index >= 0) {
+    timers[index] = timer;
+  } else {
+    timers.push(timer);
   }
 }

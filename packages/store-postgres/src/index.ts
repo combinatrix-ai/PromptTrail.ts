@@ -4,7 +4,9 @@ import {
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
+  type DurableTimer,
   type Inbound,
+  type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
   type RunStoreLease,
@@ -559,6 +561,39 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
+  async upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO timers (run_id, id, wake_at, payload, kind, created_at, fired_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (run_id, id)
+         DO UPDATE SET
+           wake_at = EXCLUDED.wake_at,
+           payload = EXCLUDED.payload,
+           kind = EXCLUDED.kind,
+           created_at = EXCLUDED.created_at,
+           fired_at = EXCLUDED.fired_at`,
+        [
+          runId,
+          timer.id,
+          timer.wakeAt,
+          timer.payload ?? null,
+          timer.kind ?? null,
+          timer.createdAt,
+          timer.firedAt ?? null,
+        ],
+      );
+    } finally {
+      client.release();
+    }
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     // Delete the run AND all of its child rows in a single transaction.
@@ -581,6 +616,7 @@ export class PostgresRunStore implements DurableRunStore {
       await client.query('DELETE FROM provider_sessions WHERE run_id = $1', [
         runId,
       ]);
+      await client.query('DELETE FROM timers WHERE run_id = $1', [runId]);
       await client.query('DELETE FROM runs WHERE run_id = $1', [runId]);
       await client.query('COMMIT');
     } catch (error) {
@@ -663,6 +699,16 @@ export class PostgresRunStore implements DurableRunStore {
           node_path TEXT NOT NULL,
           binding_json TEXT NOT NULL,
           PRIMARY KEY (run_id, node_path)
+        )`,
+        timers: `CREATE TABLE timers (
+          run_id TEXT NOT NULL,
+          id TEXT NOT NULL,
+          wake_at BIGINT NOT NULL,
+          payload TEXT,
+          kind TEXT,
+          created_at BIGINT NOT NULL,
+          fired_at BIGINT,
+          PRIMARY KEY (run_id, id)
         )`,
         lease: `CREATE TABLE lease (
           id INTEGER PRIMARY KEY,
@@ -806,7 +852,41 @@ export class PostgresRunStore implements DurableRunStore {
       ) as ProviderSessionBinding;
     }
 
-    // 7. Delegate assembly to the shared reconstruction helper.
+    // 7. Gather durable timers. BIGINT columns come back as strings from pg, so
+    // coerce the epoch-ms fields with Number().
+    const timerRes = await client.query(
+      `SELECT id, wake_at, payload, kind, created_at, fired_at
+       FROM timers WHERE run_id = $1 ORDER BY id ASC`,
+      [runId],
+    );
+    const timers: DurableTimer[] = (
+      timerRes.rows as {
+        id: string;
+        wake_at: number | string;
+        payload: string | null;
+        kind: InboundKind | null;
+        created_at: number | string;
+        fired_at: number | string | null;
+      }[]
+    ).map((trow) => {
+      const timer: DurableTimer = {
+        id: trow.id,
+        wakeAt: Number(trow.wake_at),
+        createdAt: Number(trow.created_at),
+      };
+      if (trow.payload !== null) {
+        timer.payload = trow.payload;
+      }
+      if (trow.kind !== null) {
+        timer.kind = trow.kind;
+      }
+      if (trow.fired_at !== null) {
+        timer.firedAt = Number(trow.fired_at);
+      }
+      return timer;
+    });
+
+    // 8. Delegate assembly to the shared reconstruction helper.
     return reconstructStoredRun(
       {
         agentName: row.agent_name,
@@ -821,6 +901,7 @@ export class PostgresRunStore implements DurableRunStore {
         inbox,
         outbox,
         providerSessions,
+        timers,
       },
       this.agents,
     );

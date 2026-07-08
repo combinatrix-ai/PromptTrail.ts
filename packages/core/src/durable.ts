@@ -77,6 +77,34 @@ export interface ToolCall {
   id: string;
 }
 
+/**
+ * A durable timer armed by a `sleep` node (durability roadmap §3). Persisted on
+ * the run so a scheduler can re-arm it after a restart and fire it even across a
+ * cold boot.
+ *
+ * Identity is `(runId, id)`: `id` is the sleep node's graph path, so arming is
+ * idempotent — re-executing the same sleep node never resets an already-armed
+ * `wakeAt`. `firedAt` is set once the app fires the timer (marks it and resumes
+ * the run); a fired timer is never re-armed. `kind`/`payload` describe how the
+ * timer wakes the run — v1 sleep always uses a `control` marker recognized via
+ * the executor's fired-timer set, and the fields are reserved for external
+ * signals that carry a payload.
+ */
+export interface DurableTimer {
+  /** Stable timer id — the sleep node's graph path. Unique per run. */
+  id: string;
+  /** Absolute wake time, epoch milliseconds. */
+  wakeAt: number;
+  /** Optional payload delivered when the timer fires (reserved for signals). */
+  payload?: string;
+  /** Inbound kind used when the timer wakes the run. Defaults to `control`. */
+  kind?: InboundKind;
+  /** When the timer was armed, epoch milliseconds. */
+  createdAt: number;
+  /** When the timer fired, epoch milliseconds; unset while still pending. */
+  firedAt?: number;
+}
+
 export interface DurableRunResult<TVars extends Vars = Vars> {
   status: 'done' | 'suspended';
   runId: string;
@@ -138,6 +166,7 @@ export interface StoredRun<TVars extends Vars> {
   outbox: AssistantDeliveryOutboxEntry[];
   inbox: Inbound[];
   providerSessions?: Record<string, ProviderSessionBinding>;
+  timers?: DurableTimer[];
   graphCursor?: number;
   graphSuspendedAt?: string;
   context?: Record<string, unknown>;
@@ -511,6 +540,17 @@ export interface DurableRunStore {
     binding: ProviderSessionBinding,
     fence?: number,
   ): Promise<void>;
+  /**
+   * Arm or update a durable timer (durability roadmap §3). Idempotent by
+   * `(runId, timer.id)`: a second upsert with the same id REPLACES the row (used
+   * to mark `firedAt`), it does not append a duplicate. Timers are included in
+   * `get`/`entries` reconstruction and removed by `delete`'s cascade.
+   */
+  upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void>;
   delete(runId: string, fence?: number): Promise<void>;
 }
 
@@ -646,6 +686,25 @@ export class MemoryRunStore implements DurableRunStore {
       ...(run.providerSessions ?? {}),
       [nodePath]: binding,
     };
+  }
+
+  async upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    const timers = (run.timers ??= []);
+    const index = timers.findIndex((candidate) => candidate.id === timer.id);
+    if (index >= 0) {
+      timers[index] = timer;
+    } else {
+      timers.push(timer);
+    }
   }
 
   async delete(runId: string, fence?: number): Promise<void> {
@@ -847,6 +906,16 @@ class FencedRunStore implements DurableRunStore {
     );
   }
 
+  upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.upsertTimer(runId, timer, fence ?? this.fence()),
+    );
+  }
+
   delete(runId: string, fence?: number): Promise<void> {
     return this.guard(() => this.inner.delete(runId, fence ?? this.fence()));
   }
@@ -903,6 +972,17 @@ export interface PromptTrailAppOptions {
    * running two recovering instances against one store may double-resume.
    */
   recovery?: RecoveryOptions | true;
+  /**
+   * Injectable clock (epoch ms) for the durable-timer sweep (durability roadmap
+   * §3). Defaults to `Date.now`. Tests fake it (e.g. vitest fake timers) so
+   * timer wake-ups can be driven without sleeping; production leaves it default.
+   */
+  now?: () => number;
+  /**
+   * Invoked when firing a single due timer throws. A failure never aborts the
+   * sweep — remaining due timers are still attempted. Defaults to `console.warn`.
+   */
+  onTimerError?: (runId: string, timerId: string, error: unknown) => void;
   defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any>>;
   gateways?: Record<string, AppGateway>;
@@ -941,6 +1021,15 @@ export class PromptTrailApp {
     onError: (runId: string, error: unknown) => void;
   };
   private recoveryTimer?: ReturnType<typeof setInterval>;
+  private readonly now: () => number;
+  private readonly onTimerError: (
+    runId: string,
+    timerId: string,
+    error: unknown,
+  ) => void;
+  private timerSweepHandle?: ReturnType<typeof setTimeout>;
+  private timerSweepInFlight = false;
+  private timerSweepStopped = false;
   private readonly agents = new Map<string, Agent<any>>();
   private readonly gateways = new Map<string, AppGateway>();
   private readonly runtimeBindings: RuntimeBinding<TriggerEvent>[] = [];
@@ -1023,6 +1112,14 @@ export class PromptTrailApp {
             )),
       };
     }
+    this.now = options.now ?? Date.now;
+    this.onTimerError =
+      options.onTimerError ??
+      ((runId, timerId, error) =>
+        console.warn(
+          `[PromptTrail] app "${this.name}" failed to fire durable timer "${timerId}" on run "${runId}":`,
+          error,
+        ));
     this.runtimeDefaults = options.defaults ?? {};
     this.defaultCheckpoint = options.defaults?.checkpoint;
     this.middleware = options.middleware ?? [];
@@ -1366,6 +1463,12 @@ export class PromptTrailApp {
       await this.recoverOrphans();
     }
     this.startRecoveryTimer();
+    // Durable-timer sweep (durability roadmap §3): always on with a store. The
+    // boot sweep fires any timer already due (including cold-boot/past-due) and
+    // arms an in-process wake for the earliest still-pending one. It runs after
+    // recovery so a resumed orphan's freshly-armed timers are already visible.
+    this.timerSweepStopped = false;
+    await this.runTimerSweep();
     if (this.runtimeAdapters.length > 0) {
       if (!this.runtimeServer) {
         this.runtimeServer = server({
@@ -1387,6 +1490,7 @@ export class PromptTrailApp {
 
   async stop(): Promise<void> {
     this.stopRecoveryTimer();
+    this.stopTimerSweep();
     await this.runtimeServer?.stop();
     this.runtimeServer = undefined;
     for (const gateway of this.gateways.values()) {
@@ -1477,6 +1581,162 @@ export class PromptTrailApp {
       clearInterval(this.recoveryTimer);
       this.recoveryTimer = undefined;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Durable timer sweep (durability roadmap §3)
+  //
+  // Design: ONE self-driven sweep timer, not a fixed poll interval and not one
+  // OS timer per pending durable timer. `runTimerSweep` fires every timer that
+  // is due now (`wakeAt <= now`), then re-arms a single in-process `setTimeout`
+  // that wakes at the EARLIEST still-pending `wakeAt` across all runs; each fire
+  // re-runs the sweep, which re-arms for the next earliest. When no timer is
+  // pending, no OS timer is held, so the sweep costs nothing at rest. The handle
+  // is unref'd (never keeps the process alive) and cleared on `stop()`. It
+  // shares the app's injectable clock with `armTimer`, matching the cron
+  // gateway's fake-timer-friendly, skip-don't-queue discipline.
+  //
+  // Firing a timer marks `firedAt` through the (fenced, when leased) store, then
+  // resumes the run via the per-run locked path. The sleep executor recognizes
+  // its fired timer via the `firedTimers` set threaded into execution — the same
+  // seam as inbox/providerSessions — so the executor stays store-agnostic. We
+  // deliberately do NOT append a control inbound to wake the run: a sleeping run
+  // must rest with a fully-consumed inbox (`graphCursor === inbox.length`) so it
+  // is not misread as a crashed orphan, and an unconsumed control marker would
+  // break that terminal-boundary cursor contract.
+  // ---------------------------------------------------------------------------
+
+  private stopTimerSweep(): void {
+    this.timerSweepStopped = true;
+    if (this.timerSweepHandle !== undefined) {
+      clearTimeout(this.timerSweepHandle);
+      this.timerSweepHandle = undefined;
+    }
+  }
+
+  /** Fire all due timers, then re-arm the sweep for the next earliest wake-at. */
+  private async runTimerSweep(): Promise<void> {
+    if (this.timerSweepHandle !== undefined) {
+      clearTimeout(this.timerSweepHandle);
+      this.timerSweepHandle = undefined;
+    }
+    // Skip (do not queue) if a sweep is already running or the lease is lost —
+    // the in-flight sweep re-arms at the end, and a lost lease must not write.
+    if (this.timerSweepInFlight || this.timerSweepStopped || this.leaseLost) {
+      return;
+    }
+    this.timerSweepInFlight = true;
+    try {
+      const now = this.now();
+      const due: Array<{ runId: string; timerId: string }> = [];
+      for (const [runId, run] of await this.store.entries()) {
+        for (const timer of run.timers ?? []) {
+          if (timer.firedAt === undefined && timer.wakeAt <= now) {
+            due.push({ runId, timerId: timer.id });
+          }
+        }
+      }
+      for (const { runId, timerId } of due) {
+        try {
+          await this.fireTimer(runId, timerId);
+        } catch (error) {
+          this.onTimerError(runId, timerId, error);
+        }
+      }
+    } finally {
+      this.timerSweepInFlight = false;
+      await this.rearmTimerSweep();
+    }
+  }
+
+  /** Arm a single wake at the earliest pending (unfired) timer, if any. */
+  private async rearmTimerSweep(): Promise<void> {
+    if (this.timerSweepStopped || this.leaseLost) {
+      return;
+    }
+    if (this.timerSweepHandle !== undefined) {
+      clearTimeout(this.timerSweepHandle);
+      this.timerSweepHandle = undefined;
+    }
+    let earliest: number | undefined;
+    for (const [, run] of await this.store.entries()) {
+      for (const timer of run.timers ?? []) {
+        if (timer.firedAt === undefined) {
+          earliest =
+            earliest === undefined
+              ? timer.wakeAt
+              : Math.min(earliest, timer.wakeAt);
+        }
+      }
+    }
+    if (earliest === undefined || this.timerSweepStopped) {
+      return;
+    }
+    const delay = Math.max(0, earliest - this.now());
+    const handle = setTimeout(() => {
+      void this.runTimerSweep();
+    }, delay);
+    // Don't keep the process alive purely for the timer sweep.
+    handle.unref?.();
+    this.timerSweepHandle = handle;
+  }
+
+  /**
+   * Fire one due timer under its per-run mutex: mark `firedAt` through the
+   * (fenced) store, rebind the agent from the registry so it works after a cold
+   * restart, and resume the run. Re-checks under the lock so a concurrent fire
+   * or resume cannot double-fire; a timer already marked is a no-op.
+   */
+  private async fireTimer(runId: string, timerId: string): Promise<void> {
+    await this.runLocks.run(runId, async () => {
+      const run = await this.store.get(runId);
+      if (!run) {
+        return;
+      }
+      const timer = (run.timers ?? []).find(
+        (candidate) => candidate.id === timerId,
+      );
+      if (!timer || timer.firedAt !== undefined) {
+        return;
+      }
+      timer.firedAt = this.now();
+      await this.store.upsertTimer(runId, timer);
+      const agent = this.agents.get(run.agentName);
+      if (agent) {
+        run.agent = agent;
+      }
+      await this.resumeImpl(runId);
+    });
+  }
+
+  /**
+   * Arm (idempotently) a durable timer for a sleep node. Called by the executor
+   * via the `armTimer` seam while under the run's mutex. If a timer with this id
+   * is already armed (pending) its `wakeAt` is kept — re-executing the sleep
+   * node must not push the wake later. A timer already fired is left alone.
+   */
+  private async armTimer(
+    runId: string,
+    run: StoredRun<any>,
+    timerId: string,
+    durationMs: number,
+  ): Promise<void> {
+    const timers = (run.timers ??= []);
+    const existing = timers.find((candidate) => candidate.id === timerId);
+    if (existing) {
+      return;
+    }
+    const createdAt = this.now();
+    const timer: DurableTimer = {
+      id: timerId,
+      wakeAt: createdAt + durationMs,
+      kind: 'control',
+      createdAt,
+    };
+    timers.push(timer);
+    await this.store.upsertTimer(runId, timer);
+    // A newly-armed timer may be sooner than the current wake; re-arm the sweep.
+    await this.rearmTimerSweep();
   }
 
   async run<TVars extends Vars = Vars>(
@@ -1973,6 +2233,9 @@ export class PromptTrailApp {
           onInboxConsumed: (consumed) => {
             consumedInSlice = consumed;
           },
+          firedTimers: firedTimerIds(run),
+          armTimer: (timerId, durationMs) =>
+            this.armTimer(runId, run, timerId, durationMs),
           observers: [
             async (event) => {
               await this.emitObservers(run, event);
@@ -2205,6 +2468,17 @@ function normalizeInbound(
   input: string | Omit<Inbound, 'offset'>,
 ): Omit<Inbound, 'offset'> {
   return typeof input === 'string' ? { kind: 'user', content: input } : input;
+}
+
+/** Ids of the run's already-fired timers — the sleep executor's pass-through set. */
+function firedTimerIds(run: StoredRun<any>): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const timer of run.timers ?? []) {
+    if (timer.firedAt !== undefined) {
+      ids.add(timer.id);
+    }
+  }
+  return ids;
 }
 
 function deliveryTargetFromContext(

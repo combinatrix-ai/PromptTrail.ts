@@ -16,6 +16,7 @@ export type AgentGraphNodeType =
   | 'tools'
   | 'inbox'
   | 'awaitInput'
+  | 'sleep'
   | 'goal'
   | 'scope'
   | 'loop'
@@ -471,7 +472,7 @@ function isResumeSensitiveNode(
   node: AgentGraphNode,
   childWarningPaths: readonly string[],
 ): boolean {
-  if (node.type === 'awaitInput') {
+  if (node.type === 'awaitInput' || node.type === 'sleep') {
     return true;
   }
   if (node.type === 'goal' && graphDataInteraction(node.data) !== 'none') {

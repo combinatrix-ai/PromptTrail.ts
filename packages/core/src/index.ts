@@ -41,6 +41,7 @@ export type {
   CheckpointOption,
   DurableRunResult,
   DurableRunStore,
+  DurableTimer,
   Inbound,
   InboundKind,
   InboundRuntimeEvent,
@@ -60,6 +61,7 @@ export type {
   StoredRun,
   StoredRunPatch,
 } from './durable';
+export { parseDuration } from './duration';
 export { DELETE_VALUE, Observer } from './execution';
 export type {
   AuthoredSessionPatch,
