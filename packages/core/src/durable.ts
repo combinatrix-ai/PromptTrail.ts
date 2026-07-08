@@ -658,9 +658,203 @@ export class MemoryRunStore implements DurableRunStore {
   }
 }
 
+/**
+ * Options for opt-in store-lease (single-writer) mode on {@link PromptTrailApp}.
+ * See {@link PromptTrailAppOptions.lease}.
+ */
+export interface LeaseOptions {
+  /**
+   * Opaque writer id for this instance. Defaults to
+   * `${appName}#${pid}#${randomSuffix}` — stable for the instance, unique
+   * across instances (including two instances in the same process).
+   */
+  holder?: string;
+  /** Lease TTL in ms. Defaults to 30_000. */
+  ttlMs?: number;
+  /** Heartbeat/renew interval in ms. Defaults to `ttlMs / 3`. */
+  heartbeatMs?: number;
+}
+
+/**
+ * Thrown by `app.start()` when lease mode is enabled but a LIVE lease is already
+ * held by a different writer. v1 is fail-fast: there is no waiting/polling — a
+ * new instance may only take over once the current holder releases or its lease
+ * expires. Carries the current holder for diagnostics/orchestration.
+ */
+export class LeaseUnavailableError extends Error {
+  readonly currentHolder: string;
+  readonly currentToken: number;
+  readonly expiresAt: number;
+  constructor(current: RunStoreLeaseState, appName?: string) {
+    super(
+      `Cannot acquire the store lease` +
+        (appName ? ` for app "${appName}"` : '') +
+        `: it is held by "${current.holder}" (token ${current.token}), ` +
+        `expiring at ${current.expiresAt}. Lease mode is fail-fast in v1 — ` +
+        `start after the current holder releases or its lease expires.`,
+    );
+    this.name = 'LeaseUnavailableError';
+    this.currentHolder = current.holder;
+    this.currentToken = current.token;
+    this.expiresAt = current.expiresAt;
+  }
+}
+
+/**
+ * A {@link DurableRunStore} decorator that injects the app's current lease
+ * fencing token into every MUTATING call, while delegating reads and the lease
+ * object untouched. This is the single seam through which the app/runtime writes
+ * when lease mode is on: because `PromptTrailApp` and `RuntimeServer` both route
+ * every store mutation through `this.store`, wrapping it here fences all call
+ * sites (persistRun, appendInbox, recordOnce, upsertOutbox, provider-session
+ * recording, delete, …) without threading a fence parameter through each.
+ *
+ * `fence()` returns the live token (throwing a clear error if the app holds no
+ * lease yet — direct usage without `start()` fails fast). A rejected write
+ * ({@link FencingTokenError}) is reported via `onFenceRejected` so the app can
+ * surface the lost lease, then rethrown so the caller still sees the failure.
+ */
+class FencedRunStore implements DurableRunStore {
+  constructor(
+    private readonly inner: DurableRunStore,
+    private readonly fence: () => number,
+    private readonly onFenceRejected: (error: FencingTokenError) => void,
+  ) {}
+
+  get lease(): RunStoreLease {
+    return this.inner.lease;
+  }
+
+  get(runId: string): Promise<StoredRun<any> | undefined> {
+    return this.inner.get(runId);
+  }
+
+  has(runId: string): Promise<boolean> {
+    return this.inner.has(runId);
+  }
+
+  entries(): Promise<Iterable<[string, StoredRun<any>]>> {
+    return this.inner.entries();
+  }
+
+  private async guard<T>(op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (error) {
+      if (error instanceof FencingTokenError) {
+        this.onFenceRejected(error);
+      }
+      throw error;
+    }
+  }
+
+  create(runId: string, run: StoredRun<any>, fence?: number): Promise<void> {
+    return this.guard(() =>
+      this.inner.create(runId, run, fence ?? this.fence()),
+    );
+  }
+
+  patch(runId: string, patch: StoredRunPatch, fence?: number): Promise<void> {
+    return this.guard(() =>
+      this.inner.patch(runId, patch, fence ?? this.fence()),
+    );
+  }
+
+  appendInbox(runId: string, inbound: Inbound, fence?: number): Promise<void> {
+    return this.guard(() =>
+      this.inner.appendInbox(runId, inbound, fence ?? this.fence()),
+    );
+  }
+
+  appendSessionDelta(
+    runId: string,
+    delta: SessionCheckpointDelta<any>,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.appendSessionDelta(runId, delta, fence ?? this.fence()),
+    );
+  }
+
+  recordOnce(
+    runId: string,
+    scope: OnceScope,
+    key: string,
+    value: unknown,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.recordOnce(runId, scope, key, value, fence ?? this.fence()),
+    );
+  }
+
+  upsertOutbox(
+    runId: string,
+    entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.upsertOutbox(runId, entry, fence ?? this.fence()),
+    );
+  }
+
+  recordProviderSession(
+    runId: string,
+    nodePath: string,
+    binding: ProviderSessionBinding,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.recordProviderSession(
+        runId,
+        nodePath,
+        binding,
+        fence ?? this.fence(),
+      ),
+    );
+  }
+
+  delete(runId: string, fence?: number): Promise<void> {
+    return this.guard(() => this.inner.delete(runId, fence ?? this.fence()));
+  }
+}
+
+function defaultLeaseHolder(appName: string): string {
+  const pid =
+    typeof process !== 'undefined' && typeof process.pid === 'number'
+      ? process.pid
+      : 0;
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `${appName}#${pid}#${suffix}`;
+}
+
+/**
+ * `PromptTrailApp` configuration.
+ *
+ * Lease mode (`lease`) is the cross-process single-writer enforcement layer.
+ * Without it, the app is single-process only: the per-run {@link KeyedMutex}
+ * serializes writes within ONE process, but nothing stops a second process from
+ * writing to the same store. Turning on `lease` makes the store-arbitrated
+ * single-writer lease (durability roadmap §2) real — `start()` acquires the
+ * store lease, a heartbeat renews it, every write carries the lease's fencing
+ * token, and a paused old holder's late writes are rejected with
+ * {@link FencingTokenError} (blue/green cutover).
+ */
 export interface PromptTrailAppOptions {
   name?: string;
   store?: DurableRunStore;
+  /**
+   * Opt-in store-lease (single-writer) mode. `true` uses all defaults; an object
+   * overrides `holder`/`ttlMs`/`heartbeatMs`. Omit for exactly today's
+   * behavior (no lease, all writes unfenced, single-process only).
+   */
+  lease?: LeaseOptions | true;
+  /**
+   * Called when the app loses its lease — either a heartbeat renew fails or a
+   * write is fenced out by a newer holder. Fires once per loss; the heartbeat is
+   * stopped and subsequent writes throw {@link FencingTokenError}.
+   */
+  onLeaseLost?: (state: RunStoreLeaseState | undefined) => void;
   defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any>>;
   gateways?: Record<string, AppGateway>;
@@ -678,7 +872,21 @@ export interface PromptTrailAppOptions {
 
 export class PromptTrailApp {
   private readonly name: string;
+  /** Effective store the app/runtime writes through (fenced when lease mode is on). */
   private readonly store: DurableRunStore;
+  /** Underlying store; the lease and unfenced reads live here. */
+  private readonly baseStore: DurableRunStore;
+  private readonly leaseConfig?: {
+    holder: string;
+    ttlMs: number;
+    heartbeatMs: number;
+  };
+  private readonly onLeaseLost?: (
+    state: RunStoreLeaseState | undefined,
+  ) => void;
+  private leaseState?: RunStoreLeaseState;
+  private leaseLost = false;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
   private readonly agents = new Map<string, Agent<any>>();
   private readonly gateways = new Map<string, AppGateway>();
   private readonly runtimeBindings: RuntimeBinding<TriggerEvent>[] = [];
@@ -724,10 +932,28 @@ export class PromptTrailApp {
 
   constructor(options: PromptTrailAppOptions = {}) {
     this.name = options.name ?? 'app';
-    this.store =
+    this.baseStore =
       checkpointOptionStore(options.defaults?.checkpoint) ??
       options.store ??
       new MemoryRunStore();
+    this.onLeaseLost = options.onLeaseLost;
+    if (options.lease) {
+      const leaseOpts = options.lease === true ? {} : options.lease;
+      const ttlMs = leaseOpts.ttlMs ?? 30_000;
+      this.leaseConfig = {
+        holder: leaseOpts.holder ?? defaultLeaseHolder(this.name),
+        ttlMs,
+        heartbeatMs:
+          leaseOpts.heartbeatMs ?? Math.max(1, Math.floor(ttlMs / 3)),
+      };
+      this.store = new FencedRunStore(
+        this.baseStore,
+        () => this.requireFence(),
+        () => this.handleLeaseLost(),
+      );
+    } else {
+      this.store = this.baseStore;
+    }
     this.runtimeDefaults = options.defaults ?? {};
     this.defaultCheckpoint = options.defaults?.checkpoint;
     this.middleware = options.middleware ?? [];
@@ -951,7 +1177,118 @@ export class PromptTrailApp {
     return `appObserver:${this.nextObserverBusIndex++}`;
   }
 
+  /**
+   * Current store-lease state, or `undefined` if lease mode is off or no lease
+   * is held. Exposed so a launcher can observe the fencing token for blue/green
+   * orchestration; taking over is the new instance's `start()` (which
+   * acquires once the old holder releases or its lease expires).
+   */
+  get lease(): RunStoreLeaseState | undefined {
+    return this.leaseState;
+  }
+
+  private requireFence(): number {
+    if (this.leaseState === undefined) {
+      throw new Error(
+        `PromptTrail app "${this.name}" has lease mode enabled but holds no ` +
+          `lease. Call app.start() to acquire the store lease before running ` +
+          `durable operations.`,
+      );
+    }
+    return this.leaseState.token;
+  }
+
+  private async acquireLease(): Promise<void> {
+    const config = this.leaseConfig;
+    if (!config) {
+      return;
+    }
+    const lease = this.baseStore.lease;
+    let state = await lease.acquire(config.holder, config.ttlMs);
+    if (!state) {
+      const current = await lease.current();
+      if (current) {
+        throw new LeaseUnavailableError(current, this.name);
+      }
+      // The blocking lease expired between acquire and current; retry once.
+      state = await lease.acquire(config.holder, config.ttlMs);
+      if (!state) {
+        const now = await lease.current();
+        throw new LeaseUnavailableError(
+          now ?? { holder: 'unknown', token: -1, expiresAt: 0 },
+          this.name,
+        );
+      }
+    }
+    this.leaseState = state;
+    this.leaseLost = false;
+    this.startHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    const config = this.leaseConfig;
+    if (!config) {
+      return;
+    }
+    this.stopHeartbeat();
+    const timer = setInterval(() => {
+      void this.heartbeat();
+    }, config.heartbeatMs);
+    // Don't keep the process alive purely for the heartbeat.
+    timer.unref?.();
+    this.heartbeatTimer = timer;
+  }
+
+  private async heartbeat(): Promise<void> {
+    const config = this.leaseConfig;
+    if (!config || this.leaseLost || this.leaseState === undefined) {
+      return;
+    }
+    let renewed: RunStoreLeaseState | undefined;
+    try {
+      renewed = await this.baseStore.lease.renew(config.holder, config.ttlMs);
+    } catch {
+      renewed = undefined;
+    }
+    if (renewed) {
+      this.leaseState = renewed;
+      return;
+    }
+    this.handleLeaseLost();
+  }
+
+  private handleLeaseLost(): void {
+    if (this.leaseConfig === undefined || this.leaseLost) {
+      return;
+    }
+    this.leaseLost = true;
+    this.stopHeartbeat();
+    // Retain leaseState (its now-stale token) so subsequent writes present it
+    // and are rejected with FencingTokenError by a newer holder.
+    this.onLeaseLost?.(this.leaseState);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer !== undefined) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
+  }
+
+  private async releaseLease(): Promise<void> {
+    this.stopHeartbeat();
+    const config = this.leaseConfig;
+    if (config && !this.leaseLost && this.leaseState !== undefined) {
+      await this.baseStore.lease.release(config.holder);
+    }
+    this.leaseState = undefined;
+    this.leaseLost = false;
+  }
+
   async start(): Promise<void> {
+    // Acquire the store lease before anything writes (runtime-server startup
+    // retries deliveries, gateways may emit) so all writes carry the fence.
+    await this.acquireLease();
     if (this.runtimeAdapters.length > 0) {
       if (!this.runtimeServer) {
         this.runtimeServer = server({
@@ -977,6 +1314,7 @@ export class PromptTrailApp {
     for (const gateway of this.gateways.values()) {
       await gateway.stop?.();
     }
+    await this.releaseLease();
   }
 
   async run<TVars extends Vars = Vars>(
@@ -1340,7 +1678,7 @@ export class PromptTrailApp {
     checkpoint: CheckpointOption | undefined,
   ): void {
     const store = checkpointOptionStore(checkpoint);
-    if (store && store !== this.store) {
+    if (store && store !== this.store && store !== this.baseStore) {
       throw new Error(
         'App checkpoint store overrides are not supported yet. Configure the store on PromptTrail.app({ store }) and use checkpoint: true.',
       );
