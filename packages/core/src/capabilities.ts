@@ -49,6 +49,32 @@ export interface ToolExecutionContext {
   recorder?: Recorder;
   /** Graph path of the tools node issuing the call; scopes `callIndex`. */
   recordNodePath?: string;
+  /**
+   * B1 replay substitution handle (design-docs replay-and-self-deploy.md §2).
+   * When present, `executePromptTrailTool` serves the recorded result from the
+   * cassette instead of executing the tool — so side effects never run during a
+   * replay. Threaded in by the graph tools node alongside {@link recorder}.
+   */
+  replay?: ReplayLeafSource;
+}
+
+/**
+ * B1 replay leaf-substitution seam (design-docs replay-and-self-deploy.md §2,
+ * §8). Installed on the runtime/tool context during a replay so the model
+ * funnels (assistant/Codex/Claude) and the tool funnel draw their leaf outputs
+ * from a positional cassette instead of hitting the provider or executing the
+ * tool. A miss (cassette exhausted / kind mismatch) throws under B1's
+ * `miss: 'error'` policy — the implementation lives in `replay.ts`.
+ */
+export interface ReplayLeafSource {
+  /** Serve the next recorded model/provider response for a model node. */
+  model(input: { nodePath: string; provider: string }): unknown;
+  /** Serve the next recorded tool result for a tool call. */
+  tool(input: {
+    nodePath: string;
+    toolName: string;
+    argsDigest: string;
+  }): CallToolResult;
 }
 
 export type CallToolContent =

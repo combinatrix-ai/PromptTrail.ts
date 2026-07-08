@@ -8,6 +8,7 @@ import type {
   ToolExecutionContext,
 } from './capabilities';
 import type { ExecutionEffectDeclaration } from './interceptors';
+import { digest } from './recording';
 
 export type { CallToolResult, PromptTrailTool, ToolExecutionContext };
 
@@ -92,6 +93,29 @@ export async function executePromptTrailTool<TInput, TResult>(
   try {
     const parsedInput = tool.inputSchema.parse(input);
     const executionName = context.capability ?? tool.name;
+    // B1 replay: serve the recorded tool result from the cassette instead of
+    // executing the tool — side effects never run during a replay. Approval,
+    // idempotency, and execution are all skipped; the recorder below still
+    // captures the substituted result into the replay's fresh recording.
+    if (context.replay) {
+      const replayNodePath =
+        context.recordNodePath ??
+        context.recorder?.currentNodePath ??
+        executionName;
+      const callResult = context.replay.tool({
+        nodePath: replayNodePath,
+        toolName: executionName,
+        argsDigest: digest(parsedInput),
+      });
+      context.recorder?.tool({
+        nodePath: replayNodePath,
+        toolName: executionName,
+        input: parsedInput,
+        result: callResult,
+        effect: tool.effect ?? context.effect,
+      });
+      return callResult;
+    }
     const approval = await resolveToolApproval(tool, parsedInput, {
       ...context,
       capability: executionName,

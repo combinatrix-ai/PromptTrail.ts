@@ -95,6 +95,19 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
           if (await emitModelEvent(runtime, 'model.started')) {
             openModelEvents++;
           }
+          // B1 replay: short-circuit the provider with the recorded node output
+          // (node-output granularity — internal vendor/validator rounds are not
+          // re-run). The recorder below still captures the substituted response
+          // into the replay's fresh recording stream.
+          if (runtime.replay) {
+            return runtime.replay.model({
+              nodePath:
+                record?.nodePath ??
+                runtime.recorder?.currentNodePath ??
+                commandScope,
+              provider: record?.provider ?? 'assistant',
+            }) as TResult;
+          }
           return call(request.session);
         },
       });

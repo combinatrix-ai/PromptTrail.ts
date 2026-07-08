@@ -7,6 +7,7 @@ import {
   type ResolvedExecutionTransition,
 } from './execution';
 import type { ProviderSessionBinding } from './provider_session';
+import type { ReplayLeafSource } from './capabilities';
 import type { Recorder } from './recording';
 import type { Session, Vars } from './session';
 
@@ -303,6 +304,13 @@ export interface ExecutionRuntimeState<TVars extends Vars = Vars> {
    * capture through it when set.
    */
   recorder?: Recorder;
+  /**
+   * B1 replay leaf-substitution handle (design-docs replay-and-self-deploy.md
+   * §2). Present only during a replay; the model funnels (assistant/Codex/Claude
+   * `wrapModelCall` seams) and the tool funnel serve their leaf outputs from the
+   * positional cassette instead of hitting the provider or executing the tool.
+   */
+  replay?: ReplayLeafSource;
 }
 
 export function createExecutionRuntimeState<
@@ -322,6 +330,7 @@ export function createExecutionRuntimeState<
     binding: ProviderSessionBinding,
   ) => Promise<void>;
   recorder?: Recorder;
+  replay?: ReplayLeafSource;
 }): ExecutionRuntimeState<TVars> {
   return {
     middleware: options?.middleware ?? [],
@@ -337,6 +346,7 @@ export function createExecutionRuntimeState<
     providerSessions: options?.providerSessions,
     recordProviderSession: options?.recordProviderSession,
     recorder: options?.recorder,
+    replay: options?.replay,
   };
 }
 

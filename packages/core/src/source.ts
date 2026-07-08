@@ -34,6 +34,37 @@ import type {
   TValidationResult as ValidationResult,
 } from './validators/base';
 
+// --- Replay determinism injection ---
+
+// Module-level injectable clock/rng so B1 replay can pin the two direct
+// Date.now/Math.random sites in this module (the RandomSource pick and the
+// LlmSource instance id) on replay-critical paths (design-docs
+// replay-and-self-deploy.md §2, Appendix B0 round-3 determinism inventory).
+// Defaults delegate to the real globals; `replayRun` installs deterministic
+// overrides for the duration of a replay and restores them after via
+// `resetSourceRuntimeDeterminism`.
+let sourceRuntimeNow: () => number = () => Date.now();
+let sourceRuntimeRandom: () => number = () => Math.random();
+
+/** Install deterministic clock/rng overrides for source-side nondeterminism. */
+export function setSourceRuntimeDeterminism(overrides: {
+  now?: () => number;
+  random?: () => number;
+}): void {
+  if (overrides.now) {
+    sourceRuntimeNow = overrides.now;
+  }
+  if (overrides.random) {
+    sourceRuntimeRandom = overrides.random;
+  }
+}
+
+/** Restore the default `Date.now`/`Math.random` source-side sources. */
+export function resetSourceRuntimeDeterminism(): void {
+  sourceRuntimeNow = () => Date.now();
+  sourceRuntimeRandom = () => Math.random();
+}
+
 // --- Debug Mode Configuration ---
 
 /**
@@ -450,12 +481,12 @@ export class RandomSource extends StringSource {
   }
 
   async getContent(_session: Session<any>): Promise<string> {
-    // B1 TODO (determinism inventory, Appendix B0 round-3): direct Math.random
-    // here (and Date.now at the LlmSource instanceId below) is not yet pinned by
-    // a RuntimeRng/RuntimeClock. B0 injects a clock only where RECORDS need
-    // timestamps; banning direct Date.now/Math.random on replay-critical paths
-    // (source.ts, plus the eventScopeId seed in graph_executor) is B1 scope.
-    const randomIndex = Math.floor(Math.random() * this.contentList.length);
+    // Uses the injectable source rng so B1 replay pins the pick deterministically
+    // (this string source is not a model leaf, so it runs during replay rather
+    // than being served from the cassette). Defaults to `Math.random`.
+    const randomIndex = Math.floor(
+      sourceRuntimeRandom() * this.contentList.length,
+    );
     return this.contentList[randomIndex];
   }
 
@@ -969,8 +1000,11 @@ export class LlmSource extends ModelSource {
       ...options,
     };
 
-    // Generate unique instance ID for tracking
-    this.instanceId = `llm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate unique instance ID for tracking (injectable clock/rng so B1
+    // replay pins it on replay-critical paths; defaults to Date.now/Math.random).
+    this.instanceId = `llm-${sourceRuntimeNow()}-${sourceRuntimeRandom()
+      .toString(36)
+      .substr(2, 9)}`;
 
     // Set max call limit from options or environment
     this.maxCallLimit = options?.maxCallLimit ?? getMaxLLMCalls();

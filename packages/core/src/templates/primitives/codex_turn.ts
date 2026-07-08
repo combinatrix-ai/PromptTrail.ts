@@ -137,6 +137,18 @@ export class CodexTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
     }: {
       request: TurnModelRequest<TVars>;
     }) => {
+      // B1 replay: short-circuit the Codex provider turn with the recorded
+      // aggregate output (node-output granularity). Faithful raw replay needs
+      // retain: 'full' so the recorded response equals the raw turn result.
+      if (runtime?.replay) {
+        return runtime.replay.model({
+          nodePath:
+            options.nodePath ??
+            runtime.recorder?.currentNodePath ??
+            'codexTurn',
+          provider: 'codex',
+        }) as Awaited<ReturnType<typeof collectCodexTurnResult>>;
+      }
       const ownsClient = this.options.client === undefined;
       const client =
         this.options.client ??

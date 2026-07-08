@@ -1,4 +1,4 @@
-import type { CallToolResult } from './capabilities';
+import type { CallToolResult, ReplayLeafSource } from './capabilities';
 import {
   ObserverBus,
   adoptSessionResult,
@@ -102,6 +102,13 @@ export interface GraphExecutionOptions<TVars extends Vars = Vars> {
    * funnels and node breadcrumbs capture through it.
    */
   recorder?: Recorder;
+  /**
+   * B1 replay leaf-substitution handle (design-docs replay-and-self-deploy.md
+   * §2). Supplied by `replayRun`; installed on the runtime so the model funnels
+   * and the tool funnel serve leaf outputs from the positional cassette instead
+   * of hitting the provider or executing the tool.
+   */
+  replay?: ReplayLeafSource;
 }
 
 export interface GraphToolDurableBoundaryContext<TVars extends Vars = Vars> {
@@ -223,9 +230,11 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
         providerSessions: options.providerSessions,
         recordProviderSession: options.recordProviderSession,
         recorder: options.recorder,
+        replay: options.replay,
       });
   if (options.runtime) {
     runtime.recorder = options.recorder ?? options.runtime.recorder;
+    runtime.replay = options.replay ?? options.runtime.replay;
     runtime.services = services;
     runtime.signal = signal;
     runtime.emitEvent = emitEvent;
@@ -1367,6 +1376,7 @@ async function executeToolsNode<TVars extends Vars>(
             durable: durable ?? state.durableToolBoundary?.(context),
             recorder: state.runtime.recorder,
             recordNodePath: nodePath,
+            replay: state.runtime.replay,
           });
         const result = state.durableToolExecution
           ? await state.durableToolExecution(context, executeTool)
