@@ -1,11 +1,14 @@
 import { createClient, type Client } from '@libsql/client';
 import {
+  assertFenceAllowed,
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
   type OnceScope,
   type ProviderSessionBinding,
+  type RunStoreLease,
+  type RunStoreLeaseState,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
@@ -28,6 +31,154 @@ export interface LibsqlRunStoreOptions {
   authToken?: string;
   /** Agents map used to reconstruct stored runs. */
   agents: Record<string, Agent>;
+  /** Injectable clock for the lease (defaults to `Date.now`). Tests only. */
+  now?: () => number;
+}
+
+interface LibsqlLeaseRow {
+  holder: string;
+  token: number;
+  expiresAt: number;
+  ttlMs: number;
+}
+
+/**
+ * Store-wide single-writer lease backed by a single libSQL row (id = 1).
+ * libSQL is networked/async, so each acquire/renew/handoff reads the row then
+ * writes it back in two round trips — correct for the single-writer arbitration
+ * this lease provides (the launcher/heartbeat serializes lease operations). The
+ * fencing token persists in the row, so it stays monotonic across reopens.
+ */
+class LibsqlLease implements RunStoreLease {
+  constructor(
+    private readonly client: Client,
+    private readonly now: () => number,
+  ) {}
+
+  private async readRow(): Promise<LibsqlLeaseRow | undefined> {
+    const res = await this.client.execute(
+      'SELECT holder, token, expires_at, ttl_ms FROM lease WHERE id = 1',
+    );
+    if (res.rows.length === 0) {
+      return undefined;
+    }
+    const r = res.rows[0];
+    return {
+      holder: r[0] as string,
+      token: r[1] as number,
+      expiresAt: r[2] as number,
+      ttlMs: r[3] as number,
+    };
+  }
+
+  private async write(row: LibsqlLeaseRow): Promise<void> {
+    await this.client.execute({
+      sql: `INSERT INTO lease (id, holder, token, expires_at, ttl_ms)
+            VALUES (1, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              holder = excluded.holder,
+              token = excluded.token,
+              expires_at = excluded.expires_at,
+              ttl_ms = excluded.ttl_ms`,
+      args: [row.holder, row.token, row.expiresAt, row.ttlMs],
+    });
+  }
+
+  private isActive(row: LibsqlLeaseRow | undefined, at: number): boolean {
+    return row !== undefined && row.expiresAt > at;
+  }
+
+  private view(row: LibsqlLeaseRow): RunStoreLeaseState {
+    return { holder: row.holder, token: row.token, expiresAt: row.expiresAt };
+  }
+
+  /** Active-token read used by the store's fence check. */
+  async activeToken(): Promise<number | undefined> {
+    const row = await this.readRow();
+    return this.isActive(row, this.now()) ? row!.token : undefined;
+  }
+
+  async acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = await this.readRow();
+    if (this.isActive(row, at)) {
+      if (row!.holder !== holder) {
+        return undefined;
+      }
+      const renewed: LibsqlLeaseRow = {
+        holder,
+        token: row!.token,
+        expiresAt: at + ttlMs,
+        ttlMs,
+      };
+      await this.write(renewed);
+      return this.view(renewed);
+    }
+    const next: LibsqlLeaseRow = {
+      holder,
+      token: (row?.token ?? 0) + 1,
+      expiresAt: at + ttlMs,
+      ttlMs,
+    };
+    await this.write(next);
+    return this.view(next);
+  }
+
+  async renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = await this.readRow();
+    if (!this.isActive(row, at) || row!.holder !== holder) {
+      return undefined;
+    }
+    const ttl = ttlMs ?? row!.ttlMs;
+    const renewed: LibsqlLeaseRow = {
+      holder,
+      token: row!.token,
+      expiresAt: at + ttl,
+      ttlMs: ttl,
+    };
+    await this.write(renewed);
+    return this.view(renewed);
+  }
+
+  async release(holder: string): Promise<void> {
+    const at = this.now();
+    const row = await this.readRow();
+    if (this.isActive(row, at) && row!.holder === holder) {
+      await this.write({ ...row!, expiresAt: 0 });
+    }
+  }
+
+  async handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = await this.readRow();
+    if (!this.isActive(row, at) || row!.holder !== opts.from) {
+      return undefined;
+    }
+    const next: LibsqlLeaseRow = {
+      holder: opts.to,
+      token: row!.token + 1,
+      expiresAt: at + opts.ttlMs,
+      ttlMs: opts.ttlMs,
+    };
+    await this.write(next);
+    return this.view(next);
+  }
+
+  async current(): Promise<RunStoreLeaseState | undefined> {
+    const row = await this.readRow();
+    return this.isActive(row, this.now()) ? this.view(row!) : undefined;
+  }
 }
 
 /**
@@ -47,10 +198,21 @@ export interface LibsqlRunStoreOptions {
  * `PRAGMA foreign_keys = ON`. delete() relies on cascade to clean child rows.
  */
 export class LibsqlRunStore implements DurableRunStore {
+  readonly lease: RunStoreLease;
+  private readonly libsqlLease: LibsqlLease;
+
   private constructor(
     private readonly client: Client,
     private readonly agents: Record<string, Agent>,
-  ) {}
+    now: () => number,
+  ) {
+    this.libsqlLease = new LibsqlLease(client, now);
+    this.lease = this.libsqlLease;
+  }
+
+  private async assertFence(fence: number | undefined): Promise<void> {
+    assertFenceAllowed(await this.libsqlLease.activeToken(), fence);
+  }
 
   /**
    * Open a LibsqlRunStore, enabling foreign keys and creating the schema if it
@@ -72,7 +234,11 @@ export class LibsqlRunStore implements DurableRunStore {
     } else {
       throw new Error('LibsqlRunStore.open requires either a client or a url.');
     }
-    const store = new LibsqlRunStore(client, options.agents);
+    const store = new LibsqlRunStore(
+      client,
+      options.agents,
+      options.now ?? Date.now,
+    );
     await store.createSchema();
     return store;
   }
@@ -104,7 +270,12 @@ export class LibsqlRunStore implements DurableRunStore {
     return pairs;
   }
 
-  async create(runId: string, run: StoredRun<any>): Promise<void> {
+  async create(
+    runId: string,
+    run: StoredRun<any>,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     await this.client.execute({
       sql: `INSERT INTO runs (
         run_id,
@@ -129,7 +300,12 @@ export class LibsqlRunStore implements DurableRunStore {
     });
   }
 
-  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+  async patch(
+    runId: string,
+    patch: StoredRunPatch,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     // Read current values so we can fill in unpatched fields.
     const res = await this.client.execute({
       sql: `SELECT agent_name, status, graph_cursor, graph_suspended_at,
@@ -179,7 +355,12 @@ export class LibsqlRunStore implements DurableRunStore {
     });
   }
 
-  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+  async appendInbox(
+    runId: string,
+    inbound: Inbound,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
     // INSERT OR IGNORE for offset idempotency — duplicate offsets are silently dropped.
     await this.client.execute({
       sql: `INSERT OR IGNORE INTO inbox (run_id, offset_num, kind, content, attrs_json)
@@ -197,7 +378,9 @@ export class LibsqlRunStore implements DurableRunStore {
   async appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     // Single-statement seq allocation: INSERT ... SELECT COALESCE(MAX(seq)+1, 0)
     // computes the next seq and inserts in one round trip, so there is no
     // window between reading the max and writing the row for another
@@ -233,7 +416,9 @@ export class LibsqlRunStore implements DurableRunStore {
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     await this.client.execute({
       sql: `INSERT INTO once_memo (run_id, scope, key, value_json)
             VALUES (?, ?, ?, ?)
@@ -246,7 +431,9 @@ export class LibsqlRunStore implements DurableRunStore {
   async upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     await this.client.execute({
       sql: `INSERT INTO outbox (run_id, idempotency_key, entry_json)
             VALUES (?, ?, ?)
@@ -260,7 +447,9 @@ export class LibsqlRunStore implements DurableRunStore {
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void> {
+    await this.assertFence(fence);
     await this.client.execute({
       sql: `INSERT INTO provider_sessions (run_id, node_path, binding_json)
             VALUES (?, ?, ?)
@@ -270,7 +459,8 @@ export class LibsqlRunStore implements DurableRunStore {
     });
   }
 
-  async delete(runId: string): Promise<void> {
+  async delete(runId: string, fence?: number): Promise<void> {
+    await this.assertFence(fence);
     // Deleting the parent runs row is sufficient: the schema declares
     // FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE on every
     // child table (session_deltas, once_memo, inbox, outbox, provider_sessions),
@@ -354,6 +544,14 @@ export class LibsqlRunStore implements DurableRunStore {
         binding_json TEXT NOT NULL,
         PRIMARY KEY (run_id, node_path),
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS lease (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        holder TEXT NOT NULL,
+        token INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        ttl_ms INTEGER NOT NULL
       );
     `);
   }

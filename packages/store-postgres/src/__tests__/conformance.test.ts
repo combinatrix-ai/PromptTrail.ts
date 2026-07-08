@@ -12,14 +12,14 @@ function makeAgents(): Record<string, Agent> {
 runDurableRunStoreConformance({
   name: 'PostgresRunStore (pg-mem)',
   makeAgents,
-  open: async (agents) => {
+  open: async (agents, { now }) => {
     // Create a pg-mem in-memory Postgres instance.
     // pg-mem persists data within the same `mem` object across Pool instances.
     const mem = newDb();
     const { Pool } = mem.adapters.createPg();
     const pool = new Pool();
 
-    const store = await PostgresRunStore.open({ pool, agents });
+    const store = await PostgresRunStore.open({ pool, agents, now });
 
     return {
       store,
@@ -31,7 +31,7 @@ runDurableRunStoreConformance({
         const { Pool: Pool2 } = mem.adapters.createPg();
         const pool2 = new Pool2();
         // Open without recreating schema (CREATE TABLE IF NOT EXISTS is safe)
-        return PostgresRunStore.open({ pool: pool2, agents });
+        return PostgresRunStore.open({ pool: pool2, agents, now });
       },
       dispose: async () => {
         try {

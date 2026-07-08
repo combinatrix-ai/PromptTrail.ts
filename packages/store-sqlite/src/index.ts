@@ -3,12 +3,15 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { cwd } from 'node:process';
 import {
+  assertFenceAllowed,
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
   type Inbound,
   type OnceScope,
   type ProviderSessionBinding,
+  type RunStoreLease,
+  type RunStoreLeaseState,
   type SessionCheckpointDelta,
   type StoredRun,
   type StoredRunPatch,
@@ -26,6 +29,150 @@ import {
 interface SqliteRunStoreOptions {
   path?: string;
   agents: Record<string, Agent>;
+  /** Injectable clock for the lease (defaults to `Date.now`). Tests only. */
+  now?: () => number;
+}
+
+interface LeaseRow {
+  holder: string;
+  token: number;
+  expires_at: number;
+  ttl_ms: number;
+}
+
+/**
+ * Store-wide single-writer lease backed by a single SQLite row (id = 1).
+ * better-sqlite3 is synchronous, so each acquire/renew/handoff reads and writes
+ * the row within one JS tick — the read-then-write is atomic in-process. The
+ * fencing token persists in the row, so it stays monotonic across process
+ * restarts (a reopened store reads the last token and bumps from it).
+ */
+class SqliteLease implements RunStoreLease {
+  private readonly selectStmt: Database.Statement;
+  private readonly upsertStmt: Database.Statement;
+
+  constructor(
+    db: Database.Database,
+    private readonly now: () => number,
+  ) {
+    this.selectStmt = db.prepare(
+      'SELECT holder, token, expires_at, ttl_ms FROM lease WHERE id = 1',
+    );
+    this.upsertStmt = db.prepare(`
+      INSERT INTO lease (id, holder, token, expires_at, ttl_ms)
+      VALUES (1, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        holder = excluded.holder,
+        token = excluded.token,
+        expires_at = excluded.expires_at,
+        ttl_ms = excluded.ttl_ms
+    `);
+  }
+
+  private readRow(): LeaseRow | undefined {
+    return this.selectStmt.get() as LeaseRow | undefined;
+  }
+
+  private write(row: LeaseRow): void {
+    this.upsertStmt.run(row.holder, row.token, row.expires_at, row.ttl_ms);
+  }
+
+  private isActive(row: LeaseRow | undefined, at: number): boolean {
+    return row !== undefined && row.expires_at > at;
+  }
+
+  private view(row: LeaseRow): RunStoreLeaseState {
+    return { holder: row.holder, token: row.token, expiresAt: row.expires_at };
+  }
+
+  /** Synchronous active-token read used by the store's fence check. */
+  activeToken(): number | undefined {
+    const row = this.readRow();
+    return this.isActive(row, this.now()) ? row!.token : undefined;
+  }
+
+  async acquire(
+    holder: string,
+    ttlMs: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = this.readRow();
+    if (this.isActive(row, at)) {
+      if (row!.holder !== holder) {
+        return undefined;
+      }
+      const renewed: LeaseRow = {
+        holder,
+        token: row!.token,
+        expires_at: at + ttlMs,
+        ttl_ms: ttlMs,
+      };
+      this.write(renewed);
+      return this.view(renewed);
+    }
+    const next: LeaseRow = {
+      holder,
+      token: (row?.token ?? 0) + 1,
+      expires_at: at + ttlMs,
+      ttl_ms: ttlMs,
+    };
+    this.write(next);
+    return this.view(next);
+  }
+
+  async renew(
+    holder: string,
+    ttlMs?: number,
+  ): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = this.readRow();
+    if (!this.isActive(row, at) || row!.holder !== holder) {
+      return undefined;
+    }
+    const ttl = ttlMs ?? row!.ttl_ms;
+    const renewed: LeaseRow = {
+      holder,
+      token: row!.token,
+      expires_at: at + ttl,
+      ttl_ms: ttl,
+    };
+    this.write(renewed);
+    return this.view(renewed);
+  }
+
+  async release(holder: string): Promise<void> {
+    const at = this.now();
+    const row = this.readRow();
+    if (this.isActive(row, at) && row!.holder === holder) {
+      // Retain the token for monotonicity; just expire the lease.
+      this.write({ ...row!, expires_at: 0 });
+    }
+  }
+
+  async handoff(opts: {
+    from: string;
+    to: string;
+    ttlMs: number;
+  }): Promise<RunStoreLeaseState | undefined> {
+    const at = this.now();
+    const row = this.readRow();
+    if (!this.isActive(row, at) || row!.holder !== opts.from) {
+      return undefined;
+    }
+    const next: LeaseRow = {
+      holder: opts.to,
+      token: row!.token + 1,
+      expires_at: at + opts.ttlMs,
+      ttl_ms: opts.ttlMs,
+    };
+    this.write(next);
+    return this.view(next);
+  }
+
+  async current(): Promise<RunStoreLeaseState | undefined> {
+    const row = this.readRow();
+    return this.isActive(row, this.now()) ? this.view(row!) : undefined;
+  }
 }
 
 export interface SqliteWriteJournalEntry {
@@ -115,6 +262,8 @@ export class SqliteRunStore implements DurableRunStore {
   private readonly db: Database.Database;
   private readonly runs = new Map<string, StoredRun<any>>();
   private readonly writeJournal = new Map<string, SqliteWriteJournalEntry[]>();
+  private readonly sqliteLease: SqliteLease;
+  readonly lease: RunStoreLease;
 
   private readonly insertRunStmt: Database.Statement;
   private readonly updateRunStmt: Database.Statement;
@@ -200,7 +349,14 @@ export class SqliteRunStore implements DurableRunStore {
       DO UPDATE SET binding_json = excluded.binding_json
     `);
 
+    this.sqliteLease = new SqliteLease(this.db, options.now ?? Date.now);
+    this.lease = this.sqliteLease;
+
     this.hydrate(options.agents);
+  }
+
+  private assertFence(fence: number | undefined): void {
+    assertFenceAllowed(this.sqliteLease.activeToken(), fence);
   }
 
   async get(runId: string): Promise<StoredRun<any> | undefined> {
@@ -215,7 +371,12 @@ export class SqliteRunStore implements DurableRunStore {
     return this.runs.entries();
   }
 
-  async create(runId: string, run: StoredRun<any>): Promise<void> {
+  async create(
+    runId: string,
+    run: StoredRun<any>,
+    fence?: number,
+  ): Promise<void> {
+    this.assertFence(fence);
     this.insertRunStmt.run(
       runId,
       run.agentName,
@@ -234,7 +395,12 @@ export class SqliteRunStore implements DurableRunStore {
     );
   }
 
-  async patch(runId: string, patch: StoredRunPatch): Promise<void> {
+  async patch(
+    runId: string,
+    patch: StoredRunPatch,
+    fence?: number,
+  ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -252,7 +418,12 @@ export class SqliteRunStore implements DurableRunStore {
     this.recordJournal(runId, 'patch', patchSummary(patch));
   }
 
-  async appendInbox(runId: string, inbound: Inbound): Promise<void> {
+  async appendInbox(
+    runId: string,
+    inbound: Inbound,
+    fence?: number,
+  ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -280,7 +451,9 @@ export class SqliteRunStore implements DurableRunStore {
   async appendSessionDelta(
     runId: string,
     delta: SessionCheckpointDelta<any>,
+    fence?: number,
   ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -307,7 +480,9 @@ export class SqliteRunStore implements DurableRunStore {
     scope: OnceScope,
     key: string,
     value: unknown,
+    fence?: number,
   ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -324,7 +499,9 @@ export class SqliteRunStore implements DurableRunStore {
   async upsertOutbox(
     runId: string,
     entry: AssistantDeliveryOutboxEntry,
+    fence?: number,
   ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -354,7 +531,9 @@ export class SqliteRunStore implements DurableRunStore {
     runId: string,
     nodePath: string,
     binding: ProviderSessionBinding,
+    fence?: number,
   ): Promise<void> {
+    this.assertFence(fence);
     const run = this.runs.get(runId);
     if (!run) {
       return;
@@ -375,7 +554,8 @@ export class SqliteRunStore implements DurableRunStore {
     );
   }
 
-  async delete(runId: string): Promise<void> {
+  async delete(runId: string, fence?: number): Promise<void> {
+    this.assertFence(fence);
     this.deleteRunStmt.run(runId);
     this.runs.delete(runId);
     this.recordJournal(runId, 'delete', `DELETE runs (${runId})`);
@@ -458,6 +638,14 @@ export class SqliteRunStore implements DurableRunStore {
         binding_json TEXT NOT NULL,
         PRIMARY KEY (run_id, node_path),
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS lease (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        holder TEXT NOT NULL,
+        token INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        ttl_ms INTEGER NOT NULL
       );
     `);
   }

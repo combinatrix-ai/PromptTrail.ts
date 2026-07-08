@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   Agent,
+  FencingTokenError,
   Session,
   type DurableRunStore,
   type StoredRun,
@@ -9,15 +10,36 @@ import {
   type AssistantDeliveryOutboxEntry,
 } from '@prompttrail/core';
 
+/**
+ * Options threaded into a backend's `open` so lease TTL/expiry can be exercised
+ * deterministically. The backend MUST wire `now` into its store construction
+ * (both the initial store and any `reopen`) so the lease uses the injected
+ * clock instead of the wall clock — the lease cases advance it without
+ * sleeping.
+ */
+export interface ConformanceOpenOptions {
+  now: () => number;
+}
+
 export interface ConformanceSpec {
   name: string;
   makeAgents: () => Record<string, Agent>;
-  open: (agents: Record<string, Agent>) => Promise<{
+  open: (
+    agents: Record<string, Agent>,
+    options: ConformanceOpenOptions,
+  ) => Promise<{
     store: DurableRunStore;
     reopen?: () => Promise<DurableRunStore>;
     dispose?: () => Promise<void>;
   }>;
 }
+
+/** Base value the injected clock resets to at the start of every test. */
+const BASE_NOW = 1_000_000;
+/** Lease TTL used throughout the lease conformance cases. */
+const LEASE_TTL = 10_000;
+const HOLDER_A = 'holder-a';
+const HOLDER_B = 'holder-b';
 
 function makeOnce(): StoredRun<any>['once'] {
   return { run: new Map(), conversation: new Map() };
@@ -47,6 +69,12 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
     let reopen: (() => Promise<DurableRunStore>) | undefined;
     let dispose: (() => Promise<void>) | undefined;
     let agents: Record<string, Agent>;
+    // Injected lease clock. Reset per test in openStore; lease cases advance it
+    // via setNow rather than sleeping.
+    let clock = BASE_NOW;
+    const setNow = (value: number) => {
+      clock = value;
+    };
 
     afterEach(async () => {
       if (dispose) {
@@ -55,8 +83,9 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
     });
 
     async function openStore() {
+      clock = BASE_NOW;
       agents = spec.makeAgents();
-      const result = await spec.open(agents);
+      const result = await spec.open(agents, { now: () => clock });
       store = result.store;
       reopen = result.reopen;
       dispose = result.dispose;
@@ -607,6 +636,223 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
           expect(result!.messages[i].content).toBe(`${runId}-message-${i}`);
         }
       }
+    });
+
+    // -----------------------------------------------------------------------
+    // Lease + fencing token cases (durability roadmap §2)
+    // -----------------------------------------------------------------------
+
+    // Case 15: acquire/renew/current round-trip. current() is undefined before
+    // acquire; re-acquire by the same holder renews and KEEPS the token; renew
+    // extends expiry without bumping the token; release makes current()
+    // undefined again.
+    it('case 15: lease acquire/renew/current round-trip', async () => {
+      await openStore();
+
+      expect(await store.lease.current()).toBeUndefined();
+
+      const s1 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s1).toBeDefined();
+      expect(s1!.holder).toBe(HOLDER_A);
+      expect(s1!.expiresAt).toBe(BASE_NOW + LEASE_TTL);
+
+      const current = await store.lease.current();
+      expect(current!.holder).toBe(HOLDER_A);
+      expect(current!.token).toBe(s1!.token);
+
+      // Re-acquire by the same holder renews and keeps the token.
+      const s2 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s2!.token).toBe(s1!.token);
+
+      // Renew extends the expiry against the advanced clock, keeping the token.
+      setNow(BASE_NOW + 5_000);
+      const s3 = await store.lease.renew(HOLDER_A);
+      expect(s3!.token).toBe(s1!.token);
+      expect(s3!.expiresAt).toBe(BASE_NOW + 5_000 + LEASE_TTL);
+
+      // Release: current() is undefined afterwards.
+      await store.lease.release(HOLDER_A);
+      expect(await store.lease.current()).toBeUndefined();
+
+      // renew by a holder that no longer owns a live lease returns undefined.
+      expect(await store.lease.renew(HOLDER_A)).toBeUndefined();
+    });
+
+    // Case 16: a second holder cannot acquire while the lease is live; after the
+    // first holder releases, the second holder acquires and the token bumps.
+    it('case 16: second holder cannot acquire while lease is live', async () => {
+      await openStore();
+
+      const s1 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s1).toBeDefined();
+
+      const blocked = await store.lease.acquire(HOLDER_B, LEASE_TTL);
+      expect(blocked).toBeUndefined();
+      expect((await store.lease.current())!.holder).toBe(HOLDER_A);
+
+      await store.lease.release(HOLDER_A);
+      const s2 = await store.lease.acquire(HOLDER_B, LEASE_TTL);
+      expect(s2).toBeDefined();
+      expect(s2!.holder).toBe(HOLDER_B);
+      expect(s2!.token).toBeGreaterThan(s1!.token);
+    });
+
+    // Case 17: an EXPIRED lease reads as undefined and can be taken over by a
+    // different holder; the takeover bumps the token (orphan-takeover path).
+    it('case 17: expired lease can be taken over and token increases', async () => {
+      await openStore();
+
+      const s1 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s1).toBeDefined();
+
+      // Advance past expiry: the lease reads as absent.
+      setNow(BASE_NOW + LEASE_TTL + 1);
+      expect(await store.lease.current()).toBeUndefined();
+
+      const s2 = await store.lease.acquire(HOLDER_B, LEASE_TTL);
+      expect(s2).toBeDefined();
+      expect(s2!.holder).toBe(HOLDER_B);
+      expect(s2!.token).toBeGreaterThan(s1!.token);
+    });
+
+    // Case 18: handoff transfers the live lease atomically and bumps the token;
+    // handoff from a holder that is not the current holder returns undefined.
+    it('case 18: handoff transfers atomically and bumps token', async () => {
+      await openStore();
+
+      const s1 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s1).toBeDefined();
+
+      // Wrong `from` → no transfer.
+      const wrong = await store.lease.handoff({
+        from: HOLDER_B,
+        to: 'someone',
+        ttlMs: LEASE_TTL,
+      });
+      expect(wrong).toBeUndefined();
+      expect((await store.lease.current())!.holder).toBe(HOLDER_A);
+
+      const s2 = await store.lease.handoff({
+        from: HOLDER_A,
+        to: HOLDER_B,
+        ttlMs: LEASE_TTL,
+      });
+      expect(s2).toBeDefined();
+      expect(s2!.holder).toBe(HOLDER_B);
+      expect(s2!.token).toBeGreaterThan(s1!.token);
+      expect((await store.lease.current())!.holder).toBe(HOLDER_B);
+    });
+
+    // Case 19: FENCING — after a handoff, the paused old holder ("blue") whose
+    // token predates the handoff cannot write; its stale-fenced write is
+    // rejected with FencingTokenError, while the new holder ("green") writes
+    // with its fresh token. This is the paused-blue double-write scenario the
+    // fencing token exists to defeat.
+    it('case 19: stale-fence write rejected with FencingTokenError after handoff', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-fence-19';
+
+      // Run created before any lease exists — an unfenced create is allowed.
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      const blue = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(blue).toBeDefined();
+
+      // Blue writes with its own token: accepted.
+      await store.patch(runId, { graphCursor: 1 }, blue!.token);
+
+      // Handoff to green bumps the token.
+      const green = await store.lease.handoff({
+        from: HOLDER_A,
+        to: HOLDER_B,
+        ttlMs: LEASE_TTL,
+      });
+      expect(green!.token).toBeGreaterThan(blue!.token);
+
+      // Paused blue tries to write with its now-stale token: rejected.
+      await expect(
+        store.patch(runId, { graphCursor: 2 }, blue!.token),
+      ).rejects.toBeInstanceOf(FencingTokenError);
+
+      // Green writes with its fresh token: accepted.
+      await store.patch(runId, { graphCursor: 3 }, green!.token);
+
+      const retrieved = await store.get(runId);
+      expect(retrieved!.graphCursor).toBe(3);
+    });
+
+    // Case 20: with an ACTIVE lease, an omitted fence is also a
+    // FencingTokenError — a leased store requires every writer to present its
+    // token. Presenting the current token succeeds.
+    it('case 20: omitted fence rejected while leased', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-fence-20';
+
+      await store.create(runId, makeInitialRun(agent, agentName));
+      const held = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(held).toBeDefined();
+
+      await expect(
+        store.patch(runId, { graphCursor: 1 }),
+      ).rejects.toBeInstanceOf(FencingTokenError);
+
+      await store.patch(runId, { graphCursor: 2 }, held!.token);
+      expect((await store.get(runId))!.graphCursor).toBe(2);
+    });
+
+    // Case 21: a lease-less store accepts unfenced writes — the zero-config
+    // single-process path stays unchanged. (Cases 1–14 rely on this
+    // implicitly; here it is explicit alongside the lease cases.)
+    it('case 21: lease-less store accepts unfenced writes', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-fence-21';
+
+      // No lease acquired: every mutating call proceeds without a fence.
+      expect(await store.lease.current()).toBeUndefined();
+      await store.create(runId, makeInitialRun(agent, agentName));
+      await store.patch(runId, { graphCursor: 7 });
+      await store.appendInbox(runId, {
+        offset: 0,
+        kind: 'user',
+        content: 'unfenced',
+      });
+      await store.recordOnce(runId, 'run', 'k', 'v');
+
+      const retrieved = await store.get(runId);
+      expect(retrieved!.graphCursor).toBe(7);
+      expect(retrieved!.inbox).toHaveLength(1);
+      expect(retrieved!.once.run.get('k')).toBe('v');
+    });
+
+    // Case 22: DURABILITY — the fencing token is monotonic across a store
+    // reopen (persisted with the lease). Skipped for in-memory stores that have
+    // no reopen, like case 12.
+    it('case 22: fencing token monotonic across reopen', async () => {
+      await openStore();
+      if (!reopen) {
+        return;
+      }
+
+      const s1 = await store.lease.acquire(HOLDER_A, LEASE_TTL);
+      expect(s1).toBeDefined();
+
+      // Advance past expiry so the reopened store can take the lease over.
+      setNow(BASE_NOW + LEASE_TTL + 1);
+
+      const fresh = await reopen();
+      expect(await fresh.lease.current()).toBeUndefined();
+
+      const s2 = await fresh.lease.acquire(HOLDER_B, LEASE_TTL);
+      expect(s2).toBeDefined();
+      // The persisted counter survives the reopen: the new token is strictly
+      // greater than the pre-reopen token, never reset to zero.
+      expect(s2!.token).toBeGreaterThan(s1!.token);
     });
   });
 }
