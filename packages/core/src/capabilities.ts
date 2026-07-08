@@ -66,13 +66,25 @@ export interface ToolExecutionContext {
  * tool. A miss (cassette exhausted / kind mismatch) throws under B1's
  * `miss: 'error'` policy — the implementation lives in `replay.ts`.
  */
+/**
+ * Sentinel a {@link ReplayLeafSource.model} returns to instruct the model
+ * funnel to fall through to the REAL provider (design-docs
+ * replay-and-self-deploy.md §4, B3 acceptance). Returned only under the
+ * `miss: 'live'` policy (acceptance mode) when the cassette cannot serve the
+ * call — the funnel then runs the genuine model call instead of a sentinel.
+ * Tool calls never receive this: side effects stay sealed in acceptance, so a
+ * tool miss always resolves to a stub/sentinel, never a live execution.
+ */
+export const REPLAY_GO_LIVE = Symbol('prompttrail.replay.go-live');
+
 export interface ReplayLeafSource {
   /**
    * Serve a recorded model/provider response for a model node. `requestSession`
    * + `requestMeta` let the replay source digest the candidate's live request
    * the SAME way the recorder did (`computeModelRequestDigest`), so
    * `request-hash` keying is well-defined (B2). B1's positional source ignores
-   * them.
+   * them. Returns {@link REPLAY_GO_LIVE} to instruct the funnel to run the real
+   * provider (acceptance `miss: 'live'` fall-through, B3).
    */
   model(input: {
     nodePath: string;

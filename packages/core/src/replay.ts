@@ -1,4 +1,8 @@
-import type { CallToolResult, ReplayLeafSource } from './capabilities';
+import {
+  REPLAY_GO_LIVE,
+  type CallToolResult,
+  type ReplayLeafSource,
+} from './capabilities';
 import type {
   AssistantDeliveryOutboxInput,
   ModelCallRecord,
@@ -133,10 +137,18 @@ export interface ReplayTrace {
   /** Deliveries captured but never sent (no drivers on the throwaway path). */
   wouldDeliver: AssistantDeliveryOutboxInput[];
   /**
-   * Divergence points recorded under `miss: 'flag'` — a leaf no keying level
-   * could serve. Always empty under `miss: 'error'` (a miss throws instead).
+   * Divergence points recorded under `miss: 'flag'`/`'live'` — a leaf no keying
+   * level could serve. Always empty under `miss: 'error'` (a miss throws
+   * instead). `live: true` marks a model call that fell through to the REAL
+   * provider under the acceptance `miss: 'live'` policy (design §4), so an
+   * assertion can see exactly what went live; a sealed sentinel miss omits it.
    */
-  misses: { at: string; kind: 'model' | 'tool'; position: number }[];
+  misses: {
+    at: string;
+    kind: 'model' | 'tool';
+    position: number;
+    live?: boolean;
+  }[];
 }
 
 export interface ReplayOptions {
@@ -155,9 +167,22 @@ export interface ReplayOptions {
   /**
    * Miss policy (design §2). `error` (default) throws {@link ReplayMissError};
    * `flag` records the divergence and continues with a sentinel. `live` (real
-   * provider fall-through) is rejected until B3+.
+   * MODEL-call fall-through — design §4 acceptance) is permitted ONLY together
+   * with `acceptance: true`; otherwise it is rejected, since a live provider
+   * call outside the acceptance containment is a foot-gun.
    */
   miss?: 'flag' | 'error' | 'live';
+  /**
+   * Authorize the acceptance containment (design §4, B3): allow `miss: 'live'`
+   * so a cassette miss on a MODEL call falls through to the real provider (new
+   * behavior = genuinely new LLM output). Tool calls stay SEALED even here — a
+   * tool miss resolves to a stub/sentinel, never a live execution — and
+   * deliveries stay captured in `wouldDeliver`. This is the ONE delta between a
+   * plain replay and an acceptance run, so it is a flag on `replayRun` rather
+   * than a duplicate `acceptanceRun` entry point; {@link runAcceptance} in
+   * `acceptance.ts` is the harness built on top of it.
+   */
+  acceptance?: boolean;
   /** Pinned clock for record timestamps; defaults to a fixed epoch. */
   now?: () => number;
   /** Pinned event scope / conversation id; defaults to a stable constant. */
@@ -297,7 +322,7 @@ class KeyedReplaySource implements ReplayLeafSource {
   constructor(
     private readonly cassette: Cassette,
     private readonly keying: readonly KeyingLevel[],
-    private readonly miss: 'flag' | 'error',
+    private readonly miss: 'flag' | 'error' | 'live',
   ) {
     this.modelConsumed = new Array(cassette.model.length).fill(false);
     this.toolConsumed = new Array(cassette.tools.length).fill(false);
@@ -333,6 +358,19 @@ class KeyedReplaySource implements ReplayLeafSource {
         actual: 'no keying level matched (cassette exhausted or divergent)',
       });
     }
+    if (this.miss === 'live') {
+      // Acceptance (design §4): the new behavior is genuinely new model output,
+      // so fall through to the REAL provider. Record the fall-through with a
+      // `live` marker; the funnel runs the actual call and its response is
+      // captured by the recorder, not by this trace's `modelCalls`.
+      this.misses.push({
+        at: input.nodePath,
+        kind: 'model',
+        position,
+        live: true,
+      });
+      return REPLAY_GO_LIVE;
+    }
     this.misses.push({ at: input.nodePath, kind: 'model', position });
     return cloneValue(MODEL_MISS_SENTINEL);
   }
@@ -365,6 +403,11 @@ class KeyedReplaySource implements ReplayLeafSource {
         actual: 'no keying level matched (cassette exhausted or divergent)',
       });
     }
+    // ASYMMETRY (design §4): under acceptance `miss: 'live'` only MODEL calls go
+    // live; a tool miss stays SEALED — side effects must never run in a dry-run
+    // acceptance. So `live` and `flag` both resolve a tool miss to the sentinel
+    // (no `live` marker), and a case that needs a specific tool result supplies
+    // it as a stub via its cassette.
     this.misses.push({ at: input.nodePath, kind: 'tool', position });
     return cloneValue(TOOL_MISS_SENTINEL);
   }
@@ -425,11 +468,12 @@ export async function replayRun<TVars extends Vars = Vars>(
   run: StoredRun<TVars>,
   opts: ReplayOptions = {},
 ): Promise<ReplayResult<TVars>> {
-  if (opts.miss === 'live') {
+  if (opts.miss === 'live' && !opts.acceptance) {
     throw new Error(
-      "Replay miss policy 'live' (real provider fall-through) is not supported " +
-        "yet — see design-docs replay-and-self-deploy.md §2/B3+. Use 'flag' or " +
-        "'error'.",
+      "Replay miss policy 'live' (real provider fall-through) requires the " +
+        'acceptance containment — pass `acceptance: true` (design-docs ' +
+        'replay-and-self-deploy.md §4) or use runAcceptance(). Outside ' +
+        "acceptance, use 'flag' or 'error'.",
     );
   }
   const miss = opts.miss ?? 'error';

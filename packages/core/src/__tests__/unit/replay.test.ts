@@ -260,14 +260,16 @@ describe('B1 miss policy', () => {
     ).rejects.toBeInstanceOf(ReplayMissError);
   });
 
-  it("rejects the 'live' miss policy (not supported until B3+)", async () => {
+  it("rejects the 'live' miss policy outside the acceptance containment", async () => {
     const { run } = await recordRun(recordingAgent(), {
       runId: 'miss-2',
       agentName: 'rec',
       input: 'hello',
     });
+    // Without `acceptance: true`, a live provider fall-through is a foot-gun and
+    // is rejected (design §4 — use runAcceptance / pass acceptance: true).
     await expect(replayRun(run, { miss: 'live' })).rejects.toThrow(
-      /'live'.*not supported/,
+      /'live'.*requires the acceptance containment/,
     );
   });
 

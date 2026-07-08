@@ -1,3 +1,4 @@
+import { REPLAY_GO_LIVE } from '../../capabilities';
 import type { ExecutionEvent, ResolvedExecutionCommand } from '../../execution';
 import {
   type ExecutionPhaseStep,
@@ -100,7 +101,7 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
           // re-run). The recorder below still captures the substituted response
           // into the replay's fresh recording stream.
           if (runtime.replay) {
-            return runtime.replay.model({
+            const served = runtime.replay.model({
               nodePath:
                 record?.nodePath ??
                 runtime.recorder?.currentNodePath ??
@@ -108,7 +109,13 @@ export async function executeRuntimeModelCall<TVars extends Vars, TResult>(
               provider: record?.provider ?? 'assistant',
               requestSession: modelSession,
               requestMeta: record?.requestMeta,
-            }) as TResult;
+            });
+            // Acceptance `miss: 'live'`: the cassette had no entry, so run the
+            // real provider instead of a sentinel (design §4). Any other value
+            // is the served recorded output.
+            if (served !== REPLAY_GO_LIVE) {
+              return served as TResult;
+            }
           }
           return call(request.session);
         },
