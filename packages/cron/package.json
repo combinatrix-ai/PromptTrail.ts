@@ -30,7 +30,8 @@
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
   "dependencies": {
-    "@prompttrail/core": "workspace:*"
+    "@prompttrail/core": "workspace:*",
+    "croner": "^10.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.17.19",

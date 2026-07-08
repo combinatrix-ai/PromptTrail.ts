@@ -486,6 +486,52 @@ describe('RuntimeServer', () => {
     ]);
   });
 
+  it('exposes matching bundle bindings to gateways by trigger type', async () => {
+    let gatewayBindings:
+      | RuntimeGatewayContext<FakeMessageEvent>['bindings']
+      | undefined;
+    const main = chatAgent('main', () => 'reply');
+    const bundle = PromptTrail.runtimeBundle({
+      name: 'gateway-bindings-test',
+      agents: { main },
+      bindings: [
+        on(fakeChat.messages())
+          .toAgent('main')
+          .conversation(() => 'fake-chat:one')
+          .name('binding-one'),
+        on({ type: 'other.trigger' })
+          .toAgent('main')
+          .conversation(() => 'other:one'),
+      ],
+    });
+    const server = PromptTrail.server({
+      bundle,
+      runtime: PromptTrail.app({
+        store: memoryStore(),
+        agents: bundle.agents,
+      }),
+      adapters: [
+        {
+          name: 'test-fake-chat',
+          gateways: [
+            {
+              type: 'fake-chat.messages',
+              start(ctx) {
+                gatewayBindings = ctx.bindings;
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await server.start();
+
+    expect(gatewayBindings).toHaveLength(1);
+    expect(gatewayBindings?.[0]?.name).toBe('binding-one');
+    expect(gatewayBindings?.[0]?.trigger.type).toBe('fake-chat.messages');
+  });
+
   it('routes runtime bundle events to registered Agent graphs', async () => {
     const main = Agent.create('main')
       .inbox('inbound')

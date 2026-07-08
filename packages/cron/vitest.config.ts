@@ -2,10 +2,22 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    alias: {
-      '@prompttrail/core': new URL('../core/src/index.ts', import.meta.url)
-        .pathname,
-    },
+    alias: [
+      {
+        find: '@prompttrail/core/runtime_server',
+        replacement: new URL('../core/src/runtime_server.ts', import.meta.url)
+          .pathname,
+      },
+      {
+        find: '@prompttrail/core/runtime_dispatch',
+        replacement: new URL('../core/src/runtime_dispatch.ts', import.meta.url)
+          .pathname,
+      },
+      {
+        find: '@prompttrail/core',
+        replacement: new URL('../core/src/index.ts', import.meta.url).pathname,
+      },
+    ],
   },
   test: {
     globals: true,
