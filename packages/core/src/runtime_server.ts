@@ -11,7 +11,11 @@ import {
   type ObserverLike,
 } from './execution';
 import type { Message } from './message';
-import type { DeliveryTarget, TriggerEvent } from './runtime_bindings';
+import type {
+  DeliveryTarget,
+  RuntimeBinding,
+  TriggerEvent,
+} from './runtime_bindings';
 import {
   AssistantDeliveryTracker,
   dispatchRuntimeEvent,
@@ -40,6 +44,12 @@ export interface RuntimeGatewayContext<
   TEvent extends TriggerEvent = TriggerEvent,
 > {
   emit(event: TEvent, options?: RuntimeGatewayEmitOptions): Promise<void>;
+  /**
+   * Bundle bindings whose trigger type matches this gateway's type. Gateways
+   * inspect their own triggers to discover declarative configuration (e.g. cron
+   * schedules) so a schedule is declared exactly once, on the binding.
+   */
+  bindings: readonly RuntimeBinding<TEvent>[];
 }
 
 export interface RuntimeGatewayDriver<
@@ -181,6 +191,7 @@ export class RuntimeServer {
       await gateway.start({
         emit: (event, emitOptions) =>
           this.dispatch(gateway.type, event, emitOptions),
+        bindings: this.bindingsForType(gateway.type),
       });
     }
   }
@@ -243,6 +254,14 @@ export class RuntimeServer {
         await presenceHandle?.stop();
       }
     });
+  }
+
+  private bindingsForType(
+    type: string,
+  ): readonly RuntimeBinding<TriggerEvent>[] {
+    return this.options.bundle.bindings.filter(
+      (binding) => binding.trigger.type === type,
+    );
   }
 
   private registerRuntimeObservers(): void {
