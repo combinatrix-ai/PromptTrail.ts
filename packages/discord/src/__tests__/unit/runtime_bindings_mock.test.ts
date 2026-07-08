@@ -50,7 +50,7 @@ function workroomFixture() {
           'delegation',
         ])
         .defaults({
-          context: {
+          services: {
             historyBackfill: { enabled: true, limit: 50 },
           },
         })
@@ -220,7 +220,7 @@ function channelContextFixture() {
         )
         .defaults({
           delivery: discord.replyToOriginThread(),
-          context: {
+          services: {
             channelPrompts: {
               'cloud-lab': 'Infrastructure debug mode.',
               T_special: 'Incident commander mode.',

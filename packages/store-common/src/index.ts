@@ -104,7 +104,7 @@ export interface ReconstructStoredRunInput {
   status: StoredRun<any>['status'];
   graphCursor?: number;
   graphSuspendedAt?: string;
-  context?: unknown;
+  services?: unknown;
   /** The initial session in its `Session.toJSON()` form. */
   initialSession: unknown;
   graphManifest?: unknown;
@@ -148,7 +148,7 @@ export function reconstructStoredRun(
     providerSessions: {},
     graphCursor: input.graphCursor,
     graphSuspendedAt: input.graphSuspendedAt,
-    context: input.context as StoredRun<any>['context'],
+    services: input.services as StoredRun<any>['services'],
   };
 
   for (const delta of input.deltas) {

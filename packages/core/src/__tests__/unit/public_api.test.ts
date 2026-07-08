@@ -186,7 +186,7 @@ describe('public API surface', () => {
     const options: AgentExecuteOptionsWithCheckpoint = {
       runId: 'public-direct-agent-run',
       checkpoint,
-      context: { userId: 'U1' },
+      services: { userId: 'U1' },
       signal: controller.signal,
       observers: [
         () => {

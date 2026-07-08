@@ -82,7 +82,7 @@ describe('ai-sdk tool adapter internals', () => {
     const aiSdkTool = promptTrailToolToAiSdkTool(promptTrailTool, {
       session,
       provider: 'ai-sdk',
-      context: { channel: 'claw-test' },
+      services: { channel: 'claw-test' },
     }) as unknown as {
       execute: (input: unknown, raw: unknown) => Promise<unknown>;
     };
@@ -98,7 +98,7 @@ describe('ai-sdk tool adapter internals', () => {
       {
         session,
         provider: 'ai-sdk',
-        context: { channel: 'claw-test' },
+        services: { channel: 'claw-test' },
         capability: 'search',
         raw: { toolCallId: 'call-1' },
       },

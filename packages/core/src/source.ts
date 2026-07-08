@@ -200,7 +200,7 @@ function llmGenerationManifestDescriptor(options: LLMOptions) {
     approvalHandler: options.approvalHandler
       ? { present: true, name: options.approvalHandler.name || undefined }
       : undefined,
-    context: options.context ? { present: true } : undefined,
+    services: options.services ? { present: true } : undefined,
   };
 }
 

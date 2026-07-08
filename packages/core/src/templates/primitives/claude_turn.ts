@@ -83,7 +83,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
         phase: 'prepareModelInput',
         session: currentSession,
         request: { session: modelSession },
-        context: runtime.context,
+        services: runtime.services,
         middlewareState: runtime.middlewareState,
         middleware: runtime.middleware,
         hooks: runtime.hooks,
@@ -121,7 +121,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
       const client =
         this.options.client ?? (await createDefaultClaudeAgentClient());
       const prompt = prependClaudeRestartNotice(
-        await this.resolveInput(request.session, runtime?.context),
+        await this.resolveInput(request.session, runtime?.services),
         request.restartNotice,
       );
       const checkpointBinding = request.ignoreCheckpointBinding
@@ -129,7 +129,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
         : this.resolveCheckpointBinding(runtime, options.nodePath);
       const sessionId = checkpointBinding
         ? checkpointBinding.id
-        : await this.resolveSessionId(request.session, runtime?.context);
+        : await this.resolveSessionId(request.session, runtime?.services);
       const restarts = request.restarts ?? checkpointBinding?.restarts ?? 0;
       if (sessionId) {
         await this.recordProviderSession(runtime, options.nodePath, {
@@ -153,7 +153,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
         retainMessages: this.options.retainMessages,
         attrsKey: this.options.attrsKey,
         sdkOptions: this.options.sdkOptions,
-        context: runtime?.context,
+        services: runtime?.services,
       });
       if (await emitTurnModelEvent(runtime, 'model.started', 'claudeTurn')) {
         openModelEvents++;
@@ -249,14 +249,14 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
 
   private async resolveInput(
     session: Session<TVars>,
-    context: Record<string, unknown> | undefined,
+    services: Record<string, unknown> | undefined,
   ): Promise<string> {
     if (this.options.input === undefined) {
       return session.getLastMessage()?.content ?? '';
     }
 
     if (typeof this.options.input === 'function') {
-      return this.options.input(session, context);
+      return this.options.input(session, services);
     }
 
     return this.options.input;
@@ -264,7 +264,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
 
   private async resolveSessionId(
     session: Session<TVars>,
-    context: Record<string, unknown> | undefined,
+    services: Record<string, unknown> | undefined,
   ): Promise<string | undefined> {
     if (
       this.options.sessionId === undefined ||
@@ -276,7 +276,7 @@ export class ClaudeTurn<TVars extends Vars = Vars> extends TemplateBase<TVars> {
       return deriveConversationBinding(session, 'claude-agent')?.id;
     }
     if (typeof this.options.sessionId === 'function') {
-      return this.options.sessionId(session, context);
+      return this.options.sessionId(session, services);
     }
 
     return this.options.sessionId;

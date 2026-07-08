@@ -171,7 +171,7 @@ export async function generateAnthropicMessagesText<TVars extends Vars>(
           tools,
           session,
           resolvedOptions.approvalHandler,
-          resolvedOptions.context,
+          resolvedOptions.services,
         ),
       ),
     );
@@ -380,7 +380,7 @@ export async function generateAnthropicMessagesWithSchema<TVars extends Vars>(
           tools,
           session,
           resolvedOptions.approvalHandler,
-          resolvedOptions.context,
+          resolvedOptions.services,
         ),
       ),
     );
@@ -968,7 +968,7 @@ export async function createAnthropicToolResultBlock(
   tools: readonly PromptTrailTool[],
   session: Session<any>,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ) {
   const tool = tools.find((candidate) => candidate.name === toolUse.name);
   if (!tool) {
@@ -984,7 +984,7 @@ export async function createAnthropicToolResultBlock(
   // (vendor loop); ctx.idempotencyKey still reaches the tool for remote dedup.
   const result = await executePromptTrailTool(tool, toolUse.input, {
     session,
-    context,
+    services,
     provider: 'anthropic',
     approvalHandler,
     raw: toolUse.raw,

@@ -493,7 +493,7 @@ describe('Codex App Server helpers', () => {
       execute: ({ query }, context) => ({
         query,
         provider: context.provider,
-        channel: context.context?.channel,
+        channel: context.services?.channel,
       }),
     });
     const handler = createCodexToolRequestHandler(

@@ -601,7 +601,7 @@ describe('checkpoint app runtime', () => {
       agent: 'persisted',
       runId: 'run-persist-commits',
       checkpoint: true,
-      context: {
+      services: {
         delivery: {
           platform: 'fake-chat',
           channel: 'C_general',
@@ -1026,7 +1026,7 @@ describe('checkpoint app runtime', () => {
           providerSessions: { ...(live.providerSessions ?? {}) },
           graphCursor: live.graphCursor,
           graphSuspendedAt: live.graphSuspendedAt,
-          context: live.context,
+          services: live.services,
         };
       }
     }

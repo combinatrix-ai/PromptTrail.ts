@@ -357,17 +357,17 @@ describe('Agent interceptors', () => {
       .use(
         Middleware.create({
           name: 'context',
-          beforeModel: ({ context }) => ({
+          beforeModel: ({ services }) => ({
             session: {
               vars: {
-                channel: context?.channel,
+                channel: services?.channel,
               },
             },
           }),
         }),
       )
       .assistant('reply')
-      .execute({ context: { channel: 'claw-test' } });
+      .execute({ services: { channel: 'claw-test' } });
 
     expect(session.getVarsObject()).toEqual({ channel: 'claw-test' });
   });
@@ -377,17 +377,17 @@ describe('Agent interceptors', () => {
       .use(
         Middleware.create({
           name: 'nestedContext',
-          beforeModel: ({ context }) => ({
+          beforeModel: ({ services }) => ({
             session: {
               vars: {
-                userId: context?.userId,
+                userId: services?.userId,
               },
             },
           }),
         }),
       )
       .assistant('reply')
-      .execute({ context: { userId: 'U1' } });
+      .execute({ services: { userId: 'U1' } });
 
     expect(session.getVarsObject()).toEqual({ userId: 'U1' });
   });

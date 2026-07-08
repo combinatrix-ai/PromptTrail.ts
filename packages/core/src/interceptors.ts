@@ -77,7 +77,7 @@ export interface ExecutionPhaseContext<
   session: Session<TVars>;
   request?: TRequest;
   result?: TResult;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   middlewareState: Record<string, unknown>;
   durable: ExecutionDurableBoundary;
   once: ExecutionDurableBoundary['once'];
@@ -211,7 +211,7 @@ export interface RunExecutionPhaseOptions<
   session: Session<TVars>;
   request?: TRequest;
   result?: TResult;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   middlewareState?: Record<string, unknown>;
   middleware?: readonly MiddlewareDefinition<TVars>[];
   hooks?: readonly HookDefinition<TVars>[];
@@ -255,7 +255,7 @@ export interface RunMiddlewareWrapperOptions<
     session: Session<TVars>;
     request: TRequest;
   }) => Promise<TResult>;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   middlewareState?: Record<string, unknown>;
   middleware?: readonly MiddlewareDefinition<TVars>[];
   beforeVersion?: number;
@@ -284,7 +284,7 @@ export interface ExecutionRuntimeState<TVars extends Vars = Vars> {
   middlewareState: Record<string, unknown>;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   version: number;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
   nextEventSeq?: () => number;
@@ -301,7 +301,7 @@ export function createExecutionRuntimeState<
 >(options?: {
   middleware?: readonly MiddlewareDefinition<TVars>[];
   hooks?: readonly HookDefinition<TVars>[];
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   durableBoundary?: ExecutionDurableBoundaryProvider;
   signal?: AbortSignal;
   emitEvent?: (event: ExecutionEvent) => Promise<void> | void;
@@ -319,7 +319,7 @@ export function createExecutionRuntimeState<
     middlewareState: {},
     durableBoundary: options?.durableBoundary,
     version: 0,
-    context: options?.context,
+    services: options?.services,
     signal: options?.signal,
     emitEvent: options?.emitEvent,
     nextEventSeq: options?.nextEventSeq,
@@ -364,7 +364,7 @@ export async function runRuntimeExecutionPhase<
     session: options.session,
     request: options.request,
     result: options.result,
-    context: runtime.context,
+    services: runtime.services,
     middlewareState: runtime.middlewareState,
     middleware: options.middleware ?? runtime.middleware,
     hooks: options.hooks ?? runtime.hooks,
@@ -400,7 +400,7 @@ export async function runRuntimeMiddlewareWrapper<
     session: options.session,
     request: options.request,
     call: options.call,
-    context: runtime.context,
+    services: runtime.services,
     middlewareState: runtime.middlewareState,
     middleware: options.middleware ?? runtime.middleware,
     beforeVersion: runtime.version,
@@ -483,7 +483,7 @@ export async function runExecutionPhase<
   let version = options.beforeVersion ?? 0;
   let command: ResolvedExecutionCommand = { type: 'none' };
   const steps: ExecutionPhaseStep[] = [];
-  const handlerContext = sanitizeExecutionHandlerContext(options.context);
+  const handlerServices = sanitizeExecutionHandlerServices(options.services);
 
   for (const [registrationIndex, middleware] of (
     options.middleware ?? []
@@ -509,7 +509,7 @@ export async function runExecutionPhase<
       session,
       request,
       result,
-      context: handlerContext,
+      services: handlerServices,
       middlewareState,
       durable,
       once: durable.once.bind(durable),
@@ -574,7 +574,7 @@ export async function runExecutionPhase<
       session,
       request,
       result,
-      context: handlerContext,
+      services: handlerServices,
       middlewareState,
       durable,
       once: durable.once.bind(durable),
@@ -637,7 +637,7 @@ export async function runMiddlewareWrapper<
   let command: ResolvedExecutionCommand = { type: 'none' };
   const steps: ExecutionPhaseStep[] = [];
   const middleware = options.middleware ?? [];
-  const handlerContext = sanitizeExecutionHandlerContext(options.context);
+  const handlerServices = sanitizeExecutionHandlerServices(options.services);
 
   const invoke = async (
     index: number,
@@ -703,7 +703,7 @@ export async function runMiddlewareWrapper<
       phase: options.phase,
       session,
       request,
-      context: handlerContext,
+      services: handlerServices,
       middlewareState,
       durable,
       once: durable.once.bind(durable),
@@ -782,11 +782,11 @@ export async function runMiddlewareWrapper<
   };
 }
 
-function sanitizeExecutionHandlerContext(
-  context: Record<string, unknown> | undefined,
+function sanitizeExecutionHandlerServices(
+  services: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-  if (!context || !hasSideEffectingContextHandle(context)) {
-    return context;
+  if (!services || !hasSideEffectingServiceHandle(services)) {
+    return services;
   }
   const {
     delivery: _delivery,
@@ -795,19 +795,19 @@ function sanitizeExecutionHandlerContext(
     platformBinding: _platformBinding,
     platformBindings: _platformBindings,
     ...rest
-  } = context;
+  } = services;
   return rest;
 }
 
-function hasSideEffectingContextHandle(
-  context: Record<string, unknown>,
+function hasSideEffectingServiceHandle(
+  services: Record<string, unknown>,
 ): boolean {
   return (
-    'delivery' in context ||
-    'deliveryBindings' in context ||
-    'observerDeliveryBindings' in context ||
-    'platformBinding' in context ||
-    'platformBindings' in context
+    'delivery' in services ||
+    'deliveryBindings' in services ||
+    'observerDeliveryBindings' in services ||
+    'platformBinding' in services ||
+    'platformBindings' in services
   );
 }
 

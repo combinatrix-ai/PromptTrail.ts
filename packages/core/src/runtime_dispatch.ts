@@ -12,7 +12,7 @@ import { assistantDeliveryKey } from './runtime_delivery_keys';
 
 export { assistantDeliveryKey };
 
-export interface RuntimeDispatchContext extends Record<string, unknown> {
+export interface RuntimeDispatchServices extends Record<string, unknown> {
   conversationId: string;
   delivery?: DeliveryTarget;
   toolsets?: readonly string[];
@@ -35,7 +35,7 @@ export interface RuntimeDispatchOptions<TEvent extends TriggerEvent> {
 export interface RuntimeDispatchResult<TVars extends Vars = Vars> {
   conversationId: string;
   delivery: DeliveryTarget | undefined;
-  context: RuntimeDispatchContext;
+  services: RuntimeDispatchServices;
   content: string;
   result: DurableRunResult<TVars>;
 }
@@ -68,7 +68,7 @@ export function mergeBindingDefaults(
   return {
     ...base,
     ...override,
-    context: { ...(base.context ?? {}), ...(override.context ?? {}) },
+    services: { ...(base.services ?? {}), ...(override.services ?? {}) },
     behavior: { ...(base.behavior ?? {}), ...(override.behavior ?? {}) },
   };
 }
@@ -89,16 +89,16 @@ export function resolveRuntimeInput<TEvent extends TriggerEvent>(
   return binding.trigger.defaultInput?.(event) ?? '';
 }
 
-export function resolveRuntimeBindingContext<TEvent extends TriggerEvent>(
+export function resolveRuntimeBindingServices<TEvent extends TriggerEvent>(
   binding: RuntimeBinding<TEvent>,
   event: TEvent,
 ): Record<string, unknown> | undefined {
-  if (!binding.context) {
+  if (!binding.services) {
     return undefined;
   }
-  return typeof binding.context === 'function'
-    ? binding.context(event as TEvent & Record<string, unknown>)
-    : binding.context;
+  return typeof binding.services === 'function'
+    ? binding.services(event as TEvent & Record<string, unknown>)
+    : binding.services;
 }
 
 export function resolveRuntimeDelivery(
@@ -115,20 +115,20 @@ export function resolveRuntimeDelivery(
   return delivery;
 }
 
-export function runtimeContextFromDefaults(
+export function runtimeServicesFromDefaults(
   conversationId: string,
   defaults: BindingDefaults,
   delivery: DeliveryTarget | undefined,
   _event: TriggerEvent,
-): RuntimeDispatchContext {
+): RuntimeDispatchServices {
   return {
-    ...(defaults.context ?? {}),
+    ...(defaults.services ?? {}),
     conversationId,
     delivery,
     toolsets: defaults.toolsets,
     skills: defaults.skills,
     workdir: defaults.workdir,
-    historyBackfill: defaults.context?.historyBackfill,
+    historyBackfill: defaults.services?.historyBackfill,
   };
 }
 
@@ -139,34 +139,34 @@ export async function dispatchRuntimeEvent<
   options: RuntimeDispatchOptions<TEvent>,
 ): Promise<RuntimeDispatchResult<TVars>> {
   const conversationId = options.binding.conversation(options.event);
-  const bindingContext = resolveRuntimeBindingContext(
+  const bindingServices = resolveRuntimeBindingServices(
     options.binding,
     options.event,
   );
-  const defaults = bindingContext
-    ? mergeBindingDefaults(options.defaults, { context: bindingContext })
+  const defaults = bindingServices
+    ? mergeBindingDefaults(options.defaults, { services: bindingServices })
     : options.defaults;
   const resolvedDelivery = resolveRuntimeDelivery(
     defaults.delivery,
     options.binding as RuntimeBinding<TriggerEvent>,
     options.event,
   );
-  const contextDelivery = cloneRuntimeDispatchValue(resolvedDelivery);
+  const servicesDelivery = cloneRuntimeDispatchValue(resolvedDelivery);
   const delivery = cloneRuntimeDispatchValue(resolvedDelivery);
-  const context = runtimeContextFromDefaults(
+  const services = runtimeServicesFromDefaults(
     conversationId,
     defaults,
-    contextDelivery,
+    servicesDelivery,
     options.event,
   );
-  const triggerContext = options.binding.trigger.resolveContext?.({
+  const triggerServices = options.binding.trigger.resolveServices?.({
     conversationId,
     defaults,
-    delivery: contextDelivery,
+    delivery: servicesDelivery,
     event: options.event,
   });
-  if (triggerContext) {
-    Object.assign(context, triggerContext);
+  if (triggerServices) {
+    Object.assign(services, triggerServices);
   }
   const content =
     options.content ?? resolveRuntimeInput(options.binding, options.event);
@@ -181,18 +181,18 @@ export async function dispatchRuntimeEvent<
         ...runtimeEventAttrs(options.event),
         ...(options.binding.trigger.eventAttrs?.(options.event) ?? {}),
         ...(options.attrs ?? {}),
-        runtimeContext: context,
+        runtimeServices: services,
       },
     },
     checkpoint: options.checkpoint ?? defaults.checkpoint ?? true,
     resumable: options.resumable,
-    context,
+    services,
   });
 
   return {
     conversationId,
     delivery,
-    context,
+    services,
     content,
     result,
   };

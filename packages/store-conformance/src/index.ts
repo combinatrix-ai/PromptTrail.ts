@@ -320,7 +320,7 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
       expect(retrieved!.providerSessions!['main/node0']).toEqual(binding);
     });
 
-    // Case 9: patch updates status/graphCursor/graphSuspendedAt/context/graphManifest
+    // Case 9: patch updates status/graphCursor/graphSuspendedAt/services/graphManifest
     it('case 9: patch updates run fields', async () => {
       await openStore();
       const agentName = Object.keys(agents)[0];
@@ -332,14 +332,14 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
         status: 'done',
         graphCursor: 5,
         graphSuspendedAt: 'node/waiting',
-        context: { userId: 'u1' },
+        services: { userId: 'u1' },
       });
 
       const retrieved = await store.get(runId);
       expect(retrieved!.status).toBe('done');
       expect(retrieved!.graphCursor).toBe(5);
       expect(retrieved!.graphSuspendedAt).toBe('node/waiting');
-      expect(retrieved!.context).toEqual({ userId: 'u1' });
+      expect(retrieved!.services).toEqual({ userId: 'u1' });
     });
 
     // Case 10: delete removes the run

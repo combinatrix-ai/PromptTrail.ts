@@ -83,7 +83,7 @@ describe('LlmSource', () => {
   describe('runtime tool loop', () => {
     it('uses generateTextStream when runtime is provided for native tool sources', async () => {
       const runtime = createExecutionRuntimeState({
-        context: { channel: 'runtime' },
+        services: { channel: 'runtime' },
         middleware: [],
       });
       const lookup = Tool.create({

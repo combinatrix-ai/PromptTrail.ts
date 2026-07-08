@@ -343,7 +343,7 @@ export class PostgresRunStore implements DurableRunStore {
           status,
           graph_cursor,
           graph_suspended_at,
-          context_json,
+          services_json,
           initial_session_json,
           graph_manifest_json
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -353,7 +353,7 @@ export class PostgresRunStore implements DurableRunStore {
           run.status,
           run.graphCursor ?? null,
           run.graphSuspendedAt ?? null,
-          jsonOrNull(run.context),
+          jsonOrNull(run.services),
           JSON.stringify(run.initial.toJSON()),
           jsonOrNull(run.graphManifest),
         ],
@@ -373,7 +373,7 @@ export class PostgresRunStore implements DurableRunStore {
     try {
       // Read current run to merge patch (we need current values for missing patch fields)
       const res = await client.query(
-        `SELECT agent_name, status, graph_cursor, graph_suspended_at, context_json, graph_manifest_json
+        `SELECT agent_name, status, graph_cursor, graph_suspended_at, services_json, graph_manifest_json
          FROM runs WHERE run_id = $1`,
         [runId],
       );
@@ -385,7 +385,7 @@ export class PostgresRunStore implements DurableRunStore {
         status: string;
         graph_cursor: number | null;
         graph_suspended_at: string | null;
-        context_json: string | null;
+        services_json: string | null;
         graph_manifest_json: string | null;
       };
 
@@ -395,7 +395,7 @@ export class PostgresRunStore implements DurableRunStore {
           status = $2,
           graph_cursor = $3,
           graph_suspended_at = $4,
-          context_json = $5,
+          services_json = $5,
           graph_manifest_json = $6
         WHERE run_id = $7`,
         [
@@ -409,7 +409,9 @@ export class PostgresRunStore implements DurableRunStore {
           'graphSuspendedAt' in patch
             ? (patch.graphSuspendedAt ?? null)
             : current.graph_suspended_at,
-          'context' in patch ? jsonOrNull(patch.context) : current.context_json,
+          'services' in patch
+            ? jsonOrNull(patch.services)
+            : current.services_json,
           'graphManifest' in patch
             ? jsonOrNull(patch.graphManifest)
             : current.graph_manifest_json,
@@ -658,7 +660,7 @@ export class PostgresRunStore implements DurableRunStore {
           status TEXT NOT NULL,
           graph_cursor INTEGER,
           graph_suspended_at TEXT,
-          context_json TEXT,
+          services_json TEXT,
           initial_session_json TEXT NOT NULL,
           graph_manifest_json TEXT
         )`,
@@ -744,7 +746,7 @@ export class PostgresRunStore implements DurableRunStore {
     // 1. Load the run row
     const runRes = await client.query(
       `SELECT run_id, agent_name, status, graph_cursor, graph_suspended_at,
-              context_json, initial_session_json, graph_manifest_json
+              services_json, initial_session_json, graph_manifest_json
        FROM runs WHERE run_id = $1`,
       [runId],
     );
@@ -757,7 +759,7 @@ export class PostgresRunStore implements DurableRunStore {
       status: StoredRun<any>['status'];
       graph_cursor: number | null;
       graph_suspended_at: string | null;
-      context_json: string | null;
+      services_json: string | null;
       initial_session_json: string;
       graph_manifest_json: string | null;
     };
@@ -893,7 +895,7 @@ export class PostgresRunStore implements DurableRunStore {
         status: row.status,
         graphCursor: row.graph_cursor ?? undefined,
         graphSuspendedAt: row.graph_suspended_at ?? undefined,
-        context: parseJson(row.context_json),
+        services: parseJson(row.services_json),
         initialSession: parseJsonRequired(row.initial_session_json),
         graphManifest: parseJson(row.graph_manifest_json),
         deltas,

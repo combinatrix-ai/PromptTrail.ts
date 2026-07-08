@@ -73,7 +73,7 @@ type AgentGraphStructuredFold<
 > = (obj: z.infer<TSchema>, session: Session<TC>) => Session<any>;
 
 export interface AgentGraphTransformEffectContext {
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
   once: ExecutionDurableBoundary['once'];
   idempotencyKey?: string;
@@ -89,7 +89,7 @@ type AgentGraphEffectTransformHandler<TC extends Vars> = (
 ) => Session<TC> | Promise<Session<TC>>;
 
 export interface AgentGraphHandlerRuntime {
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
@@ -97,7 +97,7 @@ export type AgentGraphCondition<TC extends Vars = Vars> =
   | boolean
   | ((context: {
       session: Session<TC>;
-      context?: Record<string, unknown>;
+      services?: Record<string, unknown>;
       signal?: AbortSignal;
     }) => boolean);
 
@@ -109,7 +109,7 @@ export interface AgentGoalSatisfactionContext<TC extends Vars = Vars> {
   session: Session<TC>;
   goal: string;
   attempt: number;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
@@ -1122,7 +1122,7 @@ export class Agent<TC extends Vars = Vars> {
       }
       return executeAgentGraph(this.toLegacyExecutionGraph(), {
         session,
-        context: executionOptions?.context,
+        services: executionOptions?.services,
         signal: executionOptions?.signal,
         observers: executionOptions?.observers,
         observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
@@ -1152,7 +1152,7 @@ export class Agent<TC extends Vars = Vars> {
         parentRuntime ??
         (executionOptions
           ? createExecutionRuntimeState<TC>({
-              context: executionOptions.context,
+              services: executionOptions.services,
               eventScopeId,
               signal: executionOptions.signal,
             })
@@ -1165,7 +1165,7 @@ export class Agent<TC extends Vars = Vars> {
     return executeAgentGraph(this.toLegacyExecutionGraph(), {
       session,
       runtime: parentRuntime,
-      context: executionOptions?.context,
+      services: executionOptions?.services,
       signal: executionOptions?.signal,
       observers: executionOptions?.observers,
       observerDeliveryBindings: executionOptions?.observerDeliveryBindings,
@@ -1260,7 +1260,7 @@ export class Agent<TC extends Vars = Vars> {
       runId: durableOptions.runId,
       session: executionOptions?.session,
       input: input === undefined ? undefined : graphInputForDurableSend(input),
-      context: executionOptions?.context,
+      services: executionOptions?.services,
     });
     return durableOptions.returnEnvelope ? result : result.session;
   }
@@ -1286,7 +1286,7 @@ export class Agent<TC extends Vars = Vars> {
 
 export interface AgentExecutionOptions {
   runId?: string;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   signal?: AbortSignal;
   checkpoint?: AgentCheckpointOption;
   observers?: readonly ObserverLike[];
@@ -1552,7 +1552,7 @@ function wrapLegacyCondition<TC extends Vars>(
 ):
   | ((context: {
       session: Session<TC>;
-      context?: Record<string, unknown>;
+      services?: Record<string, unknown>;
       signal?: AbortSignal;
     }) => boolean)
   | undefined {

@@ -1628,12 +1628,12 @@ describe('Agent graph authoring', () => {
     const controller = new AbortController();
     const session = await Agent.create('assistant')
       .assistant('reply', (_session, runtime) => {
-        expect(runtime?.context?.channel).toBe('docs');
+        expect(runtime?.services?.channel).toBe('docs');
         expect(runtime?.signal).toBe(controller.signal);
         return 'ok';
       })
       .execute({
-        context: { channel: 'docs' },
+        services: { channel: 'docs' },
         signal: controller.signal,
       });
 
@@ -1649,14 +1649,14 @@ describe('Agent graph authoring', () => {
         runtime?: ExecutionRuntimeState,
       ): Promise<string> {
         seenSignal = runtime?.signal;
-        return String(runtime?.context?.channel);
+        return String(runtime?.services?.channel);
       }
     })();
 
     const session = await Agent.create('assistant')
       .assistant('reply', source)
       .execute({
-        context: { channel: 'docs' },
+        services: { channel: 'docs' },
         signal: controller.signal,
       });
 

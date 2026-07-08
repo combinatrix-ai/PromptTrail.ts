@@ -238,7 +238,7 @@ app.on(discord.messages(), (b) =>
     .input((event) => event.content)
     .reply(discord.replyToOriginThread())
     .where(discord.notBot())
-    .context((event) => ({ channel: event.channel })),
+    .services((event) => ({ channel: event.channel })),
 );
 
 const bundle = app.bundle();

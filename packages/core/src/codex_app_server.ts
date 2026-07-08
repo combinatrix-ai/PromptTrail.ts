@@ -29,7 +29,7 @@ export type CodexThreadId =
   | 'auto'
   | ((
       session: Session<any>,
-      context: Record<string, unknown> | undefined,
+      services: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
 export type CodexTurnInput =
@@ -37,7 +37,7 @@ export type CodexTurnInput =
   | unknown[]
   | ((
       session: Session<any>,
-      context: Record<string, unknown> | undefined,
+      services: Record<string, unknown> | undefined,
     ) => string | unknown[] | Promise<string | unknown[]>);
 
 export interface CodexThreadStartParams {
@@ -1012,7 +1012,7 @@ export function createCodexToolRequestHandler(
   session: Session<any>,
   fallback?: CodexInboundRequestHandler,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ): CodexInboundRequestHandler {
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
@@ -1036,7 +1036,7 @@ export function createCodexToolRequestHandler(
 
     return executePromptTrailTool(tool, getCodexToolCallInput(request.params), {
       session,
-      context,
+      services,
       provider: 'codex',
       approvalHandler,
       raw: request.raw,
@@ -1049,7 +1049,7 @@ export function createCodexRuntimeRequestHandler(options: {
   session: Session<any>;
   fallback?: CodexInboundRequestHandler;
   approvalHandler?: ApprovalHandler;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
 }): CodexInboundRequestHandler {
   const toolHandler =
     options.tools && options.tools.length > 0
@@ -1058,7 +1058,7 @@ export function createCodexRuntimeRequestHandler(options: {
           options.session,
           undefined,
           options.approvalHandler,
-          options.context,
+          options.services,
         )
       : undefined;
 

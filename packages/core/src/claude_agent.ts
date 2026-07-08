@@ -17,7 +17,7 @@ export type ClaudeAgentInput<TVars extends Vars> =
   | string
   | ((
       session: Session<TVars>,
-      context: Record<string, unknown> | undefined,
+      services: Record<string, unknown> | undefined,
     ) => string | Promise<string>);
 
 export type ClaudeAgentSessionId<TVars extends Vars> =
@@ -26,7 +26,7 @@ export type ClaudeAgentSessionId<TVars extends Vars> =
   | 'auto'
   | ((
       session: Session<TVars>,
-      context: Record<string, unknown> | undefined,
+      services: Record<string, unknown> | undefined,
     ) => string | undefined | Promise<string | undefined>);
 
 export interface ClaudeAgentClient {
@@ -172,7 +172,7 @@ export function promptTrailToolToClaudeAgentToolDefinition(
   tool: PromptTrailTool,
   session: Session<any>,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ): ClaudeAgentToolDefinition {
   return {
     name: tool.name,
@@ -181,7 +181,7 @@ export function promptTrailToolToClaudeAgentToolDefinition(
     execute: (input) =>
       executePromptTrailTool(tool, input, {
         session,
-        context,
+        services,
         provider: 'claude-agent',
         capability: tool.name,
         approvalHandler,
@@ -195,14 +195,14 @@ export function createClaudePromptTrailMcpServer(
   sdk?: ClaudeAgentSdkLike,
   serverName = 'prompttrail',
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ): unknown {
   const definitions = tools.map((tool) =>
     promptTrailToolToClaudeAgentToolDefinition(
       tool,
       session,
       approvalHandler,
-      context,
+      services,
     ),
   );
 
@@ -255,7 +255,7 @@ export function getClaudeAgentMcpServers(
   session: Session<any>,
   sdk?: ClaudeAgentSdkLike,
   approvalHandler?: ApprovalHandler,
-  context?: Record<string, unknown>,
+  services?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const servers: Record<string, unknown> = {};
   for (const server of getClaudeMcpServers(capabilities)) {
@@ -268,7 +268,7 @@ export function getClaudeAgentMcpServers(
       sdk,
       'prompttrail',
       approvalHandler,
-      context,
+      services,
     );
   }
   return Object.keys(servers).length > 0 ? servers : undefined;
@@ -280,7 +280,7 @@ export function buildClaudeAgentQueryParams(
   options: Omit<
     ClaudeTurnOptions,
     'client' | 'input' | 'onEvent' | 'squashWith'
-  > & { context?: Record<string, unknown> },
+  > & { services?: Record<string, unknown> },
   sdk?: ClaudeAgentSdkLike,
 ): ClaudeAgentQueryParams {
   const tools = getClaudePromptTrailTools(options.capabilities);
@@ -291,7 +291,7 @@ export function buildClaudeAgentQueryParams(
     session,
     sdk,
     options.approvalHandler,
-    options.context,
+    options.services,
   );
   const mcpAllowedTools = getClaudeAllowedMcpToolNames(
     getClaudeMcpServers(options.capabilities),

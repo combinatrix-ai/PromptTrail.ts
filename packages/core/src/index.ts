@@ -165,7 +165,7 @@ export type {
   RuntimeBindingLike,
   RuntimeBundle,
   RuntimeBundleOptions,
-  RuntimeContextResolver,
+  RuntimeServicesResolver,
   RuntimeDeliveryTarget,
   RuntimeFilter,
   Trigger,

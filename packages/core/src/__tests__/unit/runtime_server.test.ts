@@ -75,12 +75,12 @@ const fakeChat = {
         event: FakeMessageEvent,
         defaults: { behavior?: unknown },
       ) => passesFakeChatBehavior(event, defaults.behavior),
-      resolveContext: ({
+      resolveServices: ({
         defaults,
         event,
       }: {
         defaults: {
-          context?: Record<string, unknown>;
+          services?: Record<string, unknown>;
           skills?: readonly string[];
         };
         event: FakeMessageEvent;
@@ -149,10 +149,10 @@ function passesFakeChatBehavior(
 }
 
 function resolveFakeChatChannelPrompt(
-  defaults: { context?: Record<string, unknown> },
+  defaults: { services?: Record<string, unknown> },
   event: FakeMessageEvent,
 ): string | undefined {
-  const prompts = defaults.context?.channelPrompts as
+  const prompts = defaults.services?.channelPrompts as
     | Record<string, string>
     | undefined;
   if (!prompts) {
@@ -166,10 +166,10 @@ function resolveFakeChatChannelPrompt(
 }
 
 function resolveFakeChatChannelSkills(
-  defaults: { context?: Record<string, unknown>; skills?: readonly string[] },
+  defaults: { services?: Record<string, unknown>; skills?: readonly string[] },
   event: FakeMessageEvent,
 ): readonly string[] | undefined {
-  const bindings = defaults.context?.channelSkillBindings as
+  const bindings = defaults.services?.channelSkillBindings as
     | Array<{ channel: string; skills: readonly string[] }>
     | undefined;
   if (!bindings) {
@@ -250,9 +250,9 @@ describe('RuntimeServer', () => {
       middleware: [
         Middleware.create({
           name: 'mutatingDeliveryContext',
-          beforeModel: ({ context }) => {
+          beforeModel: ({ services }) => {
             const delivery = (
-              context as {
+              services as {
                 delivery?: { channel?: string };
               }
             ).delivery;
@@ -608,7 +608,7 @@ describe('RuntimeServer', () => {
     const app = PromptTrail.app({
       name: 'graph-runtime-app',
       defaults: {
-        context: { appScope: 'runtime-app' },
+        services: { appScope: 'runtime-app' },
         delivery: Delivery.origin() as DeliveryTarget,
       },
     }).on(fakeChat.messages(), (binding) => {
@@ -616,7 +616,7 @@ describe('RuntimeServer', () => {
         .to(main)
         .conversation(() => 'fake-chat:graph')
         .reply(fakeChat.channel('general'))
-        .context((event) => ({
+        .services((event) => ({
           bindingScope: 'fake-chat-message',
           channelId: event.channelId,
         }));
@@ -648,7 +648,7 @@ describe('RuntimeServer', () => {
       fakeChat.channel('general'),
     );
     expect(result.delivery).toEqual(fakeChat.channel('general'));
-    expect(result.context).toEqual(
+    expect(result.services).toEqual(
       expect.objectContaining({
         appScope: 'runtime-app',
         bindingScope: 'fake-chat-message',
@@ -1083,7 +1083,7 @@ describe('RuntimeServer', () => {
       agents: { main },
       defaults: {
         checkpoint: true,
-        context: {
+        services: {
           channelPrompts: {
             general: 'General channel prompt',
           },
@@ -1130,15 +1130,15 @@ describe('RuntimeServer', () => {
         middleware: [
           Middleware.create({
             name: 'channelPrompt',
-            beforeModel: ({ context }) => {
+            beforeModel: ({ services }) => {
               middlewareDelivery.push(
-                (context as { delivery?: unknown } | undefined)?.delivery,
+                (services as { delivery?: unknown } | undefined)?.delivery,
               );
               return {
                 session: {
                   vars: {
                     channelPrompt: (
-                      context as { channelPrompt: string | undefined }
+                      services as { channelPrompt: string | undefined }
                     ).channelPrompt,
                   },
                 },
@@ -1842,7 +1842,7 @@ describe('RuntimeServer', () => {
       event,
       defaults,
     });
-    const delivery = dispatched.context.delivery as
+    const delivery = dispatched.services.delivery as
       | { channel?: string }
       | undefined;
     if (delivery) {

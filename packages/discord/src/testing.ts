@@ -71,7 +71,7 @@ export interface MockAssistantInput {
   input: {
     latestText: string;
   };
-  context: Record<string, unknown>;
+  services: Record<string, unknown>;
 }
 
 export type MockAssistantHandler = (input: MockAssistantInput) =>
@@ -172,17 +172,17 @@ export function mockDiscord(options: MockDiscordOptions): MockDiscordConnector {
 }
 
 export function deterministicAssistant(): MockAssistantHandler {
-  return ({ input, context }) => ({
+  return ({ input, services }) => ({
     content: `reply:${input.latestText}`,
     attrs: {
       observed: {
-        conversationId: context.conversationId,
-        delivery: context.delivery,
-        toolsets: context.toolsets,
-        skills: context.skills,
-        workdir: context.workdir,
-        historyBackfill: context.historyBackfill,
-        channelPrompt: context.channelPrompt,
+        conversationId: services.conversationId,
+        delivery: services.delivery,
+        toolsets: services.toolsets,
+        skills: services.skills,
+        workdir: services.workdir,
+        historyBackfill: services.historyBackfill,
+        channelPrompt: services.channelPrompt,
       },
     },
   });
@@ -266,7 +266,7 @@ class MockRuntimeFixture {
           const last = session.getLastMessage();
           return assistant({
             input: { latestText: last?.content ?? '' },
-            context: runtime?.context ?? {},
+            services: runtime?.services ?? {},
           });
         });
     }
@@ -369,8 +369,8 @@ class MockRuntimeFixture {
     conversationId: string,
     messages: readonly Message[],
   ): Promise<void> {
-    const runContext =
-      ((await this.store.get(conversationId))?.context as
+    const runServices =
+      ((await this.store.get(conversationId))?.services as
         | Record<string, unknown>
         | undefined) ?? {};
     const pending = messages
@@ -381,7 +381,7 @@ class MockRuntimeFixture {
       .map((message, index) => {
         const attrs = (message.attrs ?? {}) as Record<string, unknown>;
         const observed = (attrs.observed ?? {}) as Record<string, unknown>;
-        const delivery = (observed.delivery ?? runContext.delivery) as
+        const delivery = (observed.delivery ?? runServices.delivery) as
           | DeliveryTarget
           | undefined;
         return {
@@ -443,7 +443,7 @@ class MockRuntimeFixture {
       for (const message of [...messages].reverse()) {
         if (message.type === 'assistant') {
           const attrs = (message.attrs ?? {}) as Record<string, unknown>;
-          return attrs.observed ?? run.context;
+          return attrs.observed ?? run.services;
         }
       }
     }

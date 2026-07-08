@@ -272,16 +272,16 @@ describe('ClaudeTurn template', () => {
     await Agent.create('claude-turn')
       .claude({
         client,
-        sessionId: (_session, context) => `session-${context?.channel}`,
-        input: (session, context) =>
-          `${context?.channel}:${session.getLastMessage()?.content}`,
+        sessionId: (_session, services) => `session-${services?.channel}`,
+        input: (session, services) =>
+          `${services?.channel}:${session.getLastMessage()?.content}`,
       })
       .execute({
         session: Session.create().addMessage({
           type: 'user',
           content: 'hello',
         }),
-        context: { channel: 'claw-test' },
+        services: { channel: 'claw-test' },
       });
 
     expect(client.queries[0].prompt).toBe('claw-test:hello');

@@ -17,7 +17,7 @@ export type InputResolver<TEvent extends TriggerEvent> =
   | string
   | ((event: TEvent & Record<string, unknown>) => string);
 
-export type RuntimeContextResolver<TEvent extends TriggerEvent> =
+export type RuntimeServicesResolver<TEvent extends TriggerEvent> =
   | Record<string, unknown>
   | ((event: TEvent & Record<string, unknown>) => Record<string, unknown>);
 
@@ -38,7 +38,7 @@ export interface BindingDefaults {
   toolsets?: readonly string[];
   skills?: readonly string[];
   workdir?: string;
-  context?: Record<string, unknown>;
+  services?: Record<string, unknown>;
   behavior?: unknown;
 }
 
@@ -50,7 +50,7 @@ export interface Trigger<TEvent extends TriggerEvent = TriggerEvent> {
     delivery: DeliveryTarget,
     event: TEvent,
   ) => DeliveryTarget | undefined;
-  resolveContext?: (options: {
+  resolveServices?: (options: {
     conversationId: string;
     defaults: BindingDefaults;
     delivery: DeliveryTarget | undefined;
@@ -65,7 +65,7 @@ export interface RuntimeBinding<TEvent extends TriggerEvent> {
   agent: string;
   conversation: ConversationResolver<TEvent>;
   input?: InputResolver<TEvent>;
-  context?: RuntimeContextResolver<TEvent>;
+  services?: RuntimeServicesResolver<TEvent>;
   defaults: BindingDefaults;
   name?: string;
 }
@@ -96,7 +96,7 @@ export class BindingBuilder<TEvent extends TriggerEvent> {
   private agentRef?: RuntimeAgentRef;
   private conversationResolver?: ConversationResolver<TEvent>;
   private inputResolver?: InputResolver<TEvent>;
-  private contextResolver?: RuntimeContextResolver<TEvent>;
+  private servicesResolver?: RuntimeServicesResolver<TEvent>;
   private bindingDefaults: BindingDefaults = {};
   private bindingName?: string;
 
@@ -167,8 +167,8 @@ export class BindingBuilder<TEvent extends TriggerEvent> {
     return this;
   }
 
-  context(context: RuntimeContextResolver<TEvent>): this {
-    this.contextResolver = context;
+  services(services: RuntimeServicesResolver<TEvent>): this {
+    this.servicesResolver = services;
     return this;
   }
 
@@ -205,7 +205,7 @@ export class BindingBuilder<TEvent extends TriggerEvent> {
       agent: this.agentName,
       conversation: this.conversationResolver,
       input: this.inputResolver,
-      context: this.contextResolver,
+      services: this.servicesResolver,
       defaults: { ...this.bindingDefaults },
       name: this.bindingName,
     };
