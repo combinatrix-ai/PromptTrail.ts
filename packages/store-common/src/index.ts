@@ -7,6 +7,8 @@ import {
   type Message,
   type OnceScope,
   type ProviderSessionBinding,
+  type RecordLevel,
+  type RunRecordEntry,
   type SessionCheckpointDelta,
   type StoredRun,
   type Vars,
@@ -116,6 +118,10 @@ export interface ReconstructStoredRunInput {
   providerSessions: Record<string, ProviderSessionBinding>;
   /** Parsed durable timers, if the backend stores any. */
   timers?: DurableTimer[];
+  /** Parsed recording stream (seq order), if the backend stores any. */
+  records?: RunRecordEntry[];
+  /** Recording verbosity persisted on the run, if any. */
+  recordLevel?: RecordLevel;
 }
 
 /**
@@ -171,6 +177,14 @@ export function reconstructStoredRun(
 
   if (input.timers && input.timers.length > 0) {
     run.timers = input.timers.map((timer) => ({ ...timer }));
+  }
+
+  if (input.records && input.records.length > 0) {
+    run.recording = input.records.map((entry) => ({ ...entry }));
+  }
+
+  if (input.recordLevel !== undefined) {
+    run.recordLevel = input.recordLevel;
   }
 
   return run;

@@ -9,6 +9,8 @@ import {
   type Inbound,
   type AssistantDeliveryOutboxEntry,
   type DurableTimer,
+  type RecordLevel,
+  type RunRecordEntry,
 } from '@prompttrail/core';
 
 /**
@@ -961,6 +963,175 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
       await store.create(runId, makeInitialRun(agent, agentName));
       const reconstructed = await store.get(runId);
       expect(reconstructed!.timers ?? []).toHaveLength(0);
+    });
+
+    // -----------------------------------------------------------------------
+    // Recording layer cases (design-docs replay-and-self-deploy.md, B0)
+    // -----------------------------------------------------------------------
+
+    // Case 26: appendRecord round-trips a seq-ordered stream, preserving order
+    // across the three entry kinds (node breadcrumb, model call, tool call).
+    it('case 26: appendRecord round-trips ordered stream across kinds', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-record-26';
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      const node: RunRecordEntry = {
+        kind: 'node',
+        record: { seq: 0, nodePath: 'main', nodeType: 'scope', at: 100 },
+      };
+      const model: RunRecordEntry = {
+        kind: 'model',
+        record: {
+          seq: 1,
+          nodePath: 'main/assistant',
+          callIndex: 0,
+          provider: 'assistant',
+          requestDigest: 'req-digest-1',
+          response: { text: 'hello' },
+          at: 101,
+        },
+      };
+      const tool: RunRecordEntry = {
+        kind: 'tool',
+        record: {
+          seq: 2,
+          nodePath: 'main/tools',
+          callIndex: 0,
+          toolName: 'search',
+          argsDigest: 'args-digest-1',
+          result: { ok: true },
+          at: 102,
+        },
+      };
+      await store.appendRecord(runId, node);
+      await store.appendRecord(runId, model);
+      await store.appendRecord(runId, tool);
+
+      const retrieved = await store.get(runId);
+      const recording = retrieved!.recording ?? [];
+      expect(recording).toHaveLength(3);
+      expect(recording.map((e) => e.record.seq)).toEqual([0, 1, 2]);
+      expect(recording.map((e) => e.kind)).toEqual(['node', 'model', 'tool']);
+      expect(recording[1]).toEqual(model);
+      expect(recording[2]).toEqual(tool);
+    });
+
+    // Case 27: appendRecord is idempotent by (runId, seq) — a second append with
+    // a seq already present is a no-op (first write wins), like appendInbox.
+    it('case 27: appendRecord idempotent by (runId, seq)', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-record-27';
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      const first: RunRecordEntry = {
+        kind: 'node',
+        record: { seq: 0, nodePath: 'main', nodeType: 'scope', at: 1 },
+      };
+      await store.appendRecord(runId, first);
+
+      // Same seq, different payload => dropped (first write wins).
+      const dup: RunRecordEntry = {
+        kind: 'node',
+        record: { seq: 0, nodePath: 'other', nodeType: 'loop', at: 2 },
+      };
+      await store.appendRecord(runId, dup);
+
+      const retrieved = await store.get(runId);
+      const recording = retrieved!.recording ?? [];
+      expect(recording).toHaveLength(1);
+      expect(recording[0]).toEqual(first);
+    });
+
+    // Case 28: DURABILITY — the recording stream survives a store reopen.
+    // Skipped for in-memory stores with no reopen, like case 12.
+    it('case 28: recording survives reopen', async () => {
+      await openStore();
+      if (!reopen) {
+        return;
+      }
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-record-28';
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      const entries: RunRecordEntry[] = [
+        {
+          kind: 'node',
+          record: { seq: 0, nodePath: 'main', nodeType: 'scope', at: 1 },
+        },
+        {
+          kind: 'model',
+          record: {
+            seq: 1,
+            nodePath: 'main/assistant',
+            callIndex: 0,
+            provider: 'claude',
+            requestDigest: 'd',
+            request: { messages: ['hi'] },
+            response: { text: 'yo' },
+            at: 2,
+          },
+        },
+      ];
+      for (const entry of entries) {
+        await store.appendRecord(runId, entry);
+      }
+
+      const fresh = await reopen();
+      const reconstructed = await fresh.get(runId);
+      const recording = reconstructed!.recording ?? [];
+      expect(recording).toHaveLength(2);
+      expect(recording.map((e) => e.record.seq)).toEqual([0, 1]);
+      expect(recording[1]).toEqual(entries[1]);
+    });
+
+    // Case 29: delete cascades records — a recreated runId must not fold the old
+    // incarnation's record rows into the new run.
+    it('case 29: delete cascades records', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-record-29';
+      await store.create(runId, makeInitialRun(agent, agentName));
+      await store.appendRecord(runId, {
+        kind: 'node',
+        record: { seq: 0, nodePath: 'main', nodeType: 'scope', at: 1 },
+      });
+
+      await store.delete(runId);
+      expect(await store.has(runId)).toBe(false);
+
+      await store.create(runId, makeInitialRun(agent, agentName));
+      const reconstructed = await store.get(runId);
+      expect(reconstructed!.recording ?? []).toHaveLength(0);
+    });
+
+    // Case 30: recordLevel is fixed at create time and round-trips on the run,
+    // including across a reopen when the backend is durable.
+    it('case 30: recordLevel round-trips on the run', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-record-30';
+      const recordLevel: RecordLevel = 'full';
+      await store.create(
+        runId,
+        makeInitialRun(agent, agentName, { recordLevel }),
+      );
+
+      const retrieved = await store.get(runId);
+      expect(retrieved!.recordLevel).toBe('full');
+
+      if (reopen) {
+        const fresh = await reopen();
+        const reconstructed = await fresh.get(runId);
+        expect(reconstructed!.recordLevel).toBe('full');
+      }
     });
   });
 }

@@ -12,6 +12,8 @@ import {
   type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
+  type RecordLevel,
+  type RunRecordEntry,
   type RunStoreLease,
   type RunStoreLeaseState,
   type SessionCheckpointDelta,
@@ -188,6 +190,7 @@ export interface SqliteWriteJournalEntry {
     | 'upsertOutbox'
     | 'recordProviderSession'
     | 'upsertTimer'
+    | 'appendRecord'
     | 'patch'
     | 'delete';
   summary: string;
@@ -210,6 +213,7 @@ interface RunRow {
   services_json: string | null;
   initial_session_json: string;
   graph_manifest_json: string | null;
+  record_level: RecordLevel | null;
 }
 
 interface SessionDeltaRow {
@@ -260,6 +264,13 @@ interface TimerRow {
   fired_at: number | null;
 }
 
+interface RecordRow {
+  run_id: string;
+  seq: number;
+  kind: RunRecordEntry['kind'];
+  entry_json: string;
+}
+
 /**
  * SQLite restart substrate for PromptTrail durable runs.
  *
@@ -288,6 +299,7 @@ export class SqliteRunStore implements DurableRunStore {
   private readonly upsertOutboxStmt: Database.Statement;
   private readonly upsertProviderSessionStmt: Database.Statement;
   private readonly upsertTimerStmt: Database.Statement;
+  private readonly appendRecordStmt: Database.Statement;
 
   constructor(options: SqliteRunStoreOptions) {
     const dbPath = options.path ?? join(cwd(), '.data', 'prompttrail.db');
@@ -306,9 +318,10 @@ export class SqliteRunStore implements DurableRunStore {
         graph_suspended_at,
         services_json,
         initial_session_json,
-        graph_manifest_json
+        graph_manifest_json,
+        record_level
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.updateRunStmt = this.db.prepare(`
       UPDATE runs
@@ -375,6 +388,13 @@ export class SqliteRunStore implements DurableRunStore {
         fired_at = excluded.fired_at
     `);
 
+    // Idempotent by (run_id, seq): first write wins, so a re-append of a seq
+    // already present is silently ignored (like the inbox offset discipline).
+    this.appendRecordStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO records (run_id, seq, kind, entry_json)
+      VALUES (?, ?, ?, ?)
+    `);
+
     this.sqliteLease = new SqliteLease(this.db, options.now ?? Date.now);
     this.lease = this.sqliteLease;
 
@@ -412,6 +432,7 @@ export class SqliteRunStore implements DurableRunStore {
       jsonOrNull(run.services),
       JSON.stringify(run.initial.toJSON()),
       jsonOrNull(run.graphManifest),
+      run.recordLevel ?? null,
     );
     this.runs.set(runId, run);
     this.recordJournal(
@@ -615,6 +636,31 @@ export class SqliteRunStore implements DurableRunStore {
     );
   }
 
+  async appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    this.assertFence(fence);
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    const seq = entry.record.seq;
+    this.appendRecordStmt.run(runId, seq, entry.kind, JSON.stringify(entry));
+    const recording = (run.recording ??= []);
+    // First write wins on (run_id, seq): keep the in-memory stream in sync with
+    // the INSERT OR IGNORE semantics above.
+    if (!recording.some((existing) => existing.record.seq === seq)) {
+      recording.push(entry);
+    }
+    this.recordJournal(
+      runId,
+      'appendRecord',
+      `INSERT records (seq ${seq}, ${entry.kind})`,
+    );
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     this.assertFence(fence);
     this.deleteRunStmt.run(runId);
@@ -650,7 +696,8 @@ export class SqliteRunStore implements DurableRunStore {
         graph_suspended_at TEXT,
         services_json TEXT,
         initial_session_json TEXT NOT NULL,
-        graph_manifest_json TEXT
+        graph_manifest_json TEXT,
+        record_level TEXT
       );
 
       CREATE TABLE IF NOT EXISTS session_deltas (
@@ -713,6 +760,15 @@ export class SqliteRunStore implements DurableRunStore {
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS records (
+        run_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        entry_json TEXT NOT NULL,
+        PRIMARY KEY (run_id, seq),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS lease (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         holder TEXT NOT NULL,
@@ -745,6 +801,9 @@ export class SqliteRunStore implements DurableRunStore {
     const timerRows = this.db
       .prepare('SELECT * FROM timers ORDER BY run_id, id')
       .all() as TimerRow[];
+    const recordRows = this.db
+      .prepare('SELECT * FROM records ORDER BY run_id, seq')
+      .all() as RecordRow[];
 
     // Group child rows per run_id, preserving the SELECT ordering so each
     // run's components (deltas in seq order, inbox in offset order, etc.) are
@@ -755,6 +814,7 @@ export class SqliteRunStore implements DurableRunStore {
     const outboxByRun = groupBy(outboxRows, (row) => row.run_id);
     const providerByRun = groupBy(providerRows, (row) => row.run_id);
     const timersByRun = groupBy(timerRows, (row) => row.run_id);
+    const recordsByRun = groupBy(recordRows, (row) => row.run_id);
 
     for (const row of runRows) {
       const deltas: SessionCheckpointDelta<any>[] = (
@@ -804,6 +864,10 @@ export class SqliteRunStore implements DurableRunStore {
         (trow) => timerFromRow(trow),
       );
 
+      const records: RunRecordEntry[] = (
+        recordsByRun.get(row.run_id) ?? []
+      ).map((rrow) => parseJsonRequired(rrow.entry_json) as RunRecordEntry);
+
       const run = reconstructStoredRun(
         {
           agentName: row.agent_name,
@@ -819,6 +883,8 @@ export class SqliteRunStore implements DurableRunStore {
           outbox,
           providerSessions,
           timers,
+          records,
+          recordLevel: row.record_level ?? undefined,
         },
         agents,
       );

@@ -46,6 +46,8 @@ export type {
   InboundKind,
   InboundRuntimeEvent,
   MemoryRunStoreOptions,
+  ModelCallRecord,
+  NodeBreadcrumb,
   OnceBoundary,
   OnceOptions,
   OnceScope,
@@ -54,12 +56,15 @@ export type {
   PromptTrailRegisteredAgent,
   PromptTrailRunOptions,
   PromptTrailSendOptions,
+  RecordLevel,
+  RunRecordEntry,
   RunStore,
   RunStoreLease,
   RunStoreLeaseState,
   SessionCheckpointDelta,
   StoredRun,
   StoredRunPatch,
+  ToolCallRecord,
 } from './durable';
 export { parseDuration } from './duration';
 export { DELETE_VALUE, Observer } from './execution';

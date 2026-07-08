@@ -8,6 +8,8 @@ import type {
   Inbound,
   OnceScope,
   ProviderSessionBinding,
+  RecordLevel,
+  RunRecordEntry,
   RunStoreLease,
   RunStoreLeaseState,
   SessionCheckpointDelta,
@@ -53,6 +55,10 @@ interface RunDocument {
   providerSessions: Record<string, ProviderSessionBinding>;
   /** Durable timers, upserted by id. Optional so old docs stay readable. */
   timers?: DurableTimer[];
+  /** Seq-ordered recording stream, appended by seq. Optional for old docs. */
+  recording?: RunRecordEntry[];
+  /** Recording verbosity for this run. Optional so old docs stay readable. */
+  recordLevel?: RecordLevel;
 }
 
 interface SerializedDelta {
@@ -364,6 +370,8 @@ export class RedisRunStore implements DurableRunStore {
       outbox: [],
       providerSessions: {},
       timers: [],
+      recording: [],
+      recordLevel: run.recordLevel,
     };
     await this.saveDoc(runId, doc);
     await this.client.sadd(this.indexKey(), runId);
@@ -525,6 +533,26 @@ export class RedisRunStore implements DurableRunStore {
     await this.saveDoc(runId, doc);
   }
 
+  async appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const doc = await this.loadDoc(runId);
+    if (!doc) {
+      return;
+    }
+    const recording = (doc.recording ??= []);
+    // Idempotent by (runId, seq): first write wins, mirroring the inbox offset
+    // dedup — a re-append of a seq already present is dropped.
+    const seq = entry.record.seq;
+    if (!recording.some((existing) => existing.record.seq === seq)) {
+      recording.push(entry);
+      await this.saveDoc(runId, doc);
+    }
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     await this.client.del(this.runKey(runId));
@@ -580,6 +608,8 @@ export class RedisRunStore implements DurableRunStore {
         outbox: doc.outbox,
         providerSessions: doc.providerSessions,
         timers: doc.timers ?? [],
+        records: doc.recording ?? [],
+        recordLevel: doc.recordLevel,
       },
       this.agents,
     );

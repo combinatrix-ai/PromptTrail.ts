@@ -9,6 +9,8 @@ import {
   type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
+  type RecordLevel,
+  type RunRecordEntry,
   type RunStoreLease,
   type RunStoreLeaseState,
   type SessionCheckpointDelta,
@@ -345,8 +347,9 @@ export class PostgresRunStore implements DurableRunStore {
           graph_suspended_at,
           services_json,
           initial_session_json,
-          graph_manifest_json
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          graph_manifest_json,
+          record_level
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           runId,
           run.agentName,
@@ -356,6 +359,7 @@ export class PostgresRunStore implements DurableRunStore {
           jsonOrNull(run.services),
           JSON.stringify(run.initial.toJSON()),
           jsonOrNull(run.graphManifest),
+          run.recordLevel ?? null,
         ],
       );
     } finally {
@@ -596,6 +600,27 @@ export class PostgresRunStore implements DurableRunStore {
     }
   }
 
+  async appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const client = await this.pool.connect();
+    try {
+      // INSERT ... ON CONFLICT DO NOTHING for (run_id, seq) idempotency —
+      // first write wins, so a re-append of a seq already present is a no-op.
+      await client.query(
+        `INSERT INTO records (run_id, seq, kind, entry_json)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (run_id, seq) DO NOTHING`,
+        [runId, entry.record.seq, entry.kind, JSON.stringify(entry)],
+      );
+    } finally {
+      client.release();
+    }
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     // Delete the run AND all of its child rows in a single transaction.
@@ -619,6 +644,7 @@ export class PostgresRunStore implements DurableRunStore {
         runId,
       ]);
       await client.query('DELETE FROM timers WHERE run_id = $1', [runId]);
+      await client.query('DELETE FROM records WHERE run_id = $1', [runId]);
       await client.query('DELETE FROM runs WHERE run_id = $1', [runId]);
       await client.query('COMMIT');
     } catch (error) {
@@ -662,7 +688,8 @@ export class PostgresRunStore implements DurableRunStore {
           graph_suspended_at TEXT,
           services_json TEXT,
           initial_session_json TEXT NOT NULL,
-          graph_manifest_json TEXT
+          graph_manifest_json TEXT,
+          record_level TEXT
         )`,
         session_deltas: `CREATE TABLE session_deltas (
           run_id TEXT NOT NULL,
@@ -712,6 +739,13 @@ export class PostgresRunStore implements DurableRunStore {
           fired_at BIGINT,
           PRIMARY KEY (run_id, id)
         )`,
+        records: `CREATE TABLE records (
+          run_id TEXT NOT NULL,
+          seq BIGINT NOT NULL,
+          kind TEXT NOT NULL,
+          entry_json TEXT NOT NULL,
+          PRIMARY KEY (run_id, seq)
+        )`,
         lease: `CREATE TABLE lease (
           id INTEGER PRIMARY KEY,
           holder TEXT NOT NULL,
@@ -746,7 +780,8 @@ export class PostgresRunStore implements DurableRunStore {
     // 1. Load the run row
     const runRes = await client.query(
       `SELECT run_id, agent_name, status, graph_cursor, graph_suspended_at,
-              services_json, initial_session_json, graph_manifest_json
+              services_json, initial_session_json, graph_manifest_json,
+              record_level
        FROM runs WHERE run_id = $1`,
       [runId],
     );
@@ -762,6 +797,7 @@ export class PostgresRunStore implements DurableRunStore {
       services_json: string | null;
       initial_session_json: string;
       graph_manifest_json: string | null;
+      record_level: RecordLevel | null;
     };
 
     // 2. Gather session deltas in seq order (parsed + normalized).
@@ -888,7 +924,16 @@ export class PostgresRunStore implements DurableRunStore {
       return timer;
     });
 
-    // 8. Delegate assembly to the shared reconstruction helper.
+    // 8. Gather the recording stream ordered by seq.
+    const recordRes = await client.query(
+      `SELECT entry_json FROM records WHERE run_id = $1 ORDER BY seq ASC`,
+      [runId],
+    );
+    const records: RunRecordEntry[] = (
+      recordRes.rows as { entry_json: string }[]
+    ).map((rrow) => parseJsonRequired(rrow.entry_json) as RunRecordEntry);
+
+    // 9. Delegate assembly to the shared reconstruction helper.
     return reconstructStoredRun(
       {
         agentName: row.agent_name,
@@ -904,6 +949,8 @@ export class PostgresRunStore implements DurableRunStore {
         outbox,
         providerSessions,
         timers,
+        records,
+        recordLevel: row.record_level ?? undefined,
       },
       this.agents,
     );
