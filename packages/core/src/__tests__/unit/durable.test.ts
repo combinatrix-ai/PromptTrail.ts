@@ -953,6 +953,135 @@ describe('checkpoint app runtime', () => {
     ]);
   });
 
+  it('does not lose inbox input when the process crashes mid-execution', async () => {
+    // Model a HARD process crash mid-execution (bypassing the error handler):
+    // capture a deep copy of the durably persisted run state at the first
+    // mid-execution persist, then rehydrate a FRESH app instance from that
+    // snapshot. Under the old optimistic advance the persisted cursor had
+    // already jumped to inbox.length before the graph ran, so a crash here
+    // dropped 'hello' forever.
+    const runId = 'run-crash';
+    const buildAgent = () =>
+      Agent.create('crash')
+        .inbox('in')
+        .assistant('reply', Source.literal('ok'));
+
+    let snapshot: StoredRun<any> | undefined;
+    class CrashSnapshotStore extends MemoryRunStore {
+      async patch(
+        rid: string,
+        patch: StoredRunPatch,
+        fence?: number,
+      ): Promise<void> {
+        await super.patch(rid, patch, fence);
+        // First patch during execution (run.started observer): the executor is
+        // running but no boundary has been reached.
+        if (snapshot) {
+          return;
+        }
+        const live = (await this.get(rid))!;
+        if (live.status !== 'open') {
+          return;
+        }
+        snapshot = {
+          agent: buildAgent(),
+          agentName: live.agentName,
+          graphManifest: live.graphManifest,
+          initial: live.initial,
+          status: live.status,
+          result: live.result,
+          once: {
+            run: new Map(live.once.run),
+            conversation: new Map(live.once.conversation),
+          },
+          outbox: [...live.outbox],
+          inbox: live.inbox.map((entry) => ({ ...entry })),
+          providerSessions: { ...(live.providerSessions ?? {}) },
+          graphCursor: live.graphCursor,
+          graphSuspendedAt: live.graphSuspendedAt,
+          context: live.context,
+        };
+      }
+    }
+
+    const storeA = new CrashSnapshotStore();
+    const appA = PromptTrail.app({
+      agents: { crash: buildAgent() },
+      store: storeA,
+    });
+    await appA.run({ agent: 'crash', runId, input: 'hello', checkpoint: true });
+
+    // The durable state captured at the crash point must NOT have advanced the
+    // inbox cursor ahead of the (still-empty) session checkpoint.
+    expect(snapshot).toBeDefined();
+    expect(snapshot?.graphCursor ?? 0).toBe(0);
+    expect(snapshot?.result?.messages ?? []).toEqual([]);
+
+    // Rehydrate a fresh app from the crash snapshot and resume: the unconsumed
+    // input is re-delivered and processed, not lost.
+    const storeB = new MemoryRunStore();
+    await storeB.create(runId, snapshot!);
+    const appB = PromptTrail.app({
+      agents: { crash: buildAgent() },
+      store: storeB,
+    });
+    const recovered = await appB.resume(runId);
+    expect(recovered.status).toBe('done');
+    expect(
+      recovered.session.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ok']);
+  });
+
+  it('advances the persisted cursor to the consumed count at a suspension boundary', async () => {
+    const store = memoryStore();
+    const assistant = Agent.create('suspend-cursor')
+      .inbox('first')
+      .assistant('ack', Source.literal('ack'))
+      .awaitInput('more');
+    const app = PromptTrail.app({ agents: { s: assistant }, store });
+
+    const suspended = await app.run({
+      agent: 's',
+      runId: 'run-suspend-cursor',
+      input: 'hello',
+      checkpoint: true,
+    });
+    expect(suspended.status).toBe('suspended');
+
+    // One inbox message was consumed before suspending; the persisted cursor and
+    // session agree on exactly that count.
+    const persisted = await store.get('run-suspend-cursor');
+    expect(persisted?.graphCursor).toBe(1);
+    expect(
+      persisted?.result?.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ack']);
+  });
+
+  it('advances the persisted cursor to the consumed count at a completion boundary', async () => {
+    const store = memoryStore();
+    // A graph without an inbound consumer materializes the whole inbox remainder
+    // at completion, so the persisted cursor covers every delivered message.
+    const assistant = Agent.create('complete-cursor').assistant(
+      'reply',
+      Source.literal('ok'),
+    );
+    const app = PromptTrail.app({ agents: { c: assistant }, store });
+
+    const done = await app.run({
+      agent: 'c',
+      runId: 'run-complete-cursor',
+      input: 'hello',
+      checkpoint: true,
+    });
+    expect(done.status).toBe('done');
+
+    const persisted = await store.get('run-complete-cursor');
+    expect(persisted?.graphCursor).toBe(1);
+    expect(
+      persisted?.result?.messages.map((message) => message.content),
+    ).toEqual(['hello', 'ok']);
+  });
+
   it('delete removes the run from the store and prunes the process-local maps', async () => {
     const store = memoryStore();
     const assistant = Agent.create('deletable')
@@ -1076,18 +1205,23 @@ describe('checkpoint app runtime', () => {
   });
 
   it('surfaces both the run error and the rollback error when rollback persistence fails', async () => {
+    // The inbox cursor is never advanced before a graph boundary, so every
+    // mid-attempt persist writes the same (entry) cursor and the rollback
+    // persist is indistinguishable from the others by content — only by order.
+    // The failing transform arms the store to fail the persist that follows the
+    // single `run.failed` observer persist, i.e. the rollback persist itself.
     class RollbackFailStore extends MemoryRunStore {
-      private advanced = false;
+      // null: disarmed; n>0: let n more patches through, then fail the next.
+      patchesUntilFailure: number | null = null;
       async patch(
         runId: string,
         patch: Parameters<MemoryRunStore['patch']>[1],
       ): Promise<void> {
-        if (patch.graphCursor === 1) {
-          this.advanced = true;
-        }
-        // Fail only the rewind write (cursor regressing to 0 after advancing).
-        if (this.advanced && patch.graphCursor === 0) {
-          throw new Error('store patch failed');
+        if (this.patchesUntilFailure !== null) {
+          if (this.patchesUntilFailure === 0) {
+            throw new Error('store patch failed');
+          }
+          this.patchesUntilFailure -= 1;
         }
         return super.patch(runId, patch);
       }
@@ -1098,6 +1232,10 @@ describe('checkpoint app runtime', () => {
       .inbox('in')
       .assistant('reply', Source.literal('ok'))
       .transform('boom', () => {
+        // Arm the store so the run.failed observer persist still succeeds and
+        // the subsequent rollback persist (restoreCheckpointGraphEntryPoint)
+        // fails.
+        store.patchesUntilFailure = 1;
         throw new Error('boom');
       });
     const app = PromptTrail.app({ agents: { rollback: assistant }, store });
