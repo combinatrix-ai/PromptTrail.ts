@@ -220,13 +220,13 @@ export class PostgresRunStore implements DurableRunStore {
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      // Compute next seq
-      const seqRes = await client.query(
-        `SELECT COALESCE(MAX(seq) + 1, 0) AS seq FROM session_deltas WHERE run_id = $1`,
-        [runId],
-      );
-      const seq: number = Number((seqRes.rows[0] as { seq: unknown }).seq);
-
+      // Single-statement seq allocation: INSERT ... SELECT COALESCE(MAX(seq)+1, 0)
+      // computes the next seq and inserts in one round trip, so there is no
+      // window between reading the max and writing the row for another
+      // statement on this run to land in. The explicit ::type casts are
+      // required for pg-mem, which (unlike real Postgres) cannot infer
+      // parameter types from the INSERT target columns when they flow through
+      // a SELECT list rather than a VALUES list.
       await client.query(
         `INSERT INTO session_deltas (
           run_id,
@@ -237,10 +237,19 @@ export class PostgresRunStore implements DurableRunStore {
           vars_set_json,
           vars_deleted_json,
           rewrite
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        )
+        SELECT
+          $1::text,
+          COALESCE(MAX(seq) + 1, 0),
+          $2::integer,
+          $3::integer,
+          $4::text,
+          $5::text,
+          $6::text,
+          $7::integer
+        FROM session_deltas WHERE run_id = $1::text`,
         [
           runId,
-          seq,
           delta.fromVersion,
           delta.toVersion,
           JSON.stringify(delta.appendedMessages),

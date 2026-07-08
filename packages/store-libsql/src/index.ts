@@ -198,14 +198,10 @@ export class LibsqlRunStore implements DurableRunStore {
     runId: string,
     delta: SessionCheckpointDelta<any>,
   ): Promise<void> {
-    // Compute the next seq atomically by reading the current MAX.
-    const seqRes = await this.client.execute({
-      sql: `SELECT COALESCE(MAX(seq) + 1, 0) AS seq
-            FROM session_deltas WHERE run_id = ?`,
-      args: [runId],
-    });
-    const seq = seqRes.rows[0][0] as number;
-
+    // Single-statement seq allocation: INSERT ... SELECT COALESCE(MAX(seq)+1, 0)
+    // computes the next seq and inserts in one round trip, so there is no
+    // window between reading the max and writing the row for another
+    // statement on this run to land in.
     await this.client.execute({
       sql: `INSERT INTO session_deltas (
               run_id,
@@ -216,16 +212,18 @@ export class LibsqlRunStore implements DurableRunStore {
               vars_set_json,
               vars_deleted_json,
               rewrite
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            SELECT ?, COALESCE(MAX(seq) + 1, 0), ?, ?, ?, ?, ?, ?
+            FROM session_deltas WHERE run_id = ?`,
       args: [
         runId,
-        seq,
         delta.fromVersion,
         delta.toVersion,
         JSON.stringify(delta.appendedMessages),
         jsonOrNull(delta.varsSet),
         jsonOrNull(delta.varsDeleted),
         delta.rewrite ? 1 : 0,
+        runId,
       ],
     });
   }

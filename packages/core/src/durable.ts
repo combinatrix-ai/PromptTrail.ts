@@ -212,6 +212,31 @@ export interface AppGateway {
   stop?(): Promise<void> | void;
 }
 
+/**
+ * Concurrency contract:
+ *
+ * - This store family currently assumes a SINGLE WRITER PER RUN. Within one
+ *   process, `PromptTrailApp` provides that guarantee itself: every
+ *   `run`/`send`/`resume`/`delete` call for a given `runId` is serialized
+ *   through a per-run mutex (`KeyedMutex`), so a backend never sees two
+ *   concurrent writes for the same run from that process. Cross-process
+ *   single-writer enforcement (e.g. multiple app instances pointed at the
+ *   same store) is NOT yet provided by any backend here — it arrives with the
+ *   planned single-writer lease (durability roadmap §2). Until then, running
+ *   more than one process against the same store for the same `runId` is
+ *   unsupported and may corrupt per-run sequencing.
+ * - What IS guaranteed today, and must be preserved by any backend: seq/offset
+ *   allocation (e.g. `appendSessionDelta`'s `seq`, `appendInbox`'s offset
+ *   idempotency) must be atomic and correct under concurrent appends to
+ *   DIFFERENT runs sharing the same store/connection pool. A backend must
+ *   not compute "next seq" via a separate read-then-write round trip that
+ *   could interleave with unrelated work on the same pool/connection in a way
+ *   that corrupts another run's data; prefer a single atomic statement (e.g.
+ *   `INSERT ... SELECT COALESCE(MAX(seq) + 1, 0) ... WHERE run_id = ?`) or an
+ *   explicit transaction. Concurrent appends to the SAME run are out of
+ *   contract per the single-writer assumption above and are not required to
+ *   be race-free.
+ */
 export interface DurableRunStore {
   /**
    * Reads are now async so networked store backends (Postgres, Redis, libsql)
