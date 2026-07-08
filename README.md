@@ -130,7 +130,7 @@ runtime warns at registration when a resume-sensitive node (such as
 The full vocabulary:
 
 - Leaf nodes: `system`, `user`, `assistant`, `transform`, `inbox`,
-  `awaitInput`, `tools`, `structured`
+  `awaitInput`, `sleep`, `tools`, `structured`
 - Containers: `loop`, `conditional`, `subroutine`, `parallel`
 - Intent and provider turns: `goal`, `codex`, `claude`
 
@@ -229,6 +229,29 @@ and is left waiting, not resumed. Recovery re-delivers only the unconsumed tail,
 so it is **at-least-once** like every resume — deduped by your declared effect
 idempotency keys. Compose it with `lease` for cross-process single-writer
 safety; the boot scan runs only after the lease is acquired.
+
+**Durable timers (`sleep`).** `.sleep(id, duration)` suspends a run for a wall
+clock delay that survives restarts. The wake-at is persisted with the run, and
+`PromptTrail.app` re-arms it on boot — a `sleep('7d')` that is halfway through
+when the process dies still fires when its time comes, with no human
+re-invocation. `duration` is milliseconds or a human string (`'2h'`, `'7d'`,
+`'1h30m'`).
+
+```ts
+const reminder = Agent.create('reminder')
+  .sleep('wait', '7d')
+  .assistant('nudge', Source.llm());
+// run suspends at 'reminder/wait'; a week later the app's timer sweep resumes
+// it past the sleep and the assistant delivers.
+```
+
+The sweep is always on when the app has a store: it holds a single in-process
+timer that wakes at the earliest pending wake-at and re-arms after each firing
+(no per-timer OS timer, nothing held at rest), sharing the discipline of the
+`@prompttrail/cron` gateway rather than a second scheduler. Firing marks the
+timer and resumes through the same locked, fenced path as any resume, so the
+at-least-once contract below is unchanged. Under ephemeral (non-checkpoint)
+execution, `sleep` is a plain in-process wait.
 
 The guarantee is honest and intentionally limited:
 

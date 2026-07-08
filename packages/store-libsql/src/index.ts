@@ -4,7 +4,9 @@ import {
   type Agent,
   type AssistantDeliveryOutboxEntry,
   type DurableRunStore,
+  type DurableTimer,
   type Inbound,
+  type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
   type RunStoreLease,
@@ -459,6 +461,34 @@ export class LibsqlRunStore implements DurableRunStore {
     });
   }
 
+  async upsertTimer(
+    runId: string,
+    timer: DurableTimer,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    await this.client.execute({
+      sql: `INSERT INTO timers (run_id, id, wake_at, payload, kind, created_at, fired_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, id)
+            DO UPDATE SET
+              wake_at = excluded.wake_at,
+              payload = excluded.payload,
+              kind = excluded.kind,
+              created_at = excluded.created_at,
+              fired_at = excluded.fired_at`,
+      args: [
+        runId,
+        timer.id,
+        timer.wakeAt,
+        timer.payload ?? null,
+        timer.kind ?? null,
+        timer.createdAt,
+        timer.firedAt ?? null,
+      ],
+    });
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     // Deleting the parent runs row is sufficient: the schema declares
@@ -543,6 +573,18 @@ export class LibsqlRunStore implements DurableRunStore {
         node_path TEXT NOT NULL,
         binding_json TEXT NOT NULL,
         PRIMARY KEY (run_id, node_path),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS timers (
+        run_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        wake_at INTEGER NOT NULL,
+        payload TEXT,
+        kind TEXT,
+        created_at INTEGER NOT NULL,
+        fired_at INTEGER,
+        PRIMARY KEY (run_id, id),
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
       );
 
@@ -651,7 +693,31 @@ export class LibsqlRunStore implements DurableRunStore {
       ) as ProviderSessionBinding;
     }
 
-    // 7. Delegate assembly to the shared reconstruction helper.
+    // 7. Gather durable timers ordered by id.
+    const timerRes = await this.client.execute({
+      sql: `SELECT id, wake_at, payload, kind, created_at, fired_at
+            FROM timers WHERE run_id = ? ORDER BY id ASC`,
+      args: [runId],
+    });
+    const timers: DurableTimer[] = timerRes.rows.map((trow) => {
+      const timer: DurableTimer = {
+        id: trow[0] as string,
+        wakeAt: trow[1] as number,
+        createdAt: trow[4] as number,
+      };
+      if (trow[2] !== null) {
+        timer.payload = trow[2] as string;
+      }
+      if (trow[3] !== null) {
+        timer.kind = trow[3] as InboundKind;
+      }
+      if (trow[5] !== null) {
+        timer.firedAt = trow[5] as number;
+      }
+      return timer;
+    });
+
+    // 8. Delegate assembly to the shared reconstruction helper.
     return reconstructStoredRun(
       {
         agentName: row.agent_name,
@@ -666,6 +732,7 @@ export class LibsqlRunStore implements DurableRunStore {
         inbox,
         outbox,
         providerSessions,
+        timers,
       },
       this.agents,
     );

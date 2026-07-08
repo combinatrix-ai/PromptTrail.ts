@@ -510,6 +510,31 @@ export class Agent<TC extends Vars = Vars> {
     return this;
   }
 
+  /**
+   * Durable sleep (durability roadmap §3). Suspends the run for `duration` and
+   * resumes past the node once the app's timer sweep fires — the wake-at is
+   * persisted, so the sleep survives restarts. `duration` is milliseconds or a
+   * human string like `'2h'` / `'7d'` / `'1h30m'`. Under ephemeral (non
+   * checkpoint) execution it is a real in-process wait.
+   */
+  sleep(duration: number | string): this;
+  sleep(id: string, duration: number | string): this;
+  sleep(idOrDuration: string | number, maybeDuration?: number | string): this {
+    if (maybeDuration !== undefined) {
+      this.graphNodes.push({
+        id: idOrDuration as string,
+        type: 'sleep',
+        data: { duration: maybeDuration },
+      });
+      return this;
+    }
+    this.graphNodes.push({
+      type: 'sleep',
+      data: { duration: idOrDuration },
+    });
+    return this;
+  }
+
   transform(transform: AgentGraphPureTransformHandler<TC>): this;
   transform(
     options: AgentGraphTransformEffectOptions,
@@ -1751,6 +1776,8 @@ function graphNodeTemplateName(node: AgentGraphNodeDraft): string {
       return 'Inbox';
     case 'awaitInput':
       return 'AwaitInput';
+    case 'sleep':
+      return 'Sleep';
     case 'goal':
       return 'Goal';
     default:

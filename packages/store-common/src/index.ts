@@ -2,6 +2,7 @@ import {
   Session,
   type Agent,
   type AssistantDeliveryOutboxEntry,
+  type DurableTimer,
   type Inbound,
   type Message,
   type OnceScope,
@@ -113,6 +114,8 @@ export interface ReconstructStoredRunInput {
   inbox: Inbound[];
   outbox: AssistantDeliveryOutboxEntry[];
   providerSessions: Record<string, ProviderSessionBinding>;
+  /** Parsed durable timers, if the backend stores any. */
+  timers?: DurableTimer[];
 }
 
 /**
@@ -165,6 +168,10 @@ export function reconstructStoredRun(
   }
 
   run.providerSessions = { ...input.providerSessions };
+
+  if (input.timers && input.timers.length > 0) {
+    run.timers = input.timers.map((timer) => ({ ...timer }));
+  }
 
   return run;
 }

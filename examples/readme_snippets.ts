@@ -111,6 +111,15 @@ const done = await checkpointSupport.execute({
 });
 console.log(done.status, done.session.getLastMessage()?.content);
 
+// --- Durable timers (sleep) ----------------------------------------------
+
+const reminder = Agent.create('reminder')
+  .sleep('wait', '7d')
+  .assistant('nudge', Source.llm());
+// run suspends at 'reminder/wait'; a week later the app's timer sweep resumes
+// it past the sleep and the assistant delivers.
+void reminder;
+
 // --- Vendor Tool Loops ---------------------------------------------------
 
 void Source.llm().openai().toolLoop('vendor').addTool('searchDocs', searchDocs);

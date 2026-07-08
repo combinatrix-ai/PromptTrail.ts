@@ -8,6 +8,7 @@ import {
   type SessionCheckpointDelta,
   type Inbound,
   type AssistantDeliveryOutboxEntry,
+  type DurableTimer,
 } from '@prompttrail/core';
 
 /**
@@ -853,6 +854,113 @@ export function runDurableRunStoreConformance(spec: ConformanceSpec): void {
       // The persisted counter survives the reopen: the new token is strictly
       // greater than the pre-reopen token, never reset to zero.
       expect(s2!.token).toBeGreaterThan(s1!.token);
+    });
+
+    // -----------------------------------------------------------------------
+    // Durable timer cases (durability roadmap §3)
+    // -----------------------------------------------------------------------
+
+    // Case 23: upsertTimer round-trips and is idempotent by (runId, id) — a
+    // second upsert with the same id REPLACES the row (e.g. marking firedAt),
+    // it does not append a duplicate. A second id makes a second timer.
+    it('case 23: upsertTimer round-trip + idempotent upsert', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-timer-23';
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      const timer: DurableTimer = {
+        id: 'sleeper/wait',
+        wakeAt: BASE_NOW + 60_000,
+        kind: 'control',
+        createdAt: BASE_NOW,
+      };
+      await store.upsertTimer(runId, timer);
+
+      let retrieved = await store.get(runId);
+      expect(retrieved!.timers).toHaveLength(1);
+      expect(retrieved!.timers![0].id).toBe('sleeper/wait');
+      expect(retrieved!.timers![0].wakeAt).toBe(BASE_NOW + 60_000);
+      expect(retrieved!.timers![0].firedAt).toBeUndefined();
+
+      // Same id => replace, not duplicate (mark it fired).
+      await store.upsertTimer(runId, { ...timer, firedAt: BASE_NOW + 60_000 });
+      retrieved = await store.get(runId);
+      expect(retrieved!.timers).toHaveLength(1);
+      expect(retrieved!.timers![0].firedAt).toBe(BASE_NOW + 60_000);
+
+      // Different id => new timer.
+      await store.upsertTimer(runId, {
+        id: 'sleeper/wait2',
+        wakeAt: BASE_NOW + 120_000,
+        createdAt: BASE_NOW,
+      });
+      retrieved = await store.get(runId);
+      expect(retrieved!.timers).toHaveLength(2);
+    });
+
+    // Case 24: DURABILITY — timers survive a store reopen. Skipped for in-memory
+    // stores with no reopen, like case 12.
+    it('case 24: durable timers survive reopen', async () => {
+      await openStore();
+      if (!reopen) {
+        return;
+      }
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-timer-24';
+      await store.create(runId, makeInitialRun(agent, agentName));
+
+      await store.upsertTimer(runId, {
+        id: 'sleeper/pending',
+        wakeAt: BASE_NOW + 3_600_000,
+        payload: 'timer:sleeper/pending',
+        kind: 'control',
+        createdAt: BASE_NOW,
+      });
+      await store.upsertTimer(runId, {
+        id: 'sleeper/fired',
+        wakeAt: BASE_NOW + 1_000,
+        createdAt: BASE_NOW,
+        firedAt: BASE_NOW + 1_500,
+      });
+
+      const fresh = await reopen();
+      const reconstructed = await fresh.get(runId);
+      const timers = [...(reconstructed!.timers ?? [])].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
+      expect(timers).toHaveLength(2);
+      const fired = timers.find((t) => t.id === 'sleeper/fired')!;
+      const pending = timers.find((t) => t.id === 'sleeper/pending')!;
+      expect(fired.firedAt).toBe(BASE_NOW + 1_500);
+      expect(pending.firedAt).toBeUndefined();
+      expect(pending.wakeAt).toBe(BASE_NOW + 3_600_000);
+      expect(pending.payload).toBe('timer:sleeper/pending');
+      expect(pending.kind).toBe('control');
+    });
+
+    // Case 25: delete cascades timers — a recreated runId must not fold the old
+    // incarnation's timer rows into the new run.
+    it('case 25: delete cascades timers', async () => {
+      await openStore();
+      const agentName = Object.keys(agents)[0];
+      const agent = agents[agentName];
+      const runId = 'run-timer-25';
+      await store.create(runId, makeInitialRun(agent, agentName));
+      await store.upsertTimer(runId, {
+        id: 'sleeper/leaked',
+        wakeAt: BASE_NOW + 5_000,
+        createdAt: BASE_NOW,
+      });
+
+      await store.delete(runId);
+      expect(await store.has(runId)).toBe(false);
+
+      await store.create(runId, makeInitialRun(agent, agentName));
+      const reconstructed = await store.get(runId);
+      expect(reconstructed!.timers ?? []).toHaveLength(0);
     });
   });
 }

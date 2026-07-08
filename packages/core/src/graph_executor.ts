@@ -26,6 +26,7 @@ import {
   type Message as PromptTrailMessage,
 } from './message';
 import { Session, type Vars } from './session';
+import { parseDuration } from './duration';
 import { type ModelOutput, Source } from './source';
 import { Parallel } from './templates/composite/parallel';
 import type { Template } from './templates/base';
@@ -81,6 +82,19 @@ export interface GraphExecutionOptions<TVars extends Vars = Vars> {
    * session the graph actually produced. See the checkpoint continuation model.
    */
   onInboxConsumed?: (consumedCount: number) => void;
+  /**
+   * Durable-timer wiring for `sleep` nodes (durability roadmap §3). Both are
+   * supplied by the checkpoint runtime; under ephemeral execution they are
+   * absent and `sleep` falls back to a real in-process wait.
+   *
+   * `firedTimers` holds the ids (sleep node graph paths) of timers the app has
+   * already fired — a sleep node whose id is present passes through instead of
+   * re-arming. `armTimer` persists (idempotently) a pending timer for the given
+   * node and duration; the runtime owns the clock so the executor stays
+   * store- and clock-agnostic.
+   */
+  firedTimers?: ReadonlySet<string>;
+  armTimer?: (timerId: string, durationMs: number) => Promise<void>;
 }
 
 export interface GraphToolDurableBoundaryContext<TVars extends Vars = Vars> {
@@ -139,6 +153,8 @@ interface GraphExecutionState<TVars extends Vars> {
   unsupportedCommandLabel?: string;
   activeGoal?: ActiveGoalExecution;
   onInboxConsumed?: (consumedCount: number) => void;
+  firedTimers?: ReadonlySet<string>;
+  armTimer?: (timerId: string, durationMs: number) => Promise<void>;
 }
 
 type GraphNodeData = Record<string, unknown>;
@@ -229,6 +245,8 @@ export async function executeAgentGraph<TVars extends Vars = Vars>(
     runEventSource: options.runEventSource ?? 'graph',
     unsupportedCommandLabel: options.unsupportedCommandLabel,
     onInboxConsumed: options.onInboxConsumed,
+    firedTimers: options.firedTimers,
+    armTimer: options.armTimer,
   };
 
   await emitGraphRunEvent('run.started', state, {
@@ -446,6 +464,9 @@ async function executeGraphNode<TVars extends Vars>(
           throw new GraphExecutionSuspended(nodePath, undefined, state.session);
         }
       }
+      return;
+    case 'sleep':
+      await executeSleepNode(node, nodePath, state);
       return;
     case 'structured':
       await executeStructuredNode(node, nodePath, state);
@@ -705,6 +726,74 @@ async function executeGoalAttemptsNode<TVars extends Vars>(
       }
     }
   }
+}
+
+/**
+ * A `sleep` node (durability roadmap §3).
+ *
+ * Durable path (checkpoint runtime supplies `armTimer`): on first execution the
+ * node arms a durable timer for `wakeAt = now + duration` and SUSPENDS at its
+ * coordinate — exactly like `awaitInput`, but woken by the app's timer sweep
+ * rather than an inbound. Arming is idempotent, so a resume that reaches an
+ * already-armed (still-pending) timer re-suspends WITHOUT resetting `wakeAt`.
+ * Once the app has fired the timer, the node's id is in `firedTimers` and the
+ * node passes through (it never re-arms — no infinite loop).
+ *
+ * Ephemeral path (no `armTimer`): a real in-process wait, cancellable via the
+ * abort signal. Nothing is persisted; the promise simply resolves after the
+ * duration.
+ */
+async function executeSleepNode<TVars extends Vars>(
+  node: AgentGraphNode,
+  nodePath: string,
+  state: GraphExecutionState<TVars>,
+): Promise<void> {
+  const durationMs = parseDuration(sleepDuration(node, nodePath));
+  if (state.armTimer) {
+    if (state.firedTimers?.has(nodePath)) {
+      return;
+    }
+    await state.armTimer(nodePath, durationMs);
+    throw new GraphExecutionSuspended(nodePath, undefined, state.session);
+  }
+  await waitMs(durationMs, state.signal);
+}
+
+function sleepDuration(
+  node: AgentGraphNode,
+  nodePath: string,
+): number | string {
+  const duration = graphNodeData(node).duration;
+  if (typeof duration === 'number' || typeof duration === 'string') {
+    return duration;
+  }
+  throw new Error(`Graph node ${nodePath} requires a sleep duration.`);
+}
+
+function waitMs(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortReason(signal));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortReason(signal));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function abortReason(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  return reason instanceof Error ? reason : new Error('Sleep aborted.');
 }
 
 async function executeUserNode<TVars extends Vars>(

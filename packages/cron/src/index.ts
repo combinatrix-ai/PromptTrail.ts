@@ -81,6 +81,20 @@ const CRON_TRIGGER_TYPE = 'cron.schedule';
  * Overlap policy: fires are NOT queued. If a job's previous emit is still
  * awaiting when its next fire is due, that fire is skipped; the following
  * occurrence is still armed.
+ *
+ * Relationship to durable timers (roadmap §3 — "timers should unify with the
+ * cron trigger plumbing rather than grow a second scheduler"): the unification
+ * is the shared SCHEDULING DISCIPLINE, not a merged code path. Both this gateway
+ * and the core durable-timer sweep (`PromptTrailApp`, packages/core/src/durable.ts)
+ * follow the same rules — an injectable clock, self-driven `setTimeout`s that
+ * compute the next fire and re-arm after each occurrence, skip-don't-queue
+ * re-entrancy, and cleanup on stop — so neither grows into a second ad-hoc
+ * scheduler. They stay separate deliberately: cron is a stateless wall-clock
+ * TRIGGER that starts runs, while durable timers are per-run WAKE-UPS whose
+ * wake-at is persisted and re-armed on boot. The intended future convergence is
+ * a cron occurrence that arms a durable timer (a scheduled run that survives a
+ * restart between fire and delivery); that reuse lives on top of this same
+ * discipline, not by moving the durable-timer sweep into this package.
  */
 export function cronGateway(options: CronGatewayOptions = {}): RuntimeAdapter {
   let scheduler: CronScheduler | undefined;
