@@ -5,11 +5,21 @@ import { Agent, PromptTrail, Source } from '@prompttrail/core';
 import { discord, discordGateway } from '@prompttrail/discord';
 import { SqliteRunStore } from '@prompttrail/store-sqlite';
 import {
+  createAuthorSkill,
   createClawSkillAgent,
   createStatusSkill,
+  findClawRoot,
+  llmSynthesizer,
+  loadStagedSkills,
   registerBuiltinSkills,
+  skillToRow,
   SkillRegistry,
+  templateSynthesizer,
   validateSkillRegistry,
+  type GateOptions,
+  type SkillLoaderContext,
+  type SkillReplySource,
+  type SkillSynthesizer,
 } from './skills/index.js';
 
 interface ClawConfig {
@@ -42,6 +52,56 @@ const registry = new SkillRegistry(skillDbPath);
 const skills = registerBuiltinSkills(registry, [
   createStatusSkill({ version, replyMode: config.replyMode, startedAt }),
 ]);
+
+// Phase 1: authoring + verification gate (design-docs/claw-self-authoring.md
+// §4-§6, §10). The reply source is injected into every self-authored skill's
+// behavior; the gate uses its own mock source, so this only affects live skills.
+const skillsDir =
+  readOptionalString('CLAW_SKILLS_DIR') ??
+  join(process.cwd(), '.data', 'skills');
+const gateOptions: GateOptions = {
+  clawRoot: findClawRoot(),
+  stagingRoot: join(skillsDir, 'staging'),
+};
+const replySource = buildSkillReplySource(config);
+const synthesizer: SkillSynthesizer =
+  config.replyMode === 'openai' && config.openaiModel
+    ? llmSynthesizer({ modelName: config.openaiModel })
+    : templateSynthesizer;
+const loaderContext: SkillLoaderContext = {
+  registry,
+  skills,
+  skillsDir,
+  replySource,
+  gateOptions,
+};
+
+// Restart reload: re-import every enabled self-authored skill from its durable
+// source through the same gate-import path (full re-gate only if source changed).
+await loadStagedSkills(loaderContext);
+
+// Register the trusted authoring entry point ONLY when a privileged channel is
+// configured (§6 authorization boundary). Without CLAW_AUTHORING_CHANNELS, `!skill`
+// does nothing — a normal message can invoke skills but never author them.
+const authoringChannels = readList('CLAW_AUTHORING_CHANNELS', []);
+const authors = readList('CLAW_AUTHORS', []);
+if (authoringChannels.length > 0) {
+  const authorSkill = createAuthorSkill({
+    loaderContext,
+    synthesizer,
+    authoringChannels,
+    authors,
+  });
+  skills.set(authorSkill.id, authorSkill);
+  const authorRow = skillToRow(authorSkill);
+  const existing = registry.get(authorSkill.id);
+  if (existing) {
+    // Keep channel narrowing current with the env; respect a manual disable.
+    authorRow.enabled = existing.enabled;
+  }
+  registry.upsert(authorRow);
+}
+
 validateSkillRegistry(registry, skills);
 
 // Static registry-dispatch graph: dispatch → conditional(matched skill | default).
@@ -158,6 +218,23 @@ function buildDefaultReply(cfg: ClawConfig): (agent: Agent) => Agent {
       'reply',
       (session) => `ack: ${session.getLastMessage()?.content ?? ''}`,
     );
+}
+
+/**
+ * The reply `Source` injected into every self-authored skill's `behavior`
+ * (design-docs §2). In openai mode this is the configured LLM; otherwise a
+ * degenerate echo callback so template-authored skills still terminate in
+ * echo/dev mode. The verification gate never uses this — it injects its own
+ * mock source — so no self-authored skill can reach the network during gating.
+ */
+function buildSkillReplySource(cfg: ClawConfig): SkillReplySource {
+  if (cfg.replyMode === 'openai' && cfg.openaiModel) {
+    return Source.llm().openai({
+      adapter: 'ai-sdk',
+      modelName: cfg.openaiModel,
+    });
+  }
+  return Source.callback(async () => '(echo mode: skill reply)');
 }
 
 function readPackageVersion(): string {

@@ -4,35 +4,73 @@ import Database from 'better-sqlite3';
 import type { SkillProvenance } from './types.js';
 
 /**
- * Persistent SkillRegistry (design-docs/claw-self-authoring.md §7).
+ * Persistent SkillRegistry (design-docs/claw-self-authoring.md §7, §9).
  *
  * A deliberately separate abstraction from the run store: its access pattern is
- * load-all-on-boot plus occasional append/enable/disable and per-invocation
- * health writes, not per-run checkpoint deltas. Backed by its own SQLite file
- * via better-sqlite3.
+ * load-all-on-boot plus occasional append/enable/disable, per-invocation health
+ * writes, and (Phase 1) gate-provenance + version writes — not per-run
+ * checkpoint deltas. Backed by its own SQLite file via better-sqlite3.
  *
- * Phase 0 rows carry only the *serializable* subset of a skill: the executable
- * `when`/`behavior` live in the in-process skill map (keyed by `behaviorRef`),
- * which the dispatcher joins against at runtime. `channel` + `predicateKey`
- * describe the trigger; `behaviorRef` is the in-process skill id.
+ * Rows carry only the *serializable* subset of a skill: the executable
+ * `behavior` lives in the in-process skill map (keyed by `behaviorRef`), which
+ * the dispatcher joins against at runtime. `channel` + `predicateKey` describe
+ * the trigger.
+ *
+ * Phase 1 additions (trust tiers + active-version pointer, §9):
+ *   - `tier`          — 'builtin' (hand-written, trusted) or 'staged' (gated,
+ *                       self-authored). Higher tiers land in Phase 2.
+ *   - `sourcePath`    — durable `.ts` source location for reload after restart.
+ *   - `sourceHash`    — hash of that source; boot re-runs the full gate only if
+ *                       it changed.
+ *   - `manifestHash`  — the active build's graph manifest hash (excluded from
+ *                       the parent manifest, §8).
+ *   - `activeVersion` — the active manifest hash pointer; rollback (Phase 2)
+ *                       moves it. Past versions are immutable rows in
+ *                       `skill_versions`.
+ *   - `gateResult`    — the recorded gate outcome JSON (provenance).
  */
 
-/** A persisted skill row (the serializable subset of a {@link Skill}). */
+/** Trust tier of a skill (design-docs §9). Phase 1 lands builtin + staged. */
+export type SkillTier = 'builtin' | 'staged';
+
+/** A persisted skill row (the serializable subset of a Skill + provenance). */
 export interface SkillRegistryRow {
   id: string;
   name: string;
   /** Serializable trigger channel narrowing; null means "any channel". */
   channel: string | string[] | null;
-  /** Serializable name of the trigger predicate (Phase 0: informational). */
+  /** Serializable name of the trigger predicate. */
   predicateKey: string;
-  /** Reference to the executable skill in the in-process map (Phase 0: id). */
+  /** Reference to the executable skill in the in-process map. */
   behaviorRef: string;
   provenance: SkillProvenance;
   enabled: boolean;
   createdAt: string;
+  /** Trust tier (default 'builtin' for seeded hand-written skills). */
+  tier: SkillTier;
+  /** Durable `.ts` source path (self-authored skills only). */
+  sourcePath: string | null;
+  /** Hash of the source at `sourcePath` (gate re-run trigger on boot). */
+  sourceHash: string | null;
+  /** Active build's graph manifest hash. */
+  manifestHash: string | null;
+  /** Active-version pointer (manifest hash); rollback moves it. */
+  activeVersion: string | null;
+  /** Recorded gate result JSON (provenance). */
+  gateResult: unknown | null;
 }
 
-/** Per-skill health record (design-docs/claw-self-authoring.md §9 Phase 0). */
+/** An immutable, gated build of a skill, versioned by its manifest hash (§9). */
+export interface SkillVersionRow {
+  skillId: string;
+  manifestHash: string;
+  sourceHash: string | null;
+  sourcePath: string | null;
+  gateResult: unknown | null;
+  createdAt: string;
+}
+
+/** Per-skill health record (design-docs/claw-self-authoring.md §9). */
 export interface SkillHealthRecord {
   skillId: string;
   invocations: number;
@@ -58,6 +96,21 @@ interface SkillRow {
   behavior_ref: string;
   provenance: string;
   enabled: number;
+  created_at: string;
+  tier: string | null;
+  source_path: string | null;
+  source_hash: string | null;
+  manifest_hash: string | null;
+  active_version: string | null;
+  gate_result: string | null;
+}
+
+interface VersionRow {
+  skill_id: string;
+  manifest_hash: string;
+  source_hash: string | null;
+  source_path: string | null;
+  gate_result: string | null;
   created_at: string;
 }
 
@@ -89,7 +142,22 @@ export class SkillRegistry {
         behavior_ref TEXT NOT NULL,
         provenance TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        tier TEXT NOT NULL DEFAULT 'builtin',
+        source_path TEXT,
+        source_hash TEXT,
+        manifest_hash TEXT,
+        active_version TEXT,
+        gate_result TEXT
+      );
+      CREATE TABLE IF NOT EXISTS skill_versions (
+        skill_id TEXT NOT NULL,
+        manifest_hash TEXT NOT NULL,
+        source_hash TEXT,
+        source_path TEXT,
+        gate_result TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (skill_id, manifest_hash)
       );
       CREATE TABLE IF NOT EXISTS skill_health (
         skill_id TEXT PRIMARY KEY,
@@ -101,6 +169,29 @@ export class SkillRegistry {
         updated_at TEXT NOT NULL
       );
     `);
+    this.migrateSkillColumns();
+  }
+
+  /** Idempotently add Phase 1 columns to a pre-existing Phase 0 `skills` table. */
+  private migrateSkillColumns(): void {
+    const existing = new Set(
+      (
+        this.db.prepare('PRAGMA table_info(skills)').all() as { name: string }[]
+      ).map((c) => c.name),
+    );
+    const additions: [string, string][] = [
+      ['tier', "TEXT NOT NULL DEFAULT 'builtin'"],
+      ['source_path', 'TEXT'],
+      ['source_hash', 'TEXT'],
+      ['manifest_hash', 'TEXT'],
+      ['active_version', 'TEXT'],
+      ['gate_result', 'TEXT'],
+    ];
+    for (const [name, decl] of additions) {
+      if (!existing.has(name)) {
+        this.db.exec(`ALTER TABLE skills ADD COLUMN ${name} ${decl}`);
+      }
+    }
   }
 
   /** All rows in insertion order, enabled or not. */
@@ -119,6 +210,16 @@ export class SkillRegistry {
     return rows.map(fromSkillRow);
   }
 
+  /**
+   * Enabled, self-authored (non-builtin) rows with a durable source path —
+   * the set the boot loader re-imports and re-gates (design-docs §7).
+   */
+  listReloadable(): SkillRegistryRow[] {
+    return this.listEnabled().filter(
+      (row) => row.tier !== 'builtin' && row.sourcePath !== null,
+    );
+  }
+
   get(id: string): SkillRegistryRow | undefined {
     const row = this.db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as
       | SkillRow
@@ -131,15 +232,23 @@ export class SkillRegistry {
     this.db
       .prepare(
         `INSERT INTO skills
-           (id, name, channel, predicate_key, behavior_ref, provenance, enabled, created_at)
-         VALUES (@id, @name, @channel, @predicate_key, @behavior_ref, @provenance, @enabled, @created_at)
+           (id, name, channel, predicate_key, behavior_ref, provenance, enabled, created_at,
+            tier, source_path, source_hash, manifest_hash, active_version, gate_result)
+         VALUES (@id, @name, @channel, @predicate_key, @behavior_ref, @provenance, @enabled, @created_at,
+            @tier, @source_path, @source_hash, @manifest_hash, @active_version, @gate_result)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            channel = excluded.channel,
            predicate_key = excluded.predicate_key,
            behavior_ref = excluded.behavior_ref,
            provenance = excluded.provenance,
-           enabled = excluded.enabled`,
+           enabled = excluded.enabled,
+           tier = excluded.tier,
+           source_path = excluded.source_path,
+           source_hash = excluded.source_hash,
+           manifest_hash = excluded.manifest_hash,
+           active_version = excluded.active_version,
+           gate_result = excluded.gate_result`,
       )
       .run(toSkillRow(row));
   }
@@ -149,8 +258,10 @@ export class SkillRegistry {
     const result = this.db
       .prepare(
         `INSERT OR IGNORE INTO skills
-           (id, name, channel, predicate_key, behavior_ref, provenance, enabled, created_at)
-         VALUES (@id, @name, @channel, @predicate_key, @behavior_ref, @provenance, @enabled, @created_at)`,
+           (id, name, channel, predicate_key, behavior_ref, provenance, enabled, created_at,
+            tier, source_path, source_hash, manifest_hash, active_version, gate_result)
+         VALUES (@id, @name, @channel, @predicate_key, @behavior_ref, @provenance, @enabled, @created_at,
+            @tier, @source_path, @source_hash, @manifest_hash, @active_version, @gate_result)`,
       )
       .run(toSkillRow(row));
     return result.changes > 0;
@@ -161,6 +272,39 @@ export class SkillRegistry {
     this.db
       .prepare('UPDATE skills SET enabled = ? WHERE id = ?')
       .run(enabled ? 1 : 0, id);
+  }
+
+  /** Append an immutable version row (design-docs §9); idempotent per hash. */
+  recordVersion(version: SkillVersionRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO skill_versions
+           (skill_id, manifest_hash, source_hash, source_path, gate_result, created_at)
+         VALUES (@skill_id, @manifest_hash, @source_hash, @source_path, @gate_result, @created_at)
+         ON CONFLICT(skill_id, manifest_hash) DO UPDATE SET
+           source_hash = excluded.source_hash,
+           source_path = excluded.source_path,
+           gate_result = excluded.gate_result`,
+      )
+      .run({
+        skill_id: version.skillId,
+        manifest_hash: version.manifestHash,
+        source_hash: version.sourceHash,
+        source_path: version.sourcePath,
+        gate_result:
+          version.gateResult === null || version.gateResult === undefined
+            ? null
+            : JSON.stringify(version.gateResult),
+        created_at: version.createdAt,
+      });
+  }
+
+  /** All immutable versions of a skill, newest last (insertion order). */
+  listVersions(skillId: string): SkillVersionRow[] {
+    const rows = this.db
+      .prepare('SELECT * FROM skill_versions WHERE skill_id = ? ORDER BY rowid')
+      .all(skillId) as VersionRow[];
+    return rows.map(fromVersionRow);
   }
 
   /** Record one skill invocation outcome into its health record. */
@@ -228,6 +372,17 @@ export class SkillRegistry {
   }
 }
 
+function parseJsonOrNull(value: string | null): unknown | null {
+  if (value === null) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function fromSkillRow(row: SkillRow): SkillRegistryRow {
   return {
     id: row.id,
@@ -241,6 +396,12 @@ function fromSkillRow(row: SkillRow): SkillRegistryRow {
     provenance: JSON.parse(row.provenance) as SkillProvenance,
     enabled: row.enabled === 1,
     createdAt: row.created_at,
+    tier: (row.tier as SkillTier | null) ?? 'builtin',
+    sourcePath: row.source_path,
+    sourceHash: row.source_hash,
+    manifestHash: row.manifest_hash,
+    activeVersion: row.active_version,
+    gateResult: parseJsonOrNull(row.gate_result),
   };
 }
 
@@ -254,5 +415,25 @@ function toSkillRow(row: SkillRegistryRow): SkillRow {
     provenance: JSON.stringify(row.provenance),
     enabled: row.enabled ? 1 : 0,
     created_at: row.createdAt,
+    tier: row.tier,
+    source_path: row.sourcePath,
+    source_hash: row.sourceHash,
+    manifest_hash: row.manifestHash,
+    active_version: row.activeVersion,
+    gate_result:
+      row.gateResult === null || row.gateResult === undefined
+        ? null
+        : JSON.stringify(row.gateResult),
+  };
+}
+
+function fromVersionRow(row: VersionRow): SkillVersionRow {
+  return {
+    skillId: row.skill_id,
+    manifestHash: row.manifest_hash,
+    sourceHash: row.source_hash,
+    sourcePath: row.source_path,
+    gateResult: parseJsonOrNull(row.gate_result),
+    createdAt: row.created_at,
   };
 }
