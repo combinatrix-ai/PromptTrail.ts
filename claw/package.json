@@ -16,6 +16,7 @@
     "@prompttrail/core": "workspace:*",
     "@prompttrail/cron": "workspace:*",
     "@prompttrail/discord": "workspace:*",
+    "@prompttrail/launcher": "workspace:*",
     "@prompttrail/telegram": "workspace:*",
     "@prompttrail/store-sqlite": "workspace:*",
     "better-sqlite3": "^12.10.0",

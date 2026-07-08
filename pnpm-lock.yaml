@@ -111,6 +111,9 @@ importers:
       '@prompttrail/discord':
         specifier: workspace:*
         version: link:../packages/discord
+      '@prompttrail/launcher':
+        specifier: workspace:*
+        version: link:../packages/launcher
       '@prompttrail/store-sqlite':
         specifier: workspace:*
         version: link:../packages/store-sqlite
@@ -300,6 +303,31 @@ importers:
         specifier: ^14.26.4
         version: 14.26.4
     devDependencies:
+      '@types/node':
+        specifier: ^20.17.19
+        version: 20.17.32
+      '@vitest/coverage-v8':
+        specifier: ^1.6.1
+        version: 1.6.1(vitest@1.6.1(@types/node@20.17.32)(lightningcss@1.29.2))
+      tsup:
+        specifier: ^8.3.6
+        version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(tsx@4.19.4)(typescript@5.8.3)(yaml@2.7.1)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.17.32)(lightningcss@1.29.2)
+
+  packages/launcher:
+    dependencies:
+      '@prompttrail/core':
+        specifier: link:../core
+        version: link:../core
+    devDependencies:
+      '@prompttrail/store-sqlite':
+        specifier: workspace:*
+        version: link:../store-sqlite
       '@types/node':
         specifier: ^20.17.19
         version: 20.17.32
@@ -3010,7 +3038,6 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
-    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lightningcss-darwin-arm64@1.29.2:
