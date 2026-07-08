@@ -676,6 +676,39 @@ export interface LeaseOptions {
 }
 
 /**
+ * Options for opt-in orphan auto-resume (crash recovery) on
+ * {@link PromptTrailApp}. See {@link PromptTrailAppOptions.recovery}.
+ *
+ * An "orphan" is a run that was mid-execution when its process died: work was
+ * delivered to it (appended to the inbox) but never fully consumed. Under the
+ * checkpoint persistence contract (see {@link module:checkpoint_continuation}),
+ * the inbox cursor advances only at a terminal boundary (completion/suspension),
+ * so a run that crashed mid-execution rests with `graphCursor < inbox.length` —
+ * an UNCONSUMED INBOX TAIL. That durable signal — not any status flag — is the
+ * recoverable truth: the status vocabulary is only `'open' | 'done'`, and a run
+ * legitimately suspended at `awaitInput` also rests as `'open'`, but with a
+ * FULLY-consumed inbox (`graphCursor === inbox.length`), so it is NOT an orphan.
+ * Re-resuming an orphan re-delivers only the still-unconsumed tail, which is
+ * at-least-once and deduped by declared effect idempotency keys / the once memo.
+ */
+export interface RecoveryOptions {
+  /** Scan and resume orphans once when {@link PromptTrailApp.start} runs. */
+  onStart?: boolean;
+  /**
+   * Also scan periodically every `intervalMs` while the app is running. The
+   * timer is unref'd (never keeps the process alive) and cleared on `stop()`.
+   * Omit for a boot-only scan.
+   */
+  intervalMs?: number;
+  /**
+   * Invoked when resuming a single orphan throws. A failure never aborts the
+   * scan — the remaining orphans are still attempted. Defaults to
+   * `console.warn`.
+   */
+  onError?: (runId: string, error: unknown) => void;
+}
+
+/**
  * Thrown by `app.start()` when lease mode is enabled but a LIVE lease is already
  * held by a different writer. v1 is fail-fast: there is no waiting/polling — a
  * new instance may only take over once the current holder releases or its lease
@@ -855,6 +888,21 @@ export interface PromptTrailAppOptions {
    * stopped and subsequent writes throw {@link FencingTokenError}.
    */
   onLeaseLost?: (state: RunStoreLeaseState | undefined) => void;
+  /**
+   * Opt-in orphan auto-resume (crash recovery). `true` enables a boot-only scan
+   * (`{ onStart: true }`); an object also allows a periodic scan via
+   * `intervalMs`. On `start()` — AFTER the store lease is acquired when lease
+   * mode is on, so a scan never runs on an instance that lost the lease race —
+   * the app scans the run store for orphans (runs with an unconsumed inbox tail,
+   * `graphCursor < inbox.length`) and resumes each through the normal per-run
+   * locked path, sequentially; a resume that suspends again is a normal outcome
+   * and a resume that throws goes to `onError` without aborting the scan.
+   *
+   * With lease mode on, recovery composes naturally: this instance is the sole
+   * writer. WITHOUT lease mode the operator owns single-writer discipline —
+   * running two recovering instances against one store may double-resume.
+   */
+  recovery?: RecoveryOptions | true;
   defaults?: BindingDefaults;
   agents?: Record<string, PromptTrailRegisteredAgent<any>>;
   gateways?: Record<string, AppGateway>;
@@ -887,6 +935,12 @@ export class PromptTrailApp {
   private leaseState?: RunStoreLeaseState;
   private leaseLost = false;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private readonly recoveryConfig?: {
+    onStart: boolean;
+    intervalMs?: number;
+    onError: (runId: string, error: unknown) => void;
+  };
+  private recoveryTimer?: ReturnType<typeof setInterval>;
   private readonly agents = new Map<string, Agent<any>>();
   private readonly gateways = new Map<string, AppGateway>();
   private readonly runtimeBindings: RuntimeBinding<TriggerEvent>[] = [];
@@ -953,6 +1007,21 @@ export class PromptTrailApp {
       );
     } else {
       this.store = this.baseStore;
+    }
+    if (options.recovery) {
+      const recoveryOpts =
+        options.recovery === true ? { onStart: true } : options.recovery;
+      this.recoveryConfig = {
+        onStart: recoveryOpts.onStart ?? false,
+        intervalMs: recoveryOpts.intervalMs,
+        onError:
+          recoveryOpts.onError ??
+          ((runId, error) =>
+            console.warn(
+              `[PromptTrail] app "${this.name}" failed to auto-resume orphan run "${runId}":`,
+              error,
+            )),
+      };
     }
     this.runtimeDefaults = options.defaults ?? {};
     this.defaultCheckpoint = options.defaults?.checkpoint;
@@ -1289,6 +1358,14 @@ export class PromptTrailApp {
     // Acquire the store lease before anything writes (runtime-server startup
     // retries deliveries, gateways may emit) so all writes carry the fence.
     await this.acquireLease();
+    // Orphan auto-resume runs only past a successful lease acquisition, so an
+    // instance that lost the lease race (acquireLease threw) never recovers.
+    // Boot-scan before adapters start so recovered outbox deliveries are already
+    // queued when the runtime server begins retrying pending deliveries.
+    if (this.recoveryConfig?.onStart) {
+      await this.recoverOrphans();
+    }
+    this.startRecoveryTimer();
     if (this.runtimeAdapters.length > 0) {
       if (!this.runtimeServer) {
         this.runtimeServer = server({
@@ -1309,12 +1386,97 @@ export class PromptTrailApp {
   }
 
   async stop(): Promise<void> {
+    this.stopRecoveryTimer();
     await this.runtimeServer?.stop();
     this.runtimeServer = undefined;
     for (const gateway of this.gateways.values()) {
       await gateway.stop?.();
     }
     await this.releaseLease();
+  }
+
+  /**
+   * True when a stored run is an orphan: it never reached a terminal boundary
+   * for its most recently delivered inbox (`graphCursor < inbox.length`) and is
+   * not a completed run. Under the checkpoint persistence contract the cursor
+   * advances only at completion/suspension, so an unconsumed inbox tail is the
+   * durable signal that a process died mid-execution. A run suspended at
+   * `awaitInput` has consumed its inbox tail (cursor === inbox.length) and is
+   * therefore NOT an orphan — it is legitimately waiting for the next input.
+   */
+  private isOrphanRun(run: StoredRun<any>): boolean {
+    return run.status !== 'done' && (run.graphCursor ?? 0) < run.inbox.length;
+  }
+
+  /**
+   * Scan the run store and resume every orphan sequentially through the normal
+   * per-run locked resume path (so recovery never collides with a concurrent
+   * send for the same run). Each resume failure is reported to the configured
+   * `onError` and does NOT abort the scan; a resume that suspends again is a
+   * normal outcome. A lost lease short-circuits the scan.
+   */
+  private async recoverOrphans(): Promise<void> {
+    if (!this.recoveryConfig || this.leaseLost) {
+      return;
+    }
+    const orphanIds: string[] = [];
+    for (const [runId, run] of await this.store.entries()) {
+      if (this.isOrphanRun(run)) {
+        orphanIds.push(runId);
+      }
+    }
+    for (const runId of orphanIds) {
+      try {
+        await this.resumeOrphan(runId);
+      } catch (error) {
+        this.recoveryConfig.onError(runId, error);
+      }
+    }
+  }
+
+  /**
+   * Resume a single orphan under its per-run mutex. Re-checks the orphan
+   * condition under the lock (a concurrent send may have already advanced it)
+   * and rebinds the agent from the registry by `agentName` so recovery works
+   * after a cold restart where the stored run carries no live agent reference.
+   */
+  private async resumeOrphan(runId: string): Promise<void> {
+    await this.runLocks.run(runId, async () => {
+      const run = await this.store.get(runId);
+      if (!run || !this.isOrphanRun(run)) {
+        return;
+      }
+      const agent = this.agents.get(run.agentName);
+      if (!agent) {
+        throw new Error(
+          `Cannot auto-resume orphan run "${runId}": no agent named ` +
+            `"${run.agentName}" is registered on app "${this.name}".`,
+        );
+      }
+      run.agent = agent;
+      await this.resumeImpl(runId);
+    });
+  }
+
+  private startRecoveryTimer(): void {
+    const intervalMs = this.recoveryConfig?.intervalMs;
+    if (!intervalMs) {
+      return;
+    }
+    this.stopRecoveryTimer();
+    const timer = setInterval(() => {
+      void this.recoverOrphans();
+    }, intervalMs);
+    // Don't keep the process alive purely for the recovery scan.
+    timer.unref?.();
+    this.recoveryTimer = timer;
+  }
+
+  private stopRecoveryTimer(): void {
+    if (this.recoveryTimer !== undefined) {
+      clearInterval(this.recoveryTimer);
+      this.recoveryTimer = undefined;
+    }
   }
 
   async run<TVars extends Vars = Vars>(

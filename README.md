@@ -218,6 +218,18 @@ directly. `checkpoint: true` uses the ambient app store (and fails fast with
 guidance when there is none). Stores persist session _deltas_ — appended
 messages and var diffs — not full-session rewrites.
 
+**Crash recovery (orphan auto-resume).** `PromptTrail.app({ recovery: true })`
+scans the run store on boot and resumes runs that were mid-execution when a
+process died — a run whose inbox has an unconsumed tail (`graphCursor <
+inbox.length`), the durable signal that work was delivered but never finished.
+No human re-invocation, no lost input. Pass `{ intervalMs }` to also rescan
+periodically, and `onError` to observe a resume that throws (the scan continues
+regardless). A run legitimately suspended at `awaitInput` has consumed its inbox
+and is left waiting, not resumed. Recovery re-delivers only the unconsumed tail,
+so it is **at-least-once** like every resume — deduped by your declared effect
+idempotency keys. Compose it with `lease` for cross-process single-writer
+safety; the boot scan runs only after the lease is acquired.
+
 The guarantee is honest and intentionally limited:
 
 - Checkpoint resume gives **at-least-once** effect execution: completed nodes
