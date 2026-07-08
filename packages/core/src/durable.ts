@@ -105,6 +105,102 @@ export interface DurableTimer {
   firedAt?: number;
 }
 
+/**
+ * Recording verbosity for the B0 replay layer (design-docs
+ * replay-and-self-deploy.md, Appendix B0). Per agent/run, default `off`:
+ *
+ * - `off` — no recording captured.
+ * - `decisions` — node breadcrumbs + tool calls (name/argsDigest/result) +
+ *   model `requestDigest`/response. Cheap; powers the deterministic diff
+ *   dimensions (routing / control-flow / tool-args / structured).
+ * - `full` — additionally captures the normalized model request bytes and the
+ *   parsed tool input, needed for `request-hash` keying and faithful replay.
+ *   Larger and sensitive (this is the privacy surface).
+ */
+export type RecordLevel = 'off' | 'decisions' | 'full';
+
+/**
+ * A node-enter breadcrumb emitted by the graph executor (design B0 work item
+ * 3). One entry per node entry, so loop/goalAttempts iterations that re-run
+ * under the SAME `nodePath` appear as repeated breadcrumbs distinguished by
+ * `seq` — the record stream is seq-ordered, NOT a `nodePath → record` map.
+ * `branch` names the child a conditional entered. Parallel emits no per-branch
+ * breadcrumbs (its branches run sequentially and are reconstructed from
+ * model/tool record order).
+ */
+export interface NodeBreadcrumb {
+  /** Monotonic per-run sequence number, assigned by the caller. */
+  seq: number;
+  nodePath: string;
+  nodeType: string;
+  branch?: string;
+  /** When the node was entered, epoch milliseconds. */
+  at: number;
+}
+
+/**
+ * A single model/provider call captured at the `wrapModelCall` boundary. The
+ * `requestDigest` is computed from the NORMALIZED request at record time — per
+ * provider (assistant vs Codex vs Claude use different normalizers), so
+ * `provider` is load-bearing for keying. `request` is only populated at the
+ * `full` record level.
+ */
+export interface ModelCallRecord {
+  /** Monotonic per-run sequence number, assigned by the caller. */
+  seq: number;
+  nodePath: string;
+  callIndex: number;
+  /** Provider identity, e.g. 'assistant' | 'codex' | 'claude' | ... */
+  provider: string;
+  /** Hash of the normalized request computed AT RECORD TIME. */
+  requestDigest: string;
+  /** NormalizedModelRequest; captured only at the `full` level. */
+  request?: unknown;
+  /** ModelOutput-shaped response; opaque to the store. */
+  response: unknown;
+  /** When the call was recorded, epoch milliseconds. */
+  at: number;
+}
+
+/**
+ * A single PromptTrail/ai-sdk tool call captured at the `executePromptTrailTool`
+ * funnel. `input` is only populated at the `full` record level. builtin/MCP
+ * tool calls do NOT flow through here — they ride the model/provider response.
+ */
+export interface ToolCallRecord {
+  /** Monotonic per-run sequence number, assigned by the caller. */
+  seq: number;
+  nodePath: string;
+  callIndex: number;
+  toolName: string;
+  /** Hash of the parsed tool arguments computed AT RECORD TIME. */
+  argsDigest: string;
+  /** Parsed tool input; captured only at the `full` level. */
+  input?: unknown;
+  /** CallToolResult-shaped result; opaque to the store. */
+  result: unknown;
+  /** Declared effect metadata, if any. */
+  effect?: unknown;
+  /** When the call was recorded, epoch milliseconds. */
+  at: number;
+}
+
+/**
+ * One entry in a run's seq-ordered recording stream. A run has a SINGLE
+ * append-only sequence of these — `seq` is assigned by the caller monotonically
+ * per run, and the store preserves order and enforces idempotency by
+ * `(runId, seq)` (same discipline as `appendInbox` offsets).
+ */
+export type RunRecordEntry =
+  | { kind: 'node'; record: NodeBreadcrumb }
+  | { kind: 'model'; record: ModelCallRecord }
+  | { kind: 'tool'; record: ToolCallRecord };
+
+/** The seq a record entry carries, regardless of kind. */
+export function runRecordEntrySeq(entry: RunRecordEntry): number {
+  return entry.record.seq;
+}
+
 export interface DurableRunResult<TVars extends Vars = Vars> {
   status: 'done' | 'suspended';
   runId: string;
@@ -167,6 +263,17 @@ export interface StoredRun<TVars extends Vars> {
   inbox: Inbound[];
   providerSessions?: Record<string, ProviderSessionBinding>;
   timers?: DurableTimer[];
+  /**
+   * Seq-ordered recording stream for the B0 replay layer. Append-only,
+   * populated by the (future) capture wiring; absent when nothing was recorded.
+   */
+  recording?: RunRecordEntry[];
+  /**
+   * Recording verbosity for this run, fixed at create time from the app's
+   * `recording` option (default `off`). Placed on the run — not derived
+   * globally — so claw can sample `full` for a fraction of runs later.
+   */
+  recordLevel?: RecordLevel;
   graphCursor?: number;
   graphSuspendedAt?: string;
   services?: Record<string, unknown>;
@@ -551,6 +658,19 @@ export interface DurableRunStore {
     timer: DurableTimer,
     fence?: number,
   ): Promise<void>;
+  /**
+   * Append one entry to the run's seq-ordered recording stream (design B0).
+   * Append-only and idempotent by `(runId, entry.record.seq)`: a second append
+   * with a seq already present is a no-op (first write wins), mirroring
+   * `appendInbox`'s offset idempotency. The store preserves append order; the
+   * caller assigns `seq` monotonically per run. Records are included in
+   * `get`/`entries` reconstruction and removed by `delete`'s cascade.
+   */
+  appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void>;
   delete(runId: string, fence?: number): Promise<void>;
 }
 
@@ -705,6 +825,25 @@ export class MemoryRunStore implements DurableRunStore {
     } else {
       timers.push(timer);
     }
+  }
+
+  async appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    const recording = (run.recording ??= []);
+    const seq = runRecordEntrySeq(entry);
+    // Idempotent by (runId, seq): first write wins, like appendInbox offsets.
+    if (recording.some((existing) => runRecordEntrySeq(existing) === seq)) {
+      return;
+    }
+    recording.push(entry);
   }
 
   async delete(runId: string, fence?: number): Promise<void> {
@@ -916,6 +1055,16 @@ class FencedRunStore implements DurableRunStore {
     );
   }
 
+  appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    return this.guard(() =>
+      this.inner.appendRecord(runId, entry, fence ?? this.fence()),
+    );
+  }
+
   delete(runId: string, fence?: number): Promise<void> {
     return this.guard(() => this.inner.delete(runId, fence ?? this.fence()));
   }
@@ -973,6 +1122,14 @@ export interface PromptTrailAppOptions {
    */
   recovery?: RecoveryOptions | true;
   /**
+   * Recording verbosity for the B0 replay layer, applied to every run this app
+   * creates (design-docs replay-and-self-deploy.md, Appendix B0). Defaults to
+   * `off`. Stored per-run at create time as `StoredRun.recordLevel`, so a later
+   * sampling policy can vary it. This option only wires the level through
+   * create/reconstruction; execution-time capture is a separate follow-up.
+   */
+  recording?: RecordLevel;
+  /**
    * Injectable clock (epoch ms) for the durable-timer sweep (durability roadmap
    * §3). Defaults to `Date.now`. Tests fake it (e.g. vitest fake timers) so
    * timer wake-ups can be driven without sleeping; production leaves it default.
@@ -1021,6 +1178,8 @@ export class PromptTrailApp {
     onError: (runId: string, error: unknown) => void;
   };
   private recoveryTimer?: ReturnType<typeof setInterval>;
+  /** Recording verbosity stamped onto every run this app creates. */
+  private readonly recordLevel: RecordLevel;
   private readonly now: () => number;
   private readonly onTimerError: (
     runId: string,
@@ -1112,6 +1271,7 @@ export class PromptTrailApp {
             )),
       };
     }
+    this.recordLevel = options.recording ?? 'off';
     this.now = options.now ?? Date.now;
     this.onTimerError =
       options.onTimerError ??
@@ -2083,6 +2243,7 @@ export class PromptTrailApp {
         outbox: [],
         inbox: [],
         providerSessions: {},
+        recordLevel: this.recordLevel,
         graphCursor: 0,
         services: cloneDurableRuntimeValue(options.services),
       };

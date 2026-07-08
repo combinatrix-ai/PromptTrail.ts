@@ -20,6 +20,7 @@ import type {
   DurableTimer,
   Inbound,
   OnceScope,
+  RunRecordEntry,
   SessionCheckpointDelta,
   StoredRun,
   StoredRunPatch,
@@ -172,6 +173,10 @@ class TrackingRunStore implements DurableRunStore {
     upsertTimer(this.runs.get(runId), timer);
   }
 
+  async appendRecord(runId: string, entry: RunRecordEntry): Promise<void> {
+    appendRecord(this.runs.get(runId), entry);
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -302,6 +307,15 @@ class ControlledDelayRunStore implements DurableRunStore {
     return this.delayWrite('upsertTimer', runId, run, () => {});
   }
 
+  appendRecord(runId: string, entry: RunRecordEntry): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return Promise.resolve();
+    }
+    appendRecord(run, entry);
+    return this.delayWrite('appendRecord', runId, run, () => {});
+  }
+
   async delete(runId: string): Promise<void> {
     this.runs.delete(runId);
   }
@@ -372,6 +386,7 @@ type RecordedWrite =
       binding: ProviderSessionBinding;
     }
   | { type: 'upsertTimer'; runId: string }
+  | { type: 'appendRecord'; runId: string }
   | { type: 'delete'; runId: string };
 
 class RecordingRunStore implements DurableRunStore {
@@ -491,6 +506,15 @@ class RecordingRunStore implements DurableRunStore {
     }
     upsertTimer(run, timer);
     this.writes.push({ type: 'upsertTimer', runId });
+  }
+
+  async appendRecord(runId: string, entry: RunRecordEntry): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return;
+    }
+    appendRecord(run, entry);
+    this.writes.push({ type: 'appendRecord', runId });
   }
 
   async delete(runId: string): Promise<void> {
@@ -2061,5 +2085,18 @@ function upsertTimer(
     timers[index] = timer;
   } else {
     timers.push(timer);
+  }
+}
+
+function appendRecord(
+  run: StoredRun<any> | undefined,
+  entry: RunRecordEntry,
+): void {
+  if (!run) {
+    return;
+  }
+  const recording = (run.recording ??= []);
+  if (!recording.some((existing) => existing.record.seq === entry.record.seq)) {
+    recording.push(entry);
   }
 }

@@ -9,6 +9,8 @@ import {
   type InboundKind,
   type OnceScope,
   type ProviderSessionBinding,
+  type RecordLevel,
+  type RunRecordEntry,
   type RunStoreLease,
   type RunStoreLeaseState,
   type SessionCheckpointDelta,
@@ -287,8 +289,9 @@ export class LibsqlRunStore implements DurableRunStore {
         graph_suspended_at,
         services_json,
         initial_session_json,
-        graph_manifest_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        graph_manifest_json,
+        record_level
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         runId,
         run.agentName,
@@ -298,6 +301,7 @@ export class LibsqlRunStore implements DurableRunStore {
         jsonOrNull(run.services),
         JSON.stringify(run.initial.toJSON()),
         jsonOrNull(run.graphManifest),
+        run.recordLevel ?? null,
       ],
     });
   }
@@ -491,6 +495,21 @@ export class LibsqlRunStore implements DurableRunStore {
     });
   }
 
+  async appendRecord(
+    runId: string,
+    entry: RunRecordEntry,
+    fence?: number,
+  ): Promise<void> {
+    await this.assertFence(fence);
+    // INSERT OR IGNORE for (run_id, seq) idempotency — first write wins, so a
+    // re-append of a seq already present is silently dropped.
+    await this.client.execute({
+      sql: `INSERT OR IGNORE INTO records (run_id, seq, kind, entry_json)
+            VALUES (?, ?, ?, ?)`,
+      args: [runId, entry.record.seq, entry.kind, JSON.stringify(entry)],
+    });
+  }
+
   async delete(runId: string, fence?: number): Promise<void> {
     await this.assertFence(fence);
     // Deleting the parent runs row is sufficient: the schema declares
@@ -527,7 +546,8 @@ export class LibsqlRunStore implements DurableRunStore {
         graph_suspended_at TEXT,
         services_json TEXT,
         initial_session_json TEXT NOT NULL,
-        graph_manifest_json TEXT
+        graph_manifest_json TEXT,
+        record_level TEXT
       );
 
       CREATE TABLE IF NOT EXISTS session_deltas (
@@ -590,6 +610,15 @@ export class LibsqlRunStore implements DurableRunStore {
         FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS records (
+        run_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        entry_json TEXT NOT NULL,
+        PRIMARY KEY (run_id, seq),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS lease (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         holder TEXT NOT NULL,
@@ -610,7 +639,8 @@ export class LibsqlRunStore implements DurableRunStore {
     // 1. Load the run row.
     const runRes = await this.client.execute({
       sql: `SELECT run_id, agent_name, status, graph_cursor, graph_suspended_at,
-                   services_json, initial_session_json, graph_manifest_json
+                   services_json, initial_session_json, graph_manifest_json,
+                   record_level
             FROM runs WHERE run_id = ?`,
       args: [runId],
     });
@@ -627,6 +657,7 @@ export class LibsqlRunStore implements DurableRunStore {
       services_json: r[5] as string | null,
       initial_session_json: r[6] as string,
       graph_manifest_json: r[7] as string | null,
+      record_level: r[8] as RecordLevel | null,
     };
 
     // 2. Gather session deltas ordered by seq.
@@ -719,7 +750,17 @@ export class LibsqlRunStore implements DurableRunStore {
       return timer;
     });
 
-    // 8. Delegate assembly to the shared reconstruction helper.
+    // 8. Gather the recording stream ordered by seq.
+    const recordRes = await this.client.execute({
+      sql: `SELECT entry_json
+            FROM records WHERE run_id = ? ORDER BY seq ASC`,
+      args: [runId],
+    });
+    const records: RunRecordEntry[] = recordRes.rows.map(
+      (rrow) => parseJsonRequired(rrow[0] as string) as RunRecordEntry,
+    );
+
+    // 9. Delegate assembly to the shared reconstruction helper.
     return reconstructStoredRun(
       {
         agentName: row.agent_name,
@@ -735,6 +776,8 @@ export class LibsqlRunStore implements DurableRunStore {
         outbox,
         providerSessions,
         timers,
+        records,
+        recordLevel: row.record_level ?? undefined,
       },
       this.agents,
     );
