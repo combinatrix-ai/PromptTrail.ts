@@ -161,9 +161,44 @@ const store = new SqliteRunStore({
   path: clawDbPath,
 });
 
+// Single-writer lease (durability §2 / replay-and-self-deploy.md §5, B4/B5).
+// Opt-in via CLAW_LEASE so a bare `claw` run keeps today's zero-config behavior.
+// The holder id comes from the immutable launcher (LAUNCHER_LEASE_HOLDER) so it
+// can TARGET this instance in a blue/green handoff; a plain run falls back to the
+// app's stable default holder. LAUNCHER_ROLE marks blue (the current deployment)
+// vs green (the candidate that must WAIT for the launcher to hand it the lease
+// before it starts serving — see below).
+const leaseEnabled = readBoolean('CLAW_LEASE', false);
+const launcherRole = readOptionalString('LAUNCHER_ROLE');
+const leaseHolder = readOptionalString('LAUNCHER_LEASE_HOLDER');
+let leaseLostHandled = false;
+
 const runtime = PromptTrail.app({
   name: 'claw-discord',
   store,
+  ...(leaseEnabled
+    ? {
+        lease: leaseHolder ? { holder: leaseHolder } : true,
+        onLeaseLost: () => {
+          if (leaseLostHandled) {
+            return;
+          }
+          leaseLostHandled = true;
+          // A newer holder took over (blue lost the lease at a launcher
+          // cutover). Stop the gateways gracefully and exit — the app already
+          // lost the lease, so there is nothing to release; its late writes are
+          // fenced. The exit code marks a lease-driven stop for the launcher.
+          console.warn(
+            `[claw] lost the store lease (holder=${leaseHolder ?? 'default'}); ` +
+              'draining gateways and exiting.',
+          );
+          process.exitCode = 75; // EX_TEMPFAIL: a superseded blue, not a crash
+          void server.stop().catch((error) => {
+            console.error('[claw] error stopping after lease loss', error);
+          });
+        },
+      }
+    : {}),
   defaults: {
     checkpoint: true,
   },
@@ -284,6 +319,15 @@ const server = PromptTrail.server({
   ],
 });
 
+// Green candidate: the launcher holds the lease with blue until it cuts over.
+// The app's lease acquire is fail-fast, so wait until the launcher has handed us
+// the lease (or it is free) before starting — then `server.start()` acquires it,
+// learns its fencing token, and begins serving. Blue skips this and acquires
+// immediately as the current deployment.
+if (leaseEnabled && launcherRole === 'green' && leaseHolder) {
+  await waitForLeaseHandoff(store, leaseHolder);
+}
+
 await server.start();
 
 /**
@@ -347,6 +391,35 @@ function buildSkillReplySource(cfg: ClawConfig): SkillReplySource {
     });
   }
   return Source.callback(async () => '(echo mode: skill reply)');
+}
+
+/**
+ * Green-candidate wait: block until the immutable launcher hands the store lease
+ * to `holder`, so `server.start()`'s (fail-fast) acquire succeeds instead of
+ * racing blue. A FREE lease is deliberately NOT enough — waiting for
+ * `holder === us` guarantees we never steal the lease from blue before the
+ * launcher's verified cutover.
+ */
+async function waitForLeaseHandoff(
+  runStore: SqliteRunStore,
+  holder: string,
+  timeoutMs = 120_000,
+  pollMs = 100,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const current = await runStore.lease.current();
+    if (current && current.holder === holder) {
+      return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Green candidate timed out after ${timeoutMs}ms waiting for the ` +
+          `launcher to hand off the store lease to "${holder}".`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
 }
 
 function readPackageVersion(): string {
